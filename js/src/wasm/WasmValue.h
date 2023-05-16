@@ -42,11 +42,9 @@ struct V128 {
   }
 
   template <typename T>
-  T extractLane(unsigned lane) const {
-    T result;
+  void extractLane(unsigned lane, T* result) const {
     MOZ_ASSERT(lane < 16 / sizeof(T));
-    memcpy(&result, bytes + sizeof(T) * lane, sizeof(T));
-    return result;
+    memcpy(result, bytes + sizeof(T) * lane, sizeof(T));
   }
 
   template <typename T>
@@ -292,7 +290,6 @@ class LitVal {
   LitVal() : type_(ValType()), cell_{} {}
 
   explicit LitVal(ValType type) : type_(type) {
-    MOZ_ASSERT(type.isDefaultable());
     switch (type.kind()) {
       case ValType::Kind::I32: {
         cell_.i32_ = 0;
@@ -438,12 +435,13 @@ class MOZ_NON_PARAM Val : public LitVal {
 
   // Initialize from `loc` which is a rooted location and needs no barriers.
   void initFromRootedLocation(ValType type, const void* loc);
+  void initFromHeapLocation(ValType type, const void* loc);
 
   // Write to `loc` which is a rooted location and needs no barriers.
   void writeToRootedLocation(void* loc, bool mustWrite64) const;
 
   // Read from `loc` which is in the heap.
-  void readFromHeapLocation(void* loc);
+  void readFromHeapLocation(const void* loc);
   // Write to `loc` which is in the heap and must be barriered.
   void writeToHeapLocation(void* loc) const;
 

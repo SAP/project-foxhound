@@ -12,9 +12,7 @@ from marionette_driver.errors import MarionetteException
 from marionette_driver.wait import Wait
 from marionette_harness import MarionetteTestCase
 from marionette_harness.runner.mixins.window_manager import WindowManagerMixin
-
 from telemetry_harness.ping_server import PingServer
-
 
 CANARY_CLIENT_ID = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
 UUID_PATTERN = re.compile(
@@ -27,12 +25,14 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         """Initialize the test case and create a ping server."""
         super(TelemetryTestCase, self).__init__(*args, **kwargs)
 
+    def setUp(self, *args, **kwargs):
+        """Set up the test case and start the ping server."""
+
         self.ping_server = PingServer(
             self.testvars["server_root"], self.testvars["server_url"]
         )
+        self.ping_server.start()
 
-    def setUp(self, *args, **kwargs):
-        """Set up the test case and start the ping server."""
         super(TelemetryTestCase, self).setUp(*args, **kwargs)
 
         # Store IDs of addons installed via self.install_addon()
@@ -40,8 +40,6 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
 
         with self.marionette.using_context(self.marionette.CONTEXT_CONTENT):
             self.marionette.navigate("about:about")
-
-        self.ping_server.start()
 
     def disable_telemetry(self):
         """Disable the Firefox Data Collection and Use in the current browser."""

@@ -69,8 +69,6 @@
 #include "nsIDOMChromeWindow.h"
 #include "InProcessBrowserChildMessageManager.h"
 
-#include "Layers.h"
-
 #include "ContentParent.h"
 #include "BrowserParent.h"
 #include "mozilla/AsyncEventDispatcher.h"
@@ -993,7 +991,7 @@ bool nsFrameLoader::Show(nsSubDocumentFrame* frame) {
     // Ensure root scroll frame is reflowed in case margins have changed
     if (marginsChanged) {
       if (nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame()) {
-        presShell->FrameNeedsReflow(rootScrollFrame, IntrinsicDirty::Resize,
+        presShell->FrameNeedsReflow(rootScrollFrame, IntrinsicDirty::None,
                                     NS_FRAME_IS_DIRTY);
       }
     }
@@ -2683,6 +2681,7 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
 #endif
             "chrome://browser/content/webext-panels.xhtml"_ns,
             "chrome://devtools/content/netmonitor/index.html"_ns,
+            "chrome://devtools/content/webconsole/index.html"_ns,
         };
 
         for (const auto& allowedURI : kAllowedURIs) {

@@ -2,9 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Bug 1790483: Lit is not bundled yet, this is dev only.
-// eslint-disable-next-line import/no-unresolved
-import { query, queryAll, LitElement } from "./vendor/lit.all.mjs";
+import { LitElement } from "./vendor/lit.all.mjs";
+
+/**
+ * Helper for our replacement of @query. Used with `static queries` property.
+ *
+ * https://github.com/lit/lit/blob/main/packages/reactive-element/src/decorators/query.ts
+ */
+function query(el, selector) {
+  return () => el.renderRoot.querySelector(selector);
+}
+
+/**
+ * Helper for our replacement of @queryAll. Used with `static queries` property.
+ *
+ * https://github.com/lit/lit/blob/main/packages/reactive-element/src/decorators/query-all.ts
+ */
+function queryAll(el, selector) {
+  return () => el.renderRoot.querySelectorAll(selector);
+}
 
 /**
  * MozLitElement provides extensions to the lit-provided LitElement class.
@@ -72,9 +88,13 @@ export class MozLitElement extends LitElement {
     if (queries) {
       for (let [name, selector] of Object.entries(queries)) {
         if (selector.all) {
-          queryAll(selector.all)(this, name);
+          Object.defineProperty(this, name, {
+            get: queryAll(this, selector.all),
+          });
         } else {
-          query(selector)(this, name);
+          Object.defineProperty(this, name, {
+            get: query(this, selector),
+          });
         }
       }
     }
@@ -82,24 +102,17 @@ export class MozLitElement extends LitElement {
 
   /**
    * The URL for this component's styles. To make development in Storybook
-   * easier this will use the chrome:// URL when in product (feature detected
-   * by AppConstants existing) and a relative path for Storybook.
+   * easier this will use the chrome:// URL when in product and a relative path
+   * for Storybook.
    *
    * LOCAL_NAME should be the kebab-cased name of the element. It is added by
    * the `./mach addwidget` command.
    */
   static get stylesheetUrl() {
-    if (this.useChromeStylesheet) {
-      return `chrome://global/content/elements/${this.LOCAL_NAME}.css`;
+    if (window.IS_STORYBOOK) {
+      return `./${this.LOCAL_NAME}/${this.LOCAL_NAME}.css`;
     }
-    return `./${this.LOCAL_NAME}/${this.LOCAL_NAME}.css`;
-  }
-
-  static get useChromeStylesheet() {
-    return (
-      typeof AppConstants != "undefined" ||
-      (typeof Cu != "undefined" && Cu.isInAutomation)
-    );
+    return `chrome://global/content/elements/${this.LOCAL_NAME}.css`;
   }
 
   connectedCallback() {

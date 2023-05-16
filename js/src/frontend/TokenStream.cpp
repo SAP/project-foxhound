@@ -360,9 +360,9 @@ TaggedParserAtomIndex TokenStreamAnyChars::reservedWordToPropertyName(
   return TaggedParserAtomIndex::null();
 }
 
-SourceCoords::SourceCoords(JSContext* cx, uint32_t initialLineNumber,
+SourceCoords::SourceCoords(ErrorContext* ec, uint32_t initialLineNumber,
                            uint32_t initialOffset)
-    : lineStartOffsets_(cx), initialLineNum_(initialLineNumber), lastIndex_(0) {
+    : lineStartOffsets_(ec), initialLineNum_(initialLineNumber), lastIndex_(0) {
   // This is actually necessary!  Removing it causes compile errors on
   // GCC and clang.  You could try declaring this:
   //
@@ -503,8 +503,8 @@ TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx, ErrorContext* ec,
       options_(options),
       strictModeGetter_(smg),
       filename_(options.filename()),
-      longLineColumnInfo_(cx),
-      srcCoords(cx, options.lineno, options.scriptSourceOffset),
+      longLineColumnInfo_(ec),
+      srcCoords(ec, options.lineno, options.scriptSourceOffset),
       lineno(options.lineno),
       mutedErrors(options.mutedErrors()) {
   // |isExprEnding| was initially zeroed: overwrite the true entries here.
@@ -815,7 +815,7 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
     if (!ptr) {
       // This could rehash and invalidate a cached vector pointer, but the outer
       // condition means we don't have a cached pointer.
-      if (!longLineColumnInfo_.add(ptr, line, Vector<ChunkInfo>(cx))) {
+      if (!longLineColumnInfo_.add(ptr, line, Vector<ChunkInfo>(ec))) {
         // In case of OOM, just count columns from the start of the line.
         ec->recoverFromOutOfMemory();
         return ColumnFromPartial(start, 0, UnitsType::PossiblyMultiUnit);
@@ -1679,7 +1679,7 @@ bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
     return true;
   }
 
-  CharBuffer lineOfContext(cx);
+  CharBuffer lineOfContext(ec);
 
   const Unit* encodedWindow = sourceUnits.codeUnitPtrAt(encodedWindowStart);
   if (!FillCharBufferFromSourceNormalizingAsciiLineBreaks(
@@ -1961,7 +1961,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getDirectives(
     JSContext* cx, UniquePtr<char16_t[], JS::FreePolicy>* destination) {
   size_t length = charBuffer.length();
 
-  *destination = cx->make_pod_array<char16_t>(length + 1);
+  *destination = ec->getAllocator()->make_pod_array<char16_t>(length + 1);
   if (!*destination) {
     return false;
   }
@@ -2432,8 +2432,11 @@ TokenStreamSpecific<Unit, AnyCharsAccess>::matchIntegerAfterFirstDigit(
     unit = getCodeUnit();
     if (!isIntegerUnit(unit)) {
       if (unit == '_') {
+        ungetCodeUnit(unit);
         error(JSMSG_NUMBER_MULTIPLE_ADJACENT_UNDERSCORES);
       } else {
+        ungetCodeUnit(unit);
+        ungetCodeUnit('_');
         error(JSMSG_NUMBER_END_WITH_UNDERSCORE);
       }
       return false;
@@ -2959,11 +2962,13 @@ template <typename Unit, class AnyCharsAccess>
         } while (IsAsciiDigit(unit));
 
         if (unit == '_') {
+          ungetCodeUnit(unit);
           error(JSMSG_SEPARATOR_IN_ZERO_PREFIXED_NUMBER);
           return badToken();
         }
 
         if (unit == 'n') {
+          ungetCodeUnit(unit);
           error(JSMSG_BIGINT_INVALID_SYNTAX);
           return badToken();
         }
@@ -2974,6 +2979,7 @@ template <typename Unit, class AnyCharsAccess>
         }
       } else if (unit == '_') {
         // Give a more explicit error message when '_' is used after '0'.
+        ungetCodeUnit(unit);
         error(JSMSG_SEPARATOR_IN_ZERO_PREFIXED_NUMBER);
         return badToken();
       } else {

@@ -74,7 +74,7 @@ describe("TelemetryFeed", () => {
       },
       getSetting() {},
     };
-    sandbox.spy(global.Cu, "reportError");
+    sandbox.spy(global.console, "error");
     globals.set("AboutNewTab", {
       newTabURLOverridden: false,
       newTabURL: "",
@@ -180,13 +180,6 @@ describe("TelemetryFeed", () => {
       assert.calledTwice(stub);
       assert.calledWithExactly(stub, "unload", instance.handleEvent);
       assert.calledWithExactly(stub, "TabPinned", instance.handleEvent);
-    });
-    it("should send a 'newtab' ping", () => {
-      instance._prefs.set(TELEMETRY_PREF, true);
-      sandbox.spy(GleanPings.newtab, "submit");
-      instance.init();
-      assert.calledOnce(GleanPings.newtab.submit);
-      assert.calledWithExactly(GleanPings.newtab.submit, "component_init");
     });
     describe("telemetry pref changes from false to true", () => {
       beforeEach(() => {
@@ -935,7 +928,7 @@ describe("TelemetryFeed", () => {
         session
       );
 
-      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(global.console.error);
       assert.equal(pingType, "onboarding");
       assert.propertyVal(ping, "event_context", JSON.stringify({}));
       assert.propertyVal(ping, "message_id", "onboarding_message_01");
@@ -1725,6 +1718,13 @@ describe("TelemetryFeed", () => {
       assert.calledOnce(Glean.newtab.homepageCategory.set);
       assert.calledWith(Glean.newtab.homepageCategory.set, "disabled");
     });
+    it("should send a 'newtab' ping", async () => {
+      instance._prefs.set(TELEMETRY_PREF, true);
+      sandbox.spy(GleanPings.newtab, "submit");
+      await instance.sendPageTakeoverData();
+      assert.calledOnce(GleanPings.newtab.submit);
+      assert.calledWithExactly(GleanPings.newtab.submit, "component_init");
+    });
   });
   describe("#sendDiscoveryStreamImpressions", () => {
     it("should not send impression pings if there is no impression data", () => {
@@ -1969,7 +1969,7 @@ describe("TelemetryFeed", () => {
 
       assert.calledOnce(instance.sendStructuredIngestionEvent);
     });
-    it("should reportError on unknown pingTypes", async () => {
+    it("should console.error on unknown pingTypes", async () => {
       const data = {
         action: "unknown_event",
         event: "IMPRESSION",
@@ -1980,7 +1980,7 @@ describe("TelemetryFeed", () => {
 
       await instance.handleASRouterUserEvent({ data });
 
-      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(global.console.error);
       assert.notCalled(instance.sendStructuredIngestionEvent);
     });
   });
@@ -2129,14 +2129,14 @@ describe("TelemetryFeed", () => {
         is_sponsored: false,
       });
     });
-    it("should reportError on unknown pingTypes", async () => {
+    it("should console.error on unknown pingTypes", async () => {
       const data = { type: "unknown_type" };
       instance = new TelemetryFeed();
       sandbox.spy(instance, "sendStructuredIngestionEvent");
 
       await instance.handleTopSitesImpressionStats({ data });
 
-      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(global.console.error);
       assert.notCalled(instance.sendStructuredIngestionEvent);
     });
   });

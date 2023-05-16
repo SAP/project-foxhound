@@ -36,3 +36,25 @@ origin-controls-state-always-on = Can always read and change data on this site
 origin-controls-state-when-clicked = Permission needed to read and change data
 
 origin-controls-state-hover-run-visit-only = Run for this visit only
+
+origin-controls-state-runnable-hover-open = Open extension
+
+origin-controls-state-runnable-hover-run = Run extension
+
+origin-controls-state-temporary-access = Can read and change data for this visit
+
+## Extension's toolbar button.
+## Variables:
+##   $extensionTitle (String) - Extension name or title message.
+
+origin-controls-toolbar-button =
+    .label = { $extensionTitle }
+    .tooltiptext = { $extensionTitle }
+
+# Extension's toolbar button when permission is needed.
+# Note that the new line is intentionally part of the tooltip.
+origin-controls-toolbar-button-permission-needed =
+    .label = { $extensionTitle }
+    .tooltiptext =
+        { $extensionTitle }
+        Permission needed

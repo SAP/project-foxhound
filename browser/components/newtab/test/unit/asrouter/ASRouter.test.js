@@ -982,7 +982,7 @@ describe("ASRouter", () => {
         id: "cfr",
         enabled: true,
         type: "remote-settings",
-        bucket: "cfr",
+        collection: "cfr",
       };
       await createRouterAndInit([provider]);
 
@@ -1002,7 +1002,7 @@ describe("ASRouter", () => {
         id: "cfr",
         enabled: true,
         type: "remote-settings",
-        bucket: "cfr",
+        collection: "cfr",
       };
       await createRouterAndInit([provider]);
 
@@ -1962,9 +1962,8 @@ describe("ASRouter", () => {
       global.Cc["@mozilla.org/mac-attribution;1"] = {
         getService: () => ({ setReferrerUrl }),
       };
-      global.Cc["@mozilla.org/process/environment;1"] = {
-        getService: () => ({ set: sandbox.stub() }),
-      };
+
+      sandbox.stub(global.Services.env, "set");
     });
     it("should double encode on windows", async () => {
       sandbox.stub(fakeAttributionCode, "writeAttributionFile");
@@ -2049,10 +2048,10 @@ describe("ASRouter", () => {
 
   describe("valid preview endpoint", () => {
     it("should report an error if url protocol is not https", () => {
-      sandbox.stub(Cu, "reportError");
+      sandbox.stub(console, "error");
 
       assert.equal(false, Router._validPreviewEndpoint("http://foo.com"));
-      assert.calledTwice(Cu.reportError);
+      assert.calledTwice(console.error);
     });
   });
 
@@ -2390,7 +2389,7 @@ describe("ASRouter", () => {
         id: "cfr",
         enabled: true,
         type: "remote-settings",
-        bucket: "cfr",
+        collection: "cfr",
       };
       await createRouterAndInit([provider]);
       sandbox.spy(Router, "setState");
@@ -2405,7 +2404,7 @@ describe("ASRouter", () => {
             id: "cfr",
             enabled: true,
             type: "remote-settings",
-            bucket: "cfr",
+            collection: "cfr",
             lastUpdated: undefined,
             errors: [],
           },
@@ -2465,7 +2464,7 @@ describe("ASRouter", () => {
           {
             id: "message-groups",
             enabled: true,
-            bucket: "bucket",
+            collection: "collection",
             type: "remote-settings",
           },
         ],
@@ -2498,7 +2497,7 @@ describe("ASRouter", () => {
           {
             id: "message-groups",
             enabled: true,
-            bucket: "bucket",
+            collection: "collection",
             type: "remote-settings",
           },
         ],
@@ -2526,7 +2525,7 @@ describe("ASRouter", () => {
           {
             id: "message-groups",
             enabled: true,
-            bucket: "bucket",
+            collection: "collection",
             type: "remote-settings",
           },
         ],
@@ -2547,7 +2546,7 @@ describe("ASRouter", () => {
           {
             id: "cfr",
             enabled: true,
-            bucket: "bucket",
+            collection: "collection",
             type: "remote-settings",
           },
         ],
@@ -2570,7 +2569,7 @@ describe("ASRouter", () => {
           {
             id: "cfr",
             enabled: true,
-            bucket: "bucket",
+            collection: "collection",
             type: "remote-settings",
             userPreferences: ["cfrAddons"],
           },
@@ -2788,7 +2787,7 @@ describe("ASRouter", () => {
     beforeEach(() => {
       provider = {
         id: "cfr",
-        bucket: "cfr",
+        collection: "cfr",
       };
       sandbox
         .stub(MessageLoaderUtils, "_getRemoteSettingsMessages")

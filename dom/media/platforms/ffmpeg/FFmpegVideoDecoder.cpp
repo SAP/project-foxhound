@@ -380,7 +380,8 @@ void FFmpegVideoDecoder<LIBAV_VER>::InitHWDecodingPrefs() {
 FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
     FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
     KnowsCompositor* aAllocator, ImageContainer* aImageContainer,
-    bool aLowLatency, bool aDisableHardwareDecoding)
+    bool aLowLatency, bool aDisableHardwareDecoding,
+    Maybe<TrackingId> aTrackingId)
     : FFmpegDataDecoder(aLib, GetCodecId(aConfig.mMimeType)),
 #ifdef MOZ_WAYLAND_USE_VAAPI
       mVAAPIDeviceContext(nullptr),
@@ -396,7 +397,8 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
       mMissedDecodeInAverangeTime(0),
 #endif
       mAverangeDecodeTime(0),
-      mLowLatency(aLowLatency) {
+      mLowLatency(aLowLatency),
+      mTrackingId(std::move(aTrackingId)) {
   FFMPEG_LOG("FFmpegVideoDecoder::FFmpegVideoDecoder MIME %s Codec ID %d",
              aConfig.mMimeType.get(), mCodecID);
   // Use a new MediaByteBuffer as the object will be modified during
@@ -434,6 +436,29 @@ RefPtr<MediaDataDecoder::InitPromise> FFmpegVideoDecoder<LIBAV_VER>::Init() {
   }
 
   return InitPromise::CreateAndReject(rv, __func__);
+}
+
+static gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) {
+  switch (aFormat) {
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUV444P:
+      return gfx::ColorDepth::COLOR_8;
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_YUV422P10LE:
+    case AV_PIX_FMT_YUV444P10LE:
+      return gfx::ColorDepth::COLOR_10;
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+    case AV_PIX_FMT_YUV420P12LE:
+    case AV_PIX_FMT_YUV422P12LE:
+    case AV_PIX_FMT_YUV444P12LE:
+      return gfx::ColorDepth::COLOR_12;
+#endif
+    default:
+      MOZ_ASSERT_UNREACHABLE("Not supported format?");
+      return gfx::ColorDepth::COLOR_8;
+  }
 }
 
 #ifdef CUSTOMIZED_BUFFER_ALLOCATION
@@ -486,27 +511,6 @@ static bool IsColorFormatSupportedForUsingCustomizedBuffer(
          aFormat == AV_PIX_FMT_YUV420P12LE || aFormat == AV_PIX_FMT_YUV444P ||
          aFormat == AV_PIX_FMT_YUV444P10LE || aFormat == AV_PIX_FMT_YUV444P12LE;
 #  endif
-}
-
-static gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) {
-  switch (aFormat) {
-    case AV_PIX_FMT_YUV420P:
-    case AV_PIX_FMT_YUVJ420P:
-    case AV_PIX_FMT_YUV422P:
-    case AV_PIX_FMT_YUV444P:
-      return gfx::ColorDepth::COLOR_8;
-    case AV_PIX_FMT_YUV420P10LE:
-    case AV_PIX_FMT_YUV422P10LE:
-    case AV_PIX_FMT_YUV444P10LE:
-      return gfx::ColorDepth::COLOR_10;
-    case AV_PIX_FMT_YUV420P12LE:
-    case AV_PIX_FMT_YUV422P12LE:
-    case AV_PIX_FMT_YUV444P12LE:
-      return gfx::ColorDepth::COLOR_12;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Not supported format?");
-      return gfx::ColorDepth::COLOR_8;
-  }
 }
 
 static bool IsYUV420Sampling(const AVPixelFormat& aFormat) {
@@ -838,6 +842,40 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
   }
 #endif
 
+  mTrackingId.apply([&](const auto& aId) {
+    MediaInfoFlag flag = MediaInfoFlag::None;
+    flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                : MediaInfoFlag::NonKeyFrame);
+    flag |= (IsHardwareAccelerated() ? MediaInfoFlag::HardwareDecoding
+                                     : MediaInfoFlag::SoftwareDecoding);
+    switch (mCodecID) {
+      case AV_CODEC_ID_H264:
+        flag |= MediaInfoFlag::VIDEO_H264;
+        break;
+#if LIBAVCODEC_VERSION_MAJOR >= 54
+      case AV_CODEC_ID_VP8:
+        flag |= MediaInfoFlag::VIDEO_VP8;
+        break;
+#endif
+#if LIBAVCODEC_VERSION_MAJOR >= 55
+      case AV_CODEC_ID_VP9:
+        flag |= MediaInfoFlag::VIDEO_VP9;
+        break;
+#endif
+#ifdef FFMPEG_AV1_DECODE
+      case AV_CODEC_ID_AV1:
+        flag |= MediaInfoFlag::VIDEO_AV1;
+        break;
+#endif
+      default:
+        break;
+    }
+    mPerformanceRecorder.Start(
+        packet.dts,
+        nsPrintfCString("FFmpegVideoDecoder(%d)", LIBAVCODEC_VERSION_MAJOR),
+        aId, flag);
+  });
+
 #if LIBAVCODEC_VERSION_MAJOR >= 58
   packet.duration = aSample->mDuration.ToMicroseconds();
   int res = mLib->avcodec_send_packet(mCodecContext, &packet);
@@ -935,6 +973,41 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     if (NS_FAILED(rv)) {
       return rv;
     }
+
+    mPerformanceRecorder.Record(mFrame->pkt_dts, [&](auto& aStage) {
+      aStage.SetResolution(mFrame->width, mFrame->height);
+      auto format = [&]() -> Maybe<DecodeStage::ImageFormat> {
+        switch (mCodecContext->pix_fmt) {
+          case AV_PIX_FMT_YUV420P:
+          case AV_PIX_FMT_YUVJ420P:
+          case AV_PIX_FMT_YUV420P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV420P12LE:
+#  endif
+            return Some(DecodeStage::YUV420P);
+          case AV_PIX_FMT_YUV422P:
+          case AV_PIX_FMT_YUV422P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV422P12LE:
+#  endif
+            return Some(DecodeStage::YUV422P);
+          case AV_PIX_FMT_YUV444P:
+          case AV_PIX_FMT_YUV444P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV444P12LE:
+#  endif
+            return Some(DecodeStage::YUV444P);
+          case AV_PIX_FMT_GBRP:
+            return Some(DecodeStage::GBRP);
+          default:
+            return Nothing();
+        }
+      }();
+      format.apply([&](auto& aFmt) { aStage.SetImageFormat(aFmt); });
+      aStage.SetColorDepth(GetColorDepth(mCodecContext->pix_fmt));
+      aStage.SetYUVColorSpace(GetFrameColorSpace());
+      aStage.SetColorRange(GetFrameColorRange());
+    });
     if (aGotFrame) {
       *aGotFrame = true;
     }
@@ -1000,7 +1073,48 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
   }
 
   MediaResult rv = CreateImage(aSample->mOffset, pts, duration, aResults);
-  if (NS_SUCCEEDED(rv) && aGotFrame) {
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  mTrackingId.apply([&](const auto&) {
+    mPerformanceRecorder.Record(mFrame->pkt_dts, [&](DecodeStage& aStage) {
+      aStage.SetResolution(mFrame->width, mFrame->height);
+      auto format = [&]() -> Maybe<DecodeStage::ImageFormat> {
+        switch (mCodecContext->pix_fmt) {
+          case AV_PIX_FMT_YUV420P:
+          case AV_PIX_FMT_YUVJ420P:
+          case AV_PIX_FMT_YUV420P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV420P12LE:
+#  endif
+            return Some(DecodeStage::YUV420P);
+          case AV_PIX_FMT_YUV422P:
+          case AV_PIX_FMT_YUV422P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV422P12LE:
+#  endif
+            return Some(DecodeStage::YUV422P);
+          case AV_PIX_FMT_YUV444P:
+          case AV_PIX_FMT_YUV444P10LE:
+#  if LIBAVCODEC_VERSION_MAJOR >= 57
+          case AV_PIX_FMT_YUV444P12LE:
+#  endif
+            return Some(DecodeStage::YUV444P);
+          case AV_PIX_FMT_GBRP:
+            return Some(DecodeStage::GBRP);
+          default:
+            return Nothing();
+        }
+      }();
+      format.apply([&](auto& aFmt) { aStage.SetImageFormat(aFmt); });
+      aStage.SetColorDepth(GetColorDepth(mCodecContext->pix_fmt));
+      aStage.SetYUVColorSpace(GetFrameColorSpace());
+      aStage.SetColorRange(GetFrameColorRange());
+    });
+  });
+
+  if (aGotFrame) {
     *aGotFrame = true;
   }
   return rv;
@@ -1236,6 +1350,7 @@ FFmpegVideoDecoder<LIBAV_VER>::ProcessFlush() {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   mPtsContext.Reset();
   mDurationMap.Clear();
+  mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
   // Discard non-ref frames on HW accelerated backend to avoid decode artifacts.
   if (IsHardwareAccelerated()) {
     mFrameDrop = AVDISCARD_NONREF;

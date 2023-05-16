@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+var { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
 
-/** Test for Bug 472396 **/
+/** Test for Bug 472396 */
 add_task(async function test() {
   // initialization
   let windowsToClose = [];

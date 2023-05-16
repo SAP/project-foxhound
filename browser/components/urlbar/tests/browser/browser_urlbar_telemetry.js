@@ -72,9 +72,9 @@ async function clickURLBarSuggestion(resultTitle, button = 1) {
  *   The function to run with the new search engine as default.
  */
 async function withNewSearchEngine(taskFn) {
-  let suggestionEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "urlbarTelemetrySearchSuggestions.xml"
-  );
+  let suggestionEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "urlbarTelemetrySearchSuggestions.xml",
+  });
   let previousEngine = await Services.search.getDefault();
   await Services.search.setDefault(
     suggestionEngine,
@@ -93,21 +93,17 @@ async function withNewSearchEngine(taskFn) {
 }
 
 add_setup(async function() {
-  await SearchTestUtils.installSearchExtension({
-    name: "MozSearch",
-    keyword: "mozalias",
-    search_url: "https://example.com/",
-  });
-
-  // Make it the default search engine.
-  let engine = Services.search.getEngineByName("MozSearch");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "MozSearch",
+      keyword: "mozalias",
+      search_url: "https://example.com/",
+    },
+    { setAsDefault: true }
   );
 
-  // And the first one-off engine.
+  // Make it the first one-off engine.
+  let engine = Services.search.getEngineByName("MozSearch");
   await Services.search.moveEngine(engine, 0);
 
   // Enable search suggestions in the urlbar.
@@ -142,10 +138,6 @@ add_setup(async function() {
   // Make sure to restore the engine once we're done.
   registerCleanupFunction(async function() {
     Services.telemetry.canRecordExtended = oldCanRecord;
-    await Services.search.setDefault(
-      originalEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-    );
     Services.prefs.setBoolPref(SUGGEST_URLBAR_PREF, suggestionsEnabled);
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();
@@ -1030,6 +1022,13 @@ add_task(async function test_formHistory_enterSelection() {
 });
 
 add_task(async function test_privateWindow() {
+  // This test assumes the showSearchTerms feature is not enabled,
+  // as multiple searches are made one after another, relying on
+  // urlbar as the keyed scalar SAP, not urlbar_persisted.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", false]],
+  });
+
   // Override the search telemetry search provider info to
   // count in-content SEARCH_COUNTs telemetry for our test engine.
   SearchSERPTelemetry.overrideSearchTelemetryForTests([
@@ -1225,4 +1224,5 @@ add_task(async function test_privateWindow() {
   // Reset the search provider info.
   SearchSERPTelemetry.overrideSearchTelemetryForTests();
   await UrlbarTestUtils.formHistory.clear();
+  await SpecialPowers.popPrefEnv();
 });

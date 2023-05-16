@@ -93,8 +93,18 @@ static_assert(Instance::offsetOfLastCommonJitField() < 128);
 //
 // Functions and invocation.
 
-const void** Instance::addressOfTypeId(const uint32_t typeIndex) const {
+const void** Instance::addressOfTypeId(uint32_t typeIndex) const {
   return (const void**)(globalData() + typeIndex * sizeof(void*));
+}
+
+const void* Instance::addressOfGlobalCell(const GlobalDesc& global) const {
+  const void* cell = globalData() + global.offset();
+  // Indirect globals store a pointer to their cell in the instance global
+  // data. Dereference it to find the real cell.
+  if (global.isIndirect()) {
+    cell = *(const void**)cell;
+  }
+  return cell;
 }
 
 FuncImportInstanceData& Instance::funcImportInstanceData(const FuncImport& fi) {
@@ -1532,7 +1542,8 @@ Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
       memory_(memory),
       tables_(std::move(tables)),
       maybeDebug_(std::move(maybeDebug)),
-      debugFilter_(nullptr)
+      debugFilter_(nullptr),
+      maxInitializedGlobalsIndexPlus1_(0)
 #ifdef ENABLE_WASM_GC
       ,
       hasGcTypes_(false)
@@ -1702,7 +1713,14 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
   //
   // This must be performed after we have initialized runtime types as a global
   // initializer may reference them.
-  for (size_t i = 0; i < metadata().globals.length(); i++) {
+  //
+  // We increment `maxInitializedGlobalsIndexPlus1_` every iteration of the
+  // loop, as we call out to `InitExpr::evaluate` which may call
+  // `constantGlobalGet` which uses this value to assert we're never accessing
+  // uninitialized globals.
+  maxInitializedGlobalsIndexPlus1_ = 0;
+  for (size_t i = 0; i < metadata().globals.length();
+       i++, maxInitializedGlobalsIndexPlus1_ = i) {
     const GlobalDesc& global = metadata().globals[i];
 
     // Constants are baked into the code, never stored in the global area.
@@ -1726,7 +1744,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
         RootedVal val(cx);
         const InitExpr& init = global.initExpr();
         Rooted<WasmInstanceObject*> instanceObj(cx, object());
-        if (!init.evaluate(cx, globalImportValues, instanceObj, &val)) {
+        if (!init.evaluate(cx, instanceObj, &val)) {
           return false;
         }
 
@@ -1748,6 +1766,9 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
     }
   }
 
+  // All globals were initialized
+  MOZ_ASSERT(maxInitializedGlobalsIndexPlus1_ == metadata().globals.length());
+
   // Take references to the passive data segments
   if (!passiveDataSegments_.resize(dataSegments.length())) {
     return false;
@@ -1763,7 +1784,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
     return false;
   }
   for (size_t i = 0; i < elemSegments.length(); i++) {
-    if (elemSegments[i]->kind != ElemSegment::Kind::Active) {
+    if (elemSegments[i]->kind == ElemSegment::Kind::Passive) {
       passiveElemSegments_[i] = elemSegments[i];
     }
   }
@@ -2392,6 +2413,23 @@ void Instance::setPendingException(HandleAnyRef exn) {
   pendingExceptionTag_ = GetExceptionTag(exn.get().asJSObject());
 }
 
+void Instance::constantGlobalGet(uint32_t globalIndex,
+                                 MutableHandleVal result) {
+  MOZ_RELEASE_ASSERT(globalIndex < maxInitializedGlobalsIndexPlus1_);
+  const GlobalDesc& global = metadata().globals[globalIndex];
+
+  // Constant globals are baked into the code and never stored in global data.
+  if (global.isConstant()) {
+    // We can just re-evaluate the global initializer to get the value.
+    result.set(Val(global.constantValue()));
+    return;
+  }
+
+  // Otherwise, we need to load the initialized value from its cell.
+  const void* cell = addressOfGlobalCell(global);
+  result.address()->initFromHeapLocation(global.type(), cell);
+}
+
 bool Instance::constantRefFunc(uint32_t funcIndex,
                                MutableHandleFuncRef result) {
   void* fnref = Instance::refFunc(this, funcIndex);
@@ -2471,6 +2509,7 @@ JSString* Instance::createDisplayURL(JSContext* cx) {
 
   JSStringBuilder result(cx);
   if (!result.append("wasm:")) {
+    result.failure();
     return nullptr;
   }
 
@@ -2480,21 +2519,25 @@ JSString* Instance::createDisplayURL(JSContext* cx) {
     JSString* filenamePrefix = EncodeURI(cx, filename, strlen(filename));
     if (!filenamePrefix) {
       if (cx->isThrowingOutOfMemory()) {
+        result.failure();
         return nullptr;
       }
 
+      result.failure();
       MOZ_ASSERT(!cx->isThrowingOverRecursed());
       cx->clearPendingException();
       return nullptr;
     }
 
     if (!result.append(filenamePrefix)) {
+      result.failure();
       return nullptr;
     }
   }
 
   if (metadata().debugEnabled) {
     if (!result.append(":")) {
+      result.failure();
       return nullptr;
     }
 
@@ -2503,16 +2546,24 @@ JSString* Instance::createDisplayURL(JSContext* cx) {
       unsigned char digit1 = byte / 16, digit2 = byte % 16;
       if (!result.append(
               (char)(digit1 < 10 ? digit1 + '0' : digit1 + 'a' - 10))) {
+        result.failure();
         return nullptr;
       }
       if (!result.append(
               (char)(digit2 < 10 ? digit2 + '0' : digit2 + 'a' - 10))) {
+        result.failure();
         return nullptr;
       }
     }
   }
 
-  return result.finishString();
+  auto* resultString = result.finishString();
+  if (!resultString) {
+    result.failure();
+    return nullptr;
+  }
+  result.ok();
+  return resultString;
 }
 
 WasmBreakpointSite* Instance::getOrCreateBreakpointSite(JSContext* cx,

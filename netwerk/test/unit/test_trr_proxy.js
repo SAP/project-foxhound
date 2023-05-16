@@ -12,8 +12,8 @@
 */
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 registerCleanupFunction(async () => {
@@ -95,10 +95,7 @@ async function do_test_pac_dnsResolve() {
   await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
   await consolePromise;
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 

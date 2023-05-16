@@ -32,6 +32,7 @@
 #include "js/ScalarType.h"            // js::Scalar::Type
 #include "util/Text.h"
 #include "util/Unicode.h"
+#include "vm/Iteration.h"    // js::NativeIterator
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Uint8Clamped.h"
 #include "wasm/WasmCode.h"
@@ -115,7 +116,7 @@ static bool CheckUsesAreFloat32Consumers(const MInstruction* ins) {
 #ifdef JS_JITSPEW
 static const char* OpcodeName(MDefinition::Opcode op) {
   static const char* const names[] = {
-#  define NAME(x) #  x,
+#  define NAME(x) #x,
       MIR_OPCODE_LIST(NAME)
 #  undef NAME
   };
@@ -128,6 +129,10 @@ void MDefinition::PrintOpcodeName(GenericPrinter& out, Opcode op) {
   for (size_t i = 0; i < len; i++) {
     out.printf("%c", unicode::ToLowerCase(name[i]));
   }
+}
+
+uint32_t js::jit::GetMBasicBlockId(const MBasicBlock* block) {
+  return block->id();
 }
 #endif
 
@@ -422,6 +427,30 @@ HashNumber MQuaternaryInstruction::valueHash() const {
   }
   MOZ_ASSERT(hash == MDefinition::valueHash());
   return hash;
+}
+
+const MDefinition* MDefinition::skipObjectGuards() const {
+  const MDefinition* result = this;
+  // These instructions don't modify the object and just guard specific
+  // properties.
+  while (true) {
+    if (result->isGuardShape()) {
+      result = result->toGuardShape()->object();
+      continue;
+    }
+    if (result->isGuardNullProto()) {
+      result = result->toGuardNullProto()->object();
+      continue;
+    }
+    if (result->isGuardProto()) {
+      result = result->toGuardProto()->object();
+      continue;
+    }
+
+    break;
+  }
+
+  return result;
 }
 
 bool MDefinition::congruentIfOperandsEqual(const MDefinition* ins) const {
@@ -1138,6 +1167,12 @@ HashNumber MConstant::valueHash() const {
 
   assertInitializedPayload();
   return ConstantValueHash(type(), payload_.asBits);
+}
+
+// We will in theory get some extra collisions here, but dealing with those
+// should be cheaper than doing the skipObjectGuards for the receiver object.
+HashNumber MConstantProto::valueHash() const {
+  return protoObject()->valueHash();
 }
 
 bool MConstant::congruentTo(const MDefinition* ins) const {
@@ -3946,10 +3981,11 @@ bool MCompare::tryFoldEqualOperands(bool* result) {
   MOZ_ASSERT(
       compareType_ == Compare_Undefined || compareType_ == Compare_Null ||
       compareType_ == Compare_Int32 || compareType_ == Compare_UInt32 ||
-      compareType_ == Compare_Double || compareType_ == Compare_Float32 ||
-      compareType_ == Compare_UIntPtr || compareType_ == Compare_String ||
-      compareType_ == Compare_Object || compareType_ == Compare_Symbol ||
-      compareType_ == Compare_BigInt || compareType_ == Compare_BigInt_Int32 ||
+      compareType_ == Compare_UInt64 || compareType_ == Compare_Double ||
+      compareType_ == Compare_Float32 || compareType_ == Compare_UIntPtr ||
+      compareType_ == Compare_String || compareType_ == Compare_Object ||
+      compareType_ == Compare_Symbol || compareType_ == Compare_BigInt ||
+      compareType_ == Compare_BigInt_Int32 ||
       compareType_ == Compare_BigInt_Double ||
       compareType_ == Compare_BigInt_String);
 
@@ -4717,7 +4753,7 @@ MObjectState::MObjectState(const Shape* shape)
   setResultType(MIRType::Object);
   setRecoveredOnBailout();
 
-  numSlots_ = shape->slotSpan();
+  numSlots_ = shape->asShared().slotSpan();
   numFixedSlots_ = shape->numFixedSlots();
 }
 
@@ -4749,7 +4785,8 @@ bool MObjectState::init(TempAllocator& alloc, MDefinition* obj) {
 void MObjectState::initFromTemplateObject(TempAllocator& alloc,
                                           MDefinition* undefinedVal) {
   if (object()->isNewPlainObject()) {
-    MOZ_ASSERT(object()->toNewPlainObject()->shape()->slotSpan() == numSlots());
+    MOZ_ASSERT(object()->toNewPlainObject()->shape()->asShared().slotSpan() ==
+               numSlots());
     for (size_t i = 0; i < numSlots(); i++) {
       initSlot(i, undefinedVal);
     }
@@ -6231,6 +6268,13 @@ MDefinition* MGuardSpecificSymbol::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
+MDefinition* MGuardSpecificInt32::foldsTo(TempAllocator& alloc) {
+  if (num()->isConstant() && num()->toConstant()->isInt32(expected())) {
+    return num();
+  }
+  return this;
+}
+
 bool MCallBindVar::congruentTo(const MDefinition* ins) const {
   if (!ins->isCallBindVar()) {
     return false;
@@ -6257,7 +6301,55 @@ MDefinition::AliasType MGuardShape::mightAlias(const MDefinition* store) const {
   if (store->isStoreElementHole() || store->isArrayPush()) {
     return AliasType::NoAlias;
   }
+  if (object()->isConstantProto()) {
+    const MDefinition* receiverObject =
+        object()->toConstantProto()->receiverObject()->skipObjectGuards();
+    switch (store->op()) {
+      case MDefinition::Opcode::StoreFixedSlot:
+        if (store->toStoreFixedSlot()->object()->skipObjectGuards() ==
+            receiverObject) {
+          return AliasType::NoAlias;
+        }
+        break;
+      case MDefinition::Opcode::StoreDynamicSlot:
+        if (store->toStoreDynamicSlot()
+                ->slots()
+                ->toSlots()
+                ->object()
+                ->skipObjectGuards() == receiverObject) {
+          return AliasType::NoAlias;
+        }
+        break;
+      case MDefinition::Opcode::AddAndStoreSlot:
+        if (store->toAddAndStoreSlot()->object()->skipObjectGuards() ==
+            receiverObject) {
+          return AliasType::NoAlias;
+        }
+        break;
+      case MDefinition::Opcode::AllocateAndStoreSlot:
+        if (store->toAllocateAndStoreSlot()->object()->skipObjectGuards() ==
+            receiverObject) {
+          return AliasType::NoAlias;
+        }
+        break;
+      case MDefinition::Opcode::MegamorphicStoreSlot:
+        if (store->toMegamorphicStoreSlot()->object()->skipObjectGuards() ==
+            receiverObject) {
+          return AliasType::NoAlias;
+        }
+        break;
+      default:
+        break;
+    }
+  }
   return MInstruction::mightAlias(store);
+}
+
+AliasSet MGuardMultipleShapes::getAliasSet() const {
+  // Note: This instruction loads the elements of the ListObject used to
+  // store the list of shapes, but that object is internal and not exposed
+  // to script, so it doesn't have to be in the alias set.
+  return AliasSet::Load(AliasSet::ObjectFields);
 }
 
 MDefinition* MGuardIsNotProxy::foldsTo(TempAllocator& alloc) {
@@ -6736,6 +6828,21 @@ MDefinition* MGuardInt32IsNonNegative::foldsTo(TempAllocator& alloc) {
     return this;
   }
   return input;
+}
+
+MDefinition* MGuardInt32Range::foldsTo(TempAllocator& alloc) {
+  MOZ_ASSERT(input()->type() == MIRType::Int32);
+  MOZ_ASSERT(minimum() <= maximum());
+
+  MDefinition* in = input();
+  if (!in->isConstant()) {
+    return this;
+  }
+  int32_t cst = in->toConstant()->toInt32();
+  if (cst < minimum() || cst > maximum()) {
+    return this;
+  }
+  return in;
 }
 
 MDefinition* MGuardNonGCThing::foldsTo(TempAllocator& alloc) {

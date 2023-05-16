@@ -3,10 +3,10 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const {
+import {
   CONTEXTUAL_SERVICES_PING_TYPES,
   PartnerLinkAttribution,
-} = ChromeUtils.import("resource:///modules/PartnerLinkAttribution.jsm");
+} from "resource:///modules/PartnerLinkAttribution.sys.mjs";
 
 const lazy = {};
 
@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
@@ -27,7 +28,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
 });
 
 let gTestScope;
@@ -57,6 +57,7 @@ const DEFAULT_PING_PAYLOADS = {
     improve_suggest_experience_checked: false,
     match_type: "firefox-suggest",
     request_id: null,
+    source: "remote-settings",
   },
   [CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION]: {
     advertiser: "testadvertiser",
@@ -64,8 +65,9 @@ const DEFAULT_PING_PAYLOADS = {
     context_id: () => actual => !!actual,
     improve_suggest_experience_checked: false,
     match_type: "firefox-suggest",
-    reporting_url: "http://example.com/click",
+    reporting_url: "https://example.com/click",
     request_id: null,
+    source: "remote-settings",
   },
   [CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION]: {
     advertiser: "testadvertiser",
@@ -74,8 +76,9 @@ const DEFAULT_PING_PAYLOADS = {
     improve_suggest_experience_checked: false,
     is_clicked: false,
     match_type: "firefox-suggest",
-    reporting_url: "http://example.com/impression",
+    reporting_url: "https://example.com/impression",
     request_id: null,
+    source: "remote-settings",
   },
 };
 

@@ -36,7 +36,7 @@ const { SyncRecord, SyncTelemetry } = ChromeUtils.import(
   "resource://services-sync/telemetry.js"
 );
 
-const { BridgedEngine, BridgedStore, LogAdapter } = ChromeUtils.import(
+const { BridgedEngine, LogAdapter } = ChromeUtils.import(
   "resource://services-sync/bridged_engine.js"
 );
 
@@ -81,10 +81,6 @@ TabEngine.prototype = {
   __proto__: BridgedEngine.prototype,
   _trackerObj: TabTracker,
   syncPriority: 3,
-
-  get _storeObj() {
-    return TabsBridgedStore;
-  },
 
   async prepareTheBridge(isQuickWrite) {
     let clientsEngine = this.service.clientsEngine;
@@ -180,8 +176,8 @@ TabEngine.prototype = {
     let remoteTabs = await this._rustStore.getAll();
     let remoteClientTabs = [];
     for (let remoteClient of this.service.clientsEngine.remoteClients) {
-      // Se get the tabs from the tabs engine in rust
-      // and the client info from the clients engine in js
+      // We get the some client info from the rust tabs engine and some from
+      // the clients engine.
       let rustClient = remoteTabs.find(
         x => x.clientId === remoteClient.fxaDeviceId
       );
@@ -189,12 +185,12 @@ TabEngine.prototype = {
         continue;
       }
       let client = {
+        // rust gives us ms but js uses seconds, so fix them up.
         tabs: rustClient.remoteTabs.map(tab => {
-          // rust gives us ms but js uses seconds
           tab.lastUsed = tab.lastUsed / 1000;
           return tab;
         }),
-        lastModified: this._store.clientsLastSync[remoteClient.id] || 0,
+        lastModified: rustClient.lastModified / 1000,
         ...remoteClient,
       };
       remoteClientTabs.push(client);
@@ -237,12 +233,15 @@ TabEngine.prototype = {
   // without checking what's on the server could cause data-loss for other
   // engines, but because each device exclusively owns exactly 1 tabs record
   // with a known ID, it's safe here.
+  // Returns true if we successfully synced, false otherwise (either on error
+  // or because we declined to sync for any reason.) The return value is
+  // primarily for tests.
   async quickWrite() {
     if (!this.enabled) {
       // this should be very rare, and only if tabs are disabled after the
       // timer is created.
       this._log.info("Can't do a quick-sync as tabs is disabled");
-      return;
+      return false;
     }
     // This quick-sync doesn't drive the login state correctly, so just
     // decline to sync if out status is bad
@@ -251,14 +250,14 @@ TabEngine.prototype = {
         "Can't do a quick-sync due to the service status",
         this.service.status.toString()
       );
-      return;
+      return false;
     }
     if (!this.service.serverConfiguration) {
       this._log.info("Can't do a quick sync before the first full sync");
-      return;
+      return false;
     }
     try {
-      await this._engineLock("tabs.js: quickWrite", async () => {
+      return await this._engineLock("tabs.js: quickWrite", async () => {
         // We want to restore the lastSync timestamp when complete so next sync
         // takes tabs written by other devices since our last real sync.
         // And for this POST we don't want the protections offered by
@@ -266,7 +265,7 @@ TabEngine.prototype = {
         // has moved on and we will catch back up next full sync.
         const origLastSync = await this.getLastSync();
         try {
-          await this._doQuickWrite();
+          return this._doQuickWrite();
         } finally {
           // set the lastSync to it's original value for regular sync
           await this.setLastSync(origLastSync);
@@ -279,6 +278,7 @@ TabEngine.prototype = {
       this._log.info(
         "Can't do a quick-write as another tab sync is in progress"
       );
+      return false;
     }
   },
 
@@ -310,12 +310,9 @@ TabEngine.prototype = {
       let outgoing = await this._bridge.apply();
       // We know we always have exactly 1 record.
       let mine = outgoing[0];
-      this._log.trace("outgoing envelope", mine);
+      this._log.trace("outgoing bso", mine);
       // `this._recordObj` is a `BridgedRecord`, which isn't exported.
-      let record = this._recordObj.fromOutgoingEnvelope(
-        this.name,
-        JSON.parse(mine)
-      );
+      let record = this._recordObj.fromOutgoingBso(this.name, JSON.parse(mine));
       let changeset = {};
       changeset[record.id] = { synced: false, record };
       this._modified.replace(changeset);
@@ -324,8 +321,11 @@ TabEngine.prototype = {
       await this._uploadOutgoing();
       telemetryRecord.onEngineApplied(name, 1);
       telemetryRecord.onEngineStop(name, null);
+      return true;
     } catch (ex) {
+      this._log.warn("quicksync sync failed", ex);
       telemetryRecord.onEngineStop(name, ex);
+      return false;
     } finally {
       // The top-level sync is never considered to fail here, just the engine
       telemetryRecord.finished(null);
@@ -348,27 +348,6 @@ TabEngine.prototype = {
     }
   },
 };
-
-// Callers of getAllClients() use a lastModified field that our rustClient
-// doesn't currently have -- we need to override the store and set it ourselves
-// for now. https://github.com/mozilla/application-services/issues/5230
-class TabsBridgedStore extends BridgedStore {
-  constructor(name, engine) {
-    super(name, engine);
-    // A map that is responsible for keeping track of the last time
-    // we've fetched a record for a client
-    this.clientsLastSync = {};
-  }
-
-  async applyIncomingBatch(records) {
-    // reset this every sync to keep the list fresh
-    this.clientsLastSync = {};
-    for (let record of records) {
-      this.clientsLastSync[record.id] = record.modified;
-    }
-    return super.applyIncomingBatch(records);
-  }
-}
 
 const TabProvider = {
   getWindowEnumerator() {

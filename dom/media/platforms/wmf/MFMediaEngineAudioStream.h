@@ -33,8 +33,13 @@ class MFMediaEngineAudioStream final : public MFMediaEngineStream {
 
   bool HasEnoughRawData() const override;
 
+  already_AddRefed<MediaData> OutputDataInternal() override;
+
   // For MF_MT_USER_DATA. Currently only used for AAC.
   nsTArray<BYTE> mAACUserData;
+
+  // Set when `CreateMediaType()` is called.
+  AudioInfo mAudioInfo;
 };
 
 }  // namespace mozilla

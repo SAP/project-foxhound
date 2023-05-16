@@ -19,7 +19,6 @@ vendoring:
   skip-vendoring-steps:
     - update-moz-build
   exclude:
-    - .github
     - configure.ac
     - docs
     - INSTALL
@@ -39,7 +38,6 @@ updatebot:
   fuzzy-query: media
   tasks:
     - type: vendoring
-      branch: master
       enabled: True
       frequency: every
 

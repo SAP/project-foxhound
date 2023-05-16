@@ -29,7 +29,7 @@ const RULE_A_ORIGINAL = {
     optOut: "#fooOut",
     presence: "#foobar",
   },
-  domain: "example.com",
+  domains: ["example.com"],
   cookies: {
     optOut: [
       {
@@ -48,7 +48,7 @@ const RULE_B = {
     optOut: "#fooOutB",
     presence: "#foobarB",
   },
-  domain: "example.org",
+  domains: ["example.org"],
   cookies: {
     optOut: [
       {
@@ -66,7 +66,7 @@ const RULE_C = {
     optOut: "#fooOutC",
     presence: "#foobarC",
   },
-  domain: "example.net",
+  domains: ["example.net"],
   cookies: {
     optIn: [
       {
@@ -80,13 +80,13 @@ const RULE_C = {
 };
 
 const RULE_A_UPDATED = {
-  id: RULE_A_ORIGINAL,
+  id: RULE_A_ORIGINAL.id,
   click: {
     optOut: "#fooOut",
     optIn: "#barIn",
     presence: "#foobar",
   },
-  domain: "example.com",
+  domains: ["example.com"],
   cookies: {
     optOut: [
       {
@@ -104,7 +104,7 @@ const RULE_A_UPDATED = {
 
 const INVALID_RULE_CLICK = {
   id: genUUID(),
-  domain: "foobar.com",
+  domains: ["foobar.com"],
   click: {
     presence: 1,
     optIn: "#foo",
@@ -119,7 +119,7 @@ const RULE_D_GLOBAL = {
     optOut: "#globalOptOutD",
     presence: "#globalBannerD",
   },
-  domain: "*",
+  domains: [],
   cookies: {},
 };
 
@@ -129,8 +129,27 @@ const RULE_E_GLOBAL = {
     optOut: "#globalOptOutE",
     presence: "#globalBannerE",
   },
-  domain: "*",
+  domains: [],
   cookies: {},
+};
+
+const RULE_F_EMPTY_CLICK = {
+  id: genUUID(),
+  click: {},
+  domains: ["example.com"],
+  cookies: {
+    optOut: [
+      {
+        name: "doOptOut",
+        value: "true",
+        isSecure: true,
+      },
+      {
+        name: "hideBanner",
+        value: "1",
+      },
+    ],
+  },
 };
 
 // Testing with RemoteSettings requires a profile.
@@ -151,7 +170,13 @@ add_setup(async () => {
   });
 
   let oldCookieBanners = Services.cookieBanners;
-  Services.cookieBanners = { insertRule, removeRule, resetRules() {} };
+  Services.cookieBanners = {
+    isEnabled: true,
+    insertRule,
+    removeRule,
+    resetRules() {},
+    resetDomainTelemetryRecord() {},
+  };
 
   // Remove stubs on test end.
   registerCleanupFunction(() => {
@@ -209,12 +234,17 @@ add_task(async function test_initial_import() {
   Assert.equal(rulesInserted.length, 2, "Two inserted rules after init.");
   Assert.equal(rulesRemoved.length, 0, "No removed rules after init.");
 
-  let ruleA = rulesInserted.find(rule => rule.domain == RULE_A_UPDATED.domain);
+  let ruleA = rulesInserted.find(rule => rule.id == RULE_A_UPDATED.id);
   let cookieRuleA = ruleA.cookiesOptOut[0].cookie;
-  let ruleC = rulesInserted.find(rule => rule.domain == RULE_C.domain);
+  let ruleC = rulesInserted.find(rule => rule.id == RULE_C.id);
   let cookieRuleC = ruleC.cookiesOptIn[0].cookie;
 
   Assert.ok(ruleA, "Has rule A.");
+  Assert.deepEqual(
+    ruleA.domains,
+    RULE_A_UPDATED.domains,
+    "Domains for ruleA should match."
+  );
   // Test the defaults which CookieBannerListService sets when the rule does
   // not.
   Assert.equal(
@@ -224,7 +254,7 @@ add_task(async function test_initial_import() {
   );
   Assert.equal(
     cookieRuleA.host,
-    ".example.com",
+    null,
     "Cookie host for rule A should be default."
   );
   Assert.equal(
@@ -234,6 +264,11 @@ add_task(async function test_initial_import() {
   );
 
   Assert.ok(ruleC, "Has rule C.");
+  Assert.deepEqual(
+    ruleC.domains,
+    RULE_C.domains,
+    "Domains for ruleA should match."
+  );
   Assert.equal(
     ruleC.cookiesOptIn[0].cookie.isSession,
     true,
@@ -292,10 +327,10 @@ add_task(async function test_remotesettings_sync() {
   let ruleC = rulesRemoved[0];
 
   info("Testing that service inserted updated version of RULE_A.");
-  Assert.equal(
-    ruleA.domain,
-    RULE_A_UPDATED.domain,
-    "Domain should match RULE_A."
+  Assert.deepEqual(
+    ruleA.domains,
+    RULE_A_UPDATED.domains,
+    "Domains should match RULE_A."
   );
   Assert.equal(
     ruleA.cookiesOptOut.length,
@@ -362,11 +397,11 @@ add_task(async function test_rule_test_pref() {
   Assert.equal(rulesRemoved.length, 0, "Should not have removed any rules.");
 
   Assert.ok(
-    rulesInserted.some(rule => rule.domain == RULE_A_ORIGINAL.domain),
+    rulesInserted.some(rule => rule.id == RULE_A_ORIGINAL.id),
     "Should have inserted RULE_A"
   );
   Assert.ok(
-    rulesInserted.some(rule => rule.domain == RULE_B.domain),
+    rulesInserted.some(rule => rule.id == RULE_B.id),
     "Should have inserted RULE_B"
   );
 
@@ -397,15 +432,15 @@ add_task(async function test_rule_test_pref() {
   Assert.equal(rulesRemoved.length, 0, "Should not have removed any rules.");
 
   Assert.ok(
-    rulesInserted.some(rule => rule.domain == RULE_A_ORIGINAL.domain),
+    rulesInserted.some(rule => rule.id == RULE_A_ORIGINAL.id),
     "Should have inserted RULE_A"
   );
   Assert.ok(
-    rulesInserted.some(rule => rule.domain == RULE_B.domain),
+    rulesInserted.some(rule => rule.id == RULE_B.id),
     "Should have inserted RULE_B"
   );
   Assert.ok(
-    rulesInserted.some(rule => rule.domain == RULE_C.domain),
+    rulesInserted.some(rule => rule.id == RULE_C.id),
     "Should have inserted RULE_C"
   );
 
@@ -415,4 +450,155 @@ add_task(async function test_rule_test_pref() {
   rulesRemoved = [];
 
   Services.prefs.clearUserPref(PREF_TEST_RULES);
+});
+
+/**
+ * Tests that runContext string values get properly translated into nsIClickRule::RunContext.
+ */
+add_task(async function test_runContext_conversion() {
+  info("Initializing RemoteSettings collection " + COLLECTION_NAME);
+
+  let ruleA = {
+    id: genUUID(),
+    click: {
+      presence: "#foobar",
+      runContext: "child",
+    },
+    domains: ["a.com"],
+  };
+  let ruleB = {
+    id: genUUID(),
+    click: {
+      presence: "#foobar",
+    },
+    domains: ["b.com"],
+  };
+  let ruleC = {
+    id: genUUID(),
+    click: {
+      presence: "#foobar",
+      runContext: "all",
+    },
+    domains: ["c.com"],
+  };
+  let ruleD = {
+    id: genUUID(),
+    click: {
+      presence: "#foobar",
+      runContext: "top",
+    },
+    domains: ["d.com"],
+  };
+  let ruleE = {
+    id: genUUID(),
+    click: {
+      presence: "#foobar",
+      runContext: "thisIsNotValid",
+    },
+    domains: ["e.com"],
+  };
+
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  db.clear();
+  await db.create(ruleA);
+  await db.create(ruleB);
+  await db.create(ruleC);
+  await db.create(ruleD);
+  await db.create(ruleE);
+  await db.importChanges({}, Date.now());
+
+  let insertPromise = waitForInsert(() => rulesInserted.length >= 4);
+
+  info(
+    "Initializing the cookie banner list service which triggers a collection get call"
+  );
+  let cookieBannerListService = Cc[
+    "@mozilla.org/cookie-banner-list-service;1"
+  ].getService(Ci.nsICookieBannerListService);
+  await cookieBannerListService.initForTest();
+
+  await insertPromise;
+
+  let resultA = rulesInserted.find(rule => rule.domains.includes("a.com"))
+    .clickRule;
+  let resultB = rulesInserted.find(rule => rule.domains.includes("b.com"))
+    .clickRule;
+  let resultC = rulesInserted.find(rule => rule.domains.includes("c.com"))
+    .clickRule;
+  let resultD = rulesInserted.find(rule => rule.domains.includes("d.com"))
+    .clickRule;
+  let resultE = rulesInserted.find(rule => rule.domains.includes("e.com"))
+    .clickRule;
+
+  Assert.equal(
+    resultA.runContext,
+    Ci.nsIClickRule.RUN_CHILD,
+    "Rule A should have been imported with the correct runContext"
+  );
+  Assert.equal(
+    resultB.runContext,
+    Ci.nsIClickRule.RUN_TOP,
+    "Rule B should have fallen back to default runContext"
+  );
+  Assert.equal(
+    resultC.runContext,
+    Ci.nsIClickRule.RUN_ALL,
+    "Rule C should have been imported with the correct runContext"
+  );
+  Assert.equal(
+    resultD.runContext,
+    Ci.nsIClickRule.RUN_TOP,
+    "Rule D should have been imported with the correct runContext"
+  );
+  Assert.equal(
+    resultE.runContext,
+    Ci.nsIClickRule.RUN_TOP,
+    "Rule E should have fallen back to default runContext"
+  );
+
+  // Cleanup
+  cookieBannerListService.shutdown();
+  rulesInserted = [];
+  rulesRemoved = [];
+
+  db.clear();
+  await db.importChanges({}, Date.now());
+});
+
+/**
+ * Tests empty click rules don't get imported.
+ */
+add_task(async function test_empty_click_rule() {
+  info("Initializing RemoteSettings collection " + COLLECTION_NAME);
+
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  db.clear();
+  await db.create(RULE_F_EMPTY_CLICK);
+  await db.importChanges({}, Date.now());
+
+  let insertPromise = waitForInsert(() => rulesInserted.length >= 1);
+
+  info(
+    "Initializing the cookie banner list service which triggers a collection get call"
+  );
+  let cookieBannerListService = Cc[
+    "@mozilla.org/cookie-banner-list-service;1"
+  ].getService(Ci.nsICookieBannerListService);
+  await cookieBannerListService.initForTest();
+
+  await insertPromise;
+
+  let ruleF = rulesInserted.find(rule => rule.id == RULE_F_EMPTY_CLICK.id);
+
+  Assert.ok(ruleF, "Has rule F.");
+  Assert.ok(ruleF.cookiesOptOut?.length, "Should have imported a cookie rule.");
+  Assert.equal(ruleF.clickRule, null, "Should not have imported a click rule.");
+
+  // Cleanup
+  cookieBannerListService.shutdown();
+  rulesInserted = [];
+  rulesRemoved = [];
+
+  db.clear();
+  await db.importChanges({}, Date.now());
 });

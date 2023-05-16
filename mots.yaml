@@ -1,8 +1,14 @@
 %YAML 1.2
 ---
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# See https://mots.readthedocs.io/en/latest/#quick-start for quick start
+# documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2022-10-28T09:16:02.176101'
+updated_at: '2022-12-08T10:34:34.569111'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -137,12 +143,10 @@ people:
     bmo_id: 474533
     name: Botond Ballo
     nick: botond
-  - &bryce
-    bmo_id: 560379
+  - bmo_id: 560379
     name: Bryce Seager van Dyk
     nick: bryce
-  - &bstack
-    bmo_id: 596517
+  - bmo_id: 596517
     name: Brian Stack
     nick: bstack
   - &bthrall
@@ -177,6 +181,10 @@ people:
     bmo_id: 644229
     name: Caroline Cullen
     nick: caroline
+  - &chunmin
+    bmo_id: 521646
+    name: C
+    nick: chunmin
   - &chutten
     bmo_id: 553004
     name: Chris H-C
@@ -225,6 +233,10 @@ people:
     bmo_id: 278074
     name: Daniel Holbert
     nick: dholbert
+  - &dimi
+    bmo_id: 468232
+    name: Dimi Lee
+    nick: dimi
   - &djackson
     bmo_id: 644159
     name: Dennis Jackson
@@ -233,10 +245,6 @@ people:
     bmo_id: 436087
     name: Kannan Vijayan
     nick: djvj
-  - &dlee
-    bmo_id: 468232
-    name: Dimi Lee
-    nick: dlee
   - &dlrobertson
     bmo_id: 705145
     name: Dan Robertson
@@ -336,12 +344,10 @@ people:
     bmo_id: 47192
     name: Mike Hommey
     nick: glandium
-  - &gps
-    bmo_id: 420446
+  - bmo_id: 420446
     name: Gregory Szorc
     nick: gps
-  - &gregtatum
-    bmo_id: 561658
+  - bmo_id: 561658
     name: Greg Tatum
     nick: gregtatum
   - &gsvelto
@@ -396,6 +402,10 @@ people:
     bmo_id: 281508
     name: ''
     nick: jchen
+  - &jcristau
+    bmo_id: 580382
+    name: Julien Cristau
+    nick: jcristau
   - &jdescottes
     bmo_id: 559949
     name: Julian Descottes
@@ -436,6 +446,10 @@ people:
     bmo_id: 462836
     name: Jed Davis
     nick: jld
+  - &jlorenzo
+    bmo_id: 504868
+    name: Johan Lorenzo
+    nick: jlorenzo
   - &jmaher
     bmo_id: 324370
     name: Joel Maher
@@ -476,8 +490,7 @@ people:
     bmo_id: 32767
     name: Jonathan Watt
     nick: jwatt
-  - &jya
-    bmo_id: 512198
+  - bmo_id: 512198
     name: Jean-Yves Avenard
     nick: jya
   - &k88hudson
@@ -592,10 +605,6 @@ people:
     bmo_id: 607045
     name: Matthew Gaudet
     nick: mgaudet
-  - &mhentges
-    bmo_id: 627727
-    name: Mitchell Hentges
-    nick: mhentges
   - &mhowell
     bmo_id: 550257
     name: Molly Howell
@@ -619,10 +628,6 @@ people:
     bmo_id: 91159
     name: Dave Townsend
     nick: mossop
-  - &mozbugz
-    bmo_id: 515575
-    name: Gerald Squelart
-    nick: mozbugz
   - &mrbkap
     bmo_id: 69426
     name: Blake Kaplan
@@ -695,6 +700,10 @@ people:
     bmo_id: 489889
     name: Andreas Pehrson
     nick: pehrsons
+  - &perrymcmanis
+    bmo_id: 697076
+    name: Perry McManis
+    nick: perry.mcmanis
   - &peterv
     bmo_id: 24295
     name: Peter Van der Beken
@@ -830,6 +839,10 @@ people:
     bmo_id: 644141
     name: Toshihito Kikuchi
     nick: toshi
+  - &travis
+    bmo_id: 628857
+    name: Travis Long
+    nick: travis_
   - &TYLin
     bmo_id: 503090
     name: Ting-Yu Lin
@@ -874,8 +887,7 @@ people:
     bmo_id: 382167
     name: Yury Delendik
     nick: yury
-  - &yzen
-    bmo_id: 458165
+  - bmo_id: 458165
     name: Yura Zenevich
     nick: yzen
   - &zbraniecki
@@ -891,13 +903,6 @@ people:
     name: Tomislav Jovanovic
     nick: zombie
 modules:
-  - name: Mots config
-    includes:
-      - mots.yaml
-    owners:
-      - *zeid
-    machine_name: _mots
-
   - name: mozilla-toplevel
     description: The top level directory for the mozilla tree.
     includes:
@@ -996,7 +1001,7 @@ modules:
       - *timhuang
     peers:
       - *baku
-      - *dlee
+      - *dimi
       - *pbz
       - *johannh
     machine_name: core_antitracking
@@ -1078,6 +1083,7 @@ modules:
         - Nathan Froyd
         - Ricky Stewart
         - David Major
+        - Mitchell Hentges
       group: dev-builds
       url: :ref:`Build System`
       components:
@@ -1085,7 +1091,6 @@ modules:
     owners:
       - *glandium
     peers:
-      - *mhentges
       - *andi
     submodules:
 
@@ -1105,21 +1110,26 @@ modules:
         description: Support for task-graph generation in decision, action, and cron
           tasks, including configuration of all tasks including those for CI, nightlies,
           and releases; as well as Docker and VM images used to execute those tasks.
+        includes:
+          - taskcluster
         meta:
           components:
             - Firefox Build System::Task Configuration
+          owners_emeritus:
+            - Tom Prince
           peers_emeritus:
             - Dustin Mitchell
+            - Aki Sasaki
+            - Brian Stack
+            - Gregory Szorc
+            - Justin Wood
         owners:
-          - *tomprince
-        peers:
           - *ahal
-          - *aki
-          - *bstack
+        peers:
           - *glandium
-          - *gps
+          - *jcristau
+          - *jlorenzo
           - *jmaher
-          - *Callek
         machine_name: core_build_config_taskgraph
     machine_name: core_build_config
 
@@ -1177,7 +1187,7 @@ modules:
         - Mike Connor
         - Dan Witte
         - Christian Biesinger
-        - Shawn Wilsher (ping on irc)
+        - Shawn Wilsher
         - Ehsan Akhgari
       group: dev-platform
       components:
@@ -1278,7 +1288,7 @@ modules:
     description: ''
     includes:
       - docshell/**/*
-      - uriloader/**/*
+      - uriloader/base/**/*
     meta:
       owners_emeritus:
         - Boris Zbarsky
@@ -1338,10 +1348,11 @@ modules:
       - *emilio
       - *asuth
       - *edgar
+      - *saschanaz
     machine_name: core_document_object_model
 
   - name: 'Core: DOM File'
-    description: 'DOM Blob, File and FileSystem APIs'
+    description: DOM Blob, File and FileSystem APIs
     includes:
       - dom/file/**/*
       - dom/filesystem/**/*
@@ -1391,7 +1402,7 @@ modules:
     machine_name: core_editor
 
   - name: 'Core: Event Handling'
-    description: 'DOM Events and Event Handling'
+    description: DOM Events and Event Handling
     includes:
       - dom/events/**/*
       # TODO "and event handling related code elsewhere"
@@ -1429,6 +1440,7 @@ modules:
     description: Gecko's built-in profiler
     includes:
       - tools/profiler/**/*
+      - mozglue/baseprofiler/**/*
     meta:
       owners_emeritus:
         - Benoit Girard
@@ -1437,19 +1449,20 @@ modules:
         - Thinker Lee (TaskTracer)
         - Cervantes Yu (TaskTracer)
         - Nicholas Nethercote
+        - Gerald Squelart
+        - Kannan Vijayan
+        - Barret Rennie
+        - Greg Tatum
       group: dev-platform
-      url: https://profiler.firefox.com/docs/
+      url: https://firefox-source-docs.mozilla.org/tools/profiler/
       components:
         - Core::Gecko Profiler
     owners:
       - *mstange
     peers:
-      - *mozbugz
-      - *gregtatum
       - *canova
+      - *bmo
       - *jseward
-      - *djvj
-      - *barret
     machine_name: core_gecko_profiler
 
   - name: 'Core: GeckoView'
@@ -1478,8 +1491,8 @@ modules:
     machine_name: core_geckoview
 
   - name: 'Core: Global Key Bindings'
-    description: Global hot keys for Firefox. Does not include underlined
-      menu accelerators and the like, as those are part of i18n.
+    description: Global hot keys for Firefox. Does not include underlined menu accelerators
+      and the like, as those are part of i18n.
     includes:
       - dom/events/**/*
       # TODO "and platform specific directories under it"
@@ -1894,13 +1907,12 @@ modules:
       group: dev-media
       components:
         - Core::Audio/Video
-    owners:
-      - *jya
     peers:
       - *kinetik
-      - *bryce
       - *jhlin
       - *alwu
+      - *padenot
+      - *chunmin
     machine_name: core_media_playback
 
   - name: 'Core: Media Transport'
@@ -2022,6 +2034,8 @@ modules:
       - dom/xhr/**/*
       - dom/network/**/*
       - dom/websocket/**/*
+      - uriloader/prefetch/**/*
+      - uriloader/preload/**/*
     meta:
       owners_emeritus:
         - Dragana Damjanovic
@@ -2132,7 +2146,7 @@ modules:
         - Mike Connor
         - Dan Witte
         - Christian Biesinger
-        - Shawn Wilsher (ping on irc)
+        - Shawn Wilsher
         - Honza Bambas
       group: dev-platform
       components:
@@ -2252,7 +2266,7 @@ modules:
       - security/sandbox/linux/**/*
     meta:
       group: dev-platform
-      url: 'https://wiki.mozilla.org/Security/Sandbox'
+      url: https://wiki.mozilla.org/Security/Sandbox
       components:
         - 'Core::Security: Process Sandboxing'
     owners:
@@ -2262,12 +2276,12 @@ modules:
     machine_name: core_sandboxing_linux
 
   - name: 'Core: Sandboxing (OSX)'
-    description: 'Sandboxing for the OSX platform'
+    description: Sandboxing for the OSX platform
     includes:
       - security/sandbox/mac/**/*
     meta:
       group: dev-platform
-      url: 'https://wiki.mozilla.org/Security/Sandbox'
+      url: https://wiki.mozilla.org/Security/Sandbox
       components:
         - 'Core::Security: Process Sandboxing'
     owners:
@@ -2276,7 +2290,7 @@ modules:
     machine_name: core_sandboxing_osx
 
   - name: 'Core: Sandboxing (Windows)'
-    description: 'Sandboxing for the Windows platform'
+    description: Sandboxing for the Windows platform
     includes:
       - security/sandbox/win/**/*
     meta:
@@ -2288,7 +2302,7 @@ modules:
         - *jimm
         - *toshi
       group: dev-platform
-      url: 'https://wiki.mozilla.org/Security/Sandbox'
+      url: https://wiki.mozilla.org/Security/Sandbox
       components:
         - 'Core::Security: Process Sandboxing'
     owners:
@@ -3053,6 +3067,7 @@ modules:
         includes:
           - browser/components/downloads/**/*
           - toolkit/mozapps/downloads/**/*
+          - uriloader/exthandler/**/*
         meta:
           peers_emeritus:
             - Micah Tigley
@@ -3104,7 +3119,7 @@ modules:
           - *serg
         peers:
           - *tgiles
-          - *dlee
+          - *dimi
         machine_name: form_autofill
 
       - name: In-product Messaging
@@ -3148,7 +3163,6 @@ modules:
         peers:
           - *mathjazz
           - *eemeli
-        meta:
       - name: New Tab Page
         description: The new tab/home page.
         includes:
@@ -3199,7 +3213,7 @@ modules:
         peers:
           - *jaws
           - *tgiles
-          - *dlee
+          - *dimi
           - *sfoster
         machine_name: password_manager
 
@@ -3382,6 +3396,13 @@ modules:
     meta:
       components:
         - 'Testing :: Marionette'
+  - name: mots config
+    includes:
+      - mots.yaml
+    owners:
+      - *zeid
+    machine_name: mots
+
   - machine_name: mozharness
     name: mozharness
     description: Configuration-driven script harness.
@@ -3396,6 +3417,21 @@ modules:
     meta:
       components:
         - 'Release Engineering :: Applications: MozharnessCore'
+  - machine_name: python_usage
+    name: Python usage, tools, and style
+    description: Aspects of Python use such as tooling, formatting and naming style
+    includes:
+      - tools/lint/python/**/*
+    excludes: []
+    owners:
+      - *ahal
+    peers:
+      - *glandium
+      - *marco
+      - *Sylvestre
+    meta:
+      components:
+        - 'Developer Infrastructure :: Lint and Formatting'
   - machine_name: testing_firefox_ui
     name: firefox-ui
     description: Firefox UI test framework.
@@ -3452,7 +3488,8 @@ modules:
   - machine_name: testing_mozbase
     name: Mozbase
     description: Base modules used for implementing test components.
-    includes: []
+    includes:
+      - testing/mozbase
     excludes: []
     owners:
       - *gbrown
@@ -3512,7 +3549,7 @@ modules:
       - *jgraham
     meta:
       components:
-        - 'Firefox Build System :: Try'
+        - 'Developer Infrastructure :: Try'
   - machine_name: testing_web_platform_tests_infrastructure
     name: web-platform-tests infrastructure
     description: Infrastructure for running the cross-browser web-platform-tests
@@ -3574,13 +3611,15 @@ modules:
         machine_name: application_startup
 
       - name: Telemetry
-        description: The core infrastructure in the Firefox client to send back Telemetry
-          and FHR data. Includes the common mechanism to record, view and submit data
-          like histograms, the Telemetry environment and custom pings. This module
+        description: >
+          The core infrastructure in the Firefox client to send back telemetry
+          data. Includes the common mechanisms to record, view and submit data: Legacy
+          Telemetry and Glean (via Firefox on Glean (FOG)). This module
           does ''not'' include responsibility for every piece of submitted Telemetry
           data. Each team/module is responsible for their own measurements (histograms,
           scalars, other ping submissions, etc.).
         includes:
+          - toolkit/components/glean/**/*
           - toolkit/components/telemetry/**/*
           - toolkit/content/aboutTelemetry.*
         meta:
@@ -3593,6 +3632,8 @@ modules:
         peers:
           - *aplacitelli
           - *janerik
+          - *perrymcmanis
+          - *travis
         machine_name: telemetry
 
       - name: UI Widgets
@@ -3626,5 +3667,5 @@ modules:
         machine_name: webextensions
     machine_name: toolkit
 hashes:
-  config: 20bf74c6395f41505f814c9cb6f1d23d03b1d7ae
-  export: f8100ab782235179d9bc6382e950d0d9d9d046f1
+  config: 81fa57fcd5cf04d03b569dbbd02a0fb1cd269e7f
+  export: 3e6449e8e44a80d47bcd1a8e52c8dd41cf316515

@@ -20,6 +20,7 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/URLPreloader.h"
+#include "nsIChildChannel.h"
 #include "nsIRunnable.h"
 #include "nsISupportsPriority.h"
 #include "nsITimedChannel.h"
@@ -391,9 +392,9 @@ SheetLoadData::SheetLoadData(
 }
 
 SheetLoadData::~SheetLoadData() {
-  MOZ_DIAGNOSTIC_ASSERT(mSheetCompleteCalled || mIntentionallyDropped,
-                        "Should always call SheetComplete, except when "
-                        "dropping the load");
+  MOZ_RELEASE_ASSERT(mSheetCompleteCalled || mIntentionallyDropped,
+                     "Should always call SheetComplete, except when "
+                     "dropping the load");
 }
 
 NS_IMETHODIMP
@@ -465,7 +466,7 @@ void SheetLoadData::FireLoadEvent(nsIThreadInternal* aThread) {
 }
 
 void SheetLoadData::StartPendingLoad() {
-  mLoader->LoadSheet(*this, Loader::SheetState::NeedsParser,
+  mLoader->LoadSheet(*this, Loader::SheetState::NeedsParser, 0,
                      Loader::PendingLoad::Yes);
 }
 
@@ -1184,6 +1185,7 @@ void Loader::InsertChildSheet(StyleSheet& aSheet, StyleSheet& aParentSheet) {
  * a new load is kicked off asynchronously.
  */
 nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
+                           uint64_t aEarlyHintPreloaderId,
                            PendingLoad aPendingLoad) {
   LOG(("css::Loader::LoadSheet"));
   MOZ_ASSERT(aLoadData.mURI, "Need a URI to load");
@@ -1501,6 +1503,8 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
           timedChannel->SetReportResourceTiming(false);
         }
 
+      } else if (aEarlyHintPreloaderId) {
+        timedChannel->SetInitiatorType(u"early-hints"_ns);
       } else {
         timedChannel->SetInitiatorType(u"link"_ns);
       }
@@ -1520,6 +1524,14 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
                         nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, mDocument);
   }
 
+  if (aEarlyHintPreloaderId) {
+    nsCOMPtr<nsIHttpChannelInternal> channelInternal =
+        do_QueryInterface(channel);
+    NS_ENSURE_TRUE(channelInternal != nullptr, NS_ERROR_FAILURE);
+
+    rv = channelInternal->SetEarlyHintPreloaderId(aEarlyHintPreloaderId);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   rv = channel->AsyncOpen(streamLoader);
   if (NS_FAILED(rv)) {
     LOG_ERROR(("  Failed to create stream loader"));
@@ -1828,8 +1840,23 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
 
   nsINode* requestingNode =
       aInfo.mContent ? static_cast<nsINode*>(aInfo.mContent) : mDocument;
-  const bool syncLoad = aInfo.mContent && aInfo.mContent->IsInUAWidget() &&
-                        IsPrivilegedURI(aInfo.mURI);
+  const bool syncLoad = [&] {
+    if (!aInfo.mContent) {
+      return false;
+    }
+    const bool privilegedShadowTree = aInfo.mContent->IsInUAWidget() ||
+                                      (aInfo.mContent->IsInShadowTree() &&
+                                       aInfo.mContent->IsInChromeDocument());
+    if (!privilegedShadowTree) {
+      return false;
+    }
+    if (!IsPrivilegedURI(aInfo.mURI)) {
+      return false;
+    }
+    // We're loading a chrome/resource URI in a chrome doc shadow tree or UA
+    // widget. Load synchronously to avoid FOUC.
+    return true;
+  }();
   LOG(("  Link sync load: '%s'", syncLoad ? "true" : "false"));
   MOZ_ASSERT_IF(syncLoad, !aObserver);
 
@@ -1892,11 +1919,9 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
         return Err(rv);
       }
     } else {
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
       // We don't have to notify anyone of this load, as it was complete, so
       // drop it intentionally.
       data->mIntentionallyDropped = true;
-#endif
     }
 
     // The load hasn't been completed yet, will be done in PostLoadEvent.
@@ -1910,7 +1935,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
              "These should better match!");
 
   // Load completion will free the data
-  rv = LoadSheet(*data, state);
+  rv = LoadSheet(*data, state, 0);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
@@ -2036,16 +2061,14 @@ nsresult Loader::LoadChildSheet(StyleSheet& aParentSheet,
     // We're completely done.  No need to notify, even, since the
     // @import rule addition/modification will trigger the right style
     // changes automatically.
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     data->mIntentionallyDropped = true;
-#endif
     return NS_OK;
   }
 
   bool syncLoad = data->mSyncLoad;
 
   // Load completion will release the data
-  rv = LoadSheet(*data, state);
+  rv = LoadSheet(*data, state, 0);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!syncLoad) {
@@ -2061,7 +2084,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheetSync(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   return InternalLoadNonDocumentSheet(
       aURL, StylePreloadKind::None, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, nullptr, CORS_NONE, u""_ns);
+      referrerInfo, nullptr, CORS_NONE, u""_ns, 0);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
@@ -2070,25 +2093,27 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   return InternalLoadNonDocumentSheet(
       aURI, StylePreloadKind::None, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, aObserver, CORS_NONE, u""_ns);
+      referrerInfo, aObserver, CORS_NONE, u""_ns, 0);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
     nsIURI* aURL, StylePreloadKind aPreloadKind,
     const Encoding* aPreloadEncoding, nsIReferrerInfo* aReferrerInfo,
-    nsICSSLoaderObserver* aObserver, CORSMode aCORSMode,
-    const nsAString& aIntegrity) {
+    nsICSSLoaderObserver* aObserver, uint64_t aEarlyHintPreloaderId,
+    CORSMode aCORSMode, const nsAString& aIntegrity) {
   LOG(("css::Loader::LoadSheet(aURL, aObserver) api call"));
-  return InternalLoadNonDocumentSheet(
-      aURL, aPreloadKind, eAuthorSheetFeatures, UseSystemPrincipal::No,
-      aPreloadEncoding, aReferrerInfo, aObserver, aCORSMode, aIntegrity);
+  return InternalLoadNonDocumentSheet(aURL, aPreloadKind, eAuthorSheetFeatures,
+                                      UseSystemPrincipal::No, aPreloadEncoding,
+                                      aReferrerInfo, aObserver, aCORSMode,
+                                      aIntegrity, aEarlyHintPreloaderId);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
     nsIURI* aURL, StylePreloadKind aPreloadKind, SheetParsingMode aParsingMode,
     UseSystemPrincipal aUseSystemPrincipal, const Encoding* aPreloadEncoding,
     nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
-    CORSMode aCORSMode, const nsAString& aIntegrity) {
+    CORSMode aCORSMode, const nsAString& aIntegrity,
+    uint64_t aEarlyHintPreloaderId) {
   MOZ_ASSERT(aURL, "Must have a URI to load");
   MOZ_ASSERT(aUseSystemPrincipal == UseSystemPrincipal::No || !aObserver,
              "Shouldn't load system-principal sheets async");
@@ -2131,14 +2156,12 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
     } else {
       // We don't have to notify anyone of this load, as it was complete, so
       // drop it intentionally.
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
       data->mIntentionallyDropped = true;
-#endif
     }
     return sheet;
   }
 
-  rv = LoadSheet(*data, state);
+  rv = LoadSheet(*data, state, aEarlyHintPreloaderId);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }

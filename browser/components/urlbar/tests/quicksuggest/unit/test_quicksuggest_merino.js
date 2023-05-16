@@ -41,7 +41,9 @@ const EXPECTED_REMOTE_SETTINGS_RESULT = {
     sponsoredAdvertiser: "TestAdvertiser",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://test.com/q=frabbits",
     source: "remote-settings",
   },
@@ -63,7 +65,9 @@ const EXPECTED_MERINO_RESULT = {
     sponsoredAdvertiser: "advertiser",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "url",
     requestId: "request_id",
     source: "merino",
@@ -457,7 +461,9 @@ add_task(async function multipleMerinoSuggestions() {
           sponsoredAdvertiser: "multipleMerinoSuggestions 1 advertiser",
           isSponsored: true,
           helpUrl: QuickSuggest.HELP_URL,
-          helpL10nId: "firefox-suggest-urlbar-learn-more",
+          helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+          isBlockable: false,
+          blockL10n: { id: "firefox-suggest-urlbar-block" },
           displayUrl: "multipleMerinoSuggestions 1 url",
           requestId: "request_id",
           source: "merino",
@@ -500,6 +506,9 @@ add_task(async function timestamps() {
       isPrivate: context.isPrivate,
       onFirstResult() {
         return false;
+      },
+      getSearchSource() {
+        return "dummy-search-source";
       },
       window: {
         location: {
@@ -671,7 +680,9 @@ add_task(async function topPick() {
           sponsoredAdvertiser: "multipleMerinoSuggestions 2 advertiser",
           isSponsored: true,
           helpUrl: QuickSuggest.HELP_URL,
-          helpL10nId: "firefox-suggest-urlbar-learn-more",
+          helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+          isBlockable: false,
+          blockL10n: { id: "firefox-suggest-urlbar-block" },
           displayUrl: "multipleMerinoSuggestions 2 url",
           requestId: "request_id",
           source: "merino",

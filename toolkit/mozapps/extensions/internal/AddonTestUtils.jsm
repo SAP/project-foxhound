@@ -11,7 +11,7 @@ var EXPORTED_SYMBOLS = ["AddonTestUtils", "MockAsyncShutdown"];
 
 const CERTDB_CONTRACTID = "@mozilla.org/security/x509certdb;1";
 
-const { AddonManager, AddonManagerPrivate, AMTelemetry } = ChromeUtils.import(
+const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
 const { AsyncShutdown } = ChromeUtils.import(
@@ -30,15 +30,19 @@ const { EventEmitter } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  XPCShellContentUtils:
+    "resource://testing-common/XPCShellContentUtils.sys.mjs",
+  getAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+  updateAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
-  getAppInfo: "resource://testing-common/AppInfo.jsm",
   Management: "resource://gre/modules/Extension.jsm",
   ExtensionAddonObserver: "resource://gre/modules/Extension.jsm",
-  FileTestUtils: "resource://testing-common/FileTestUtils.jsm",
-  MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
-  updateAppInfo: "resource://testing-common/AppInfo.jsm",
-  XPCShellContentUtils: "resource://testing-common/XPCShellContentUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -1716,7 +1720,7 @@ var AddonTestUtils = {
     // In xpcshell tests, equal/ok are defined in the global scope.
     let { equal, ok } = this.testScope;
     if (!equal || !ok) {
-      // In mochitests, these are available via Assert.jsm.
+      // In mochitests, these are available via Assert.sys.mjs.
       let { Assert } = this.testScope;
       equal = Assert.equal.bind(Assert);
       ok = Assert.ok.bind(Assert);
@@ -1782,33 +1786,41 @@ var AddonTestUtils = {
   // AMTelemetry events helpers.
 
   /**
-   * Redefine AMTelemetry.recordEvent to collect the recorded telemetry events and
-   * ensure that there are no unexamined events after the test file is exiting.
+   * Formerly this function re-routed telemetry events. Now it just ensures
+   * that there are no unexamined events after the test file is exiting.
    */
   hookAMTelemetryEvents() {
-    let originalRecordEvent = AMTelemetry.recordEvent;
-    AMTelemetry.recordEvent = event => {
-      this.collectedTelemetryEvents.push(event);
-    };
     this.testScope.registerCleanupFunction(() => {
       this.testScope.Assert.deepEqual(
         [],
-        this.collectedTelemetryEvents,
+        this.getAMTelemetryEvents(),
         "No unexamined telemetry events after test is finished"
       );
-      AMTelemetry.recordEvent = originalRecordEvent;
     });
   },
 
   /**
-   * Retrive any AMTelemetry event collected and empty the array of the collected events.
+   * Retrive any AMTelemetry event collected and clears _all_ telemetry events.
    *
    * @returns {Array<Object>}
    *          The array of the collected telemetry data.
    */
   getAMTelemetryEvents() {
-    let events = this.collectedTelemetryEvents;
-    this.collectedTelemetryEvents = [];
+    // This duplicates some logic from TelemetryTestUtils.
+    let snapshots = Services.telemetry.snapshotEvents(
+      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+      /* clear = */ true
+    );
+    let events = (snapshots.parent ?? [])
+      .filter(entry => entry[1] == "addonsManager")
+      .map(entry => ({
+        // The callers don't expect the timestamp or the category.
+        method: entry[2],
+        object: entry[3],
+        value: entry[4],
+        extra: entry[5],
+      }));
+
     return events;
   },
 };

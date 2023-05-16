@@ -35,6 +35,7 @@
 #include "xpc_make_class.h"
 #include "XPCWrapper.h"
 #include "Crypto.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/AbortControllerBinding.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingCallContext.h"
@@ -90,6 +91,8 @@
 #include "mozilla/dom/XMLSerializerBinding.h"
 #include "mozilla/dom/FormDataBinding.h"
 #include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/ExtensionPolicyService.h"
@@ -2228,4 +2231,25 @@ ModuleLoaderBase* SandboxPrivate::GetModuleLoader(JSContext* aCx) {
   mModuleLoader = moduleLoader;
 
   return moduleLoader;
+}
+
+mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
+SandboxPrivate::GetStorageKey() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mozilla::ipc::PrincipalInfo principalInfo;
+  nsresult rv = PrincipalToPrincipalInfo(mPrincipal, &principalInfo);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return mozilla::Err(rv);
+  }
+
+  // Block expanded and null principals, let content and system through.
+  if (principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TContentPrincipalInfo &&
+      principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo) {
+    return Err(NS_ERROR_DOM_SECURITY_ERR);
+  }
+
+  return std::move(principalInfo);
 }

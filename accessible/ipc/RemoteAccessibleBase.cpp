@@ -267,6 +267,9 @@ void RemoteAccessibleBase<Derived>::Value(nsString& aValue) const {
           const_cast<RemoteAccessibleBase<Derived>*>(this)->GetSelectedItem(0);
       if (option) {
         option->Name(aValue);
+      } else {
+        // If no selected item, determine the value from descendant elements.
+        nsTextEquivUtils::GetTextEquivFromSubtree(this, aValue);
       }
       return;
     }
@@ -380,42 +383,85 @@ Accessible* RemoteAccessibleBase<Derived>::ChildAtPoint(
             MOZ_ASSERT(innerDoc->IsDoc());
             // Search the embedded document's viewport cache so we return the
             // deepest descendant in that embedded document.
-            return innerDoc->ChildAtPoint(aX, aY,
-                                          EWhichChildAtPoint::DeepestChild);
+            Accessible* deepestAcc = innerDoc->ChildAtPoint(
+                aX, aY, EWhichChildAtPoint::DeepestChild);
+            MOZ_ASSERT(!deepestAcc || deepestAcc->IsRemote());
+            lastMatch = deepestAcc ? deepestAcc->AsRemote() : nullptr;
+            break;
           }
           // If there is no embedded document, the iframe itself is the deepest
           // descendant.
-          return acc;
-        }
-
-        if (acc == this) {
-          MOZ_ASSERT(!acc->IsOuterDoc());
-          // Even though we're searching from the doc's cache
-          // this call shouldn't pass the boundary defined by
-          // the acc this call originated on. If we hit `this`,
-          // return our most recent match.
+          lastMatch = acc;
           break;
         }
 
-        if (acc->Bounds().Contains(aX, aY)) {
-          if (aWhichChild == EWhichChildAtPoint::DeepestChild) {
-            // Because our rects are in hittesting order, the
-            // first match we encounter is guaranteed to be the
-            // deepest match.
+        // Because our rects are in hittesting order, the first match we
+        // encounter is supposed to be the deepest match. Unfortunately, this
+        // isn't always the case; e.g. on Gmail (bug 1801756).
+        // 1. Find the first match. We do this to respect visual order as far as
+        // possible.
+        if (!lastMatch) {
+          if (acc->Bounds().Contains(aX, aY)) {
             lastMatch = acc;
-            break;
           }
+          continue;
+        }
 
-          // We're looking for a DirectChild match. Update our
-          // `lastMatch` marker as we ascend towards `this`.
+        // 2. We assume that lastMatch is at least in the correct subtree, even
+        // if it isn't the deepest match therein. We also assume a
+        // descendant match won't have a lower z-index. Therefore, find the
+        // deepest matching descendant of lastMatch.
+        // Note that IsAncestorOf is generally faster than Bounds, so we call
+        // that first.
+        if (lastMatch->IsAncestorOf(acc) && acc->Bounds().Contains(aX, aY)) {
           lastMatch = acc;
         }
       }
     }
   }
 
-  if (!lastMatch && Bounds().Contains(aX, aY)) {
+  if (lastMatch == this || (!lastMatch && Bounds().Contains(aX, aY))) {
     return this;
+  }
+  if (!lastMatch) {
+    return nullptr;
+  }
+
+  // lastMatch is currently the deepest descendant.
+  // ChildAtPoint should always return an Accessible which is a descendant of
+  // `this`. However, it's possible that the initial match in the viewport cache
+  // is in a different subtree. For example, this can happen when the aX, aY
+  // given are outside `this`.
+  if (aWhichChild == EWhichChildAtPoint::DeepestChild) {
+    if (IsDoc()) {
+      // There are less documents in the ancestor chain than there are
+      // Accessibles, so walk the document ancestors.
+      DocAccessibleParent* doc;
+      for (doc = lastMatch->Document(); doc; doc = doc->ParentDoc()) {
+        if (doc == this) {
+          break;
+        }
+      }
+      if (!doc) {
+        // lastMatch is not a descendant of this.
+        return nullptr;
+      }
+    } else if (!IsAncestorOf(lastMatch)) {
+      return nullptr;
+    }
+  } else {
+    // The caller requested a direct child of this.
+    RemoteAccessible* parent = lastMatch;
+    while ((parent = parent->RemoteParent())) {
+      if (parent == this) {
+        break;
+      }
+      lastMatch = parent;
+    }
+    if (!parent) {
+      // lastMatch is not a descendant of this.
+      return nullptr;
+    }
   }
 
   return lastMatch;
@@ -770,12 +816,17 @@ Relation RemoteAccessibleBase<Derived>::RelationByType(
       while (ancestor && ancestor->Role() != roles::FORM && ancestor != mDoc) {
         ancestor = ancestor->RemoteParent();
       }
-      Pivot p = Pivot(ancestor);
-      PivotRadioNameRule rule(name);
-      Accessible* match = p.Next(ancestor, rule);
-      while (match) {
-        rel.AppendTarget(match->AsRemote());
-        match = p.Next(match, rule);
+      if (ancestor) {
+        // Sometimes we end up with an unparented acc here, potentially
+        // because the acc is being moved. See bug 1807639.
+        // Pivot expects to be created with a non-null mRoot.
+        Pivot p = Pivot(ancestor);
+        PivotRadioNameRule rule(name);
+        Accessible* match = p.Next(ancestor, rule);
+        while (match) {
+          rel.AppendTarget(match->AsRemote());
+          match = p.Next(match, rule);
+        }
       }
       return rel;
     }
@@ -899,11 +950,6 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
       }
     }
 
-    if (!data.mReverseType) {
-      updateTracker.AppendElement(false);
-      continue;
-    }
-
     nsStaticAtom* const relAtom = data.mAtom;
     auto newRelationTargets =
         aFields->GetAttribute<nsTArray<uint64_t>>(relAtom);
@@ -922,15 +968,23 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
               mCachedFields->GetAttribute<nsTArray<uint64_t>>(relAtom)) {
         for (uint64_t id : *maybeOldIDs) {
           // For each target, fetch its reverse relation map
-          nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& reverseRels =
-              Document()->mReverseRelations.LookupOrInsert(id);
-          // Then fetch its reverse relation's ID list
-          nsTArray<uint64_t>& reverseRelIDs = reverseRels.LookupOrInsert(
-              static_cast<uint64_t>(*data.mReverseType));
-          //  There might be other reverse relations stored for this acc, so
-          //  remove our ID instead of deleting the array entirely.
-          DebugOnly<bool> removed = reverseRelIDs.RemoveElement(ID());
-          MOZ_ASSERT(removed, "Can't find old reverse relation");
+          // We need to call `Lookup` here instead of `LookupOrInsert` because
+          // it's possible the ID we're querying is from an acc that has since
+          // been Shutdown(), and so has intentionally removed its reverse rels
+          // from the doc's reverse rel cache.
+          if (auto reverseRels = Document()->mReverseRelations.Lookup(id)) {
+            // Then fetch its reverse relation's ID list. This should be safe
+            // to do via LookupOrInsert because by the time we've gotten here,
+            // we know the acc and `this` are still alive in the doc. If we hit
+            // the following assert, we don't have parity on implicit/explicit
+            // rels and something is wrong.
+            nsTArray<uint64_t>& reverseRelIDs = reverseRels->LookupOrInsert(
+                static_cast<uint64_t>(data.mReverseType));
+            //  There might be other reverse relations stored for this acc, so
+            //  remove our ID instead of deleting the array entirely.
+            DebugOnly<bool> removed = reverseRelIDs.RemoveElement(ID());
+            MOZ_ASSERT(removed, "Can't find old reverse relation");
+          }
         }
       }
     }
@@ -959,10 +1013,8 @@ void RemoteAccessibleBase<Derived>::PostProcessRelations(
       for (uint64_t id : newIDs) {
         nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& relations =
             Document()->mReverseRelations.LookupOrInsert(id);
-        MOZ_ASSERT(data.mReverseType,
-                   "Updating implicit rels, but no implicit rel exists?");
         nsTArray<uint64_t>& ids =
-            relations.LookupOrInsert(static_cast<uint64_t>(*data.mReverseType));
+            relations.LookupOrInsert(static_cast<uint64_t>(data.mReverseType));
         ids.AppendElement(ID());
       }
     }
@@ -1085,13 +1137,6 @@ uint64_t RemoteAccessibleBase<Derived>::State() {
       }
       if (state & states::EXPANDABLE && !(state & states::EXPANDED)) {
         state |= states::COLLAPSED;
-      }
-    }
-
-    auto* browser = static_cast<dom::BrowserParent*>(Document()->Manager());
-    if (browser == dom::BrowserParent::GetFocused()) {
-      if (this == Document()->GetFocusedAcc()) {
-        state |= states::FOCUSED;
       }
     }
 
@@ -1234,11 +1279,29 @@ already_AddRefed<AccAttributes> RemoteAccessibleBase<Derived>::Attributes() {
     }
 
     nsAccUtils::SetLiveContainerAttributes(attributes, this);
+
+    nsString id;
+    DOMNodeID(id);
+    if (!id.IsEmpty()) {
+      attributes->SetAttribute(nsGkAtoms::id, std::move(id));
+    }
   }
 
   nsAutoString name;
   if (Name(name) != eNameFromSubtree && !name.IsVoid()) {
     attributes->SetAttribute(nsGkAtoms::explicit_name, true);
+  }
+
+  // Expose the string value via the valuetext attribute. We test for the value
+  // interface because we don't want to expose traditional Value() information
+  // such as URLs on links and documents, or text in an input.
+  // XXX This is only needed for ATK, since other APIs have native ways to
+  // retrieve value text. We should probably move this into ATK specific code.
+  // For now, we do this because LocalAccessible does it.
+  if (HasNumericValue()) {
+    nsString valuetext;
+    Value(valuetext);
+    attributes->SetAttribute(nsGkAtoms::aria_valuetext, std::move(valuetext));
   }
 
   return attributes.forget();
@@ -1666,22 +1729,20 @@ bool RemoteAccessibleBase<Derived>::TableIsProbablyForLayout() {
 }
 
 template <class Derived>
-const nsTArray<int32_t>&
-RemoteAccessibleBase<Derived>::GetCachedHyperTextOffsets() const {
+nsTArray<int32_t>& RemoteAccessibleBase<Derived>::GetCachedHyperTextOffsets() {
   if (mCachedFields) {
-    if (auto offsets =
-            mCachedFields->GetAttribute<nsTArray<int32_t>>(nsGkAtoms::offset)) {
+    if (auto offsets = mCachedFields->GetMutableAttribute<nsTArray<int32_t>>(
+            nsGkAtoms::offset)) {
       return *offsets;
     }
   }
   nsTArray<int32_t> newOffsets;
-  BuildCachedHyperTextOffsets(newOffsets);
   if (!mCachedFields) {
-    const_cast<RemoteAccessibleBase<Derived>*>(this)->mCachedFields =
-        new AccAttributes();
+    mCachedFields = new AccAttributes();
   }
   mCachedFields->SetAttribute(nsGkAtoms::offset, std::move(newOffsets));
-  return *mCachedFields->GetAttribute<nsTArray<int32_t>>(nsGkAtoms::offset);
+  return *mCachedFields->GetMutableAttribute<nsTArray<int32_t>>(
+      nsGkAtoms::offset);
 }
 
 template <class Derived>

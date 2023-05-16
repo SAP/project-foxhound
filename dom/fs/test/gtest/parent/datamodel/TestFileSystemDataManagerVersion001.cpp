@@ -367,8 +367,8 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
     FileSystemEntryMetadata src{firstChildDir, firstChildMeta.childName(),
                                 /* is directory */ true};
     FileSystemChildMetadata dest{rootId, src.entryName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    TEST_TRY_UNWRAP(bool moved, dm->MoveEntry(src, dest));
+    ASSERT_TRUE(moved);
   }
 
   {
@@ -417,8 +417,8 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
                                 firstChildDescendantMeta.childName(),
                                 /* is directory */ true};
     FileSystemChildMetadata dest{firstChildDir, src.entryName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    TEST_TRY_UNWRAP(bool moved, dm->MoveEntry(src, dest));
+    ASSERT_TRUE(moved);
   }
 
   {
@@ -480,63 +480,35 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
   }
 
   {
-    // Try to move file to its current location with correct isDirectory flag
+    // Try to move file to its current location
     FileSystemEntryMetadata src{testFile, testFileMeta.childName(),
                                 /* is directory */ false};
     FileSystemChildMetadata dest{firstChildDir, src.entryName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    TEST_TRY_UNWRAP(bool isMoved, dm->MoveEntry(src, dest));
+    ASSERT_TRUE(isMoved);
   }
 
   {
-    // Try to move file to its current location with incorrect isDirectory flag
-    FileSystemEntryMetadata src{testFile, testFileMeta.childName(),
-                                /* is directory */ true};
-    FileSystemChildMetadata dest{firstChildDir, src.entryName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
-  }
-
-  {
-    // Try to rename file to a directory with correct isDirectory flag
+    // Try to rename file to a directory
     FileSystemEntryMetadata src{testFile, testFileMeta.childName(),
                                 /* is directory */ false};
     const FileSystemChildMetadata& dest = firstChildDescendantMeta;
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   {
-    // Try to rename file to a directory with incorrect isDirectory flag
-    FileSystemEntryMetadata src{testFile, testFileMeta.childName(),
-                                /* is directory */ true};
-    const FileSystemChildMetadata& dest = firstChildDescendantMeta;
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
-  }
-
-  {
-    // Try to rename directory to a file with correct isDirectory flag
+    // Try to rename directory to a file
     FileSystemEntryMetadata src{firstChildDescendant,
                                 firstChildDescendantMeta.childName(),
                                 /* is directory */ true};
     const FileSystemChildMetadata& dest = testFileMeta;
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   {
-    // Try to rename directory to a file with incorrect isDirectory flag
-    FileSystemEntryMetadata src{firstChildDescendant,
-                                firstChildDescendantMeta.childName(),
-                                /* is directory */ false};
-    const FileSystemChildMetadata& dest = testFileMeta;
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
-  }
-
-  {
-    // Try to move subsubdirectory under a file with correct isDirectory flag
+    // Try to move subsubdirectory under a file
     FileSystemEntryMetadata src{firstChildDescendant,
                                 firstChildDescendantMeta.childName(),
                                 /* is directory */ true};
@@ -547,29 +519,7 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
   }
 
   {
-    // Try to move subsubdirectory under a file with incorrect isDirectory flag
-    FileSystemEntryMetadata src{firstChildDescendant,
-                                firstChildDescendantMeta.childName(),
-                                /* is directory */ false};
-    FileSystemChildMetadata dest{testFile,
-                                 firstChildDescendantMeta.childName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_STORAGE_CONSTRAINT, rv);
-  }
-
-  {
-    // Try to move subsubdirectory under a file with incorrect isDirectory flag
-    FileSystemEntryMetadata src{firstChildDescendant,
-                                firstChildDescendantMeta.childName(),
-                                /* is directory */ false};
-    FileSystemChildMetadata dest{testFile,
-                                 firstChildDescendantMeta.childName()};
-    TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_STORAGE_CONSTRAINT, rv);
-  }
-
-  {
-    // Move file one level up with correct isDirectory flag
+    // Move file one level up
     FileSystemEntryMetadata src{testFile, testFileMeta.childName(),
                                 /* is directory */ false};
     FileSystemChildMetadata dest{rootId, src.entryName()};
@@ -616,7 +566,7 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
     FileSystemChildMetadata dest{firstChildDir,
                                  firstChildDescendantMeta.childName()};
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   // Rename file first and then try to move it to collide with subSubDirectory
@@ -636,7 +586,7 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
     FileSystemChildMetadata dest{firstChildDir,
                                  firstChildDescendantMeta.childName()};
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   {
@@ -646,7 +596,7 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
                                 /* is directory */ true};
     FileSystemChildMetadata dest{rootId, firstChildDescendantMeta.childName()};
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   // Create a new file in the subsubdirectory
@@ -706,14 +656,13 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
                                 /* is directory */ true};
     FileSystemChildMetadata dest{rootId, firstChildMeta.childName()};
     TEST_TRY_UNWRAP_ERR(nsresult rv, dm->MoveEntry(src, dest));
-    ASSERT_NSEQ(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR, rv);
+    ASSERT_NSEQ(NS_ERROR_DOM_INVALID_MODIFICATION_ERR, rv);
   }
 
   // Move first file and subSubDirectory back one level down keeping the names
   {
-    // First file with wrong isDirectory flag
     FileSystemEntryMetadata src{testFile, firstChildDescendantMeta.childName(),
-                                /* is directory */ true};
+                                /* is directory */ false};
     FileSystemChildMetadata dest{firstChildDir,
                                  firstChildDescendantMeta.childName()};
 
@@ -723,9 +672,9 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
   }
 
   {
-    // Then move the directory with wrong isDirectory flag
+    // Then move the directory
     FileSystemEntryMetadata src{firstChildDescendant, testFileMeta.childName(),
-                                /* is directory */ false};
+                                /* is directory */ true};
     FileSystemChildMetadata dest{firstChildDir, testFileMeta.childName()};
 
     // Flag is ignored

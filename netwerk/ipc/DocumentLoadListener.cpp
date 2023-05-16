@@ -7,6 +7,7 @@
 
 #include "DocumentLoadListener.h"
 
+#include "NeckoCommon.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/LoadInfo.h"
@@ -138,15 +139,17 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
   auto securityFlags = SecurityFlagsForLoadInfo(aLoadState);
 
   if (aBrowsingContext->GetParent()) {
-    loadInfo = LoadInfo::CreateForFrame(aBrowsingContext,
-                                        aLoadState->TriggeringPrincipal(),
-                                        securityFlags, sandboxFlags);
+    loadInfo = LoadInfo::CreateForFrame(
+        aBrowsingContext, aLoadState->TriggeringPrincipal(),
+        aLoadState->GetEffectiveTriggeringRemoteType(), securityFlags,
+        sandboxFlags);
   } else {
     OriginAttributes attrs;
     aBrowsingContext->GetOriginAttributes(attrs);
-    loadInfo = LoadInfo::CreateForDocument(aBrowsingContext, aLoadState->URI(),
-                                           aLoadState->TriggeringPrincipal(),
-                                           attrs, securityFlags, sandboxFlags);
+    loadInfo = LoadInfo::CreateForDocument(
+        aBrowsingContext, aLoadState->URI(), aLoadState->TriggeringPrincipal(),
+        aLoadState->GetEffectiveTriggeringRemoteType(), attrs, securityFlags,
+        sandboxFlags);
   }
 
   if (aLoadState->IsExemptFromHTTPSOnlyMode()) {
@@ -246,7 +249,8 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
     // The one exception is nsUnknownDecoder, which works in the parent
     // (and we need to know what the content type is before we can
     // decide if it will be handled in the parent), so we run that here.
-    if (mContentType.LowerCaseEqualsASCII(UNKNOWN_CONTENT_TYPE)) {
+    if (mContentType.LowerCaseEqualsASCII(UNKNOWN_CONTENT_TYPE) ||
+        mContentType.IsEmpty()) {
       return nsDocumentOpenInfo::TryStreamConversion(aChannel);
     }
 
@@ -519,6 +523,73 @@ bool CheckRecursiveLoad(CanonicalBrowsingContext* aLoadingContext,
   return true;
 }
 
+// Check that the load state, potentially received from a child process, appears
+// to be performing a load of the specified LoadingSessionHistoryInfo.
+// Returns a static (telemetry-safe) string naming what did not match, or
+// nullptr if it succeeds.
+static const char* ValidateHistoryLoad(
+    CanonicalBrowsingContext* aLoadingContext,
+    nsDocShellLoadState* aLoadState) {
+  MOZ_ASSERT(SessionHistoryInParent());
+  MOZ_ASSERT(aLoadState->LoadIsFromSessionHistory());
+
+  if (!aLoadState->GetLoadingSessionHistoryInfo()) {
+    return "Missing LoadingSessionHistoryInfo";
+  }
+
+  const SessionHistoryInfo* snapshot =
+      SessionHistoryEntry::GetInfoSnapshotForValidationByLoadId(
+          aLoadState->GetLoadingSessionHistoryInfo()->mLoadId);
+  if (!snapshot) {
+    return "Invalid LoadId";
+  }
+
+  // History loads do not inherit principal.
+  if (aLoadState->HasInternalLoadFlags(
+          nsDocShell::INTERNAL_LOAD_FLAGS_INHERIT_PRINCIPAL)) {
+    return "LOAD_FLAGS_INHERIT_PRINCIPAL";
+  }
+
+  auto uriEq = [](nsIURI* a, nsIURI* b) -> bool {
+    bool eq = false;
+    return a == b || (a && b && NS_SUCCEEDED(a->Equals(b, &eq)) && eq);
+  };
+  auto principalEq = [](nsIPrincipal* a, nsIPrincipal* b) -> bool {
+    return a == b || (a && b && a->Equals(b));
+  };
+
+  // XXX: Needing to do all of this validation manually is kinda gross.
+  if (!uriEq(snapshot->GetURI(), aLoadState->URI())) {
+    return "URI";
+  }
+  if (!uriEq(snapshot->GetOriginalURI(), aLoadState->OriginalURI())) {
+    return "OriginalURI";
+  }
+  if (!aLoadState->ResultPrincipalURIIsSome() ||
+      !uriEq(snapshot->GetResultPrincipalURI(),
+             aLoadState->ResultPrincipalURI())) {
+    return "ResultPrincipalURI";
+  }
+  if (!uriEq(snapshot->GetUnstrippedURI(), aLoadState->GetUnstrippedURI())) {
+    return "UnstrippedURI";
+  }
+  if (!principalEq(snapshot->GetTriggeringPrincipal(),
+                   aLoadState->TriggeringPrincipal())) {
+    return "TriggeringPrincipal";
+  }
+  if (!principalEq(snapshot->GetPrincipalToInherit(),
+                   aLoadState->PrincipalToInherit())) {
+    return "PrincipalToInherit";
+  }
+  if (!principalEq(snapshot->GetPartitionedPrincipalToInherit(),
+                   aLoadState->PartitionedPrincipalToInherit())) {
+    return "PartitionedPrincipalToInherit";
+  }
+
+  // Everything matches!
+  return nullptr;
+}
+
 auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
                                 LoadInfo* aLoadInfo, nsLoadFlags aLoadFlags,
                                 uint32_t aCacheKey,
@@ -546,6 +617,31 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
     if (!CheckRecursiveLoad(loadingContext, aLoadState, this, mIsDocumentLoad,
                             aLoadInfo)) {
       *aRv = NS_ERROR_RECURSIVE_DOCUMENT_LOAD;
+      mParentChannelListener = nullptr;
+      return nullptr;
+    }
+  }
+
+  // If we are using SHIP and this load is from session history, validate that
+  // the load matches our local copy of the loading history entry.
+  //
+  // NOTE: Keep this check in-sync with the check in
+  // `nsDocShellLoadState::GetEffectiveTriggeringRemoteType()`!
+  if (SessionHistoryInParent() && aLoadState->LoadIsFromSessionHistory() &&
+      aLoadState->LoadType() != LOAD_ERROR_PAGE) {
+    if (const char* mismatch =
+            ValidateHistoryLoad(loadingContext, aLoadState)) {
+      LOG(
+          ("DocumentLoadListener::Open with invalid loading history entry "
+           "[this=%p, mismatch=%s]",
+           this, mismatch));
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+      MOZ_CRASH_UNSAFE_PRINTF(
+          "DocumentLoadListener::Open for invalid history entry due to "
+          "mismatch of '%s'",
+          mismatch);
+#endif
+      *aRv = NS_ERROR_DOM_SECURITY_ERR;
       mParentChannelListener = nullptr;
       return nullptr;
     }
@@ -1108,8 +1204,8 @@ void DocumentLoadListener::Disconnect(bool aContinueNavigating) {
   // Don't cancel ongoing early hints when continuing to load the web page.
   // Early hints are loaded earlier in the code and shouldn't get cancelled
   // here. See also: Bug 1765652
-  if (GetLoadingBrowsingContext() && !aContinueNavigating) {
-    GetLoadingBrowsingContext()->mEarlyHintsService.Cancel();
+  if (!aContinueNavigating) {
+    mEarlyHintsService.Cancel("DocumentLoadListener::Disconnect"_ns);
   }
 
   if (auto* ctx = GetDocumentBrowsingContext()) {
@@ -1328,54 +1424,9 @@ bool DocumentLoadListener::ResumeSuspendedChannel(
   if (!aListener) {
     streamListenerFunctions.Clear();
   }
-  nsresult rv = NS_OK;
-  for (auto& variant : streamListenerFunctions) {
-    variant.match(
-        [&](const OnStartRequestParams& aParams) {
-          rv = aListener->OnStartRequest(aParams.request);
-          if (NS_FAILED(rv)) {
-            aParams.request->Cancel(rv);
-          }
-        },
-        [&](const OnDataAvailableParams& aParams) {
-          // Don't deliver OnDataAvailable if we've
-          // already failed.
-          if (NS_FAILED(rv)) {
-            return;
-          }
-          nsCOMPtr<nsIInputStream> stringStream;
-          rv = NS_NewByteInputStream(
-              getter_AddRefs(stringStream),
-              Span<const char>(aParams.data.get(), aParams.count),
-              NS_ASSIGNMENT_DEPEND);
-          if (NS_SUCCEEDED(rv)) {
-            rv = aListener->OnDataAvailable(aParams.request, stringStream,
-                                            aParams.offset, aParams.count);
-          }
-          if (NS_FAILED(rv)) {
-            aParams.request->Cancel(rv);
-          }
-        },
-        [&](const OnStopRequestParams& aParams) {
-          if (NS_SUCCEEDED(rv)) {
-            aListener->OnStopRequest(aParams.request, aParams.status);
-          } else {
-            aListener->OnStopRequest(aParams.request, rv);
-          }
-          rv = NS_OK;
-        },
-        [&](const OnAfterLastPartParams& aParams) {
-          nsCOMPtr<nsIMultiPartChannelListener> multiListener =
-              do_QueryInterface(aListener);
-          if (multiListener) {
-            if (NS_SUCCEEDED(rv)) {
-              multiListener->OnAfterLastPart(aParams.status);
-            } else {
-              multiListener->OnAfterLastPart(rv);
-            }
-          }
-        });
-  }
+
+  ForwardStreamListenerFunctions(streamListenerFunctions, aListener);
+
   // We don't expect to get new stream listener functions added
   // via re-entrancy. If this ever happens, we should understand
   // exactly why before allowing it.
@@ -1391,10 +1442,11 @@ bool DocumentLoadListener::ResumeSuspendedChannel(
 
 void DocumentLoadListener::SerializeRedirectData(
     RedirectToRealChannelArgs& aArgs, bool aIsCrossProcess,
-    uint32_t aRedirectFlags, uint32_t aLoadFlags,
-    ContentParent* aParent) const {
+    uint32_t aRedirectFlags, uint32_t aLoadFlags, ContentParent* aParent,
+    nsTArray<EarlyHintConnectArgs>&& aEarlyHints) const {
   aArgs.uri() = GetChannelCreationURI();
   aArgs.loadIdentifier() = mLoadIdentifier;
+  aArgs.earlyHints() = std::move(aEarlyHints);
 
   // I previously used HttpBaseChannel::CloneLoadInfoForRedirect, but that
   // clears the principal to inherit, which fails tests (probably because this
@@ -2025,9 +2077,12 @@ DocumentLoadListener::RedirectToRealChannel(
           CreateAndReject(ipc::ResponseRejectReason::SendError, __func__);
     }
 
+    nsTArray<EarlyHintConnectArgs> ehArgs;
+    mEarlyHintsService.RegisterLinksAndGetConnectArgs(ehArgs);
+
     RedirectToRealChannelArgs args;
     SerializeRedirectData(args, /* aIsCrossProcess */ true, aRedirectFlags,
-                          aLoadFlags, cp);
+                          aLoadFlags, cp, std::move(ehArgs));
     if (mTiming) {
       mTiming->Anonymize(args.uri());
       args.timing() = Some(std::move(mTiming));
@@ -2063,10 +2118,14 @@ DocumentLoadListener::RedirectToRealChannel(
   auto promise =
       MakeRefPtr<PDocumentChannelParent::RedirectToRealChannelPromise::Private>(
           __func__);
-  mOpenPromise->Resolve(
-      OpenPromiseSucceededType({std::move(aStreamFilterEndpoints),
-                                aRedirectFlags, aLoadFlags, promise}),
-      __func__);
+
+  nsTArray<EarlyHintConnectArgs> ehArgs;
+  mEarlyHintsService.RegisterLinksAndGetConnectArgs(ehArgs);
+
+  mOpenPromise->Resolve(OpenPromiseSucceededType(
+                            {std::move(aStreamFilterEndpoints), aRedirectFlags,
+                             aLoadFlags, std::move(ehArgs), promise}),
+                        __func__);
 
   // There is no way we could come back here if the promise had been resolved
   // previously. But for clarity and to avoid all doubt, we set this boolean to
@@ -2481,15 +2540,13 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
     }
   }
 
-  if (GetLoadingBrowsingContext()) {
-    if (httpChannel) {
-      uint32_t responseStatus;
-      Unused << httpChannel->GetResponseStatus(&responseStatus);
-      GetLoadingBrowsingContext()->mEarlyHintsService.FinalResponse(
-          responseStatus);
-    } else {
-      GetLoadingBrowsingContext()->mEarlyHintsService.Cancel();
-    }
+  if (httpChannel) {
+    uint32_t responseStatus = 0;
+    Unused << httpChannel->GetResponseStatus(&responseStatus);
+    mEarlyHintsService.FinalResponse(responseStatus);
+  } else {
+    mEarlyHintsService.Cancel(
+        "DocumentLoadListener::OnStartRequest: no httpChannel"_ns);
   }
 
   // If we're going to be delivering this channel to a remote content
@@ -2709,18 +2766,23 @@ DocumentLoadListener::AsyncOnChannelRedirect(
     return NS_OK;
   }
 
+  // Cancel cross origin redirects as described by whatwg:
+  // > Note: [The early hint reponse] is discarded if it is succeeded by a
+  // > cross-origin redirect.
+  // https://html.spec.whatwg.org/multipage/semantics.html#early-hints
+  nsCOMPtr<nsIURI> oldURI;
+  aOldChannel->GetURI(getter_AddRefs(oldURI));
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  nsresult rv = ssm->CheckSameOriginURI(oldURI, uri, false, false);
+  if (NS_FAILED(rv)) {
+    mEarlyHintsService.Cancel(
+        "DocumentLoadListener::AsyncOnChannelRedirect: cors redirect"_ns);
+  }
+
   if (GetDocumentBrowsingContext()) {
-    nsCOMPtr<nsIURI> oldURI;
-    aOldChannel->GetURI(getter_AddRefs(oldURI));
     if (!net::ChannelIsPost(aOldChannel)) {
       AddURIVisit(aOldChannel, 0);
       nsDocShell::SaveLastVisit(aNewChannel, oldURI, aFlags);
-    }
-
-    nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-    nsresult rv = ssm->CheckSameOriginURI(oldURI, uri, false, false);
-    if (NS_FAILED(rv)) {
-      GetLoadingBrowsingContext()->mEarlyHintsService.Cancel();
     }
   }
   mHaveVisibleRedirect |= true;
@@ -2852,12 +2914,11 @@ NS_IMETHODIMP DocumentLoadListener::OnStatus(nsIRequest* aRequest,
   return NS_OK;
 }
 
-NS_IMETHODIMP DocumentLoadListener::EarlyHint(const nsACString& linkHeader) {
+NS_IMETHODIMP DocumentLoadListener::EarlyHint(
+    const nsACString& aLinkHeader, const nsACString& aReferrerPolicy) {
   LOG(("DocumentLoadListener::EarlyHint.\n"));
-  if (GetLoadingBrowsingContext()) {
-    GetLoadingBrowsingContext()->mEarlyHintsService.EarlyHint(
-        linkHeader, GetChannelCreationURI(), mChannel);
-  }
+  mEarlyHintsService.EarlyHint(aLinkHeader, GetChannelCreationURI(), mChannel,
+                               aReferrerPolicy);
   return NS_OK;
 }
 

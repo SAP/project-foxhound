@@ -260,13 +260,14 @@ class ExternalEngineStateMachine final
 
   bool ShouldRunEngineUpdateForRequest();
 
+  void UpdateSecondaryVideoContainer() override;
+
   UniquePtr<ExternalPlaybackEngine> mEngine;
 
   bool mHasEnoughAudio = false;
   bool mHasEnoughVideo = false;
   bool mSentPlaybackEndedEvent = false;
-
-  const RefPtr<VideoFrameContainer> mVideoFrameContainer;
+  bool mHasReceivedFirstDecodedVideoFrame = false;
 };
 
 class ExternalPlaybackEngine {

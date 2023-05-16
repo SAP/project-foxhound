@@ -14,7 +14,6 @@
 #include "GLContext.h"
 #include "GLContextProvider.h"
 #include "GLLibraryLoader.h"
-#include "Layers.h"
 #include "nsExceptionHandler.h"
 #include "mozilla/Range.h"
 #include "mozilla/EnumeratedRange.h"
@@ -2183,15 +2182,17 @@ void WebRenderBridgeParent::SetOMTASampleTime() {
   }
 }
 
-void WebRenderBridgeParent::CompositeIfNeeded() {
-  if (mSkippedComposite) {
-    mSkippedComposite = false;
-    if (mCompositorScheduler) {
-      mCompositorScheduler->ScheduleComposition(
-          mSkippedCompositeReasons | RenderReasons::SKIPPED_COMPOSITE);
-    }
-    mSkippedCompositeReasons = wr::RenderReasons::NONE;
+void WebRenderBridgeParent::RetrySkippedComposite() {
+  if (!mSkippedComposite) {
+    return;
   }
+
+  mSkippedComposite = false;
+  if (mCompositorScheduler) {
+    mCompositorScheduler->ScheduleComposition(mSkippedCompositeReasons |
+                                              RenderReasons::SKIPPED_COMPOSITE);
+  }
+  mSkippedCompositeReasons = wr::RenderReasons::NONE;
 }
 
 void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
@@ -2230,8 +2231,10 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
     return;
   }
 
-  if (mSkippedComposite ||
-      wr::RenderThread::Get()->TooManyPendingFrames(mApi->GetId())) {
+  mSkippedComposite =
+      wr::RenderThread::Get()->TooManyPendingFrames(mApi->GetId());
+
+  if (mSkippedComposite) {
     // Render thread is busy, try next time.
     mSkippedComposite = true;
     mSkippedCompositeReasons = mSkippedCompositeReasons | aReasons;
@@ -2337,15 +2340,14 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
   SetOMTASampleTime();
   SetAPZSampleTime();
 
-  wr::RenderThread::Get()->IncPendingFrameCount(mApi->GetId(), aId, start);
-
 #if defined(ENABLE_FRAME_LATENCY_LOG)
   auto startTime = TimeStamp::Now();
   mApi->SetFrameStartTime(startTime);
 #endif
 
-  MOZ_ASSERT(generateFrame);
   fastTxn.GenerateFrame(aId, aReasons);
+  wr::RenderThread::Get()->IncPendingFrameCount(mApi->GetId(), aId, start);
+
   mApi->SendTransaction(fastTxn);
 
 #if defined(MOZ_WIDGET_ANDROID)

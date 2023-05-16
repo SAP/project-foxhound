@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/Vector.h"
 #include "mozilla/WeakPtr.h"
 
 #include "CacheInvalidator.h"
@@ -78,7 +79,7 @@ struct SamplerUniformInfo final {
   const decltype(WebGLContext::mBound2DTextures)& texListForType;
   const webgl::TextureBaseType texBaseType;
   const bool isShadowSampler;
-  std::vector<uint32_t> texUnits;
+  Vector<uint8_t, 8> texUnits = decltype(texUnits)();
 };
 
 struct LocationInfo final {

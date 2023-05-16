@@ -69,7 +69,7 @@ let InternalFaviconLoader = {
     try {
       request.cancel();
     } catch (ex) {
-      Cu.reportError(
+      console.error(
         "When cancelling a request for " +
           uri.spec +
           " because " +
@@ -260,22 +260,37 @@ let InternalFaviconLoader = {
 
 /**
  * Collects all information for a bookmark and performs editmethods
- *
- * @param {object} info
- *    Either a result node or a node-like object representing the item to be edited.
- * @param {string} [tags]
- *     Tags (if any) for the bookmark in a comma separated string. Empty tags are
- * skipped
- * @param {string} [keyword]
- *    Existing (if there are any) keyword for bookmark
- * @returns {string} Guid
- *    BookamrkGuid
  */
 class BookmarkState {
-  constructor(info, tags = "", keyword = "") {
+  /**
+   * Construct a new BookmarkState.
+   *
+   * @param {object} options
+   *   The constructor options.
+   * @param {object} options.info
+   *   Either a result node or a node-like object representing the item to be edited.
+   * @param {string} [options.tags]
+   *   Tags (if any) for the bookmark in a comma separated string. Empty tags are
+   *   skipped
+   * @param {string} [options.keyword]
+   *   Existing (if there are any) keyword for bookmark
+   * @param {boolean} [options.isFolder]
+   *   If the item is a folder.
+   * @param {Array.<nsIURI>} [options.children]
+   *   The list of child URIs to bookmark within the folder.
+   */
+  constructor({
+    info,
+    tags = "",
+    keyword = "",
+    isFolder = false,
+    children = [],
+  }) {
     this._guid = info.itemGuid;
     this._postData = info.postData;
     this._isTagContainer = info.isTag;
+    this._isFolder = isFolder;
+    this._children = children;
 
     // Original Bookmark
     this._originalState = {
@@ -344,11 +359,56 @@ class BookmarkState {
   }
 
   /**
+   * Create a new bookmark.
+   *
+   * @returns {string} The bookmark's GUID.
+   */
+  async _createBookmark() {
+    await lazy.PlacesTransactions.batch(async () => {
+      this._guid = await lazy.PlacesTransactions.NewBookmark({
+        parentGuid: this._newState.parentGuid ?? this._originalState.parentGuid,
+        tags: this._newState.tags,
+        title: this._newState.title ?? this._originalState.title,
+        url: this._newState.uri ?? this._originalState.uri,
+      }).transact();
+      if (this._newState.keyword) {
+        await lazy.PlacesTransactions.EditKeyword({
+          guid: this._guid,
+          keyword: this._newState.keyword,
+          postData: this._postData,
+        }).transact();
+      }
+    });
+    return this._guid;
+  }
+
+  /**
+   * Create a new folder.
+   *
+   * @returns {string} The folder's GUID.
+   */
+  async _createFolder() {
+    this._guid = await lazy.PlacesTransactions.NewFolder({
+      parentGuid: this._newState.parentGuid ?? this._originalState.parentGuid,
+      title: this._newState.title ?? this._originalState.title,
+      children: this._children.map(item => ({
+        url: item.uri,
+        title: item.title,
+      })),
+    }).transact();
+    return this._guid;
+  }
+
+  /**
    * Save() API function for bookmark.
    *
    * @returns {string} bookmark.guid
    */
   async save() {
+    if (this._guid === lazy.PlacesUtils.bookmarks.unsavedGuid) {
+      return this._isFolder ? this._createFolder() : this._createBookmark();
+    }
+
     if (!Object.keys(this._newState).length) {
       return this._guid;
     }
@@ -1247,8 +1307,12 @@ export var PlacesUIUtils = {
       type: Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
     };
 
+    let itemId =
+      aFetchInfo.guid === lazy.PlacesUtils.bookmarks.unsavedGuid
+        ? undefined
+        : await lazy.PlacesUtils.promiseItemId(aFetchInfo.guid);
     return Object.freeze({
-      itemId: await lazy.PlacesUtils.promiseItemId(aFetchInfo.guid),
+      itemId,
       bookmarkGuid: aFetchInfo.guid,
       title: aFetchInfo.title,
       uri: aFetchInfo.url !== undefined ? aFetchInfo.url.href : "",
@@ -1511,16 +1575,6 @@ export var PlacesUIUtils = {
           JSON.stringify([lazy.CustomizableUI.AREA_BOOKMARKS, "true"])
         );
       }
-    }
-  },
-
-  maybeToggleBookmarkToolbarVisibilityAfterMigration() {
-    if (
-      Services.prefs.getBoolPref(
-        "browser.migrate.showBookmarksToolbarAfterMigration"
-      )
-    ) {
-      this.maybeToggleBookmarkToolbarVisibility(true);
     }
   },
 
@@ -1790,7 +1844,7 @@ export var PlacesUIUtils = {
       }
     ).catch(e => {
       // We want to report errors, but we still want to add the button then:
-      Cu.reportError(e);
+      console.error(e);
       return 0;
     });
 
@@ -2122,7 +2176,7 @@ function getTransactionsForTransferItems(
       // Only log if this is one of "our" types as external items, e.g. drag from
       // url bar to toolbar, shouldn't complain.
       if (PlacesUIUtils.PLACES_FLAVORS.includes(item.type)) {
-        Cu.reportError(
+        console.error(
           "Tried to move an unmovable Places " +
             "node, reverting to a copy operation."
         );

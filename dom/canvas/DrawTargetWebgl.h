@@ -15,6 +15,10 @@
 #include "mozilla/ipc/Shmem.h"
 #include <vector>
 
+namespace WGR {
+struct OutputVertex;
+}
+
 namespace mozilla {
 
 class ClientWebGLContext;
@@ -102,9 +106,14 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     Matrix mTransform;
     Rect mRect;
     RefPtr<const Path> mPath;
+
+    bool operator==(const ClipStack& aOther) const;
   };
 
   std::vector<ClipStack> mClipStack;
+
+  // The previous state of the clip stack when a mask was generated.
+  std::vector<ClipStack> mCachedClipStack;
 
   // UsageProfile stores per-frame counters for significant profiling events
   // that assist in determining whether acceleration should still be used for
@@ -169,6 +178,14 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     uint32_t mPathVertexOffset = 0;
     // The maximum size of the GPU path buffer.
     uint32_t mPathVertexCapacity = 0;
+    // The maximum supported type complexity of a GPU path.
+    uint32_t mPathMaxComplexity = 0;
+    // Whether to accelerate stroked paths with AAStroke.
+    bool mPathAAStroke = true;
+    // Whether to accelerate stroked paths with WGR.
+    bool mPathWGRStroke = false;
+    // Temporary buffer for generating WGR output into.
+    UniquePtr<WGR::OutputVertex[]> mWGROutputBuffer;
     RefPtr<WebGLProgramJS> mSolidProgram;
     RefPtr<WebGLUniformLocationJS> mSolidProgramViewport;
     RefPtr<WebGLUniformLocationJS> mSolidProgramAA;
@@ -239,7 +256,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
     bool Initialize();
     bool CreateShaders();
-    void ResetPathVertexBuffer();
+    void ResetPathVertexBuffer(bool aChanged = true);
 
     void SetBlendState(CompositionOp aOp,
                        const Maybe<DeviceColor>& aBlendColor = Nothing());
@@ -273,7 +290,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     already_AddRefed<TextureHandle> WrapSnapshot(const IntSize& aSize,
                                                  SurfaceFormat aFormat,
                                                  RefPtr<WebGLTextureJS> aTex);
-    already_AddRefed<TextureHandle> CopySnapshot();
+    already_AddRefed<TextureHandle> CopySnapshot(
+        const IntRect& aRect, TextureHandle* aHandle = nullptr);
 
     already_AddRefed<WebGLTextureJS> GetCompatibleSnapshot(
         SourceSurface* aSurface);
@@ -348,6 +366,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   already_AddRefed<SourceSurface> GetDataSnapshot();
   already_AddRefed<SourceSurface> Snapshot() override;
+  already_AddRefed<SourceSurface> GetOptimizedSnapshot(DrawTarget* aTarget);
   already_AddRefed<SourceSurface> GetBackingSurface() override;
   void DetachAllSnapshots() override;
 
@@ -379,9 +398,6 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                    const IntPoint& aDestination) override;
   void FillRect(const Rect& aRect, const Pattern& aPattern,
                 const DrawOptions& aOptions = DrawOptions()) override;
-  bool StrokeRectAccel(const Rect& aRect, const Pattern& aPattern,
-                       const StrokeOptions& aStrokeOptions,
-                       const DrawOptions& aOptions);
   void StrokeRect(const Rect& aRect, const Pattern& aPattern,
                   const StrokeOptions& aStrokeOptions = StrokeOptions(),
                   const DrawOptions& aOptions = DrawOptions()) override;
@@ -485,7 +501,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                 bool aAccelOnly = false, bool aForceUpdate = false,
                 const StrokeOptions* aStrokeOptions = nullptr);
 
-  bool ShouldAccelPath(const DrawOptions& aOptions);
+  bool ShouldAccelPath(const DrawOptions& aOptions,
+                       const StrokeOptions* aStrokeOptions);
   void DrawPath(const Path* aPath, const Pattern& aPattern,
                 const DrawOptions& aOptions,
                 const StrokeOptions* aStrokeOptions = nullptr);
@@ -518,7 +535,11 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   bool ReadInto(uint8_t* aDstData, int32_t aDstStride);
   already_AddRefed<DataSourceSurface> ReadSnapshot();
-  already_AddRefed<TextureHandle> CopySnapshot();
+  already_AddRefed<TextureHandle> CopySnapshot(const IntRect& aRect);
+  already_AddRefed<TextureHandle> CopySnapshot() {
+    return CopySnapshot(GetRect());
+  }
+
   void ClearSnapshot(bool aCopyOnWrite = true, bool aNeedHandle = false);
 
   bool CreateFramebuffer();

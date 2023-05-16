@@ -28,6 +28,7 @@ FocusManager::FocusManager() {}
 FocusManager::~FocusManager() {}
 
 LocalAccessible* FocusManager::FocusedLocalAccessible() const {
+  MOZ_ASSERT(NS_IsMainThread());
   if (mActiveItem) {
     if (mActiveItem->IsDefunct()) {
       MOZ_ASSERT_UNREACHABLE("Stored active item is unbound from document");
@@ -35,6 +36,12 @@ LocalAccessible* FocusManager::FocusedLocalAccessible() const {
     }
 
     return mActiveItem;
+  }
+
+  if (nsAccessibilityService::IsShutdown()) {
+    // We might try to get or create a DocAccessible below, which isn't safe (or
+    // useful) if the accessibility service is shutting down.
+    return nullptr;
   }
 
   nsINode* focusedNode = FocusedDOMNode();
@@ -49,6 +56,20 @@ LocalAccessible* FocusManager::FocusedLocalAccessible() const {
 }
 
 Accessible* FocusManager::FocusedAccessible() const {
+#if defined(ANDROID)
+  // It's not safe to call FocusedLocalAccessible() except on the main thread.
+  // Android might query RemoteAccessibles on the UI thread, which might call
+  // FocusedAccessible(). Never try to get the focused LocalAccessible in this
+  // case.
+  if (NS_IsMainThread()) {
+    if (Accessible* focusedAcc = FocusedLocalAccessible()) {
+      return focusedAcc;
+    }
+  } else {
+    nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  }
+  return mFocusedRemoteDoc ? mFocusedRemoteDoc->GetFocusedAcc() : nullptr;
+#else
   if (Accessible* focusedAcc = FocusedLocalAccessible()) {
     return focusedAcc;
   }
@@ -75,28 +96,7 @@ Accessible* FocusManager::FocusedAccessible() const {
   DocAccessibleParent* focusedDoc =
       DocAccessibleParent::GetFrom(focusedContext);
   return focusedDoc ? focusedDoc->GetFocusedAcc() : nullptr;
-}
-
-bool FocusManager::IsFocused(const LocalAccessible* aAccessible) const {
-  if (mActiveItem) return mActiveItem == aAccessible;
-
-  nsINode* focusedNode = FocusedDOMNode();
-  if (focusedNode) {
-    // XXX: Before getting an accessible for node having a DOM focus make sure
-    // they belong to the same document because it can trigger unwanted document
-    // accessible creation for temporary about:blank document. Without this
-    // peculiarity we would end up with plain implementation based on
-    // FocusedLocalAccessible() method call. Make sure this issue is fixed in
-    // bug 638465.
-    if (focusedNode->OwnerDoc() == aAccessible->GetNode()->OwnerDoc()) {
-      DocAccessible* doc =
-          GetAccService()->GetDocAccessible(focusedNode->OwnerDoc());
-      return aAccessible ==
-             (doc ? doc->GetAccessibleEvenIfNotInMapOrContainer(focusedNode)
-                  : nullptr);
-    }
-  }
-  return false;
+#endif  // defined(ANDROID)
 }
 
 bool FocusManager::IsFocusWithin(const Accessible* aContainer) const {

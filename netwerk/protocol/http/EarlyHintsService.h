@@ -9,15 +9,17 @@
 #define mozilla_net_EarlyHintsService_h
 
 #include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "nsStringFwd.h"
-#include "mozilla/RefPtr.h"
+#include "nsTArray.h"
 
 class nsIChannel;
 class nsIURI;
 
 namespace mozilla::net {
 
+class EarlyHintConnectArgs;
 class OngoingEarlyHints;
 
 class EarlyHintsService {
@@ -25,9 +27,12 @@ class EarlyHintsService {
   EarlyHintsService();
   ~EarlyHintsService();
   void EarlyHint(const nsACString& aLinkHeader, nsIURI* aBaseURI,
-                 nsIChannel* aChannel);
+                 nsIChannel* aChannel, const nsACString& aReferrerPolicy);
   void FinalResponse(uint32_t aResponseStatus);
-  void Cancel();
+  void Cancel(const nsACString& aReason);
+
+  void RegisterLinksAndGetConnectArgs(
+      nsTArray<EarlyHintConnectArgs>& aOutLinks);
 
  private:
   void CollectTelemetry(Maybe<uint32_t> aResponseStatus);
@@ -35,7 +40,6 @@ class EarlyHintsService {
 
   Maybe<TimeStamp> mFirstEarlyHint;
   uint32_t mEarlyHintsCount{0};
-  bool mCanceled{false};
 
   RefPtr<OngoingEarlyHints> mOngoingEarlyHints;
 };

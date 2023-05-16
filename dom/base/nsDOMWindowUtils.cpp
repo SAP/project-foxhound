@@ -80,10 +80,9 @@
 #  include <gdk/gdk.h>
 #  if defined(MOZ_X11)
 #    include <gdk/gdkx.h>
+#    include "X11UndefineNone.h"
 #  endif
 #endif
-
-#include "Layers.h"
 
 #include "mozilla/dom/AudioDeviceInfo.h"
 #include "mozilla/dom/Element.h"
@@ -101,7 +100,7 @@
 #include "nsPrintfCString.h"
 #include "nsViewportInfo.h"
 #include "nsIFormControl.h"
-//#include "nsWidgetsCID.h"
+// #include "nsWidgetsCID.h"
 #include "nsDisplayList.h"
 #include "nsROCSSPrimitiveValue.h"
 #include "nsIBaseWindow.h"
@@ -3082,8 +3081,8 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
   // main-thread side knows to scroll the content into view before we get
   // the bounding content rect and ask APZ to adjust the visual viewport.
   presShell->ScrollContentIntoView(
-      element, ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
-      ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
+      element, ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
+      ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
       ScrollFlags::ScrollOverflowHidden);
 
   if (shouldSkip) {
@@ -4464,8 +4463,8 @@ nsDOMWindowUtils::EnsureDirtyRootFrame() {
     return NS_ERROR_FAILURE;
   }
 
-  presShell->FrameNeedsReflow(frame, IntrinsicDirty::StyleChange,
-                              NS_FRAME_IS_DIRTY);
+  presShell->FrameNeedsReflow(
+      frame, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
   return NS_OK;
 }
 

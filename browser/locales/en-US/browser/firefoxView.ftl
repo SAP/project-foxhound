@@ -61,6 +61,10 @@ firefoxview-tabpickup-password-locked-description = To grab your tabs, you’ll 
 firefoxview-tabpickup-password-locked-link = Learn more
 firefoxview-tabpickup-password-locked-primarybutton = Enter Primary Password
 
+firefoxview-tabpickup-signed-out-header = Sign in to reconnect
+firefoxview-tabpickup-signed-out-description = To reconnect and grab your tabs, sign in to your { -fxaccount-brand-name }.
+firefoxview-tabpickup-signed-out-primarybutton = Sign in
+
 firefoxview-tabpickup-syncing = Sit tight while your tabs sync. It’ll be just a moment.
 
 firefoxview-mobile-promo-header = Grab tabs from your phone or tablet
@@ -76,6 +80,11 @@ firefoxview-closed-tabs-description2 = Reopen pages you’ve closed in this wind
 firefoxview-closed-tabs-placeholder-header = No recently closed tabs
 firefoxview-closed-tabs-placeholder-body = When you close a tab in this window, you can fetch it from here.
 
+# Variables:
+#   $tabTitle (string) - Title of tab being dismissed
+firefoxview-closed-tabs-dismiss-tab =
+  .title = Dismiss { $tabTitle }
+
 # refers to the last tab that was used
 firefoxview-pickup-tabs-badge = Last active
 
@@ -85,7 +94,6 @@ firefoxview-tabs-list-tab-button =
   .title = Open { $targetURI } in a new tab
 
 firefoxview-try-colorways-button = Try colorways
-firefoxview-no-current-colorway-collection = New colorways are on the way
 firefoxview-change-colorway-button = Change colorway
 
 # Variables:

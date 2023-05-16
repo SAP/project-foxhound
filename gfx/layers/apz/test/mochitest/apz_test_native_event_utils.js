@@ -1282,13 +1282,25 @@ function promiseMoveMouseAndScrollWheelOver(
     offsetY: dy,
   });
   if (waitForScroll) {
-    p = p.then(() =>
-      promiseNativeWheelAndWaitForScrollEvent(target, dx, dy, 0, -scrollDelta)
-    );
+    p = p.then(() => {
+      return promiseNativeWheelAndWaitForScrollEvent(
+        target,
+        dx,
+        dy,
+        0,
+        -scrollDelta
+      );
+    });
   } else {
-    p = p.then(() =>
-      promiseNativeWheelAndWaitForWheelEvent(target, dx, dy, 0, -scrollDelta)
-    );
+    p = p.then(() => {
+      return promiseNativeWheelAndWaitForWheelEvent(
+        target,
+        dx,
+        dy,
+        0,
+        -scrollDelta
+      );
+    });
   }
   return p;
 }
@@ -1540,6 +1552,10 @@ function promiseTransformEnd() {
   return promiseTopic("APZ:TransformEnd");
 }
 
+function promiseScrollend(aTarget = window) {
+  return promiseOneEvent(aTarget, "scrollend");
+}
+
 // Returns a promise that resolves after the indicated number
 // of touchend events have fired on the given target element.
 function promiseTouchEnd(element, count = 1) {
@@ -1772,4 +1788,128 @@ async function doubleTapOn(element, x, y, useTouchpad) {
 
   // Flush state so we can query an accurate resolution
   await promiseApzFlushedRepaints();
+}
+
+const NativePanHandlerForLinux = {
+  beginPhase: SpecialPowers.DOMWindowUtils.PHASE_BEGIN,
+  updatePhase: SpecialPowers.DOMWindowUtils.PHASE_UPDATE,
+  endPhase: SpecialPowers.DOMWindowUtils.PHASE_END,
+  promiseNativePanEvent: promiseNativeTouchpadPanEventAndWaitForObserver,
+  delta: -50,
+};
+
+const NativePanHandlerForWindows = {
+  beginPhase: SpecialPowers.DOMWindowUtils.PHASE_BEGIN,
+  updatePhase: SpecialPowers.DOMWindowUtils.PHASE_UPDATE,
+  endPhase: SpecialPowers.DOMWindowUtils.PHASE_END,
+  promiseNativePanEvent: promiseNativeTouchpadPanEventAndWaitForObserver,
+  delta: 50,
+};
+
+const NativePanHandlerForMac = {
+  // From https://developer.apple.com/documentation/coregraphics/cgscrollphase/kcgscrollphasebegan?language=occ , etc.
+  beginPhase: 1, // kCGScrollPhaseBegan
+  updatePhase: 2, // kCGScrollPhaseChanged
+  endPhase: 4, // kCGScrollPhaseEnded
+  promiseNativePanEvent: promiseNativePanGestureEventAndWaitForObserver,
+  delta: -50,
+};
+
+function getPanHandler() {
+  switch (getPlatform()) {
+    case "linux":
+      return NativePanHandlerForLinux;
+    case "windows":
+      return NativePanHandlerForWindows;
+    case "mac":
+      return NativePanHandlerForMac;
+    default:
+      throw new Error(
+        "There's no native pan handler on platform " + getPlatform()
+      );
+  }
+}
+
+// Lazily get `NativePanHandler` to avoid an exception where we don't support
+// native pan events (e.g. Android).
+if (!window.hasOwnProperty("NativePanHandler")) {
+  Object.defineProperty(window, "NativePanHandler", {
+    get() {
+      return getPanHandler();
+    },
+  });
+}
+
+async function panRightToLeft(aElement, aX, aY, aMultiplier) {
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    NativePanHandler.delta * aMultiplier,
+    0,
+    NativePanHandler.beginPhase
+  );
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    NativePanHandler.delta * aMultiplier,
+    0,
+    NativePanHandler.updatePhase
+  );
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    0,
+    0,
+    NativePanHandler.endPhase
+  );
+}
+
+async function panLeftToRight(aElement, aX, aY, aMultiplier) {
+  await panLeftToRightBegin(aElement, aX, aY, aMultiplier);
+  await panLeftToRightUpdate(aElement, aX, aY, aMultiplier);
+  await panLeftToRightEnd(aElement, aX, aY, aMultiplier);
+}
+
+async function panLeftToRightBegin(aElement, aX, aY, aMultiplier) {
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    -NativePanHandler.delta * aMultiplier,
+    0,
+    NativePanHandler.beginPhase
+  );
+}
+
+async function panLeftToRightUpdate(aElement, aX, aY, aMultiplier) {
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    -NativePanHandler.delta * aMultiplier,
+    0,
+    NativePanHandler.updatePhase
+  );
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    -NativePanHandler.delta * aMultiplier,
+    0,
+    NativePanHandler.updatePhase
+  );
+}
+
+async function panLeftToRightEnd(aElement, aX, aY, aMultiplier) {
+  await NativePanHandler.promiseNativePanEvent(
+    aElement,
+    aX,
+    aY,
+    0,
+    0,
+    NativePanHandler.endPhase
+  );
 }

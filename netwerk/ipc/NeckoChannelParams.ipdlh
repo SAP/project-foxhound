@@ -29,12 +29,14 @@ using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class nsIPropertyBag2 from "nsIPropertyBag2.h";
 [RefCounted] using class nsDOMNavigationTiming from "nsDOMNavigationTiming.h";
+[RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using mozilla::net::PreferredAlternativeDataDeliveryTypeIPC from "nsICacheInfoChannel.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 using nsILoadInfo::StoragePermissionState from "nsILoadInfo.h";
 using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 using mozilla::dom::RequestMode from "mozilla/dom/RequestBinding.h";
+using mozilla::net::LinkHeader from "nsNetUtil.h";
 
 namespace mozilla {
 namespace net {
@@ -98,6 +100,7 @@ struct LoadInfoArgs
   PrincipalInfo?              principalToInheritInfo;
   PrincipalInfo?              topLevelPrincipalInfo;
   URIParams?                  resultPrincipalURI;
+  nsCString                   triggeringRemoteType;
   nsID                        sandboxedNullPrincipalID;
   uint32_t                    securityFlags;
   uint32_t                    sandboxFlags;
@@ -341,6 +344,7 @@ struct HttpChannelOpenArgs
   TimeStamp                   handleFetchEventEnd;
   bool                        forceMainDocumentChannel;
   TimeStamp                   navigationStartTimeStamp;
+  uint64_t                    earlyHintPreloaderId;
 };
 
 struct HttpChannelConnectArgs
@@ -446,7 +450,7 @@ union DocumentChannelElementCreationArgs {
 };
 
 struct DocumentChannelCreationArgs {
-  DocShellLoadStateInit loadState;
+  nsDocShellLoadState loadState;
   TimeStamp asyncOpenTime;
   uint64_t channelId;
   uint32_t cacheKey;
@@ -454,6 +458,11 @@ struct DocumentChannelCreationArgs {
   IPCClientInfo? initialClientInfo;
   DocumentChannelElementCreationArgs elementCreationArgs;
   uint64_t parentInitiatedNavigationEpoch;
+};
+
+struct EarlyHintConnectArgs {
+  LinkHeader link;
+  uint64_t earlyHintPreloaderId;
 };
 
 struct RedirectToRealChannelArgs {
@@ -478,6 +487,7 @@ struct RedirectToRealChannelArgs {
   LoadingSessionHistoryInfo? loadingSessionHistoryInfo;
   uint64_t loadIdentifier;
   nsCString? originalUriString;
+  EarlyHintConnectArgs[] earlyHints;
 };
 
 struct TimingStructArgs {

@@ -415,9 +415,6 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
         !protocol.IsEmpty()) {
       mProtocolVersion.Assign(protocol);
     }
-    // Make sure peerId is generated.
-    nsAutoCString unused;
-    securityInfo->GetPeerId(unused);
   }
 
   UniquePtr<nsHttpResponseHead> head(mTransaction->TakeResponseHead());
@@ -632,10 +629,11 @@ HttpTransactionChild::CheckListenerChain() {
 }
 
 NS_IMETHODIMP
-HttpTransactionChild::EarlyHint(const nsACString& value) {
+HttpTransactionChild::EarlyHint(const nsACString& value,
+                                const nsACString& referrerPolicy) {
   LOG(("HttpTransactionChild::EarlyHint"));
   if (CanSend()) {
-    Unused << SendEarlyHint(PromiseFlatCString(value));
+    Unused << SendEarlyHint(value, referrerPolicy);
   }
   return NS_OK;
 }

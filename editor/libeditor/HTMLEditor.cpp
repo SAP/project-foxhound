@@ -57,6 +57,7 @@
 #include "nsContentList.h"
 #include "nsContentUtils.h"
 #include "nsCRT.h"
+#include "nsDebug.h"
 #include "nsElementTable.h"
 #include "nsFocusManager.h"
 #include "nsGenericHTMLElement.h"
@@ -5746,27 +5747,22 @@ nsresult HTMLEditor::SetAttributeOrEquivalent(Element* aElement,
   nsStyledElement* styledElement = nsStyledElement::FromNodeOrNull(aElement);
   if (!IsCSSEnabled()) {
     // we are not in an HTML+CSS editor; let's set the attribute the HTML way
-    if (styledElement) {
-      // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
-      // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
-      nsresult rv =
-          aSuppressTransaction
-              ? CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithoutTransaction(
-                    *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                    nullptr)
-              : CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithTransaction(
-                    *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                    nullptr);
-      if (rv == NS_ERROR_EDITOR_DESTROYED) {
-        NS_WARNING(
-            "CSSEditUtils::RemoveCSSEquivalentToHTMLStyle*Transaction() "
-            "destroyed the editor");
-        return NS_ERROR_EDITOR_DESTROYED;
+    if (EditorElementStyle::IsHTMLStyle(aAttribute)) {
+      const EditorElementStyle elementStyle =
+          EditorElementStyle::Create(*aAttribute);
+      if (styledElement && elementStyle.IsCSSEditable(*styledElement)) {
+        // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
+        // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
+        nsresult rv = CSSEditUtils::RemoveCSSEquivalentToStyle(
+            aSuppressTransaction ? WithTransaction::No : WithTransaction::Yes,
+            *this, MOZ_KnownLive(*styledElement), elementStyle, nullptr);
+        if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
+          return NS_ERROR_EDITOR_DESTROYED;
+        }
+        NS_WARNING_ASSERTION(
+            NS_SUCCEEDED(rv),
+            "CSSEditUtils::RemoveCSSEquivalentToStyle() failed, but ignored");
       }
-      NS_WARNING_ASSERTION(
-          NS_SUCCEEDED(rv),
-          "CSSEditUtils::RemoveCSSEquivalentToHTMLStyle*Transaction() "
-          "failed, but ignored");
     }
     if (aSuppressTransaction) {
       nsresult rv =
@@ -5780,43 +5776,42 @@ nsresult HTMLEditor::SetAttributeOrEquivalent(Element* aElement,
     return rv;
   }
 
-  if (styledElement) {
-    // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
-    // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
-    Result<int32_t, nsresult> count =
-        aSuppressTransaction
-            ? CSSEditUtils::SetCSSEquivalentToHTMLStyleWithoutTransaction(
-                  *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                  &aValue)
-            : CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                  &aValue);
-    if (count.isErr()) {
-      if (count.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-        return NS_ERROR_EDITOR_DESTROYED;
+  if (EditorElementStyle::IsHTMLStyle(aAttribute)) {
+    const EditorElementStyle elementStyle =
+        EditorElementStyle::Create(*aAttribute);
+    if (styledElement && elementStyle.IsCSSEditable(*styledElement)) {
+      // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
+      // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
+      Result<size_t, nsresult> count = CSSEditUtils::SetCSSEquivalentToStyle(
+          aSuppressTransaction ? WithTransaction::No : WithTransaction::Yes,
+          *this, MOZ_KnownLive(*styledElement), elementStyle, &aValue);
+      if (MOZ_UNLIKELY(count.isErr())) {
+        if (NS_WARN_IF(count.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
+          return NS_ERROR_EDITOR_DESTROYED;
+        }
+        NS_WARNING(
+            "CSSEditUtils::SetCSSEquivalentToStyle() failed, but ignored");
       }
-      NS_WARNING(
-          "CSSEditUtils::SetCSSEquivalentToHTMLStyle*Transaction() failed, but "
-          "ignored");
-    }
-    if (count.inspect()) {
-      // we found an equivalence ; let's remove the HTML attribute itself if it
-      // is set
-      nsAutoString existingValue;
-      if (!aElement->GetAttr(kNameSpaceID_None, aAttribute, existingValue)) {
-        return NS_OK;
-      }
+      if (count.inspect()) {
+        // we found an equivalence ; let's remove the HTML attribute itself if
+        // it is set
+        nsAutoString existingValue;
+        if (!aElement->GetAttr(kNameSpaceID_None, aAttribute, existingValue)) {
+          return NS_OK;
+        }
 
-      if (aSuppressTransaction) {
-        nsresult rv = aElement->UnsetAttr(kNameSpaceID_None, aAttribute, true);
-        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Element::UnsetAttr() failed");
+        if (aSuppressTransaction) {
+          nsresult rv =
+              aElement->UnsetAttr(kNameSpaceID_None, aAttribute, true);
+          NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Element::UnsetAttr() failed");
+          return rv;
+        }
+        nsresult rv = RemoveAttributeWithTransaction(*aElement, *aAttribute);
+        NS_WARNING_ASSERTION(
+            NS_SUCCEEDED(rv),
+            "EditorBase::RemoveAttributeWithTransaction() failed");
         return rv;
       }
-      nsresult rv = RemoveAttributeWithTransaction(*aElement, *aAttribute);
-      NS_WARNING_ASSERTION(
-          NS_SUCCEEDED(rv),
-          "EditorBase::RemoveAttributeWithTransaction() failed");
-      return rv;
     }
   }
 
@@ -5865,28 +5860,26 @@ nsresult HTMLEditor::RemoveAttributeOrEquivalent(Element* aElement,
   MOZ_ASSERT(aElement);
   MOZ_ASSERT(aAttribute);
 
-  if (IsCSSEnabled() &&
-      CSSEditUtils::IsCSSEditableProperty(aElement, nullptr, aAttribute)) {
-    // XXX It might be keep handling attribute even if aElement is not
-    //     an nsStyledElement instance.
-    nsStyledElement* styledElement = nsStyledElement::FromNodeOrNull(aElement);
-    if (NS_WARN_IF(!styledElement)) {
-      return NS_ERROR_INVALID_ARG;
-    }
-    // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
-    // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
-    nsresult rv =
-        aSuppressTransaction
-            ? CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithoutTransaction(
-                  *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                  nullptr)
-            : CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, MOZ_KnownLive(*styledElement), nullptr, aAttribute,
-                  nullptr);
-    if (NS_FAILED(rv)) {
-      NS_WARNING(
-          "CSSEditUtils::RemoveCSSEquivalentToHTMLStyle*Transaction() failed");
-      return rv;
+  if (IsCSSEnabled() && EditorElementStyle::IsHTMLStyle(aAttribute)) {
+    const EditorElementStyle elementStyle =
+        EditorElementStyle::Create(*aAttribute);
+    if (elementStyle.IsCSSEditable(*aElement)) {
+      // XXX It might be keep handling attribute even if aElement is not
+      //     an nsStyledElement instance.
+      nsStyledElement* styledElement =
+          nsStyledElement::FromNodeOrNull(aElement);
+      if (NS_WARN_IF(!styledElement)) {
+        return NS_ERROR_INVALID_ARG;
+      }
+      // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
+      // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
+      nsresult rv = CSSEditUtils::RemoveCSSEquivalentToStyle(
+          aSuppressTransaction ? WithTransaction::No : WithTransaction::Yes,
+          *this, MOZ_KnownLive(*styledElement), elementStyle, nullptr);
+      if (NS_FAILED(rv)) {
+        NS_WARNING("CSSEditUtils::RemoveCSSEquivalentToStyle() failed");
+        return rv;
+      }
     }
   }
 
@@ -5972,26 +5965,25 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
       // If the range is in a text node, set background color of its parent
       // block.
       if (range.StartRef().IsInTextNode()) {
-        if (const RefPtr<nsStyledElement> editableBlockStyledElement =
-                nsStyledElement::FromNodeOrNull(
-                    HTMLEditUtils::GetAncestorElement(
-                        *range.StartRef().ContainerAs<Text>(),
-                        HTMLEditUtils::ClosestEditableBlockElement))) {
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, *editableBlockStyledElement, nullptr,
-                  nsGkAtoms::bgcolor, &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
-              return NS_ERROR_EDITOR_DESTROYED;
-            }
-            NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+        const RefPtr<nsStyledElement> editableBlockStyledElement =
+            nsStyledElement::FromNodeOrNull(HTMLEditUtils::GetAncestorElement(
+                *range.StartRef().ContainerAs<Text>(),
+                HTMLEditUtils::ClosestEditableBlockElement));
+        if (!editableBlockStyledElement ||
+            !EditorElementStyle::BGColor().IsCSSEditable(
+                *editableBlockStyledElement)) {
+          continue;
+        }
+        Result<size_t, nsresult> result = CSSEditUtils::SetCSSEquivalentToStyle(
+            WithTransaction::Yes, *this, *editableBlockStyledElement,
+            EditorElementStyle::BGColor(), &aColor);
+        if (MOZ_UNLIKELY(result.isErr())) {
+          if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
+            return NS_ERROR_EDITOR_DESTROYED;
           }
+          NS_WARNING(
+              "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+              "BGColor()) failed, but ignored");
         }
         continue;
       }
@@ -6000,22 +5992,22 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
       // color of the `<body>` element.
       if (range.Collapsed() &&
           range.StartRef().IsContainerHTMLElement(nsGkAtoms::body)) {
-        if (RefPtr<nsStyledElement> styledElement =
-                range.StartRef().GetContainerAs<nsStyledElement>()) {
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, *styledElement, nullptr, nsGkAtoms::bgcolor, &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
-              return NS_ERROR_EDITOR_DESTROYED;
-            }
-            NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+        const RefPtr<nsStyledElement> styledElement =
+            range.StartRef().GetContainerAs<nsStyledElement>();
+        if (!styledElement ||
+            !EditorElementStyle::BGColor().IsCSSEditable(*styledElement)) {
+          continue;
+        }
+        Result<size_t, nsresult> result = CSSEditUtils::SetCSSEquivalentToStyle(
+            WithTransaction::Yes, *this, *styledElement,
+            EditorElementStyle::BGColor(), &aColor);
+        if (MOZ_UNLIKELY(result.isErr())) {
+          if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
+            return NS_ERROR_EDITOR_DESTROYED;
           }
+          NS_WARNING(
+              "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+              "BGColor()) failed, but ignored");
         }
         continue;
       }
@@ -6028,26 +6020,26 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
         if (NS_WARN_IF(range.StartRef().IsInDataNode())) {
           continue;
         }
-        if (const RefPtr<nsStyledElement> editableBlockStyledElement =
-                nsStyledElement::FromNodeOrNull(
-                    HTMLEditUtils::GetInclusiveAncestorElement(
-                        *range.StartRef().GetChild(),
-                        HTMLEditUtils::ClosestEditableBlockElement))) {
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, *editableBlockStyledElement, nullptr,
-                  nsGkAtoms::bgcolor, &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
-              return NS_ERROR_EDITOR_DESTROYED;
-            }
-            NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+        const RefPtr<nsStyledElement> editableBlockStyledElement =
+            nsStyledElement::FromNodeOrNull(
+                HTMLEditUtils::GetInclusiveAncestorElement(
+                    *range.StartRef().GetChild(),
+                    HTMLEditUtils::ClosestEditableBlockElement));
+        if (!editableBlockStyledElement ||
+            !EditorElementStyle::BGColor().IsCSSEditable(
+                *editableBlockStyledElement)) {
+          continue;
+        }
+        Result<size_t, nsresult> result = CSSEditUtils::SetCSSEquivalentToStyle(
+            WithTransaction::Yes, *this, *editableBlockStyledElement,
+            EditorElementStyle::BGColor(), &aColor);
+        if (MOZ_UNLIKELY(result.isErr())) {
+          if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
+            return NS_ERROR_EDITOR_DESTROYED;
           }
+          NS_WARNING(
+              "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+              "BGColor()) failed, but ignored");
         }
         continue;
       }
@@ -6092,24 +6084,24 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
           HTMLEditUtils::ClosestEditableBlockElement);
       if (editableBlockElement && handledBlockParent != editableBlockElement) {
         handledBlockParent = editableBlockElement;
-        if (nsStyledElement* blockStyledElement =
-                nsStyledElement::FromNode(handledBlockParent)) {
+        nsStyledElement* const blockStyledElement =
+            nsStyledElement::FromNode(handledBlockParent);
+        if (blockStyledElement &&
+            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
           // MOZ_KnownLive(*blockStyledElement): It's handledBlockParent
           // whose type is RefPtr.
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, MOZ_KnownLive(*blockStyledElement), nullptr,
-                  nsGkAtoms::bgcolor, &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
+          Result<size_t, nsresult> result =
+              CSSEditUtils::SetCSSEquivalentToStyle(
+                  WithTransaction::Yes, *this,
+                  MOZ_KnownLive(*blockStyledElement),
+                  EditorElementStyle::BGColor(), &aColor);
+          if (MOZ_UNLIKELY(result.isErr())) {
+            if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
               return NS_ERROR_EDITOR_DESTROYED;
             }
             NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+                "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+                "BGColor()) failed, but ignored");
           }
         }
       }
@@ -6123,24 +6115,24 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
               content, HTMLEditUtils::ClosestEditableBlockElement);
       if (editableBlockElement && handledBlockParent != editableBlockElement) {
         handledBlockParent = editableBlockElement;
-        if (nsStyledElement* blockStyledElement =
-                nsStyledElement::FromNode(handledBlockParent)) {
+        nsStyledElement* const blockStyledElement =
+            nsStyledElement::FromNode(handledBlockParent);
+        if (blockStyledElement &&
+            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
           // MOZ_KnownLive(*blockStyledElement): It's handledBlockParent whose
           // type is RefPtr.
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, MOZ_KnownLive(*blockStyledElement), nullptr,
-                  nsGkAtoms::bgcolor, &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
+          Result<size_t, nsresult> result =
+              CSSEditUtils::SetCSSEquivalentToStyle(
+                  WithTransaction::Yes, *this,
+                  MOZ_KnownLive(*blockStyledElement),
+                  EditorElementStyle::BGColor(), &aColor);
+          if (MOZ_UNLIKELY(result.isErr())) {
+            if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
               return NS_ERROR_EDITOR_DESTROYED;
             }
             NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+                "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+                "BGColor()) failed, but ignored");
           }
         }
       }
@@ -6155,22 +6147,21 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
           *range.EndRef().ContainerAs<Text>(),
           HTMLEditUtils::ClosestEditableBlockElement);
       if (editableBlockElement && handledBlockParent != editableBlockElement) {
-        if (RefPtr<nsStyledElement> blockStyledElement =
-                nsStyledElement::FromNode(editableBlockElement)) {
-          Result<int32_t, nsresult> result =
-              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
-                  *this, *blockStyledElement, nullptr, nsGkAtoms::bgcolor,
-                  &aColor);
-          if (result.isErr()) {
-            if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
-              NS_WARNING(
-                  "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                  "nsGkAtoms::bgcolor) destroyed the editor");
+        const RefPtr<nsStyledElement> blockStyledElement =
+            nsStyledElement::FromNode(editableBlockElement);
+        if (blockStyledElement &&
+            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
+          Result<size_t, nsresult> result =
+              CSSEditUtils::SetCSSEquivalentToStyle(
+                  WithTransaction::Yes, *this, *blockStyledElement,
+                  EditorElementStyle::BGColor(), &aColor);
+          if (MOZ_UNLIKELY(result.isErr())) {
+            if (NS_WARN_IF(result.inspectErr() == NS_ERROR_EDITOR_DESTROYED)) {
               return NS_ERROR_EDITOR_DESTROYED;
             }
             NS_WARNING(
-                "CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction("
-                "nsGkAtoms::bgcolor) failed, but ignored");
+                "CSSEditUtils::SetCSSEquivalentToStyle(EditorElementStyle::"
+                "BGColor()) failed, but ignored");
           }
         }
       }

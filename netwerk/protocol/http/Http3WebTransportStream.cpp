@@ -62,19 +62,13 @@ class WebTransportSendStreamStats : public nsIWebTransportSendStreamStats {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  WebTransportSendStreamStats(uint64_t aWritten, uint64_t aSent,
-                              uint64_t aAcked)
+  explicit WebTransportSendStreamStats(uint64_t aSent, uint64_t aAcked)
       : mTimeStamp(TimeStamp::Now()),
-        mTotalWritten(aWritten),
         mTotalSent(aSent),
         mTotalAcknowledged(aAcked) {}
 
   NS_IMETHOD GetTimestamp(mozilla::TimeStamp* aTimestamp) override {
     *aTimestamp = mTimeStamp;
-    return NS_OK;
-  }
-  NS_IMETHOD GetBytesWritten(uint64_t* aBytesWritten) override {
-    *aBytesWritten = mTotalWritten;
     return NS_OK;
   }
   NS_IMETHOD GetBytesSent(uint64_t* aBytesSent) override {
@@ -90,12 +84,38 @@ class WebTransportSendStreamStats : public nsIWebTransportSendStreamStats {
   virtual ~WebTransportSendStreamStats() = default;
 
   TimeStamp mTimeStamp;
-  uint64_t mTotalWritten;
   uint64_t mTotalSent;
   uint64_t mTotalAcknowledged;
 };
 
 NS_IMPL_ISUPPORTS(WebTransportSendStreamStats, nsIWebTransportSendStreamStats)
+
+class WebTransportReceiveStreamStats
+    : public nsIWebTransportReceiveStreamStats {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  explicit WebTransportReceiveStreamStats(uint64_t aReceived)
+      : mTimeStamp(TimeStamp::Now()), mTotalReceived(aReceived) {}
+
+  NS_IMETHOD GetTimestamp(mozilla::TimeStamp* aTimestamp) override {
+    *aTimestamp = mTimeStamp;
+    return NS_OK;
+  }
+  NS_IMETHOD GetBytesReceived(uint64_t* aByteReceived) override {
+    *aByteReceived = mTotalReceived;
+    return NS_OK;
+  }
+
+ private:
+  virtual ~WebTransportReceiveStreamStats() = default;
+
+  TimeStamp mTimeStamp;
+  uint64_t mTotalReceived;
+};
+
+NS_IMPL_ISUPPORTS(WebTransportReceiveStreamStats,
+                  nsIWebTransportReceiveStreamStats)
 
 }  // namespace
 
@@ -108,8 +128,24 @@ Http3WebTransportStream::Http3WebTransportStream(
     : Http3StreamBase(new DummyWebTransportStreamTransaction(), aSession),
       mSessionId(aSessionId),
       mStreamType(aType),
+      mStreamRole(OUTGOING),
       mStreamReadyCallback(std::move(aCallback)) {
-  LOG(("Http3WebTransportStream ctor %p", this));
+  LOG(("Http3WebTransportStream outgoing ctor %p", this));
+}
+
+Http3WebTransportStream::Http3WebTransportStream(Http3Session* aSession,
+                                                 uint64_t aSessionId,
+                                                 WebTransportStreamType aType,
+                                                 uint64_t aStreamId)
+    : Http3StreamBase(new DummyWebTransportStreamTransaction(), aSession),
+      mSessionId(aSessionId),
+      mStreamType(aType),
+      mStreamRole(INCOMING),
+      mSendState(SENDING),  // When an incoming stream is created, we should
+                            // be able to send data immediately.
+      mStreamReadyCallback(nullptr) {
+  LOG(("Http3WebTransportStream incoming ctor %p", this));
+  mStreamId = aStreamId;
 }
 
 Http3WebTransportStream::~Http3WebTransportStream() {
@@ -126,10 +162,6 @@ NS_IMETHODIMP Http3WebTransportStream::OnInputStreamReady(
   LOG(("Http3WebTransportStream::OnInputStreamReady [this=%p stream=%p]", this,
        aStream));
 
-  uint64_t avail = 0;
-  Unused << aStream->Available(&avail);
-  mTotalWritten += avail;
-
   mSession->StreamHasDataToWrite(this);
   return NS_OK;
 }
@@ -137,12 +169,9 @@ NS_IMETHODIMP Http3WebTransportStream::OnInputStreamReady(
 nsresult Http3WebTransportStream::InitOutputPipe() {
   nsCOMPtr<nsIAsyncOutputStream> out;
   nsCOMPtr<nsIAsyncInputStream> in;
-  nsresult rv = NS_NewPipe2(getter_AddRefs(in), getter_AddRefs(out), true, true,
-                            nsIOService::gDefaultSegmentSize,
-                            nsIOService::gDefaultSegmentCount);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  NS_NewPipe2(getter_AddRefs(in), getter_AddRefs(out), true, true,
+              nsIOService::gDefaultSegmentSize,
+              nsIOService::gDefaultSegmentCount);
 
   {
     MutexAutoLock lock(mMutex);
@@ -150,7 +179,31 @@ nsresult Http3WebTransportStream::InitOutputPipe() {
     mSendStreamPipeOut = std::move(out);
   }
 
-  return mSendStreamPipeIn->AsyncWait(this, 0, 0, gSocketTransportService);
+  nsresult rv =
+      mSendStreamPipeIn->AsyncWait(this, 0, 0, gSocketTransportService);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  mSendState = SENDING;
+  return NS_OK;
+}
+
+nsresult Http3WebTransportStream::InitInputPipe() {
+  nsCOMPtr<nsIAsyncOutputStream> out;
+  nsCOMPtr<nsIAsyncInputStream> in;
+  NS_NewPipe2(getter_AddRefs(in), getter_AddRefs(out), true, true,
+              nsIOService::gDefaultSegmentSize,
+              nsIOService::gDefaultSegmentCount);
+
+  {
+    MutexAutoLock lock(mMutex);
+    mReceiveStreamPipeIn = std::move(in);
+    mReceiveStreamPipeOut = std::move(out);
+  }
+
+  mRecvState = READING;
+  return NS_OK;
 }
 
 already_AddRefed<nsIAsyncOutputStream> Http3WebTransportStream::GetWriter() {
@@ -162,13 +215,30 @@ already_AddRefed<nsIAsyncOutputStream> Http3WebTransportStream::GetWriter() {
   return stream.forget();
 }
 
+already_AddRefed<nsIAsyncInputStream> Http3WebTransportStream::GetReader() {
+  nsCOMPtr<nsIAsyncInputStream> stream;
+  {
+    MutexAutoLock lock(mMutex);
+    stream = mReceiveStreamPipeIn;
+  }
+  return stream.forget();
+}
+
 already_AddRefed<nsIWebTransportSendStreamStats>
 Http3WebTransportStream::GetSendStreamStats() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   nsCOMPtr<nsIWebTransportSendStreamStats> stats =
-      new WebTransportSendStreamStats(mTotalWritten, mTotalSent,
-                                      mTotalAcknowledged);
+      new WebTransportSendStreamStats(mTotalSent, mTotalAcknowledged);
+  return stats.forget();
+}
+
+already_AddRefed<nsIWebTransportReceiveStreamStats>
+Http3WebTransportStream::GetReceiveStreamStats() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  nsCOMPtr<nsIWebTransportReceiveStreamStats> stats =
+      new WebTransportReceiveStreamStats(mTotalReceived);
   return stats.forget();
 }
 
@@ -201,6 +271,9 @@ nsresult Http3WebTransportStream::OnReadSegment(const char* buf, uint32_t count,
       }
 
       rv = InitOutputPipe();
+      if (NS_SUCCEEDED(rv) && mStreamType == WebTransportStreamType::BiDi) {
+        rv = InitInputPipe();
+      }
       if (NS_FAILED(rv)) {
         LOG3(
             ("Http3WebTransportStream::OnReadSegment %p failed to create pipe "
@@ -212,7 +285,6 @@ nsresult Http3WebTransportStream::OnReadSegment(const char* buf, uint32_t count,
       }
 
       // Successfully activated.
-      mSendState = SENDING;
       mStreamReadyCallback(RefPtr{this});
       break;
     case SENDING: {
@@ -269,6 +341,11 @@ nsresult Http3WebTransportStream::ReadSegments() {
       }
         [[fallthrough]];
       case SENDING: {
+        if (mStreamRole == INCOMING &&
+            mStreamType == WebTransportStreamType::UniDi) {
+          rv = NS_OK;
+          break;
+        }
         rv = mSendStreamPipeIn->ReadSegments(ReadRequestSegment, this,
                                              nsIOService::gDefaultSegmentSize,
                                              &sendBytes);
@@ -288,7 +365,7 @@ nsresult Http3WebTransportStream::ReadSegments() {
          static_cast<uint32_t>(mSocketOutCondition), again, mSendFin, this));
 
     // XXX some streams return NS_BASE_STREAM_CLOSED to indicate EOF.
-    if (rv == NS_BASE_STREAM_CLOSED || mSendFin) {
+    if (rv == NS_BASE_STREAM_CLOSED || mSendFin || mStopSendingError) {
       rv = NS_OK;
       sendBytes = 0;
     }
@@ -309,6 +386,9 @@ nsresult Http3WebTransportStream::ReadSegments() {
       if (mSendFin) {
         mSession->CloseSendingSide(mStreamId);
       }
+      if (mStopSendingError) {
+        mSession->StreamStopSending(this, *mStopSendingError);
+      }
       mSendState = SEND_DONE;
       rv = NS_OK;
       again = false;
@@ -321,14 +401,103 @@ nsresult Http3WebTransportStream::ReadSegments() {
 nsresult Http3WebTransportStream::OnWriteSegment(char* buf, uint32_t count,
                                                  uint32_t* countWritten) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("Http3WebTransportStream::OnWriteSegment [this=%p]", this));
-  return NS_ERROR_NOT_IMPLEMENTED;
+
+  LOG(("Http3WebTransportStream::OnWriteSegment [this=%p, state=%d", this,
+       mRecvState));
+  nsresult rv = NS_OK;
+  switch (mRecvState) {
+    case READING: {
+      rv = mSession->ReadResponseData(mStreamId, buf, count, countWritten,
+                                      &mFin);
+      if (NS_FAILED(rv)) {
+        break;
+      }
+      if (*countWritten == 0) {
+        if (mFin) {
+          mRecvState = RECV_DONE;
+          rv = NS_BASE_STREAM_CLOSED;
+        } else {
+          rv = NS_BASE_STREAM_WOULD_BLOCK;
+        }
+      } else {
+        mTotalReceived += *countWritten;
+        if (mFin) {
+          mRecvState = RECEIVED_FIN;
+        }
+      }
+    } break;
+    case RECEIVED_FIN:
+      rv = NS_BASE_STREAM_CLOSED;
+      mRecvState = RECV_DONE;
+      break;
+    case RECV_DONE:
+      rv = NS_ERROR_UNEXPECTED;
+      break;
+    default:
+      rv = NS_ERROR_UNEXPECTED;
+      break;
+  }
+
+  // Remember the error received from lower layers. A stream pipe may overwrite
+  // it.
+  // If rv == NS_OK this will reset mSocketInCondition.
+  mSocketInCondition = rv;
+
+  return rv;
+}
+
+// static
+nsresult Http3WebTransportStream::WritePipeSegment(nsIOutputStream* stream,
+                                                   void* closure, char* buf,
+                                                   uint32_t offset,
+                                                   uint32_t count,
+                                                   uint32_t* countWritten) {
+  Http3WebTransportStream* self = (Http3WebTransportStream*)closure;
+
+  nsresult rv = self->OnWriteSegment(buf, count, countWritten);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  LOG(("Http3WebTransportStream::WritePipeSegment %p written=%u", self,
+       *countWritten));
+
+  return rv;
 }
 
 nsresult Http3WebTransportStream::WriteSegments() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("Http3WebTransportStream::WriteSegments [this=%p]", this));
-  return NS_ERROR_NOT_IMPLEMENTED;
+
+  nsresult rv = NS_OK;
+  uint32_t countWrittenSingle = 0;
+  bool again = true;
+
+  do {
+    mSocketInCondition = NS_OK;
+    countWrittenSingle = 0;
+    rv = mReceiveStreamPipeOut->WriteSegments(WritePipeSegment, this,
+                                              nsIOService::gDefaultSegmentSize,
+                                              &countWrittenSingle);
+    LOG(("Http3Stream::WriteSegments rv=0x%" PRIx32
+         " countWrittenSingle=%" PRIu32 " socketin=%" PRIx32 " [this=%p]",
+         static_cast<uint32_t>(rv), countWrittenSingle,
+         static_cast<uint32_t>(mSocketInCondition), this));
+    if (NS_FAILED(rv)) {
+      if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+        rv = NS_OK;
+      }
+      again = false;
+    } else if (NS_FAILED(mSocketInCondition)) {
+      if (mSocketInCondition != NS_BASE_STREAM_WOULD_BLOCK) {
+        rv = mSocketInCondition;
+      }
+      again = false;
+    }
+    // read more from the socket until error...
+  } while (again && gHttpHandler->Active());
+
+  return NS_OK;
 }
 
 bool Http3WebTransportStream::Done() const {
@@ -389,6 +558,24 @@ void Http3WebTransportStream::Reset(uint8_t aErrorCode) {
       MOZ_ASSERT_UNREACHABLE("invalid mSendState!");
       break;
   }
+}
+
+void Http3WebTransportStream::SendStopSending(uint8_t aErrorCode) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("Http3WebTransportStream::SendStopSending [this=%p, mSendState=%d]",
+       this, mSendState));
+  if (mSendState != SENDING) {
+    return;
+  }
+
+  if (mStopSendingError) {
+    return;
+  }
+
+  mStopSendingError = Some(aErrorCode);
+
+  // To make Http3WebTransportStream::ReadSegments be called.
+  mSession->StreamHasDataToWrite(this);
 }
 
 }  // namespace mozilla::net

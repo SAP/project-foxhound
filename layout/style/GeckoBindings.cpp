@@ -170,6 +170,27 @@ const nsTArray<RefPtr<nsINode>>* Gecko_GetAssignedNodes(
   return &static_cast<const HTMLSlotElement*>(aElement)->AssignedNodes();
 }
 
+void Gecko_GetQueryContainerSize(const Element* aElement, nscoord* aOutWidth,
+                                 nscoord* aOutHeight) {
+  MOZ_ASSERT(aElement);
+  const nsIFrame* frame = aElement->GetPrimaryFrame();
+  if (!frame) {
+    return;
+  }
+  const auto containAxes = frame->GetContainSizeAxes();
+  if (!containAxes.IsAny()) {
+    return;
+  }
+  nsSize size = frame->GetContentRectRelativeToSelf().Size();
+  bool isVertical = frame->GetWritingMode().IsVertical();
+  if (isVertical ? containAxes.mBContained : containAxes.mIContained) {
+    *aOutWidth = size.width;
+  }
+  if (isVertical ? containAxes.mIContained : containAxes.mBContained) {
+    *aOutHeight = size.height;
+  }
+}
+
 void Gecko_ComputedStyle_Init(ComputedStyle* aStyle,
                               const ServoComputedData* aValues,
                               PseudoStyleType aPseudoType) {
@@ -1445,13 +1466,17 @@ void Gecko_StyleSheet_FinishAsyncParse(
   UniquePtr<StyleUseCounters> useCounters = aUseCounters.Consume();
   RefPtr<SheetLoadDataHolder> loadData = aData;
   RefPtr<RawServoStyleSheetContents> sheetContents = aSheetContents.Consume();
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [d = std::move(loadData), contents = std::move(sheetContents),
-                 counters = std::move(useCounters)]() mutable {
-        MOZ_ASSERT(NS_IsMainThread());
-        SheetLoadData* data = d->get();
-        data->mSheet->FinishAsyncParse(contents.forget(), std::move(counters));
-      }));
+  NS_DispatchToMainThreadQueue(
+      NS_NewRunnableFunction(
+          __func__,
+          [d = std::move(loadData), contents = std::move(sheetContents),
+           counters = std::move(useCounters)]() mutable {
+            MOZ_ASSERT(NS_IsMainThread());
+            SheetLoadData* data = d->get();
+            data->mSheet->FinishAsyncParse(contents.forget(),
+                                           std::move(counters));
+          }),
+      EventQueuePriority::RenderBlocking);
 }
 
 static already_AddRefed<StyleSheet> LoadImportSheet(
@@ -1523,16 +1548,19 @@ void Gecko_LoadStyleSheetAsync(SheetLoadDataHolder* aParentData,
   RefPtr<SheetLoadDataHolder> loadData = aParentData;
   RefPtr<RawServoMediaList> mediaList = aMediaList.Consume();
   RefPtr<RawServoImportRule> importRule = aImportRule.Consume();
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__,
-      [data = std::move(loadData), url = StyleCssUrl(*aUrl),
-       media = std::move(mediaList), import = std::move(importRule)]() mutable {
-        MOZ_ASSERT(NS_IsMainThread());
-        SheetLoadData* d = data->get();
-        RefPtr<StyleSheet> sheet = LoadImportSheet(
-            d->mLoader, d->mSheet, d, nullptr, url, media.forget());
-        Servo_ImportRule_SetSheet(import, sheet);
-      }));
+  NS_DispatchToMainThreadQueue(
+      NS_NewRunnableFunction(
+          __func__,
+          [data = std::move(loadData), url = StyleCssUrl(*aUrl),
+           media = std::move(mediaList),
+           import = std::move(importRule)]() mutable {
+            MOZ_ASSERT(NS_IsMainThread());
+            SheetLoadData* d = data->get();
+            RefPtr<StyleSheet> sheet = LoadImportSheet(
+                d->mLoader, d->mSheet, d, nullptr, url, media.forget());
+            Servo_ImportRule_SetSheet(import, sheet);
+          }),
+      EventQueuePriority::RenderBlocking);
 }
 
 void Gecko_AddPropertyToSet(nsCSSPropertyIDSet* aPropertySet,

@@ -10,16 +10,19 @@
  */
 
 const {
-  networkRequest,
-} = require("resource://devtools/client/shared/source-map-loader/utils/network-request.js");
-const {
   SourceMapConsumer,
   SourceMapGenerator,
 } = require("resource://devtools/client/shared/vendor/source-map/source-map.js");
 
+// Initialize the source-map library right away so that all other code can use it.
+SourceMapConsumer.initialize({
+  "lib/mappings.wasm":
+    "resource://devtools/client/shared/vendor/source-map/lib/mappings.wasm",
+});
+
 const {
-  createConsumer,
-} = require("resource://devtools/client/shared/source-map-loader/utils/createConsumer.js");
+  networkRequest,
+} = require("resource://devtools/client/shared/source-map-loader/utils/network-request.js");
 const assert = require("resource://devtools/client/shared/source-map-loader/utils/assert.js");
 const {
   fetchSourceMap,
@@ -209,31 +212,6 @@ async function getGeneratedLocation(location) {
     line: match.line,
     column: match.column,
   };
-}
-
-async function getAllGeneratedLocations(location) {
-  if (!isOriginalId(location.sourceId)) {
-    return [];
-  }
-
-  const generatedSourceId = originalToGeneratedId(location.sourceId);
-  const data = await getSourceMapWithMetadata(generatedSourceId);
-  if (!data) {
-    return [];
-  }
-  const { urlsById, map } = data;
-
-  const positions = map.allGeneratedPositionsFor({
-    source: urlsById.get(location.sourceId),
-    line: location.line,
-    column: location.column == null ? 0 : location.column,
-  });
-
-  return positions.map(({ line, column }) => ({
-    sourceId: generatedSourceId,
-    line,
-    column,
-  }));
 }
 
 async function getOriginalLocations(locations, options = {}) {
@@ -511,7 +489,7 @@ function applySourceMap(generatedId, url, code, mappings) {
   mappings.forEach(mapping => generator.addMapping(mapping));
   generator.setSourceContent(url, code);
 
-  const map = createConsumer(generator.toJSON());
+  const map = new SourceMapConsumer(generator.toJSON());
   setSourceMap(generatedId, Promise.resolve(map));
 }
 
@@ -527,7 +505,6 @@ module.exports = {
   getOriginalRanges,
   getGeneratedRanges,
   getGeneratedLocation,
-  getAllGeneratedLocations,
   getOriginalLocation,
   getOriginalLocations,
   getOriginalSourceText,

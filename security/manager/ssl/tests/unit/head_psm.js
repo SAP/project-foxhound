@@ -12,8 +12,8 @@ const { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
 );
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 const { PromiseUtils } = ChromeUtils.importESModule(
@@ -617,7 +617,7 @@ async function asyncConnectTo(
     return connection.go();
   }
 
-  return connectTo(aHost).then(function(conn) {
+  return connectTo(aHost).then(async function(conn) {
     info("handling " + aHost);
     let expectedNSResult =
       aExpectedResult == PRErrorCodeSuccess
@@ -630,9 +630,7 @@ async function asyncConnectTo(
     );
     if (aWithSecurityInfo) {
       aWithSecurityInfo(
-        conn.transport.tlsSocketControl.QueryInterface(
-          Ci.nsITransportSecurityInfo
-        )
+        await conn.transport.tlsSocketControl.asyncGetSecurityInfo()
       );
     }
   });
@@ -688,16 +686,13 @@ async function asyncStartTLSTestServer(
 
   const CALLBACK_PORT = 8444;
 
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
-  envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
-  envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
+  Services.env.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
   let httpServer = new HttpServer();
   let serverReady = new Promise(resolve => {
@@ -1175,14 +1170,11 @@ function getSubjectAndSPKIHash(nsCert) {
 }
 
 function run_certutil_on_directory(directory, args, expectSuccess = true) {
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
   let certutilBin = _getBinaryUtil("certutil");
   let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
   process.init(certutilBin);

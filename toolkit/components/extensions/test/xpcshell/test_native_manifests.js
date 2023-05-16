@@ -20,8 +20,8 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 let registry = null;
 if (AppConstants.platform == "win") {
-  var { MockRegistry } = ChromeUtils.import(
-    "resource://testing-common/MockRegistry.jsm"
+  var { MockRegistry } = ChromeUtils.importESModule(
+    "resource://testing-common/MockRegistry.sys.mjs"
   );
   registry = new MockRegistry();
   registerCleanupFunction(() => {
@@ -88,11 +88,8 @@ let PYTHON;
 add_task(async function setup() {
   await Schemas.load(BASE_SCHEMA);
 
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   try {
-    PYTHON = await Subprocess.pathSearch(env.get("PYTHON"));
+    PYTHON = await Subprocess.pathSearch(Services.env.get("PYTHON"));
   } catch (e) {
     notEqual(
       PYTHON,

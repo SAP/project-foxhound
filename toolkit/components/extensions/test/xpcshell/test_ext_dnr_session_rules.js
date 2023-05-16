@@ -50,19 +50,29 @@ function makeDnrTestUtils() {
     };
   };
 
+  function serializeForLog(rule) {
+    // JSON-stringify, but drop null values (replacing them with undefined
+    // causes JSON.stringify to drop them), so that optional keys with the null
+    // values are hidden.
+    let str = JSON.stringify(rule, rep => rep ?? undefined);
+    // VERY_LONG_STRING consists of many 'X'. Shorten to avoid logspam.
+    str = str.replace(/x{10,}/g, xxx => `x{${xxx.length}}`);
+    return str;
+  }
+
   async function testInvalidRule(rule, expectedError, isSchemaError) {
     if (isSchemaError) {
       // Schema validation error = thrown error instead of a rejection.
       browser.test.assertThrows(
         () => dnr.updateSessionRules({ addRules: [rule] }),
         expectedError,
-        `Rule should be invalid (schema-validated): ${JSON.stringify(rule)}`
+        `Rule should be invalid (schema-validated): ${serializeForLog(rule)}`
       );
     } else {
       await browser.test.assertRejects(
         dnr.updateSessionRules({ addRules: [rule] }),
         expectedError,
-        `Rule should be invalid: ${JSON.stringify(rule)}`
+        `Rule should be invalid: ${serializeForLog(rule)}`
       );
     }
   }
@@ -99,6 +109,36 @@ function makeDnrTestUtils() {
         regexSubstitution: null,
         ...rule.action.redirect,
       };
+      if (rule.action.redirect.transform) {
+        expectedRule.action.redirect.transform = {
+          scheme: null,
+          username: null,
+          password: null,
+          host: null,
+          port: null,
+          path: null,
+          query: null,
+          queryTransform: null,
+          fragment: null,
+          ...rule.action.redirect.transform,
+        };
+        if (rule.action.redirect.transform.queryTransform) {
+          const qt = {
+            removeParams: null,
+            addOrReplaceParams: null,
+            ...rule.action.redirect.transform.queryTransform,
+          };
+          if (qt.addOrReplaceParams) {
+            qt.addOrReplaceParams = qt.addOrReplaceParams.map(v => ({
+              key: null,
+              value: null,
+              replaceOnly: false,
+              ...v,
+            }));
+          }
+          expectedRule.action.redirect.transform.queryTransform = qt;
+        }
+      }
     }
     if (rule.action.requestHeaders) {
       expectedRule.action.requestHeaders = rule.action.requestHeaders.map(
@@ -464,6 +504,109 @@ add_task(async function validate_domains() {
   });
 });
 
+add_task(async function validate_urlFilter() {
+  await runAsDNRExtension({
+    background: async dnrTestUtils => {
+      const { testInvalidCondition, testValidCondition } = dnrTestUtils;
+
+      await testInvalidCondition(
+        { urlFilter: "", regexFilter: "" },
+        "urlFilter and regexFilter are mutually exclusive"
+      );
+
+      await testInvalidCondition(
+        { urlFilter: 0 },
+        /urlFilter: Expected string instead of 0/,
+        /* isSchemaError */ true
+      );
+      await testInvalidCondition(
+        { urlFilter: "" },
+        "urlFilter should not be an empty string"
+      );
+      await testInvalidCondition(
+        { urlFilter: "||*" },
+        "urlFilter should not start with '||*'" // should use '*' instead.
+      );
+      await testInvalidCondition(
+        { urlFilter: "||*/" },
+        "urlFilter should not start with '||*'" // should use '*' instead.
+      );
+      await testInvalidCondition(
+        { urlFilter: "straß.de" },
+        "urlFilter should not contain non-ASCII characters"
+      );
+      await testValidCondition({ urlFilter: "xn--stra-yna.de" });
+      await testValidCondition({ urlFilter: "||xn--stra-yna.de/" });
+
+      // The following are all logically equivalent to "||*" (and ""), but are
+      // considered valid in the DNR API implemented/documented by Chrome.
+      await testValidCondition({ urlFilter: "*" });
+      await testValidCondition({ urlFilter: "****************" });
+      await testValidCondition({ urlFilter: "||" });
+      await testValidCondition({ urlFilter: "|" });
+      await testValidCondition({ urlFilter: "|*|" });
+      await testValidCondition({ urlFilter: "^" });
+      await testValidCondition({ urlFilter: null });
+
+      await testValidCondition({ urlFilter: "||example^" });
+      await testValidCondition({ urlFilter: "||example.com" });
+      await testValidCondition({ urlFilter: "||example.com/index^" });
+      await testValidCondition({ urlFilter: ".gif|" });
+      await testValidCondition({ urlFilter: "|https:" });
+      await testValidCondition({ urlFilter: "|https:*" });
+      await testValidCondition({ urlFilter: "e" });
+      await testValidCondition({ urlFilter: "%80" });
+      await testValidCondition({ urlFilter: "*e*" }); // FYI: same as just "e".
+      await testValidCondition({ urlFilter: "*e*|" }); // FYI: same as just "e".
+
+      let validchars = "";
+      for (let i = 0; i < 0x80; ++i) {
+        validchars += String.fromCharCode(i);
+      }
+      await testValidCondition({ urlFilter: validchars });
+      // Confirming that 0x80 and up is invalid.
+      await testInvalidCondition(
+        { urlFilter: "\x80" },
+        "urlFilter should not contain non-ASCII characters"
+      );
+
+      browser.test.notifyPass();
+    },
+  });
+});
+
+add_task(async function validate_regexFilter() {
+  await runAsDNRExtension({
+    background: async dnrTestUtils => {
+      const { testInvalidCondition } = dnrTestUtils;
+
+      // This check is duplicated in validate_urlFilter.
+      await testInvalidCondition(
+        { urlFilter: "", regexFilter: "" },
+        "urlFilter and regexFilter are mutually exclusive"
+      );
+
+      await testInvalidCondition(
+        { regexFilter: /regex/ },
+        /regexFilter: Expected string instead of \{\}/,
+        /* isSchemaError */ true
+      );
+
+      await testInvalidCondition(
+        { regexFilter: "" },
+        "regexFilter should not be an empty string"
+      );
+      // TODO bug 1745760: implement regexFilter support
+      await testInvalidCondition(
+        { regexFilter: "^https://example\\.com\\/" },
+        "regexFilter is not supported yet"
+      );
+
+      browser.test.notifyPass();
+    },
+  });
+});
+
 add_task(async function validate_actions() {
   await runAsDNRExtension({
     background: async dnrTestUtils => {
@@ -538,6 +681,11 @@ add_task(async function validate_actions() {
         type: "redirect",
         redirect: { url: browser.runtime.getURL("/") },
       });
+      await testValidAction({
+        type: "redirect",
+        redirect: { transform: {} },
+      });
+      // redirect.transform is validated in validate_action_redirect_transform.
 
       // modifyHeaders actions, invalid cases
       await testInvalidAction(
@@ -597,15 +745,6 @@ add_task(async function validate_actions() {
         /operation: Invalid enumeration value "REMOVE"/,
         /* isSchemaError */ true
       );
-      await testInvalidAction(
-        {
-          type: "modifyHeaders",
-          // "append" is documented to be disallowed.
-          requestHeaders: [{ header: "x", operation: "append", value: "x" }],
-        },
-        /operation: Invalid enumeration value "append"/,
-        /* isSchemaError */ true
-      );
 
       // modifyHeaders actions, valid cases
       await testValidAction({
@@ -625,8 +764,9 @@ add_task(async function validate_actions() {
         type: "modifyHeaders",
         requestHeaders: [
           { header: "reqh", operation: "set", value: "b" },
-          // "append" is documented to be disallowed.
-          // { header: "reqh", operation: "append", value: "b" },
+          // Note: contrary to Chrome, we support "append" for requestHeaders:
+          // https://bugzilla.mozilla.org/show_bug.cgi?id=1797404#c1
+          { header: "reqh", operation: "append", value: "b" },
           { header: "reqh", operation: "remove" },
         ],
         responseHeaders: [
@@ -641,6 +781,203 @@ add_task(async function validate_actions() {
         /type: Invalid enumeration value "MODIFYHEADERS"/,
         /* isSchemaError */ true
       );
+
+      browser.test.notifyPass();
+    },
+  });
+});
+
+// This test task only verifies that a redirect transform is validated upon
+// registration. A transform can result in an invalid redirect despite passing
+// validation (see e.g. VERY_LONG_STRING below).
+// test_ext_dnr_redirect_transform.js will test the behavior of such cases.
+add_task(async function validate_action_redirect_transform() {
+  await runAsDNRExtension({
+    background: async dnrTestUtils => {
+      const { testInvalidAction, testValidAction } = dnrTestUtils;
+
+      const GENERIC_TRANSFORM_ERROR =
+        "redirect.transform does not describe a valid URL transformation";
+
+      const testValidTransform = transform =>
+        testValidAction({ type: "redirect", redirect: { transform } });
+      const testInvalidTransform = (transform, expectedError, isSchemaError) =>
+        testInvalidAction(
+          { type: "redirect", redirect: { transform } },
+          expectedError ?? GENERIC_TRANSFORM_ERROR,
+          isSchemaError
+        );
+
+      // Maximum length of a UTL is 1048576 (network.standard-url.max-length).
+      // Since URLs have other characters (separators), using VERY_LONG_STRING
+      // anywhere in a transform should be rejected. Note that this is mainly
+      // to verify that there is some bounds check on the URL. It is possible
+      // to generate a transform that is borderline valid at validation time,
+      // but invalid when applied to an existing longer URL.
+      const VERY_LONG_STRING = "x".repeat(1048576);
+
+      // An empty transformation is still valid.
+      await testValidTransform({});
+
+      // redirect.transform.scheme
+      await testValidTransform({ scheme: "http" });
+      await testValidTransform({ scheme: "https" });
+      await testValidTransform({ scheme: "moz-extension" });
+      await testInvalidTransform(
+        { scheme: "HTTPS" },
+        /scheme: Invalid enumeration value "HTTPS"/,
+        /* isSchemaError */ true
+      );
+      await testInvalidTransform(
+        { scheme: "javascript" },
+        /scheme: Invalid enumeration value "javascript"/,
+        /* isSchemaError */ true
+      );
+      // "ftp" is unsupported because support for it was dropped in Firefox.
+      // Chrome documents "ftp" as a supported scheme, but in practice it does
+      // not do anything useful, because it cannot handle ftp schemes either.
+      await testInvalidTransform(
+        { scheme: "ftp" },
+        /scheme: Invalid enumeration value "ftp"/,
+        /* isSchemaError */ true
+      );
+
+      // redirect.transform.host
+      await testValidTransform({ host: "example.com" });
+      await testValidTransform({ host: "example.com." });
+      await testValidTransform({ host: "localhost" });
+      await testValidTransform({ host: "127.0.0.1" });
+      await testValidTransform({ host: "[::1]" });
+      await testValidTransform({ host: "." });
+      await testValidTransform({ host: "straß.de" });
+      await testValidTransform({ host: "xn--stra-yna.de" });
+      await testInvalidTransform({ host: "::1" }); // Invalid IPv6.
+      await testInvalidTransform({ host: "[]" }); // Invalid IPv6.
+      await testInvalidTransform({ host: "/" }); // Invalid host
+      await testInvalidTransform({ host: " a" }); // Invalid host
+      await testInvalidTransform({ host: "foo:1234" }); // Port not allowed.
+      await testInvalidTransform({ host: "foo:" }); // Port sep not allowed.
+      await testInvalidTransform({ host: "" }); // Host cannot be empty.
+      await testInvalidTransform({ host: VERY_LONG_STRING });
+
+      // redirect.transform.port
+      await testValidTransform({ port: "" }); // empty = strip port.
+      await testValidTransform({ port: "0" });
+      await testValidTransform({ port: "0700" });
+      await testValidTransform({ port: "65535" });
+      const PORT_ERR = "redirect.transform.port should be empty or an integer";
+      await testInvalidTransform({ port: "65536" }, GENERIC_TRANSFORM_ERROR);
+      await testInvalidTransform({ port: " 0" }, PORT_ERR);
+      await testInvalidTransform({ port: "0 " }, PORT_ERR);
+      await testInvalidTransform({ port: "0." }, PORT_ERR);
+      await testInvalidTransform({ port: "0x1" }, PORT_ERR);
+      await testInvalidTransform({ port: "1.2" }, PORT_ERR);
+      await testInvalidTransform({ port: "-1" }, PORT_ERR);
+      await testInvalidTransform({ port: "a" }, PORT_ERR);
+      // A naive implementation of `host = hostname + ":" + port` could be
+      // misinterpreted as an IPv6 address. Verify that this is not the case.
+      await testInvalidTransform({ host: "[::1", port: "2]" }, PORT_ERR);
+      await testInvalidTransform({ port: VERY_LONG_STRING }, PORT_ERR);
+
+      // redirect.transform.path
+      await testValidTransform({ path: "" }); // empty = strip path.
+      await testValidTransform({ path: "/slash" });
+      await testValidTransform({ path: "/ref#ok" }); // # will be escaped.
+      await testValidTransform({ path: "/\n\t\x00" }); // Will all be escaped.
+      // A path should start with a '/', but the implementation works fine
+      // without it, and Chrome doesn't require it either.
+      await testValidTransform({ path: "noslash" });
+      await testValidTransform({ path: "http://example.com/" });
+      await testInvalidTransform({ path: VERY_LONG_STRING });
+
+      // redirect.transform.query
+      await testValidTransform({ query: "" }); // empty = strip query.
+      await testValidTransform({ query: "?suffix" });
+      await testValidTransform({ query: "?ref#ok" }); // # will be escaped.
+      await testValidTransform({ query: "?\n\t\x00" }); // Will all be escaped.
+      await testInvalidTransform(
+        { query: "noquestionmark" },
+        "redirect.transform.query should be empty or start with a '?'"
+      );
+      await testInvalidTransform({ query: "?" + VERY_LONG_STRING });
+
+      // redirect.transform.queryTransform
+      await testInvalidTransform(
+        { query: "", queryTransform: {} },
+        "redirect.transform.query and redirect.transform.queryTransform are mutually exclusive"
+      );
+      await testValidTransform({ queryTransform: {} });
+      await testValidTransform({ queryTransform: { removeParams: [] } });
+      await testValidTransform({ queryTransform: { removeParams: ["x"] } });
+      await testValidTransform({ queryTransform: { addOrReplaceParams: [] } });
+      await testValidTransform({
+        queryTransform: {
+          addOrReplaceParams: [{ key: "k", value: "v" }],
+        },
+      });
+      await testValidTransform({
+        queryTransform: {
+          addOrReplaceParams: [{ key: "k", value: "v", replaceOnly: true }],
+        },
+      });
+      await testInvalidTransform({
+        queryTransform: {
+          addOrReplaceParams: [{ key: "k", value: VERY_LONG_STRING }],
+        },
+      });
+      await testInvalidTransform(
+        {
+          queryTransform: {
+            addOrReplaceParams: [{ key: "k" }],
+          },
+        },
+        /addOrReplaceParams\.0: Property "value" is required/,
+        /* isSchemaError */ true
+      );
+      await testInvalidTransform(
+        {
+          queryTransform: {
+            addOrReplaceParams: [{ value: "v" }],
+          },
+        },
+        /addOrReplaceParams\.0: Property "key" is required/,
+        /* isSchemaError */ true
+      );
+
+      // redirect.transform.fragment
+      await testValidTransform({ fragment: "" }); // empty = strip fragment.
+      await testValidTransform({ fragment: "#suffix" });
+      await testValidTransform({ fragment: "#\n\t\x00" }); // will be escaped.
+      await testInvalidTransform(
+        { fragment: "nohash" },
+        "redirect.transform.fragment should be empty or start with a '#'"
+      );
+      await testInvalidTransform({ fragment: "#" + VERY_LONG_STRING });
+
+      // redirect.transform.username
+      await testValidTransform({ username: "" }); // empty = strip username.
+      await testValidTransform({ username: "username" });
+      await testValidTransform({ username: "@:" }); // will be escaped.
+      await testInvalidTransform({ username: VERY_LONG_STRING });
+
+      // redirect.transform.password
+      await testValidTransform({ password: "" }); // empty = strip password.
+      await testValidTransform({ password: "pass" });
+      await testValidTransform({ password: "@:" }); // will be escaped.
+      await testInvalidTransform({ password: VERY_LONG_STRING });
+
+      // All together:
+      await testValidTransform({
+        scheme: "http",
+        username: "a",
+        password: "b",
+        host: "c",
+        port: "12345",
+        path: "/d",
+        query: "?e",
+        queryTransform: null,
+        fragment: "#f",
+      });
 
       browser.test.notifyPass();
     },

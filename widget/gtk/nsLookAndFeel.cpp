@@ -566,9 +566,6 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
     case ColorID::IMESelectedConvertedTextUnderline:
       aColor = NS_TRANSPARENT;
       break;
-    case ColorID::SpellCheckerUnderline:
-      aColor = NS_RGB(0xff, 0, 0);
-      break;
     case ColorID::Scrollbar:
       aColor = mThemedScrollbar;
       break;
@@ -678,6 +675,7 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
       break;
 
     case ColorID::Threedlightshadow:
+    case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
       aColor = mIsDark ? *GenericDarkColor(aID) : NS_RGB(0xE0, 0xE0, 0xE0);
       break;
@@ -738,6 +736,12 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
       break;
     case ColorID::MozColheaderhovertext:
       aColor = mMozColHeaderHoverText;
+      break;
+    case ColorID::SpellCheckerUnderline:
+    case ColorID::Mark:
+    case ColorID::Marktext:
+      aColor = GetStandinForNativeColor(
+          aID, mIsDark ? ColorScheme::Dark : ColorScheme::Light);
       break;
     default:
       /* default color is BLACK */
@@ -1090,12 +1094,6 @@ bool nsLookAndFeel::PerThemeData::GetFont(FontID aID, nsString& aFontName,
     case FontID::MessageBox:    // css2
     case FontID::SmallCaption:  // css2
     case FontID::StatusBar:     // css2
-    case FontID::MozWindow:     // css3
-    case FontID::MozDocument:   // css3
-    case FontID::MozWorkspace:  // css3
-    case FontID::MozDesktop:    // css3
-    case FontID::MozInfo:       // css3
-    case FontID::MozDialog:     // css3
     default:
       aFontName = mDefaultFontName;
       aFontStyle = mDefaultFontStyle;

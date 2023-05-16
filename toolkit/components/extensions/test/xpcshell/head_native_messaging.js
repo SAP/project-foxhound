@@ -5,11 +5,9 @@
 /* globals AppConstants, FileUtils */
 /* exported getSubprocessCount, setupHosts, waitForSubprocessExit */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistry",
-  "resource://testing-common/MockRegistry.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  MockRegistry: "resource://testing-common/MockRegistry.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 if (AppConstants.platform == "win") {
   ChromeUtils.defineESModuleGetters(this, {
@@ -49,10 +47,7 @@ const ID = "native@tests.mozilla.org";
 async function setupHosts(scripts) {
   const PERMS = { unixMode: 0o755 };
 
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  const pythonPath = await Subprocess.pathSearch(env.get("PYTHON"));
+  const pythonPath = await Subprocess.pathSearch(Services.env.get("PYTHON"));
 
   async function writeManifest(script, scriptPath, path) {
     let body = `#!${pythonPath} -u\n${script.script}`;

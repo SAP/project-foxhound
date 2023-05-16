@@ -78,7 +78,7 @@ class _ASRouterPreferences {
     try {
       result = JSON.parse(value);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
     return result;
   }
@@ -90,7 +90,7 @@ class _ASRouterPreferences {
       try {
         value = JSON.parse(Services.prefs.getStringPref(pref, ""));
       } catch (e) {
-        Cu.reportError(
+        console.error(
           `Could not parse ASRouter preference. Try resetting ${pref} in about:config.`
         );
       }
@@ -118,7 +118,7 @@ class _ASRouterPreferences {
     const providers = this._getProviderConfig();
     const config = providers.find(p => p.id === id);
     if (!config) {
-      Cu.reportError(
+      console.error(
         `Cannot set enabled state for '${id}' because the pref ${this._providerPrefBranch}${id} does not exist or is not correctly formatted.`
       );
       return;
@@ -136,6 +136,36 @@ class _ASRouterPreferences {
     }
     for (const id of Object.keys(USER_PREFERENCES)) {
       Services.prefs.clearUserPref(USER_PREFERENCES[id]);
+    }
+  }
+
+  /**
+   * Bug 1800087 - Migrate the ASRouter message provider prefs' values to the
+   * current format (provider.bucket -> provider.collection).
+   *
+   * TODO (Bug 1800937): Remove migration code after the next watershed release.
+   */
+  _migrateProviderPrefs() {
+    const prefList = Services.prefs.getChildList(this._providerPrefBranch);
+    for (const pref of prefList) {
+      if (!Services.prefs.prefHasUserValue(pref)) {
+        continue;
+      }
+      try {
+        let value = JSON.parse(Services.prefs.getStringPref(pref, ""));
+        if (value && "bucket" in value && !("collection" in value)) {
+          const { bucket, ...rest } = value;
+          Services.prefs.setStringPref(
+            pref,
+            JSON.stringify({
+              ...rest,
+              collection: bucket,
+            })
+          );
+        }
+      } catch (e) {
+        Services.prefs.clearUserPref(pref);
+      }
     }
   }
 
@@ -191,6 +221,7 @@ class _ASRouterPreferences {
     if (this._initialized) {
       return;
     }
+    this._migrateProviderPrefs();
     Services.prefs.addObserver(this._providerPrefBranch, this);
     Services.prefs.addObserver(this._devtoolsPref, this);
     for (const id of Object.keys(USER_PREFERENCES)) {

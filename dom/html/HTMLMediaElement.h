@@ -320,13 +320,16 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   nsresult DispatchPendingMediaEvents();
 
   // Return true if we can activate autoplay assuming enough data has arrived.
-  bool CanActivateAutoplay();
+  // https://html.spec.whatwg.org/multipage/media.html#eligible-for-autoplay
+  bool IsEligibleForAutoplay();
 
   // Notify that state has changed that might cause an autoplay element to
   // start playing.
   // If the element is 'autoplay' and is ready to play back (not paused,
   // autoplay pref enabled, etc), it should start playing back.
   void CheckAutoplayDataReady();
+
+  void RunAutoplay();
 
   // Check if the media element had crossorigin set when loading started
   bool ShouldCheckAllowOrigin();
@@ -770,7 +773,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // that will soon be gone.
   bool IsBeingDestroyed();
 
-  void OnVisibilityChange(Visibility aNewVisibility);
+  virtual void OnVisibilityChange(Visibility aNewVisibility);
 
   // Begin testing only methods
   float ComputedVolume() const;
@@ -1640,16 +1643,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // True if loadeddata has been fired.
   bool mLoadedDataFired = false;
 
-  // Indicates whether current playback is a result of user action
-  // (ie. calling of the Play method), or automatic playback due to
-  // the 'autoplay' attribute being set. A true value indicates the
-  // latter case.
-  // The 'autoplay' HTML attribute indicates that the video should
-  // start playing when loaded. The 'autoplay' attribute of the object
-  // is a mirror of the HTML attribute. These are different from this
-  // 'mAutoplaying' flag, which indicates whether the current playback
-  // is a result of the autoplay attribute.
-  bool mAutoplaying = true;
+  // One of the factors determines whether a media element with 'autoplay'
+  // attribute is allowed to start playing.
+  // https://html.spec.whatwg.org/multipage/media.html#can-autoplay-flag
+  bool mCanAutoplayFlag = true;
 
   // Playback of the video is paused either due to calling the
   // 'Pause' method, or playback not yet having started.

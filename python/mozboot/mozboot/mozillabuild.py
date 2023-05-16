@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import ctypes
 import os
 import platform
@@ -231,34 +229,8 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
     def ensure_sccache_packages(self):
         from mozboot import sccache
 
-        self.install_toolchain_artifact("sccache")
         self.install_toolchain_artifact(sccache.RUSTC_DIST_TOOLCHAIN, no_unpack=True)
         self.install_toolchain_artifact(sccache.CLANG_DIST_TOOLCHAIN, no_unpack=True)
-
-    def ensure_stylo_packages(self):
-        # On-device artifact builds are supported; on-device desktop builds are not.
-        if is_aarch64_host():
-            raise Exception(
-                "You should not be performing desktop builds on an "
-                "AArch64 device.  If you want to do artifact builds "
-                "instead, please choose the appropriate artifact build "
-                "option when beginning bootstrap."
-            )
-
-        self.install_toolchain_artifact("clang")
-        self.install_toolchain_artifact("cbindgen")
-
-    def ensure_nasm_packages(self):
-        self.install_toolchain_artifact("nasm")
-
-    def ensure_node_packages(self):
-        self.install_toolchain_artifact("node")
-
-    def ensure_fix_stacks_packages(self):
-        self.install_toolchain_artifact("fix-stacks")
-
-    def ensure_minidump_stackwalk_packages(self):
-        self.install_toolchain_artifact("minidump-stackwalk")
 
     def _update_package_manager(self):
         pass

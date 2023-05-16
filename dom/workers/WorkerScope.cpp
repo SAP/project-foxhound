@@ -63,6 +63,7 @@
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
@@ -231,10 +232,12 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkerGlobalScopeBase)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 WorkerGlobalScopeBase::WorkerGlobalScopeBase(
-    WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource)
+    WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource,
+    bool aShouldResistFingerprinting)
     : mWorkerPrivate(aWorkerPrivate),
       mClientSource(std::move(aClientSource)),
-      mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
+      mSerialEventTarget(aWorkerPrivate->HybridEventTarget()),
+      mShouldResistFingerprinting(aShouldResistFingerprinting) {
   MOZ_ASSERT(mWorkerPrivate);
 #ifdef DEBUG
   mWorkerPrivate->AssertIsOnWorkerThread();
@@ -270,7 +273,11 @@ bool WorkerGlobalScopeBase::IsSharedMemoryAllowed() const {
 
 bool WorkerGlobalScopeBase::ShouldResistFingerprinting() const {
   AssertIsOnWorkerThread();
-  return mWorkerPrivate->ShouldResistFingerprinting();
+  return mShouldResistFingerprinting;
+}
+
+bool WorkerGlobalScopeBase::IsSystemPrincipal() const {
+  return mWorkerPrivate->UsesSystemPrincipal();
 }
 
 uint32_t WorkerGlobalScopeBase::GetPrincipalHashValue() const {
@@ -294,6 +301,24 @@ Maybe<ClientInfo> WorkerGlobalScopeBase::GetClientInfo() const {
 
 Maybe<ServiceWorkerDescriptor> WorkerGlobalScopeBase::GetController() const {
   return mClientSource->GetController();
+}
+
+mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
+WorkerGlobalScopeBase::GetStorageKey() {
+  AssertIsOnWorkerThread();
+
+  const mozilla::ipc::PrincipalInfo& principalInfo =
+      mWorkerPrivate->GetEffectiveStoragePrincipalInfo();
+
+  // Block expanded and null principals, let content and system through.
+  if (principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TContentPrincipalInfo &&
+      principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo) {
+    return Err(NS_ERROR_DOM_SECURITY_ERR);
+  }
+
+  return principalInfo;
 }
 
 void WorkerGlobalScopeBase::Control(
@@ -417,10 +442,21 @@ void WorkerGlobalScope::NoteTerminating() {
   }
 
   StartDying();
+}
+
+void WorkerGlobalScope::NoteShuttingDown() {
+  MOZ_ASSERT(IsDying());
 
   if (mNavigator) {
     mNavigator->Invalidate();
     mNavigator = nullptr;
+  }
+
+  if (mPerformance) {
+    RefPtr<PerformanceWorker> pw =
+        static_cast<PerformanceWorker*>(mPerformance.get());
+    MOZ_ASSERT(pw);
+    pw->NoteShuttingDown();
   }
 }
 
@@ -813,6 +849,10 @@ WorkerGlobalScope::GetOrCreateServiceWorkerRegistration(
   return ref;
 }
 
+mozilla::dom::StorageManager* WorkerGlobalScope::GetStorageManager() {
+  return RefPtr(Navigator())->Storage();
+}
+
 void WorkerGlobalScope::StorageAccessPermissionGranted() {
   // Reset the IndexedDB factory.
   mIndexedDB = nullptr;
@@ -849,8 +889,9 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(DedicatedWorkerGlobalScope,
 
 DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
     WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource,
-    const nsString& aName)
-    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource)),
+    const nsString& aName, bool aShouldResistFingerprinting)
+    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource),
+                        aShouldResistFingerprinting),
       NamedWorkerGlobalScopeMixin(aName) {}
 
 bool DedicatedWorkerGlobalScope::WrapGlobalObject(
@@ -1005,7 +1046,8 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
     // needs to have it's Time Reduction Logic refactored, so it's currently
     // only clamping for RFP mode. RFP mode gives a much lower time precision,
     // so we accept the security leak here for now.
-    timeStamp = nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(timeStamp, 0);
+    timeStamp = nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(
+        timeStamp, 0, this->GetRTPCallerType());
   }
 
   for (auto& callback : callbacks) {
@@ -1023,8 +1065,9 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
 
 SharedWorkerGlobalScope::SharedWorkerGlobalScope(
     WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource,
-    const nsString& aName)
-    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource)),
+    const nsString& aName, bool aShouldResistFingerprinting)
+    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource),
+                        aShouldResistFingerprinting),
       NamedWorkerGlobalScopeMixin(aName) {}
 
 bool SharedWorkerGlobalScope::WrapGlobalObject(
@@ -1057,8 +1100,10 @@ NS_IMPL_RELEASE_INHERITED(ServiceWorkerGlobalScope, WorkerGlobalScope)
 
 ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(
     WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource,
-    const ServiceWorkerRegistrationDescriptor& aRegistrationDescriptor)
-    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource)),
+    const ServiceWorkerRegistrationDescriptor& aRegistrationDescriptor,
+    bool aShouldResistFingerprinting)
+    : WorkerGlobalScope(std::move(aWorkerPrivate), std::move(aClientSource),
+                        aShouldResistFingerprinting),
       mScope(NS_ConvertUTF8toUTF16(aRegistrationDescriptor.Scope()))
 
       // Eagerly create the registration because we will need to receive

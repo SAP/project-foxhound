@@ -47,7 +47,7 @@ with Files("test/pageinfo/**"):
     BUG_COMPONENT = ("Firefox", "Page Info Window")
 
 with Files("test/performance/**"):
-    BUG_COMPONENT = ("Firefox", "General")
+    BUG_COMPONENT = ("Toolkit", "Performance Monitoring")
 
 with Files("test/performance/browser_appmenu.js"):
     BUG_COMPONENT = ("Firefox", "Menus")
@@ -128,6 +128,9 @@ with Files("blockedSite.xhtml"):
     BUG_COMPONENT = ("Toolkit", "Safe Browsing")
 
 with Files("browser-addons.js"):
+    BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
+
+with Files("browser-unified-extensions.js"):
     BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
 
 with Files("*menu*"):

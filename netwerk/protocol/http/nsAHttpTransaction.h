@@ -19,8 +19,8 @@ typedef __StatusTmp Status;
 class nsIDNSHTTPSSVCRecord;
 class nsIInterfaceRequestor;
 class nsIRequestContext;
-class nsISSLSocketControl;
 class nsISVCBRecord;
+class nsITLSSocketControl;
 class nsITransport;
 
 namespace mozilla {
@@ -33,7 +33,8 @@ class nsHttpTransaction;
 class nsHttpRequestHead;
 class nsHttpConnectionInfo;
 class NullHttpTransaction;
-class Http2ConnectTransaction;
+
+enum class WebSocketSupport { UNSURE, NO_SUPPORT, SUPPORTED };
 
 //----------------------------------------------------------------------------
 // Abstract base class for a HTTP transaction:
@@ -150,13 +151,6 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   // non nsHttpTransaction implementations of nsAHttpTransaction
   virtual nsHttpTransaction* QueryHttpTransaction() { return nullptr; }
 
-  // If we used rtti this would be the result of doing
-  // dynamic_cast<Http2ConnectTransaction *>(this).. i.e. it can be nullptr for
-  // other types
-  virtual Http2ConnectTransaction* QueryHttp2ConnectTransaction() {
-    return nullptr;
-  }
-
   // return the request context associated with the transaction
   virtual nsIRequestContext* RequestContext() { return nullptr; }
 
@@ -174,7 +168,7 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   // overload. If it returns NS_FAILURE the connection should be considered
   // authoritative.
   [[nodiscard]] virtual nsresult GetTransactionTLSSocketControl(
-      nsISSLSocketControl**) {
+      nsITLSSocketControl**) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
@@ -183,7 +177,10 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual void DisableHttp2ForProxy() {}
   virtual void DisableHttp3(bool aAllowRetryHTTPSRR) {}
   virtual void MakeNonSticky() {}
+  virtual void MakeRestartable() {}
   virtual void ReuseConnectionOnRestartOK(bool) {}
+  virtual void SetIsHttp2Websocket(bool) {}
+  virtual bool IsHttp2Websocket() { return false; }
 
   // We call this function if we want to use alt-svc host again on the next
   // restart. If this function is not called on the next restart the

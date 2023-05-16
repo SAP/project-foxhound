@@ -27,7 +27,10 @@ avoid-blacklist-and-whitelist:
         - md
         - ftl
         - yml
+        - java
+        - kt
     exclude:
+        - '**/.eslintrc.js'
         - browser/app/profile/firefox.js
         - browser/app/winlauncher/LauncherProcessWin.cpp
         - browser/base/content/browser.js
@@ -59,7 +62,7 @@ avoid-blacklist-and-whitelist:
         - browser/components/preferences/privacy.js
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
         - browser/components/safebrowsing/content/test/browser_whitelisted.js
-        - browser/components/sessionstore/ContentSessionStore.jsm
+        - browser/components/sessionstore/ContentSessionStore.sys.mjs
         - browser/components/sessionstore/test/browser_crashedTabs.js
         - browser/components/uitour/UITourChild.jsm
         - browser/components/urlbar/tests/browser/browser_searchSingleWordNotification.js
@@ -206,6 +209,10 @@ avoid-blacklist-and-whitelist:
         - mfbt/Attributes.h
         - mobile/android/app/geckoview-prefs.js
         - mobile/android/app/mobile.js
+        - mobile/android/geckoview/src/main/java/org/mozilla/gecko/util/HardwareCodecCapabilityUtils.java
+        - mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ContentBlocking.java
+        - mobile/android/geckoview/src/main/java/org/mozilla/geckoview/CrashReporter.java
+        - mobile/android/geckoview/src/main/java/org/mozilla/geckoview/WebAuthnTokenManager.java
         - modules/libpref/Preferences.cpp
         - modules/libpref/docs/index.md
         - modules/libpref/init/all.js
@@ -318,7 +325,6 @@ avoid-blacklist-and-whitelist:
         - testing/profiles/unittest-required/user.js
         - testing/raptor/browsertime/browsertime_scenario.js
         - testing/raptor/raptor/control_server.py
-        - testing/specialpowers/content/SpecialPowersChild.jsm
         - testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/static/js/main.js
         - testing/talos/talos/tests/devtools/addon/content/tests/source-map/angular-min.js.map
         - testing/web-platform/tests/common/security-features/README.md

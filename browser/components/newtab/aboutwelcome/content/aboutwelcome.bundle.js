@@ -66,6 +66,14 @@ const AboutWelcomeUtils = {
     (_window$AWSendEventTe2 = (_window2 = window).AWSendEventTelemetry) === null || _window$AWSendEventTe2 === void 0 ? void 0 : _window$AWSendEventTe2.call(_window2, ping);
   },
 
+  sendDismissTelemetry(messageId, elementId) {
+    // Don't send DISMISS telemetry in spotlight modals since they already send
+    // their own equivalent telemetry.
+    if (page !== "spotlight") {
+      this.sendActionTelemetry(messageId, elementId, "DISMISS");
+    }
+  },
+
   async fetchFlowParams(metricsFlowUri) {
     let flowParams;
 
@@ -107,24 +115,20 @@ const DEFAULT_RTAMO_CONTENT = {
   template: "return_to_amo",
   utm_term: "rtamo",
   content: {
-    position: "corner",
-    hero_text: {
-      string_id: "mr1-welcome-screen-hero-text"
-    },
+    position: "split",
     title: {
-      string_id: "return-to-amo-subtitle"
+      string_id: "mr1-return-to-amo-subtitle"
     },
-    has_noodles: true,
+    has_noodles: false,
     subtitle: {
-      string_id: "return-to-amo-addon-title"
+      string_id: "mr1-return-to-amo-addon-title"
     },
-    help_text: {
-      string_id: "mr1-onboarding-welcome-image-caption"
-    },
-    backdrop: "#212121 url(chrome://activity-stream/content/data/content/assets/proton-bkg.avif) center/cover no-repeat fixed",
+    backdrop: "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
+    background: "url('chrome://activity-stream/content/data/content/assets/mr-rtamo-background-image.svg') no-repeat center",
+    progress_bar: true,
     primary_button: {
       label: {
-        string_id: "return-to-amo-add-extension-label"
+        string_id: "mr1-return-to-amo-add-extension-label"
       },
       source_id: "ADD_EXTENSION_BUTTON",
       action: {
@@ -151,7 +155,8 @@ const DEFAULT_RTAMO_CONTENT = {
       source_id: "RTAMO_FXA_SIGNIN_BUTTON",
       action: {
         data: {
-          entrypoint: "activity-stream-firstrun"
+          entrypoint: "activity-stream-firstrun",
+          where: "tab"
         },
         type: "SHOW_FIREFOX_ACCOUNTS",
         addFlowParams: true
@@ -168,7 +173,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "MultiStageAboutWelcome": () => (/* binding */ MultiStageAboutWelcome),
 /* harmony export */   "SecondaryCTA": () => (/* binding */ SecondaryCTA),
-/* harmony export */   "OnboardingVideo": () => (/* binding */ OnboardingVideo),
 /* harmony export */   "StepsIndicator": () => (/* binding */ StepsIndicator),
 /* harmony export */   "WelcomeScreen": () => (/* binding */ WelcomeScreen)
 /* harmony export */ });
@@ -178,7 +182,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(6);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(11);
-/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(14);
+/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(15);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -385,31 +389,6 @@ const SecondaryCTA = props => {
     onClick: props.handleAction
   })));
 };
-const OnboardingVideo = props => {
-  const vidUrl = props.content.video_url;
-  const autoplay = props.content.autoPlay;
-
-  const handleVideoAction = event => {
-    props.handleAction({
-      currentTarget: {
-        value: event
-      }
-    });
-  };
-
-  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("video", {
-    // eslint-disable-line jsx-a11y/media-has-caption
-    controls: true,
-    autoPlay: autoplay,
-    src: vidUrl,
-    width: "604px",
-    height: "340px",
-    onPlay: () => handleVideoAction("video_start"),
-    onEnded: () => handleVideoAction("video_end")
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
-    src: vidUrl
-  })));
-};
 const StepsIndicator = props => {
   let steps = [];
 
@@ -483,7 +462,14 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
     } // Send telemetry before waiting on actions
 
 
-    _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, event.currentTarget.value, event.name);
+    _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, value, event.name); // Send additional telemetry if a messaging surface like feature callout is
+    // dismissed via the dismiss button. Other causes of dismissal will be
+    // handled separately by the messaging surface's own code.
+
+    if (value === "dismiss_button" && !event.name) {
+      _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendDismissTelemetry(props.messageId, value);
+    }
+
     let {
       action
     } = targetContent;
@@ -673,9 +659,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(11);
 /* harmony import */ var _CTAParagraph__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(12);
 /* harmony import */ var _HeroImage__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(13);
+/* harmony import */ var _OnboardingVideo__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(14);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -733,7 +721,8 @@ const ProtonScreenActionButtons = props => {
   var _content$checkbox, _content$primary_butt, _content$primary_butt2;
 
   const {
-    content
+    content,
+    addonName
   } = props;
   const defaultValue = (_content$checkbox = content.checkbox) === null || _content$checkbox === void 0 ? void 0 : _content$checkbox.defaultValue;
   const [isChecked, setIsChecked] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultValue || false);
@@ -754,7 +743,10 @@ const ProtonScreenActionButtons = props => {
     ,
     value: isChecked ? "checkbox" : "primary_button",
     disabled: ((_content$primary_butt2 = content.primary_button) === null || _content$primary_butt2 === void 0 ? void 0 : _content$primary_butt2.disabled) === true,
-    onClick: props.handleAction
+    onClick: props.handleAction,
+    "data-l10n-args": addonName ? JSON.stringify({
+      "addon-name": addonName
+    }) : ""
   })), content.checkbox ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: "checkbox-container"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
@@ -918,7 +910,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     // by checking if screen order is even or odd.
 
     const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles, content === null || content === void 0 ? void 0 : content.video_container) : "";
-    const currentStep = this.props.order + 1;
+    const currentStep = (this.props.order ?? 0) + 1;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
       className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
       role: "alertdialog",
@@ -939,14 +931,14 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       style: content.background && isCenterPosition ? {
         background: content.background
       } : {}
-    }, content.dismiss_button ? this.renderDismissButton() : null, content.logo ? this.renderLogo(content.logo) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `${isRtamo ? "rtamo-icon" : "hide-rtamo-icon"}`
+    }, content.dismiss_button ? this.renderDismissButton() : null, content.logo ? this.renderLogo(content.logo) : null, isRtamo ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "rtamo-icon"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
-      className: `${isTheme ? "rtamo-theme-icon" : ""}`,
+      className: `${isTheme ? "rtamo-theme-icon" : "brand-logo"}`,
       src: this.props.iconURL,
       role: "presentation",
       alt: ""
-    })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    })) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "main-content-inner"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `welcome-text ${content.title_style || ""}`
@@ -964,18 +956,19 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     })), content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_8__.CTAParagraph, {
       content: content.cta_paragraph,
       handleAction: this.props.handleAction
-    }) : null), content.video_container ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_6__.OnboardingVideo, {
+    }) : null), content.video_container ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_OnboardingVideo__WEBPACK_IMPORTED_MODULE_10__.OnboardingVideo, {
       content: content.video_container,
       handleAction: this.props.handleAction
     }) : null, this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
       content: content,
+      addonName: this.props.addonName,
       handleAction: this.props.handleAction
     })), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `steps ${content.progress_bar ? "progress-bar" : ""}`,
       "data-l10n-id": "onboarding-welcome-steps-indicator2",
       "data-l10n-args": JSON.stringify({
         current: currentStep,
-        total
+        total: total ?? 0
       }),
       "data-l10n-attrs": "aria-valuetext",
       role: "meter",
@@ -1372,7 +1365,21 @@ function useLanguageSwitcher(appAndSystemLocaleInfo, screens, screenIndex, setSc
   const languageMismatchScreenIndex = screens.findIndex(({
     id
   }) => id === "AW_LANGUAGE_MISMATCH");
-  const screen = screens[languageMismatchScreenIndex]; // If there is a mismatch, then Firefox can negotiate a better langpack to offer
+  const screen = screens[languageMismatchScreenIndex]; // Ensure fluent messages have the negotiatedLanguage args set, as they are rendered
+  // before the negotiatedLanguage is known. If the arg isn't present then Firefox will
+  // crash in development mode.
+
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    var _screen$content;
+
+    if (screen !== null && screen !== void 0 && (_screen$content = screen.content) !== null && _screen$content !== void 0 && _screen$content.languageSwitcher) {
+      for (const text of Object.values(screen.content.languageSwitcher)) {
+        if (text !== null && text !== void 0 && text.args && text.args.negotiatedLanguage === undefined) {
+          text.args.negotiatedLanguage = "";
+        }
+      }
+    }
+  }, [screen]); // If there is a mismatch, then Firefox can negotiate a better langpack to offer
   // the user.
 
   const [negotiatedLanguage, setNegotiatedLanguage] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
@@ -1672,6 +1679,46 @@ const HeroImage = props => {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "OnboardingVideo": () => (/* binding */ OnboardingVideo)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+const OnboardingVideo = props => {
+  const vidUrl = props.content.video_url;
+  const autoplay = props.content.autoPlay;
+
+  const handleVideoAction = event => {
+    props.handleAction({
+      currentTarget: {
+        value: event
+      }
+    });
+  };
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("video", {
+    // eslint-disable-line jsx-a11y/media-has-caption
+    controls: true,
+    autoPlay: autoplay,
+    src: vidUrl,
+    width: "604px",
+    height: "340px",
+    onPlay: () => handleVideoAction("video_start"),
+    onEnded: () => handleVideoAction("video_end")
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+    src: vidUrl
+  })));
+};
+
+/***/ }),
+/* 15 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "BASE_PARAMS": () => (/* binding */ BASE_PARAMS),
 /* harmony export */   "addUtmParams": () => (/* binding */ addUtmParams)
 /* harmony export */ });
@@ -1709,7 +1756,7 @@ function addUtmParams(url, utmTerm) {
 }
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1720,7 +1767,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(6);
-/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(14);
+/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(15);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1808,7 +1855,7 @@ class ReturnToAMO extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureComp
     }
 
     if (content !== null && content !== void 0 && content.primary_button.label) {
-      content.primary_button.label.string_id = type.includes("theme") ? "return-to-amo-add-theme-label" : "return-to-amo-add-extension-label";
+      content.primary_button.label.string_id = type.includes("theme") ? "return-to-amo-add-theme-label" : "mr1-return-to-amo-add-extension-label";
     } // For experiments, when needed below rendered UI allows settings hard coded strings
     // directly inside JSON except for ReturnToAMOText which picks add-on name and icon from fluent string
 
@@ -1915,7 +1962,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* harmony import */ var _components_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(4);
-/* harmony import */ var _components_ReturnToAMO__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(15);
+/* harmony import */ var _components_ReturnToAMO__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(16);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public

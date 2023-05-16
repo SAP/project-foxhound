@@ -98,7 +98,7 @@ using namespace mozilla::dom;
 #ifdef DEBUG
 // PR_LOGGING is force to always be on (even in release builds)
 // but we only want some of it on,
-//#define EXTENDED_DEBUG_PRINTING
+// #define EXTENDED_DEBUG_PRINTING
 #endif
 
 // this log level turns on the dumping of each document's layout info
@@ -414,10 +414,8 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
 
   mPrintSettings->GetShrinkToFit(&mShrinkToFit);
 
-  bool printingViaParent =
-      XRE_IsContentProcess() && StaticPrefs::print_print_via_parent();
   nsCOMPtr<nsIDeviceContextSpec> devspec;
-  if (printingViaParent) {
+  if (XRE_IsContentProcess()) {
     devspec = new nsDeviceContextSpecProxy(mRemotePrintJob);
   } else {
     devspec = do_CreateInstance("@mozilla.org/gfx/devicecontextspec;1", &rv);
@@ -1330,26 +1328,8 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   if (mPrintSettings->HasOrthogonalSheetsAndPages()) {
     std::swap(pageSize.width, pageSize.height);
   }
-
-  // If the document has a specified CSS page-size, we rotate the page to
-  // reflect this. Changing the orientation is reflected by the result of
-  // FinishPrintPreview, so that the frontend can reflect this.
-  // The new document has not yet been reflowed, so we have to query the
-  // original document for any CSS page-size.
-  if (const Maybe<StylePageSizeOrientation> maybeOrientation =
-          aPO->mDocument->GetPresShell()
-              ->StyleSet()
-              ->GetDefaultPageSizeOrientation()) {
-    if (maybeOrientation.value() == StylePageSizeOrientation::Landscape &&
-        pageSize.width < pageSize.height) {
-      // Paper is in portrait, CSS page size is landscape.
-      std::swap(pageSize.width, pageSize.height);
-    } else if (maybeOrientation.value() == StylePageSizeOrientation::Portrait &&
-               pageSize.width > pageSize.height) {
-      // Paper is in landscape, CSS page size is portrait.
-      std::swap(pageSize.width, pageSize.height);
-    }
-  }
+  // XXXalaskanemily: Is this actually necessary? We set it again before the
+  // first reflow.
   aPO->mPresContext->SetPageSize(pageSize);
 
   int32_t p2a = aPO->mPresContext->DeviceContext()->AppUnitsPerDevPixel();
@@ -1377,8 +1357,46 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   MOZ_TRY(aPO->mPresShell->Initialize());
   NS_ASSERTION(aPO->mPresShell, "Presshell should still be here");
 
-  // Process the reflow event Initialize posted
   RefPtr<PresShell> presShell = aPO->mPresShell;
+  {
+    // Get the initial page name. Even though we haven't done any page-name
+    // fragmentation (that happens during block reflow), this will still be
+    // valid to find the first page's name.
+    const nsAtom* firstPageName = nsGkAtoms::_empty;
+    if (const Element* const rootElement = aPO->mDocument->GetRootElement()) {
+      if (const nsIFrame* const rootFrame = rootElement->GetPrimaryFrame()) {
+        firstPageName = rootFrame->ComputePageValue();
+      }
+    }
+
+    // If the document has a specified CSS page-size, we rotate the page to
+    // reflect this. Changing the orientation is reflected by the result of
+    // FinishPrintPreview, so that the frontend can reflect this.
+    // The new document has not yet been reflowed, so we have to query the
+    // original document for any CSS page-size.
+    if (const Maybe<StylePageSizeOrientation> maybeOrientation =
+            presShell->StyleSet()->GetDefaultPageSizeOrientation(
+                firstPageName)) {
+      switch (maybeOrientation.value()) {
+        case StylePageSizeOrientation::Landscape:
+          if (pageSize.width < pageSize.height) {
+            // Paper is in portrait, CSS page size is landscape.
+            std::swap(pageSize.width, pageSize.height);
+          }
+          break;
+        case StylePageSizeOrientation::Portrait:
+          if (pageSize.width > pageSize.height) {
+            // Paper is in landscape, CSS page size is portrait.
+            std::swap(pageSize.width, pageSize.height);
+          }
+          break;
+      }
+      mMaybeCSSPageLandscape =
+          Some(maybeOrientation.value() == StylePageSizeOrientation::Landscape);
+      aPO->mPresContext->SetPageSize(pageSize);
+    }
+  }
+  // Process the reflow event Initialize posted
   presShell->FlushPendingNotifications(FlushType::Layout);
 
   MOZ_TRY(UpdateSelectionAndShrinkPrintObject(aPO.get(), documentIsTopLevel));
@@ -1982,18 +2000,10 @@ nsresult nsPrintJob::FinishPrintPreview() {
 
   if (mPrintPreviewCallback) {
     const bool hasSelection = !mDisallowSelectionPrint && mSelectionRoot;
-    // Determine if there is a specified page size, and if we should set the
-    // paper orientation to match it.
-    const Maybe<bool> maybeLandscape =
-        mPrintObject->mPresShell->StyleSet()
-            ->GetDefaultPageSizeOrientation()
-            .map([](StylePageSizeOrientation o) -> bool {
-              return o == StylePageSizeOrientation::Landscape;
-            });
     mPrintPreviewCallback(PrintPreviewResultInfo(
         GetPrintPreviewNumSheets(), GetRawNumPages(), GetIsEmpty(),
         hasSelection, hasSelection && mPrintObject->HasSelection(),
-        maybeLandscape));
+        mMaybeCSSPageLandscape));
     mPrintPreviewCallback = nullptr;
   }
 

@@ -881,6 +881,12 @@ const tests = [
 
   async function(win) {
     info("Open search mode with a keyboard shortcut.");
+    // Bug 1797801: If the search mode used is the same as the default engine and
+    // showSearchTerms is enabled, the chiclet will remain in the urlbar on the search.
+    // Subsequent tests rely on search mode not already been selected.
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.showSearchTerms.featureGate", false]],
+    });
     let defaultEngine = await Services.search.getDefault();
     win.gURLBar.select();
     EventUtils.synthesizeKey("k", { accelKey: true }, win);
@@ -899,6 +905,8 @@ const tests = [
     });
     EventUtils.synthesizeKey("VK_RETURN", {}, win);
     await promise;
+
+    await SpecialPowers.popPrefEnv();
 
     return {
       category: "urlbar",
@@ -1136,14 +1144,10 @@ add_setup(async function() {
   await PlacesUtils.bookmarks.eraseEverything();
 
   // Create a new search engine and mark it as default
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
+  });
   await Services.search.moveEngine(engine, 0);
 
   await SearchTestUtils.installSearchExtension({
@@ -1164,10 +1168,6 @@ add_setup(async function() {
   });
 
   registerCleanupFunction(async function() {
-    await Services.search.setDefault(
-      oldDefaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-    );
     await PlacesUtils.keywords.remove("kw");
     await PlacesUtils.bookmarks.remove(bm);
     await PlacesUtils.history.clear();
@@ -1267,10 +1267,15 @@ let tipMatches = [
     UrlbarUtils.RESULT_TYPE.TIP,
     UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
     {
-      text: "This is a test intervention.",
-      buttonText: "Done",
+      helpUrl: "http://example.com/",
       type: "test",
-      helpUrl: "about:about",
+      titleL10n: { id: "urlbar-search-tips-confirm" },
+      buttons: [
+        {
+          url: "http://example.com/",
+          l10n: { id: "urlbar-search-tips-confirm" },
+        },
+      ],
     }
   ),
   new UrlbarResult(

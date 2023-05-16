@@ -11,6 +11,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/SystemPrincipal.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
@@ -42,23 +43,16 @@ namespace ipc {
 
 Result<nsCOMPtr<nsIPrincipal>, nsresult> PrincipalInfoToPrincipal(
     const PrincipalInfo& aPrincipalInfo) {
-  MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipalInfo.type() != PrincipalInfo::T__None);
-
-  nsCOMPtr<nsIScriptSecurityManager> secMan =
-      nsContentUtils::GetSecurityManager();
-  if (!secMan) {
-    return Err(NS_ERROR_NULL_POINTER);
-  }
 
   nsCOMPtr<nsIPrincipal> principal;
   nsresult rv;
 
   switch (aPrincipalInfo.type()) {
     case PrincipalInfo::TSystemPrincipalInfo: {
-      rv = secMan->GetSystemPrincipal(getter_AddRefs(principal));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return Err(rv);
+      principal = SystemPrincipal::Get();
+      if (NS_WARN_IF(!principal)) {
+        return Err(NS_ERROR_NOT_INITIALIZED);
       }
 
       return principal;
@@ -91,7 +85,16 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> PrincipalInfoToPrincipal(
         return Err(rv);
       }
 
-      principal = BasePrincipal::CreateContentPrincipal(uri, info.attrs());
+      nsCOMPtr<nsIURI> domain;
+      if (info.domain()) {
+        rv = NS_NewURI(getter_AddRefs(domain), *info.domain());
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return Err(rv);
+        }
+      }
+
+      principal =
+          BasePrincipal::CreateContentPrincipal(uri, info.attrs(), domain);
       if (NS_WARN_IF(!principal)) {
         return Err(NS_ERROR_NULL_POINTER);
       }
@@ -105,19 +108,6 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> PrincipalInfoToPrincipal(
 
       if (NS_WARN_IF(!info.originNoSuffix().Equals(originNoSuffix))) {
         return Err(NS_ERROR_FAILURE);
-      }
-
-      if (info.domain()) {
-        nsCOMPtr<nsIURI> domain;
-        rv = NS_NewURI(getter_AddRefs(domain), *info.domain());
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return Err(rv);
-        }
-
-        rv = principal->SetDomain(domain);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return Err(rv);
-        }
       }
 
       if (!info.baseDomain().IsVoid()) {
@@ -164,6 +154,29 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> PrincipalInfoToPrincipal(
     default:
       return Err(NS_ERROR_FAILURE);
   }
+}
+
+bool StorageKeysEqual(const PrincipalInfo& aLeft, const PrincipalInfo& aRight) {
+  MOZ_RELEASE_ASSERT(aLeft.type() == PrincipalInfo::TContentPrincipalInfo ||
+                     aLeft.type() == PrincipalInfo::TSystemPrincipalInfo);
+  MOZ_RELEASE_ASSERT(aRight.type() == PrincipalInfo::TContentPrincipalInfo ||
+                     aRight.type() == PrincipalInfo::TSystemPrincipalInfo);
+
+  if (aLeft.type() != aRight.type()) {
+    return false;
+  }
+
+  if (aLeft.type() == PrincipalInfo::TContentPrincipalInfo) {
+    const ContentPrincipalInfo& leftContent = aLeft.get_ContentPrincipalInfo();
+    const ContentPrincipalInfo& rightContent =
+        aRight.get_ContentPrincipalInfo();
+
+    return leftContent.attrs() == rightContent.attrs() &&
+           leftContent.originNoSuffix() == rightContent.originNoSuffix();
+  }
+
+  // Storage keys for the System principal always equal.
+  return true;
 }
 
 already_AddRefed<nsIContentSecurityPolicy> CSPInfoToCSP(
@@ -253,7 +266,6 @@ nsresult CSPToCSPInfo(nsIContentSecurityPolicy* aCSP, CSPInfo* aCSPInfo) {
 nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
                                   PrincipalInfo* aPrincipalInfo,
                                   bool aSkipBaseDomain) {
-  MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aPrincipalInfo);
 
@@ -424,6 +436,10 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
     SerializeURI(resultPrincipalURI, optionalResultPrincipalURI);
   }
 
+  nsCString triggeringRemoteType;
+  rv = aLoadInfo->GetTriggeringRemoteType(triggeringRemoteType);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   nsTArray<RedirectHistoryEntryInfo> redirectChainIncludingInternalRedirects;
   for (const nsCOMPtr<nsIRedirectHistoryEntry>& redirectEntry :
        aLoadInfo->RedirectChainIncludingInternalRedirects()) {
@@ -523,7 +539,7 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
 
   *aOptionalLoadInfoArgs = Some(LoadInfoArgs(
       loadingPrincipalInfo, triggeringPrincipalInfo, principalToInheritInfo,
-      topLevelPrincipalInfo, optionalResultPrincipalURI,
+      topLevelPrincipalInfo, optionalResultPrincipalURI, triggeringRemoteType,
       aLoadInfo->GetSandboxedNullPrincipalID(), aLoadInfo->GetSecurityFlags(),
       aLoadInfo->GetSandboxFlags(), aLoadInfo->GetTriggeringSandboxFlags(),
       aLoadInfo->InternalContentPolicyType(),
@@ -570,16 +586,18 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
 
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsILoadInfo** outLoadInfo) {
-  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, nullptr, outLoadInfo);
+    const nsACString& aOriginRemoteType, nsILoadInfo** outLoadInfo) {
+  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
+                                nullptr, outLoadInfo);
 }
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, nsILoadInfo** outLoadInfo) {
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
+    nsILoadInfo** outLoadInfo) {
   RefPtr<LoadInfo> loadInfo;
-  nsresult rv =
-      LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aCspToInheritLoadingContext,
-                             getter_AddRefs(loadInfo));
+  nsresult rv = LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
+                                       aCspToInheritLoadingContext,
+                                       getter_AddRefs(loadInfo));
   NS_ENSURE_SUCCESS(rv, rv);
 
   loadInfo.forget(outLoadInfo);
@@ -587,12 +605,15 @@ nsresult LoadInfoArgsToLoadInfo(
 }
 
 nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs, LoadInfo** outLoadInfo) {
-  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, nullptr, outLoadInfo);
+    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
+    const nsACString& aOriginRemoteType, LoadInfo** outLoadInfo) {
+  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
+                                nullptr, outLoadInfo);
 }
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, LoadInfo** outLoadInfo) {
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
+    LoadInfo** outLoadInfo) {
   if (aOptionalLoadInfoArgs.isNothing()) {
     *outLoadInfo = nullptr;
     return NS_OK;
@@ -670,6 +691,20 @@ nsresult LoadInfoArgsToLoadInfo(
   if (loadInfoArgs.resultPrincipalURI().isSome()) {
     resultPrincipalURI = DeserializeURI(loadInfoArgs.resultPrincipalURI());
     NS_ENSURE_TRUE(resultPrincipalURI, NS_ERROR_UNEXPECTED);
+  }
+
+  // If we received this message from a content process, reset
+  // triggeringRemoteType to the process which sent us the message. If the
+  // parent sent us the message, we trust it to provide the correct triggering
+  // remote type.
+  //
+  // This means that the triggering remote type will be reset if a LoadInfo is
+  // bounced through a content process, as the LoadInfo can no longer be
+  // validated to be coming from the originally specified remote type.
+  nsCString triggeringRemoteType = loadInfoArgs.triggeringRemoteType();
+  if (aOriginRemoteType != NOT_REMOTE_TYPE &&
+      aOriginRemoteType != triggeringRemoteType) {
+    triggeringRemoteType = aOriginRemoteType;
   }
 
   RedirectHistoryArray redirectChainIncludingInternalRedirects;
@@ -795,10 +830,10 @@ nsresult LoadInfoArgsToLoadInfo(
   RefPtr<mozilla::net::LoadInfo> loadInfo = new mozilla::net::LoadInfo(
       loadingPrincipal, triggeringPrincipal, principalToInherit,
       topLevelPrincipal, resultPrincipalURI, cookieJarSettings, cspToInherit,
-      loadInfoArgs.sandboxedNullPrincipalID(), clientInfo, reservedClientInfo,
-      initialClientInfo, controller, loadInfoArgs.securityFlags(),
-      loadInfoArgs.sandboxFlags(), loadInfoArgs.triggeringSandboxFlags(),
-      loadInfoArgs.contentPolicyType(),
+      triggeringRemoteType, loadInfoArgs.sandboxedNullPrincipalID(), clientInfo,
+      reservedClientInfo, initialClientInfo, controller,
+      loadInfoArgs.securityFlags(), loadInfoArgs.sandboxFlags(),
+      loadInfoArgs.triggeringSandboxFlags(), loadInfoArgs.contentPolicyType(),
       static_cast<LoadTainting>(loadInfoArgs.tainting()),
       loadInfoArgs.blockAllMixedContent(),
       loadInfoArgs.upgradeInsecureRequests(),

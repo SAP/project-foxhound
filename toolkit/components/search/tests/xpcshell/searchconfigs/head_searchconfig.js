@@ -26,14 +26,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   sinon: "resource://testing-common/Sinon.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetters(this, {
-  gEnvironment: ["@mozilla.org/process/environment;1", "nsIEnvironment"],
-});
-
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const GLOBAL_SCOPE = this;
-const TEST_DEBUG = gEnvironment.get("TEST_DEBUG");
+const TEST_DEBUG = Services.env.get("TEST_DEBUG");
 
 const URLTYPE_SUGGEST_JSON = "application/x-suggestions+json";
 const URLTYPE_SEARCH_HTML = "text/html";
@@ -53,7 +49,7 @@ let engineSelector;
  * against a remote server.
  */
 async function maybeSetupConfig() {
-  const SEARCH_CONFIG = gEnvironment.get("SEARCH_CONFIG");
+  const SEARCH_CONFIG = Services.env.get("SEARCH_CONFIG");
   if (SEARCH_CONFIG) {
     if (!(SEARCH_CONFIG in SearchUtils.ENGINES_URLS)) {
       throw new Error(`Invalid value for SEARCH_CONFIG`);
@@ -217,7 +213,7 @@ class SearchConfigTest {
   }
 
   /**
-   * @returns {array} the list of locales for the tests to run with.
+   * @returns {Array} the list of locales for the tests to run with.
    */
   async _getLocales() {
     if (TEST_DEBUG) {
@@ -242,9 +238,10 @@ class SearchConfigTest {
    * Determines if a locale matches with a locales section in the configuration.
    *
    * @param {object} locales
-   * @param {array} [locales.matches]
+   *   The config locales config, containing the locals to match against.
+   * @param {Array} [locales.matches]
    *   Array of locale names to match exactly.
-   * @param {array} [locales.startsWith]
+   * @param {Array} [locales.startsWith]
    *   Array of locale names to match the start.
    * @param {string} locale
    *   The two-letter locale code.
@@ -400,7 +397,7 @@ class SearchConfigTest {
    *   The two-letter region code.
    * @param {string} locale
    *   The two-letter locale code.
-   * @param {array} engines
+   * @param {Array} engines
    *   The current visible engines.
    * @returns {boolean}
    *   Returns true if the engine is expected to be present, false otherwise.
@@ -416,7 +413,7 @@ class SearchConfigTest {
    *   The two-letter region code.
    * @param {string} locale
    *   The two-letter locale code.
-   * @param {array} engines
+   * @param {Array} engines
    *   The current visible engines.
    */
   _assertEngineDetails(region, locale, engines) {

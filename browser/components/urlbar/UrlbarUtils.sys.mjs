@@ -12,23 +12,26 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   KeywordUtils: "resource://gre/modules/KeywordUtils.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
     "resource://gre/modules/SearchSuggestionController.sys.mjs",
-
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarProviderInterventions:
+    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarProviderSearchTips:
+    "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
 });
 
 export var UrlbarUtils = {
@@ -597,11 +600,6 @@ export var UrlbarUtils = {
           return { url, postData };
         }
         break;
-      }
-      case UrlbarUtils.RESULT_TYPE.TIP: {
-        // Return the button URL. Consumers must check payload.helpUrl
-        // themselves if they need the tip's help link.
-        return { url: result.payload.buttonUrl, postData: null };
       }
     }
     return { url: null, postData: null };
@@ -1242,6 +1240,177 @@ export var UrlbarUtils = {
       ? uri
       : Services.textToSubURI.unEscapeURIForUI(uri);
   },
+
+  /**
+   * Extracts a group for search engagement telemetry from a result.
+   *
+   * @param {UrlbarResult} result The result to analyze.
+   * @returns {string} Group name as string.
+   */
+  searchEngagementTelemetryGroup(result) {
+    if (!result) {
+      return "unknown";
+    }
+    if (result.isBestMatch) {
+      return "top_pick";
+    }
+    if (result.providerName === "UrlbarProviderTopSites") {
+      return "top_site";
+    }
+
+    switch (this.getResultGroup(result)) {
+      case UrlbarUtils.RESULT_GROUP.INPUT_HISTORY: {
+        return "adaptive_history";
+      }
+      case UrlbarUtils.RESULT_GROUP.FORM_HISTORY: {
+        return "search_history";
+      }
+      case UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION: {
+        return "search_suggest";
+      }
+      case UrlbarUtils.RESULT_GROUP.REMOTE_TAB: {
+        return "remote_tab";
+      }
+      case UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION:
+      case UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX:
+      case UrlbarUtils.RESULT_GROUP.OMNIBOX: {
+        return "addon";
+      }
+      case UrlbarUtils.RESULT_GROUP.GENERAL: {
+        return "general";
+      }
+      // Group of UrlbarProviderQuickSuggest is GENERAL_PARENT.
+      case UrlbarUtils.RESULT_GROUP.GENERAL_PARENT:
+      case UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION: {
+        return "suggest";
+      }
+      case UrlbarUtils.RESULT_GROUP.ABOUT_PAGES: {
+        return "about_page";
+      }
+      case UrlbarUtils.RESULT_GROUP.SUGGESTED_INDEX: {
+        return "suggested_index";
+      }
+    }
+
+    return result.heuristic ? "heuristic" : "unknown";
+  },
+
+  /**
+   * Extracts a type for search engagement telemetry from a result.
+   *
+   * @param {UrlbarResult} result The result to analyze.
+   * @returns {string} Type as string.
+   */
+  searchEngagementTelemetryType(result) {
+    if (!result) {
+      return "unknown";
+    }
+
+    switch (result.type) {
+      case UrlbarUtils.RESULT_TYPE.DYNAMIC:
+        switch (result.providerName) {
+          case "calculator":
+            return "calc";
+          case "quickactions":
+            return "action";
+          case "TabToSearch":
+            return "tab_to_search";
+          case "UnitConversion":
+            return "unit";
+        }
+        break;
+      case UrlbarUtils.RESULT_TYPE.KEYWORD:
+        return "keyword";
+      case UrlbarUtils.RESULT_TYPE.OMNIBOX:
+        return "addon";
+      case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+        return "remote_tab";
+      case UrlbarUtils.RESULT_TYPE.SEARCH:
+        if (result.providerName === "TabToSearch") {
+          return "tab_to_search";
+        }
+        if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
+          return "search_history";
+        }
+        if (result.payload.suggestion) {
+          return "search_suggest";
+        }
+        return "search_engine";
+      case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+        return "tab";
+      case UrlbarUtils.RESULT_TYPE.TIP:
+        if (result.providerName === "UrlbarProviderInterventions") {
+          switch (result.payload.type) {
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.CLEAR:
+              return "intervention_clear";
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.REFRESH:
+              return "intervention_refresh";
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.UPDATE_ASK:
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.UPDATE_CHECKING:
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.UPDATE_REFRESH:
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.UPDATE_RESTART:
+            case lazy.UrlbarProviderInterventions.TIP_TYPE.UPDATE_WEB:
+              return "intervention_update";
+            default:
+              return "intervention_unknown";
+          }
+        }
+
+        switch (result.payload.type) {
+          case lazy.UrlbarProviderSearchTips.TIP_TYPE.ONBOARD:
+            return "tip_onboard";
+          case lazy.UrlbarProviderSearchTips.TIP_TYPE.REDIRECT:
+            return "tip_redirect";
+          default:
+            return "tip_unknown";
+        }
+      case UrlbarUtils.RESULT_TYPE.URL:
+        if (
+          result.source === UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL &&
+          result.heuristic
+        ) {
+          return "url";
+        }
+        if (result.autofill) {
+          return `autofill_${result.autofill.type ?? "unknown"}`;
+        }
+        if (result.providerName === "UrlbarProviderQuickSuggest") {
+          return result.payload.isSponsored
+            ? "suggest_sponsor"
+            : "suggest_non_sponsor";
+        }
+        if (result.providerName === "UrlbarProviderTopSites") {
+          return "top_site";
+        }
+        return result.source === UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+          ? "bookmark"
+          : "history";
+    }
+
+    return "unknown";
+  },
+
+  /**
+   * Extracts a subtype for search engagement telemetry from a result and the picked element.
+   *
+   * @param {UrlbarResult} result The result to analyze.
+   * @param {DOMElement} element The picked view element. Nullable.
+   * @returns {string} Subtype as string.
+   */
+  searchEngagementTelemetrySubtype(result, element) {
+    if (!result) {
+      return "";
+    }
+
+    if (
+      result.providerName === "quickactions" &&
+      element?.classList.contains("urlbarView-quickaction-row")
+    ) {
+      return element.dataset.key;
+    }
+
+    return "";
+  },
 };
 
 XPCOMUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
@@ -1343,11 +1512,34 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
     type: "object",
     required: ["url"],
     properties: {
+      // l10n { id, args }
+      blockL10n: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          args: {
+            type: "array",
+          },
+        },
+      },
       displayUrl: {
         type: "string",
       },
-      helpL10nId: {
-        type: "string",
+      // l10n { id, args }
+      helpL10n: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          args: {
+            type: "array",
+          },
+        },
       },
       helpUrl: {
         type: "string",
@@ -1355,11 +1547,17 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       icon: {
         type: "string",
       },
+      isBlockable: {
+        type: "boolean",
+      },
       isPinned: {
         type: "boolean",
       },
       isSponsored: {
         type: "boolean",
+      },
+      merinoProvider: {
+        type: "string",
       },
       originalUrl: {
         type: "string",
@@ -1445,6 +1643,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       content: {
         type: "string",
       },
+      deletable: {
+        type: "boolean",
+      },
       icon: {
         type: "string",
       },
@@ -1484,13 +1685,42 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
     type: "object",
     required: ["type"],
     properties: {
-      // Prefer `buttonTextData` if your string is translated.  This is for
-      // untranslated strings.
+      buttons: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["l10n"],
+          properties: {
+            l10n: {
+              type: "object",
+              required: ["id"],
+              properties: {
+                id: {
+                  type: "string",
+                },
+                args: {
+                  type: "array",
+                },
+              },
+            },
+            url: {
+              type: "string",
+            },
+          },
+        },
+      },
+      // TODO: This is intended only for WebExtensions. We should remove it and
+      // the WebExtensions urlbar API since we're no longer using it.
       buttonText: {
         type: "string",
       },
+      // TODO: This is intended only for WebExtensions. We should remove it and
+      // the WebExtensions urlbar API since we're no longer using it.
+      buttonUrl: {
+        type: "string",
+      },
       // l10n { id, args }
-      buttonTextData: {
+      helpL10n: {
         type: "object",
         required: ["id"],
         properties: {
@@ -1502,22 +1732,19 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
           },
         },
       },
-      buttonUrl: {
-        type: "string",
-      },
       helpUrl: {
         type: "string",
       },
       icon: {
         type: "string",
       },
-      // Prefer `text` if your string is translated.  This is for untranslated
-      // strings.
+      // TODO: This is intended only for WebExtensions. We should remove it and
+      // the WebExtensions urlbar API since we're no longer using it.
       text: {
         type: "string",
       },
       // l10n { id, args }
-      textData: {
+      titleL10n: {
         type: "object",
         required: ["id"],
         properties: {

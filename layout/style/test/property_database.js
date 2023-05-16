@@ -5544,17 +5544,6 @@ var gCSSProperties = {
       "message-box",
       "small-caption",
       "status-bar",
-      // Gecko-specific system fonts
-      "-moz-window",
-      "-moz-document",
-      "-moz-desktop",
-      "-moz-info",
-      "-moz-dialog",
-      "-moz-button",
-      "-moz-pull-down-menu",
-      "-moz-list",
-      "-moz-field",
-      "-moz-workspace",
       // line-height with calc()
       "condensed bold italic small-caps 24px/calc(2px) Times New Roman, serif",
       "condensed bold italic small-caps 24px/calc(50%) Times New Roman, serif",
@@ -11092,6 +11081,13 @@ var gCSSProperties = {
     alias_for: "animation-timing-function",
     subproperties: ["animation-timing-function"],
   },
+  "-webkit-clip-path": {
+    domProp: "webkitClipPath",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "clip-path",
+    subproperties: ["clip-path"],
+  },
   "-webkit-filter": {
     domProp: "webkitFilter",
     inherited: false,
@@ -12013,7 +12009,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.font-palette.enabled")) {
-  gCSSProperties["font"].subproperties.push("font-palette");
   gCSSProperties["font-palette"] = {
     domProp: "fontPalette",
     inherited: true,
@@ -12022,7 +12017,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.font-palette.enabled")) {
     applies_to_first_line: true,
     applies_to_marker: true,
     applies_to_placeholder: true,
-    applies_to_cue: true,
     initial_values: ["normal"],
     other_values: ["light", "dark", "--custom"],
     invalid_values: ["custom"],

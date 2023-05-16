@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { FormAutoCompleteResult } = ChromeUtils.import(
-  "resource://gre/modules/nsFormAutoCompleteResult.jsm"
-);
+import { FormAutoCompleteResult } from "resource://gre/modules/nsFormAutoCompleteResult.sys.mjs";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   SearchSuggestionController:
@@ -17,7 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * We do it this way since the AutoCompleteController in Mozilla requires a
  * unique XPCOM Service for every search provider, even if the logic for two
  * providers is identical.
- * @constructor
+ *
+ * @class
  */
 class SuggestAutoComplete {
   constructor() {
@@ -58,7 +58,7 @@ class SuggestAutoComplete {
    *
    * @param {string} searchString
    *   The user's query string.
-   * @param {array} results
+   * @param {Array} results
    *   An array of results to the search.
    * @param {object} formHistoryResult
    *   Any previous form history result.
@@ -147,7 +147,7 @@ class SuggestAutoComplete {
         );
       })
       .catch(result =>
-        Cu.reportError(
+        console.error(
           "Could not initialize search service, bailing out: " + result
         )
       );
@@ -220,7 +220,8 @@ class SuggestAutoComplete {
 /**
  * SearchSuggestAutoComplete is a service implementation that handles suggest
  * results specific to web searches.
- * @constructor
+ *
+ * @class
  */
 export class SearchSuggestAutoComplete extends SuggestAutoComplete {
   classID = Components.ID("{aa892eb4-ffbf-477d-9f9a-06c995ae9f27}");

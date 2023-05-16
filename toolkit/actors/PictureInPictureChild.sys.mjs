@@ -162,6 +162,9 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       );
     }
 
+    let scrubberPosition =
+      video.currentTime === 0 ? 0 : video.currentTime / video.duration;
+
     // All other requests to toggle PiP should open a new PiP
     // window
     const videoRef = lazy.ContentDOMReference.get(video);
@@ -173,6 +176,7 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       videoRef,
       ccEnabled: lazy.DISPLAY_TEXT_TRACKS_PREF,
       webVTTSubtitles: !!video.textTracks?.length,
+      scrubberPosition,
     });
   }
 
@@ -1406,6 +1410,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
       isFullscreen,
       isVideoControlsShowing,
       playerBottomControlsDOMRect,
+      isScrubberShowing,
     } = data;
     let textTracks = this.document.getElementById("texttracks");
     const originatingWindow = this.getWeakVideo().ownerGlobal;
@@ -1428,6 +1433,12 @@ export class PictureInPictureChild extends JSWindowActorChild {
         playerBottomControlsDOMRect.top;
 
       if (isOverlap) {
+        const root = this.document.querySelector(":root");
+        if (isScrubberShowing) {
+          root.style.setProperty("--player-controls-scrubber-height", "30px");
+        } else {
+          root.style.setProperty("--player-controls-scrubber-height", "0px");
+        }
         textTracks.setAttribute("overlap-video-controls", true);
       } else {
         textTracks.removeAttribute("overlap-video-controls");
@@ -1606,7 +1617,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
         // Just double-checking that we received the event for the right
         // video element.
         if (video !== event.target) {
-          Cu.reportError(
+          lazy.logConsole.error(
             "PictureInPictureChild received volumechange for " +
               "the wrong video!"
           );
@@ -1676,6 +1687,15 @@ export class PictureInPictureChild extends JSWindowActorChild {
         );
         const cues = this._currentWebVTTTrack.activeCues;
         this.updateWebVTTTextTracksDisplay(cues);
+        break;
+      }
+      case "timeupdate": {
+        let currentTime = event.target.currentTime;
+        let duration = event.target.duration;
+        let scrubberPosition = currentTime === 0 ? 0 : currentTime / duration;
+        this.sendAsyncMessage("PictureInPicture:SetScrubberPosition", {
+          scrubberPosition,
+        });
         break;
       }
     }
@@ -1794,7 +1814,23 @@ export class PictureInPictureChild extends JSWindowActorChild {
         this.setTextTrackFontSize();
         break;
       }
+      case "PictureInPicture:SetVideoTime": {
+        const { scrubberPosition } = message.data;
+        this.setVideoTime(scrubberPosition);
+        break;
+      }
     }
+  }
+
+  /**
+   * Set the current time of the video based of the position of the scrubber
+   * @param {Number} scrubberPosition A number between 0 and 1 representing the position of the scrubber
+   */
+  setVideoTime(scrubberPosition) {
+    const video = this.getWeakVideo();
+    let duration = this.videoWrapper.getDuration(video);
+    let currentTime = scrubberPosition * duration;
+    this.videoWrapper.setCurrentTime(video, currentTime);
   }
 
   /**
@@ -1856,6 +1892,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
       originatingVideo.addEventListener("volumechange", this);
       originatingVideo.addEventListener("resize", this);
       originatingVideo.addEventListener("emptied", this);
+      originatingVideo.addEventListener("timeupdate", this);
 
       if (lazy.DISPLAY_TEXT_TRACKS_PREF) {
         this.setupTextTracks(originatingVideo);
@@ -1901,6 +1938,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
       originatingVideo.removeEventListener("volumechange", this);
       originatingVideo.removeEventListener("resize", this);
       originatingVideo.removeEventListener("emptied", this);
+      originatingVideo.removeEventListener("timeupdate", this);
 
       if (lazy.DISPLAY_TEXT_TRACKS_PREF) {
         this.removeTextTracks(originatingVideo);
@@ -2351,18 +2389,14 @@ class PictureInPictureChildVideoWrapper {
         let retVal = wrappedMethod.call(this.#siteWrapper, ...args);
 
         if (!validateRetVal) {
-          lazy.logConsole.debug(
-            `Invalid return value validator was found for method ${name}(). Replacing return value ${retVal} with null.`
-          );
-          Cu.reportError(
+          lazy.logConsole.error(
             `No return value validator was provided for method ${name}(). Returning null.`
           );
           return null;
         }
 
         if (!validateRetVal(retVal)) {
-          lazy.logConsole.debug("Invalid return value:", retVal);
-          Cu.reportError(
+          lazy.logConsole.error(
             `Calling method ${name}() returned an unexpected value: ${retVal}. Returning null.`
           );
           return null;
@@ -2371,8 +2405,10 @@ class PictureInPictureChildVideoWrapper {
         return retVal;
       }
     } catch (e) {
-      lazy.logConsole.debug("Error:", e.message);
-      Cu.reportError(`There was an error while calling ${name}(): `, e.message);
+      lazy.logConsole.error(
+        `There was an error while calling ${name}(): `,
+        e.message
+      );
     }
 
     return fallback();
@@ -2408,7 +2444,10 @@ class PictureInPictureChildVideoWrapper {
       Services.scriptloader.loadSubScript(wrapperScriptUrl, sandbox);
     } catch (e) {
       Cu.nukeSandbox(sandbox);
-      Cu.reportError("Error loading wrapper script for Picture-in-Picture" + e);
+      lazy.logConsole.error(
+        "Error loading wrapper script for Picture-in-Picture",
+        e
+      );
       return null;
     }
 

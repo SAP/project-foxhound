@@ -36,9 +36,7 @@ class PrintHelper {
             null,
             true
           );
-          await SpecialPowers.spawn(browser, [pageUrl], contentUrl => {
-            content.location = contentUrl;
-          });
+          BrowserTestUtils.loadURI(browser, pageUrl);
           await loaded;
         }
         await testFn(new PrintHelper(browser));
@@ -239,11 +237,14 @@ class PrintHelper {
       throw new Error("Print already mocked");
     }
 
-    // Create some Promises that we can resolve/reject from the test.
-    let showSystemDialogPromise = new Promise((resolve, reject) => {
-      this.resolveShowSystemDialog = resolve;
-      this.rejectShowSystemDialog = () => {
-        reject(Components.Exception("", Cr.NS_ERROR_ABORT));
+    // Create some Promises that we can resolve from the test.
+    let showSystemDialogPromise = new Promise(resolve => {
+      this.resolveShowSystemDialog = result => {
+        if (result !== undefined) {
+          resolve(result);
+        } else {
+          resolve(true);
+        }
       };
     });
     let printPromise = new Promise((resolve, reject) => {
@@ -253,7 +254,7 @@ class PrintHelper {
 
     // Mock PrintEventHandler with our Promises.
     this.win.PrintEventHandler._showPrintDialog = (
-      dialogSvc,
+      window,
       haveSelection,
       settings
     ) => {

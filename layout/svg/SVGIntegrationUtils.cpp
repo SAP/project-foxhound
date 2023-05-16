@@ -10,7 +10,6 @@
 // Keep others in (case-insensitive) order:
 #include "gfxDrawable.h"
 
-#include "Layers.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsCSSRendering.h"
 #include "nsDisplayList.h"
@@ -63,7 +62,7 @@ class PreEffectsInkOverflowCollector : public nsLayoutUtils::BoxCallback {
                  "We want the first continuation here");
   }
 
-  virtual void AddBox(nsIFrame* aFrame) override {
+  void AddBox(nsIFrame* aFrame) override {
     nsRect overflow = (aFrame == mCurrentFrame)
                           ? mCurrentFrameOverflowArea
                           : PreEffectsInkOverflowRect(aFrame, mInReflow);

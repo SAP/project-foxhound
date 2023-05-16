@@ -1,7 +1,8 @@
 from __future__ import absolute_import, print_function
 
-from marionette_harness import MarionetteTestCase
 from contextlib import contextmanager
+
+from marionette_harness import MarionetteTestCase
 
 
 class ExperimentStatus:
@@ -141,8 +142,7 @@ class TestWin32kAutostart(MarionetteTestCase):
           // We're running in a function, in a sandbox, that inherits from an
           // X-ray wrapped window. Anything we want to be globally available
           // needs to be defined on that window.
-          window.env = Cc["@mozilla.org/process/environment;1"]
-                    .getService(Ci.nsIEnvironment);
+          window.env = Services.env;
         """
         )
 

@@ -574,16 +574,11 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       this._downloadDetailsNormal.setAttribute("tooltiptext", status);
     }
     if (hoverStatus?.l10n) {
-      hoverStatus.l10n.id
-        ? document.l10n.setAttributes(
-            this._downloadDetailsHover,
-            hoverStatus.l10n.id,
-            hoverStatus.l10n.args
-          )
-        : document.l10n.setAttributes(
-            this._downloadDetailsHover,
-            hoverStatus.l10n
-          );
+      document.l10n.setAttributes(
+        this._downloadDetailsHover,
+        hoverStatus.l10n.id,
+        hoverStatus.l10n.args
+      );
     } else {
       this._downloadDetailsHover.removeAttribute("data-l10n-id");
       this._downloadDetailsHover.setAttribute("value", hoverStatus);
@@ -739,7 +734,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       }
       let hoverStatus = DownloadsViewUI.improvementsIsOn
         ? {
-            l10n: "downloading-file-click-to-open",
+            l10n: { id: "downloading-file-click-to-open" },
           }
         : undefined;
       this.showStatus(status, hoverStatus);
@@ -781,7 +776,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
                 sizeWithUnits
               );
             }
-            this.showStatus(status, { l10n: "downloads-open-file" });
+            this.showStatus(status, { l10n: { id: "downloads-open-file" } });
           } else {
             // In the Downloads View, we show the file size in place of the
             // state label, for example "1.5 MB - example.com - 1:45 PM".
@@ -813,7 +808,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
             // Downloads Panel, a subview can be used to remove the file or open
             // the download anyways.
             this.showButton("subviewOpenOrRemoveFile");
-            hover = { l10n: "downloads-show-more-information" };
+            hover = { l10n: { id: "downloads-show-more-information" } };
           } else {
             // This download was blocked temporarily by reputation check. In the
             // Downloads View, the interface depends on the threat severity.
@@ -921,7 +916,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       case lazy.Downloads.Error.BLOCK_VERDICT_INSECURE:
         return [
           s.blockedPotentiallyInsecure,
-          [s.unblockInsecure, s.unblockTip2],
+          [s.unblockInsecure2, s.unblockTip2],
         ];
       case lazy.Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
         return [

@@ -10,6 +10,7 @@
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/layers/SampleTime.h"
+#include "mozilla/layers/ScrollbarData.h"
 #include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
@@ -26,7 +27,6 @@
 #include "FlingAccelerator.h"
 #include "InputQueue.h"
 #include "APZUtils.h"
-#include "Layers.h"  // for Layer::ScrollDirection
 #include "LayersTypes.h"
 #include "mozilla/gfx/Matrix.h"
 #include "nsRegion.h"

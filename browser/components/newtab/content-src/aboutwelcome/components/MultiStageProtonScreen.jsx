@@ -8,14 +8,11 @@ import { Colorways } from "./MRColorways";
 import { MobileDownloads } from "./MobileDownloads";
 import { MultiSelect } from "./MultiSelect";
 import { Themes } from "./Themes";
-import {
-  OnboardingVideo,
-  SecondaryCTA,
-  StepsIndicator,
-} from "./MultiStageAboutWelcome";
+import { SecondaryCTA, StepsIndicator } from "./MultiStageAboutWelcome";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CTAParagraph } from "./CTAParagraph";
 import { HeroImage } from "./HeroImage";
+import { OnboardingVideo } from "./OnboardingVideo";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -60,7 +57,7 @@ export const MultiStageProtonScreen = props => {
 };
 
 export const ProtonScreenActionButtons = props => {
-  const { content } = props;
+  const { content, addonName } = props;
   const defaultValue = content.checkbox?.defaultValue;
 
   const [isChecked, setIsChecked] = useState(defaultValue || false);
@@ -85,6 +82,13 @@ export const ProtonScreenActionButtons = props => {
           value={isChecked ? "checkbox" : "primary_button"}
           disabled={content.primary_button?.disabled === true}
           onClick={props.handleAction}
+          data-l10n-args={
+            addonName
+              ? JSON.stringify({
+                  "addon-name": addonName,
+                })
+              : ""
+          }
         />
       </Localized>
       {content.checkbox ? (
@@ -319,7 +323,7 @@ export class ProtonScreen extends React.PureComponent {
         )
       : "";
 
-    const currentStep = this.props.order + 1;
+    const currentStep = (this.props.order ?? 0) + 1;
 
     return (
       <main
@@ -355,14 +359,17 @@ export class ProtonScreen extends React.PureComponent {
 
             {content.logo ? this.renderLogo(content.logo) : null}
 
-            <div className={`${isRtamo ? "rtamo-icon" : "hide-rtamo-icon"}`}>
-              <img
-                className={`${isTheme ? "rtamo-theme-icon" : ""}`}
-                src={this.props.iconURL}
-                role="presentation"
-                alt=""
-              />
-            </div>
+            {isRtamo ? (
+              <div className="rtamo-icon">
+                <img
+                  className={`${isTheme ? "rtamo-theme-icon" : "brand-logo"}`}
+                  src={this.props.iconURL}
+                  role="presentation"
+                  alt=""
+                />
+              </div>
+            ) : null}
+
             <div className="main-content-inner">
               <div className={`welcome-text ${content.title_style || ""}`}>
                 <Localized text={content.title}>
@@ -393,6 +400,7 @@ export class ProtonScreen extends React.PureComponent {
               {this.renderLanguageSwitcher()}
               <ProtonScreenActionButtons
                 content={content}
+                addonName={this.props.addonName}
                 handleAction={this.props.handleAction}
               />
             </div>
@@ -404,7 +412,7 @@ export class ProtonScreen extends React.PureComponent {
                 data-l10n-id={"onboarding-welcome-steps-indicator2"}
                 data-l10n-args={JSON.stringify({
                   current: currentStep,
-                  total,
+                  total: total ?? 0,
                 })}
                 data-l10n-attrs="aria-valuetext"
                 role="meter"

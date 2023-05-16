@@ -9,6 +9,7 @@
 #include "ImageContainer.h"
 #include "ImageToI420.h"
 #include "Pacer.h"
+#include "PerformanceRecorder.h"
 #include "VideoSegment.h"
 #include "VideoUtils.h"
 #include "nsISupportsImpl.h"
@@ -131,6 +132,14 @@ class VideoFrameConverter {
                     &VideoFrameConverter::ProcessVideoFrame,
                     mLastFrameQueuedForProcessing)));
           }
+        })));
+  }
+
+  void SetTrackingId(TrackingId aTrackingId) {
+    MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(NS_NewRunnableFunction(
+        __func__, [self = RefPtr<VideoFrameConverter>(this), this,
+                   id = std::move(aTrackingId)]() mutable {
+          mTrackingId = Some(std::move(id));
         })));
   }
 
@@ -378,7 +387,9 @@ class VideoFrameConverter {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     mFramesDropped = 0;
 #endif
-
+    PerformanceRecorder<CopyVideoStage> rec(
+        "VideoFrameConverter::ConvertToI420"_ns, *mTrackingId, buffer->width(),
+        buffer->height());
     nsresult rv =
         ConvertToI420(aFrame.mImage, buffer->MutableDataY(), buffer->StrideY(),
                       buffer->MutableDataU(), buffer->StrideU(),
@@ -389,6 +400,7 @@ class VideoFrameConverter {
               ("VideoFrameConverter %p: Image conversion failed", this));
       return;
     }
+    rec.Record();
 
     VideoFrameConverted(webrtc::VideoFrame::Builder()
                             .set_video_frame_buffer(buffer)
@@ -415,6 +427,7 @@ class VideoFrameConverter {
   Maybe<FrameConverted> mLastFrameConverted;
   bool mActive = false;
   bool mTrackEnabled = true;
+  Maybe<TrackingId> mTrackingId;
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   size_t mFramesDropped = 0;
 #endif

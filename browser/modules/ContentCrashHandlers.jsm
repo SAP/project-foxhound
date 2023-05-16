@@ -17,6 +17,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -24,7 +25,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CrashSubmit: "resource://gre/modules/CrashSubmit.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
 });
 
 // We don't process crash reports older than 28 days, so don't bother
@@ -167,10 +167,7 @@ var TabCrashHandler = {
         }
 
         // check for environment affecting crash reporting
-        let env = Cc["@mozilla.org/process/environment;1"].getService(
-          Ci.nsIEnvironment
-        );
-        let shutdown = env.exists("MOZ_CRASHREPORTER_SHUTDOWN");
+        let shutdown = Services.env.exists("MOZ_CRASHREPORTER_SHUTDOWN");
 
         if (shutdown) {
           dump(

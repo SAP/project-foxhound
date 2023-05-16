@@ -150,7 +150,7 @@ already_AddRefed<File> Blob::ToFile(const nsAString& aName,
 
   RefPtr<MultipartBlobImpl> impl =
       MultipartBlobImpl::Create(std::move(blobImpls), aName, contentType,
-                                mGlobal->CrossOriginIsolated(), aRv);
+                                mGlobal->GetRTPCallerType(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -226,9 +226,9 @@ already_AddRefed<Blob> Blob::Constructor(
     MakeValidBlobType(type);
     impl->InitializeBlob(aData.Value(), type,
                          aBag.mEndings == EndingType::Native,
-                         global->CrossOriginIsolated(), aRv);
+                         global->GetRTPCallerType(), aRv);
   } else {
-    impl->InitializeBlob(global->CrossOriginIsolated(), aRv);
+    impl->InitializeBlob(global->GetRTPCallerType(), aRv);
   }
 
   if (NS_WARN_IF(aRv.Failed())) {

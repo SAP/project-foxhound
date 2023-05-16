@@ -29,6 +29,7 @@ const SUGGESTIONS = [
       "fullkeywo",
       "fullkeywor",
       "fullkeyword",
+      "example",
     ],
     click_url: "http://example.com/click",
     impression_url: "http://example.com/impression",
@@ -62,7 +63,9 @@ const EXPECTED_BEST_MATCH_RESULT = {
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://example.com",
     source: "remote-settings",
   },
@@ -84,7 +87,9 @@ const EXPECTED_NON_BEST_MATCH_RESULT = {
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://example.com",
     source: "remote-settings",
   },
@@ -106,7 +111,9 @@ const EXPECTED_BEST_MATCH_POSITION_RESULT = {
     sponsoredBlockId: 2,
     sponsoredAdvertiser: "TestAdvertiser",
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://example.com/best-match-position",
     source: "remote-settings",
   },
@@ -232,7 +239,7 @@ add_task(async function tabToSearch() {
       name: "Test",
       search_url: engineURL,
     },
-    true
+    { skipUnload: true }
   );
   let engine = Services.search.getEngineByName("Test");
 
@@ -407,4 +414,34 @@ add_task(async function noConfig() {
       });
     },
   });
+});
+
+// Test that bestMatch results are not shown when there is a heuristic
+// result for the same domain.
+add_task(async function hueristicDeduplication() {
+  let scenarios = [
+    ["http://example.com/", false],
+    ["http://www.example.com/", false],
+    ["http://exampledomain.com/", true],
+  ];
+
+  for (let [url, expectBestMatch] of scenarios) {
+    await PlacesTestUtils.addVisits(url);
+    let context = createContext("example", {
+      providers: [UrlbarProviderQuickSuggest.name, UrlbarProviderAutofill.name],
+      isPrivate: false,
+    });
+    const EXPECTED_AUTOFILL_RESULT = makeVisitResult(context, {
+      uri: url,
+      title: `test visit for ${url}`,
+      heuristic: true,
+    });
+    await check_results({
+      context,
+      matches: expectBestMatch
+        ? [EXPECTED_AUTOFILL_RESULT, EXPECTED_BEST_MATCH_RESULT]
+        : [EXPECTED_AUTOFILL_RESULT],
+    });
+    await PlacesUtils.history.clear();
+  }
 });

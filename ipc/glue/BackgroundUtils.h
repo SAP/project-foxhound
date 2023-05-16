@@ -83,6 +83,14 @@ nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
                                   bool aSkipBaseDomain = false);
 
 /**
+ * Compare storage keys for equivalence.
+ *
+ * Only use with storage keys retrieved from nsIGlobalObject::GetStorageKey!
+ * Bug 1776271 tracks enhancing this into a proper type.
+ */
+bool StorageKeysEqual(const PrincipalInfo& aLeft, const PrincipalInfo& aRight);
+
+/**
  * Convert a CSPInfo to an nsIContentSecurityPolicy.
  *
  * MUST be called on the main thread only.
@@ -136,16 +144,18 @@ nsresult LoadInfoToLoadInfoArgs(
  */
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<mozilla::net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsILoadInfo** outLoadInfo);
+    const nsACString& aOriginRemoteType, nsILoadInfo** outLoadInfo);
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<mozilla::net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, nsILoadInfo** outLoadInfo);
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
+    nsILoadInfo** outLoadInfo);
 nsresult LoadInfoArgsToLoadInfo(
     const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
+    const nsACString& aOriginRemoteType, mozilla::net::LoadInfo** outLoadInfo);
+nsresult LoadInfoArgsToLoadInfo(
+    const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
+    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
     mozilla::net::LoadInfo** outLoadInfo);
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<net::LoadInfoArgs>& aOptionalLoadInfoArgs,
-    nsINode* aCspToInheritLoadingContext, mozilla::net::LoadInfo** outLoadInfo);
 
 /**
  * Fills ParentLoadInfoForwarderArgs with properties we want to carry to child

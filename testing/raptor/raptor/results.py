@@ -15,7 +15,7 @@ from io import open
 
 import six
 from logger.logger import RaptorLogger
-from output import RaptorOutput, BrowsertimeOutput
+from output import BrowsertimeOutput, RaptorOutput
 
 LOG = RaptorLogger(component="perftest-results-handler")
 KNOWN_TEST_MODIFIERS = [
@@ -27,6 +27,9 @@ KNOWN_TEST_MODIFIERS = [
     "webrender",
     "bytecode-cached",
 ]
+NON_FIREFOX_OPTS = ("webrender", "bytecode-cached", "fission")
+NON_FIREFOX_BROWSERS = ("chrome", "chromium", "safari")
+NON_FIREFOX_BROWSERS_MOBILE = ("chrome-m",)
 
 
 @six.add_metaclass(ABCMeta)
@@ -115,20 +118,17 @@ class PerftestResultsHandler(object):
                         % name
                     )
 
-        if self.app.lower() in (
-            "chrome",
-            "chrome-m",
-            "chromium",
-        ):
-            # Bug 1770225: Make this more dynamic, this will fail us again in the future
-            if "webrender" in extra_options:
-                extra_options.remove("webrender")
-            if "fission" in extra_options:
-                extra_options.remove("fission")
-            if "bytecode-cached" in extra_options:
-                extra_options.remove("bytecode-cached")
+        # Bug 1770225: Make this more dynamic, this will fail us again in the future
+        self._clean_up_browser_options(extra_options=extra_options)
 
         return extra_options
+
+    def _clean_up_browser_options(self, extra_options):
+        """Remove certain firefox specific options from different browsers"""
+        if self.app.lower() in NON_FIREFOX_BROWSERS + NON_FIREFOX_BROWSERS_MOBILE:
+            for opts in NON_FIREFOX_OPTS:
+                if opts in extra_options:
+                    extra_options.remove(opts)
 
     def add_browser_meta(self, browser_name, browser_version):
         # sets the browser metadata for the perfherder data
@@ -628,14 +628,15 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 for bt, raptor in conversion:
                     if measure is not None and bt not in measure:
                         continue
-                    # chrome we just measure fcp and loadtime; skip fnbpaint and dcf
+                    # chrome and safari we just measure fcp and loadtime; skip fnbpaint and dcf
                     if (
                         self.app
-                        and (
-                            "chrome" in self.app.lower()
-                            or "chromium" in self.app.lower()
+                        and self.app.lower() in NON_FIREFOX_BROWSERS
+                        and bt
+                        in (
+                            "fnbpaint",
+                            "dcf",
                         )
-                        and bt in ("fnbpaint", "dcf")
                     ):
                         continue
 
@@ -665,6 +666,15 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     bt_result["statistics"][bt] = _get_raptor_val(
                         raw_result["statistics"]["timings"], raptor, retval={}
                     )
+
+                # Bug 1806402 - Handle chrome cpu data properly
+                cpu_vals = raw_result.get("cpu", None)
+                if (
+                    cpu_vals
+                    and self.app
+                    not in NON_FIREFOX_BROWSERS + NON_FIREFOX_BROWSERS_MOBILE
+                ):
+                    bt_result["measurements"].setdefault("cpuTime", []).extend(cpu_vals)
 
                 if self.perfstats:
                     for cycle in raw_result["geckoPerfStats"]:
@@ -795,27 +805,34 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 raise
 
             # Split the chimera videos here for local testing
-            cold_path = None
-            warm_path = None
-            if self.chimera:
+            def split_browsertime_results(result_json_path, raw_btresults):
                 # First result is cold, second is warm
                 cold_data = raw_btresults[0]
                 warm_data = raw_btresults[1]
 
-                dirpath = os.path.dirname(os.path.abspath(bt_res_json))
-                cold_path = os.path.join(dirpath, "cold-browsertime.json")
-                warm_path = os.path.join(dirpath, "warm-browsertime.json")
+                dirpath = os.path.dirname(os.path.abspath(result_json_path))
+                _cold_path = os.path.join(dirpath, "cold-browsertime.json")
+                _warm_path = os.path.join(dirpath, "warm-browsertime.json")
 
                 self._label_video_folder(cold_data, dirpath, "cold")
                 self._label_video_folder(warm_data, dirpath, "warm")
 
-                with open(cold_path, "w") as f:
+                with open(_cold_path, "w") as f:
                     json.dump([cold_data], f)
-                with open(warm_path, "w") as f:
+                with open(_warm_path, "w") as f:
                     json.dump([warm_data], f)
 
                 raw_btresults[0] = cold_data
                 raw_btresults[1] = warm_data
+
+                return _cold_path, _warm_path
+
+            cold_path = None
+            warm_path = None
+            if self.chimera:
+                cold_path, warm_path = split_browsertime_results(
+                    bt_res_json, raw_btresults
+                )
 
                 # Overwrite the contents of the browsertime.json file
                 # to update it with the new file paths
@@ -827,6 +844,27 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     # XXX this should be replaced by a traceback call
                     LOG.error("Exception: %s %s" % (type(e).__name__, str(e)))
                     raise
+
+                # If extra profiler run is enabled, split its browsertime.json
+                # file to cold and warm json files as well.
+                bt_profiling_res_json = os.path.join(
+                    self.result_dir_for_test_profiling(test), "browsertime.json"
+                )
+                has_extra_profiler_run = test_config.get(
+                    "extra_profiler_run", False
+                ) and os.path.exists(bt_profiling_res_json)
+                if has_extra_profiler_run:
+                    try:
+                        with open(bt_profiling_res_json, "r", encoding="utf8") as f:
+                            raw_profiling_btresults = json.load(f)
+                            split_browsertime_results(
+                                bt_profiling_res_json, raw_profiling_btresults
+                            )
+                    except Exception as e:
+                        LOG.info(
+                            "Exception reading and writing %s" % bt_profiling_res_json
+                        )
+                        LOG.info("Exception: %s %s" % (type(e).__name__, str(e)))
 
             if not run_local:
                 extra_options = self.build_extra_options()

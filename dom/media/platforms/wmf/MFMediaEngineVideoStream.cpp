@@ -34,15 +34,33 @@ MFMediaEngineVideoStream* MFMediaEngineVideoStream::Create(
   return stream;
 }
 
+void MFMediaEngineVideoStream::SetKnowsCompositor(
+    layers::KnowsCompositor* aKnowsCompositor) {
+  ComPtr<MFMediaEngineVideoStream> self = this;
+  Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
+      "MFMediaEngineStream::SetKnowsCompositor",
+      [self, knowCompositor = RefPtr<layers::KnowsCompositor>{aKnowsCompositor},
+       this]() {
+        mKnowsCompositor = knowCompositor;
+        LOGV("Set SetKnowsCompositor=%p", mKnowsCompositor.get());
+        ResolvePendingDrainPromiseIfNeeded();
+      }));
+}
+
 void MFMediaEngineVideoStream::SetDCompSurfaceHandle(
     HANDLE aDCompSurfaceHandle) {
-  MutexAutoLock lock(mMutex);
-  if (mDCompSurfaceHandle == aDCompSurfaceHandle) {
-    return;
-  }
-  mDCompSurfaceHandle = aDCompSurfaceHandle;
-  mNeedRecreateImage = true;
-  LOGV("Set DCompSurfaceHandle, handle=%p", mDCompSurfaceHandle);
+  ComPtr<MFMediaEngineVideoStream> self = this;
+  Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
+      "MFMediaEngineStream::SetDCompSurfaceHandle",
+      [self, aDCompSurfaceHandle, this]() {
+        if (mDCompSurfaceHandle == aDCompSurfaceHandle) {
+          return;
+        }
+        mDCompSurfaceHandle = aDCompSurfaceHandle;
+        mNeedRecreateImage = true;
+        LOGV("Set DCompSurfaceHandle, handle=%p", mDCompSurfaceHandle);
+        ResolvePendingDrainPromiseIfNeeded();
+      }));
 }
 
 HRESULT MFMediaEngineVideoStream::CreateMediaType(const TrackInfo& aInfo,
@@ -169,23 +187,23 @@ bool MFMediaEngineVideoStream::HasEnoughRawData() const {
   // If more than this much raw video is queued, we'll hold off request more
   // video.
   static const int64_t VIDEO_VIDEO_USECS = 500000;
-  return mRawDataQueue.Duration() >= VIDEO_VIDEO_USECS;
+  return mRawDataQueueForFeedingEngine.Duration() >= VIDEO_VIDEO_USECS;
 }
 
-already_AddRefed<MediaData> MFMediaEngineVideoStream::OutputData(
-    MediaRawData* aSample) {
-  MutexAutoLock lock(mMutex);
+bool MFMediaEngineVideoStream::IsDCompImageReady() {
+  AssertOnTaskQueue();
   if (!mDCompSurfaceHandle || mDCompSurfaceHandle == INVALID_HANDLE_VALUE) {
     LOGV("Can't create image without a valid dcomp surface handle");
-    return nullptr;
+    return false;
   }
 
   if (!mKnowsCompositor) {
     LOGV("Can't create image without the knows compositor");
-    return nullptr;
+    return false;
   }
 
   if (!mDcompSurfaceImage || mNeedRecreateImage) {
+    MutexAutoLock lock(mMutex);
     // DirectComposition only supports RGBA. We use DXGI_FORMAT_B8G8R8A8_UNORM
     // as a default because we can't know what format the dcomp surface is.
     // https://docs.microsoft.com/en-us/windows/win32/api/dcomp/nf-dcomp-idcompositionsurfacefactory-createsurface
@@ -196,10 +214,52 @@ already_AddRefed<MediaData> MFMediaEngineVideoStream::OutputData(
     LOGV("Created dcomp surface image, handle=%p, size=[%u,%u]",
          mDCompSurfaceHandle, mDisplay.Width(), mDisplay.Height());
   }
+  return true;
+}
 
-  return VideoData::CreateFromImage(mDisplay, aSample->mOffset, aSample->mTime,
-                                    aSample->mDuration, mDcompSurfaceImage,
-                                    aSample->mKeyframe, aSample->mTimecode);
+already_AddRefed<MediaData> MFMediaEngineVideoStream::OutputDataInternal() {
+  AssertOnTaskQueue();
+  if (mRawDataQueueForGeneratingOutput.GetSize() == 0 || !IsDCompImageReady()) {
+    return nullptr;
+  }
+  RefPtr<MediaRawData> sample = mRawDataQueueForGeneratingOutput.PopFront();
+  RefPtr<VideoData> output;
+  {
+    MutexAutoLock lock(mMutex);
+    output = VideoData::CreateFromImage(
+        mDisplay, sample->mOffset, sample->mTime, sample->mDuration,
+        mDcompSurfaceImage, sample->mKeyframe, sample->mTimecode);
+  }
+  return output.forget();
+}
+
+RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineVideoStream::Drain() {
+  AssertOnTaskQueue();
+  MediaDataDecoder::DecodedData outputs;
+  if (!IsDCompImageReady()) {
+    LOGV("Waiting for dcomp image for draining");
+    return mPendingDrainPromise.Ensure(__func__);
+  }
+  return MFMediaEngineStream::Drain();
+}
+
+void MFMediaEngineVideoStream::ResolvePendingDrainPromiseIfNeeded() {
+  AssertOnTaskQueue();
+  if (mPendingDrainPromise.IsEmpty()) {
+    return;
+  }
+  if (!IsDCompImageReady()) {
+    return;
+  }
+  MediaDataDecoder::DecodedData outputs;
+  while (RefPtr<MediaData> outputData = OutputDataInternal()) {
+    outputs.AppendElement(outputData);
+    LOGV("Output data [%" PRId64 ",%" PRId64 "]",
+         outputData->mTime.ToMicroseconds(),
+         outputData->GetEndTime().ToMicroseconds());
+  }
+  mPendingDrainPromise.Resolve(std::move(outputs), __func__);
+  LOGV("Resolved pending drain promise");
 }
 
 MediaDataDecoder::ConversionRequired MFMediaEngineVideoStream::NeedsConversion()
@@ -243,6 +303,23 @@ void MFMediaEngineVideoStream::UpdateConfig(const VideoInfo& aInfo) {
   RETURN_VOID_IF_FAILED(GenerateStreamDescriptor(mediaType));
   RETURN_VOID_IF_FAILED(mMediaEventQueue->QueueEventParamUnk(
       MEStreamFormatChanged, GUID_NULL, S_OK, mediaType.Get()));
+}
+
+void MFMediaEngineVideoStream::ShutdownCleanUpOnTaskQueue() {
+  AssertOnTaskQueue();
+  mPendingDrainPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+}
+
+bool MFMediaEngineVideoStream::IsEnded() const {
+  AssertOnTaskQueue();
+  // If a video only contains one frame, the media engine won't return a decoded
+  // frame before we tell it the track is already ended. However, due to the
+  // constraint of our media pipeline, the format reader won't notify EOS until
+  // the draining finishes, which causes a deadlock. Therefore, we would
+  // consider having pending drain promise as a sign of EOS as well, in order to
+  // get the decoded frame and revolve the drain promise.
+  return (mReceivedEOS || !mPendingDrainPromise.IsEmpty()) &&
+         mRawDataQueueForFeedingEngine.GetSize() == 0;
 }
 
 #undef LOGV

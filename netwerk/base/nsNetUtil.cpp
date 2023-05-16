@@ -20,6 +20,7 @@
 #include "mozilla/LoadContext.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StoragePrincipalHelper.h"
@@ -29,6 +30,7 @@
 #include "nsCategoryCache.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsEscape.h"
 #include "nsFileStreams.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
@@ -669,9 +671,11 @@ int32_t NS_GetDefaultPort(const char* scheme,
                           nsIIOService* ioService /* = nullptr */) {
   nsresult rv;
 
-  // Getting the default port through the protocol handler has a lot of XPCOM
-  // overhead involved.  We optimize the protocols that matter for Web pages
-  // (HTTP and HTTPS) by hardcoding their default ports here.
+  // Getting the default port through the protocol handler previously had a lot
+  // of XPCOM overhead involved.  We optimize the protocols that matter for Web
+  // pages (HTTP and HTTPS) by hardcoding their default ports here.
+  //
+  // XXX: This might not be necessary for performance anymore.
   if (strncmp(scheme, "http", 4) == 0) {
     if (scheme[4] == 's' && scheme[5] == '\0') {
       return 443;
@@ -685,11 +689,8 @@ int32_t NS_GetDefaultPort(const char* scheme,
   net_EnsureIOService(&ioService, grip);
   if (!ioService) return -1;
 
-  nsCOMPtr<nsIProtocolHandler> handler;
-  rv = ioService->GetProtocolHandler(scheme, getter_AddRefs(handler));
-  if (NS_FAILED(rv)) return -1;
   int32_t port;
-  rv = handler->GetDefaultPort(&port);
+  rv = ioService->GetDefaultPort(scheme, &port);
   return NS_SUCCEEDED(rv) ? port : -1;
 }
 
@@ -1044,15 +1045,12 @@ nsresult NS_NewStreamLoader(
 
 nsresult NS_NewSyncStreamListener(nsIStreamListener** result,
                                   nsIInputStream** stream) {
-  nsCOMPtr<nsISyncStreamListener> listener = nsSyncStreamListener::Create();
-  if (listener) {
-    nsresult rv = listener->GetInputStream(stream);
-    if (NS_SUCCEEDED(rv)) {
-      listener.forget(result);
-    }
-    return rv;
+  nsCOMPtr<nsISyncStreamListener> listener = new nsSyncStreamListener();
+  nsresult rv = listener->GetInputStream(stream);
+  if (NS_SUCCEEDED(rv)) {
+    listener.forget(result);
   }
-  return NS_ERROR_FAILURE;
+  return rv;
 }
 
 nsresult NS_ImplementChannelOpen(nsIChannel* channel, nsIInputStream** result) {

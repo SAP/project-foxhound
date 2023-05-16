@@ -23,6 +23,9 @@ const PREF_FEATUREGATE = "browser.urlbar.showSearchTerms.featureGate";
   If Nimbus experiment is enabled, check option visibility.
 */
 add_task(async function showSearchTermsVisibility_experiment_beforeOpen() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_FEATUREGATE, false]],
+  });
   await QuickSuggestTestUtils.withExperiment({
     valueOverrides: {
       showSearchTermsFeatureGate: true,
@@ -40,6 +43,7 @@ add_task(async function showSearchTermsVisibility_experiment_beforeOpen() {
       gBrowser.removeCurrentTab();
     },
   });
+  await SpecialPowers.popPrefEnv();
 });
 
 /*
@@ -47,6 +51,9 @@ add_task(async function showSearchTermsVisibility_experiment_beforeOpen() {
   check option visibility on Preferences page.
 */
 add_task(async function showSearchTermsVisibility_experiment_afterOpen() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_FEATUREGATE, false]],
+  });
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let container = doc.getElementById(CHECKBOX_ID);
@@ -74,6 +81,7 @@ add_task(async function showSearchTermsVisibility_experiment_afterOpen() {
   );
 
   gBrowser.removeCurrentTab();
+  await SpecialPowers.popPrefEnv();
 });
 
 /*
@@ -131,10 +139,11 @@ add_task(async function showSearchTerms_checkbox() {
 });
 
 /*
-  Check enabling the search bar disables
-  the show search terms preference.
+  When loading the search preferences panel, the
+  showSearchTerms checkbox should be disabled if
+  the search bar is enabled.
 */
-add_task(async function showSearchTerms_and_searchBar_preference() {
+add_task(async function showSearchTerms_and_searchBar_preference_load() {
   // Enable the feature.
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -145,24 +154,47 @@ add_task(async function showSearchTerms_and_searchBar_preference() {
 
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
-  doc.getElementById(GROUP_ID).scrollIntoView();
 
-  // Evaluate pref while search bar is checked.
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "#" + CHECKBOX_ID,
-    {},
-    gBrowser.selectedBrowser
-  );
-  Assert.equal(
-    Services.prefs.getBoolPref(PREF_SEARCHTERMS),
-    true,
-    "Preference should not be clickable when disabled."
+  let checkbox = doc.getElementById(CHECKBOX_ID);
+  Assert.ok(
+    checkbox.disabled,
+    "showSearchTerms checkbox should be disabled when search bar is enabled."
   );
 
   // Clean-up.
-  Services.prefs.clearUserPref(PREF_SEARCHTERMS);
-  Services.prefs.clearUserPref("browser.search.widget.inNavBar");
   gBrowser.removeCurrentTab();
   await SpecialPowers.popPrefEnv();
+});
+
+/*
+  If the search bar is enabled while the search
+  preferences panel is open, the showSearchTerms
+  checkbox should not be clickable.
+*/
+add_task(async function showSearchTerms_and_searchBar_preference_change() {
+  // Enable the feature.
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_FEATUREGATE, true]],
+  });
+
+  await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
+  let doc = gBrowser.selectedBrowser.contentDocument;
+
+  let checkbox = doc.getElementById(CHECKBOX_ID);
+  Assert.ok(!checkbox.disabled, "showSearchTerms checkbox should be enabled.");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.inNavBar", true]],
+  });
+  Assert.ok(
+    checkbox.disabled,
+    "showSearchTerms checkbox should be disabled when search bar is enabled."
+  );
+
+  // Clean-up.
+  await SpecialPowers.popPrefEnv();
+  Assert.ok(!checkbox.disabled, "showSearchTerms checkbox should be enabled.");
+
+  gBrowser.removeCurrentTab();
   await SpecialPowers.popPrefEnv();
 });

@@ -17,12 +17,10 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
 });
 
 do_get_profile();
@@ -167,7 +165,8 @@ function do_log_info(aMessage) {
  *        The name of the file to copy.
  * @param {string} aDestFilename
  *        The name of the file to copy.
- * @param {Object} [options.overwriteExisting]
+ * @param {object} [options]
+ * @param {object} [options.overwriteExisting]
  *        Whether to overwrite an existing file.
  * @returns {string} path to the copied file.
  */

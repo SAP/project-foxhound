@@ -322,6 +322,7 @@ enum BFCacheStatus {
 
 namespace mozilla::net {
 class ChannelEventQueue;
+class EarlyHintConnectArgs;
 }  // namespace mozilla::net
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
@@ -1167,6 +1168,15 @@ class Document : public nsINode,
    */
   void GetHeaderData(nsAtom* aHeaderField, nsAString& aData) const;
   void SetHeaderData(nsAtom* aheaderField, const nsAString& aData);
+
+  /**
+   * Set Early Hint data, moves the arrays into the function, leaving the
+   * passed variables empty
+   */
+  void SetEarlyHints(nsTArray<net::EarlyHintConnectArgs>&& aEarlyHints);
+  const nsTArray<net::EarlyHintConnectArgs>& GetEarlyHints() const {
+    return mEarlyHints;
+  }
 
   /**
    * Create a new presentation shell that will use aContext for its
@@ -3004,7 +3014,7 @@ class Document : public nsINode,
                          bool aLinkPreload, const TimeStamp& aInitTimestamp);
   void PreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
                     ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                    bool aLinkPreload);
+                    bool aLinkPreload, uint64_t aEarlyHintPreloaderId);
 
   /**
    * Called by images to forget an image preload when they start doing
@@ -3020,7 +3030,8 @@ class Document : public nsINode,
                                   const nsAString& aCrossOriginAttr,
                                   ReferrerPolicyEnum aReferrerPolicy,
                                   const nsAString& aIntegrity,
-                                  css::StylePreloadKind);
+                                  css::StylePreloadKind,
+                                  uint64_t aEarlyHintPreloaderId);
 
   /**
    * Called by the chrome registry to load style sheets.
@@ -3767,6 +3778,10 @@ class Document : public nsINode,
     return mLazyLoadImageObserverViewport;
   }
   DOMIntersectionObserver& EnsureLazyLoadImageObserver();
+
+  DOMIntersectionObserver& EnsureContentVisibilityObserver();
+  void ObserveForContentVisibility(Element&);
+  void UnobserveForContentVisibility(Element&);
 
   ResizeObserver* GetLastRememberedSizeObserver() {
     return mLastRememberedSizeObserver;
@@ -4539,6 +4554,7 @@ class Document : public nsINode,
   // GetPermissionDelegateHandler
   RefPtr<PermissionDelegateHandler> mPermissionDelegateHandler;
 
+  bool mCachedStateObjectValid : 1;
   bool mBlockAllMixedContent : 1;
   bool mBlockAllMixedContentPreloads : 1;
   bool mUpgradeInsecureRequests : 1;
@@ -5035,7 +5051,7 @@ class Document : public nsINode,
   nsString mBaseTarget;
 
   nsCOMPtr<nsIStructuredCloneContainer> mStateObjectContainer;
-  Maybe<JS::Heap<JS::Value>> mStateObjectCached;
+  JS::Heap<JS::Value> mCachedStateObject;
 
   uint32_t mInSyncOperationCount;
 
@@ -5112,6 +5128,8 @@ class Document : public nsINode,
   class HeaderData;
   UniquePtr<HeaderData> mHeaderData;
 
+  nsTArray<net::EarlyHintConnectArgs> mEarlyHints;
+
   nsRevocableEventPtr<nsRunnableMethod<Document, void, false>>
       mPendingTitleChangeEvent;
 
@@ -5135,6 +5153,10 @@ class Document : public nsINode,
   RefPtr<DOMIntersectionObserver> mLazyLoadImageObserver;
   // Used to measure how effective the lazyload thresholds are.
   RefPtr<DOMIntersectionObserver> mLazyLoadImageObserverViewport;
+
+  // Used for detecting when `content-visibility: auto` elements are near
+  // or far from the viewport.
+  RefPtr<DOMIntersectionObserver> mContentVisibilityObserver;
 
   // ResizeObserver for storing and removing the last remembered size.
   // @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}

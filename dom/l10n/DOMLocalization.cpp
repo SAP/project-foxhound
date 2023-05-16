@@ -347,6 +347,11 @@ already_AddRefed<Promise> DOMLocalization::TranslateElements(
 
     FormatMessagesSync(l10nKeys, l10nMessages, aRv);
 
+    if (NS_WARN_IF(aRv.Failed())) {
+      promise->MaybeRejectWithUndefined();
+      return MaybeWrapPromise(promise);
+    }
+
     bool allTranslated =
         ApplyTranslations(domElements, l10nMessages, aProto, aRv);
     if (NS_WARN_IF(aRv.Failed()) || !allTranslated) {
@@ -625,6 +630,10 @@ void DOMLocalization::ReportL10nOverlaysErrors(
 void DOMLocalization::ConvertStringToL10nArgs(const nsString& aInput,
                                               intl::L10nArgs& aRetVal,
                                               ErrorResult& aRv) {
+  if (aInput.IsEmpty()) {
+    // There are no properties.
+    return;
+  }
   // This method uses a temporary dictionary to automate
   // converting a JSON string into an IDL Record via a dictionary.
   //

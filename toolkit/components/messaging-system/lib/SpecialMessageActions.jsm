@@ -233,7 +233,7 @@ const SpecialMessageActions = {
       case "SHOW_MIGRATION_WIZARD":
         Services.tm.dispatchToMainThread(() =>
           lazy.MigrationUtils.showMigrationWizard(window, [
-            lazy.MigrationUtils.MIGRATION_ENTRYPOINT_NEWTAB,
+            lazy.MigrationUtils.MIGRATION_ENTRYPOINTS.NEWTAB,
             action.data?.source,
           ])
         );
@@ -307,8 +307,8 @@ const SpecialMessageActions = {
       case "PIN_CURRENT_TAB":
         let tab = window.gBrowser.selectedTab;
         window.gBrowser.pinTab(tab);
-        window.ConfirmationHint.show(tab, "pinTab", {
-          showDescription: true,
+        window.ConfirmationHint.show(tab, "confirmation-hint-pin-tab", {
+          descriptionId: "confirmation-hint-pin-tab-description",
         });
         break;
       case "SHOW_FIREFOX_ACCOUNTS":
@@ -362,22 +362,6 @@ const SpecialMessageActions = {
         break;
       case "CONFIGURE_HOMEPAGE":
         this.configureHomepage(action.data);
-        break;
-      case "ENABLE_TOTAL_COOKIE_PROTECTION":
-        Services.prefs.setBoolPref(
-          "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
-          true
-        );
-        break;
-      case "ENABLE_TOTAL_COOKIE_PROTECTION_SECTION_AND_OPT_OUT":
-        Services.prefs.setBoolPref(
-          "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
-          false
-        );
-        Services.prefs.setBoolPref(
-          "privacy.restrict3rdpartystorage.rollout.preferences.TCPToggleInStandard",
-          true
-        );
         break;
       case "SHOW_SPOTLIGHT":
         lazy.Spotlight.showSpotlightDialog(browser, action.data);

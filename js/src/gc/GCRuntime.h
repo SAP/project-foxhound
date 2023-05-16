@@ -8,6 +8,7 @@
 #define gc_GCRuntime_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/DoublyLinkedList.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
@@ -50,6 +51,7 @@ class AutoTraceSession;
 struct FinalizePhase;
 class MarkingValidator;
 struct MovingTracer;
+class ParallelMarkTask;
 enum class ShouldCheckThresholds;
 class SweepGroupsIter;
 
@@ -289,13 +291,10 @@ class GCRuntime {
   [[nodiscard]] bool addRoot(Value* vp, const char* name);
   void removeRoot(Value* vp);
 
-  [[nodiscard]] bool setParameter(JSGCParamKey key, uint32_t value);
-  [[nodiscard]] bool setParameter(JSGCParamKey key, uint32_t value,
-                                  AutoLockGC& lock);
-  void resetParameter(JSGCParamKey key);
-  void resetParameter(JSGCParamKey key, AutoLockGC& lock);
+  [[nodiscard]] bool setParameter(JSContext* cx, JSGCParamKey key,
+                                  uint32_t value);
+  void resetParameter(JSContext* cx, JSGCParamKey key);
   uint32_t getParameter(JSGCParamKey key);
-  uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
 
   void setPerformanceHint(PerformanceHint hint);
   bool isInPageLoad() const { return inPageLoadCount != 0; }
@@ -497,6 +496,9 @@ class GCRuntime {
 
   void setFullCompartmentChecks(bool enable);
 
+  // Get the main marking tracer.
+  GCMarker& marker() { return *markers[0]; }
+
   JS::Zone* getCurrentSweepGroup() { return currentSweepGroup; }
   unsigned getCurrentSweepGroupIndex() {
     return state() == State::Sweep ? sweepGroupIndex : 0;
@@ -620,13 +622,21 @@ class GCRuntime {
                                   AllocKind kind);
   static TenuredCell* refillFreeListInGC(Zone* zone, AllocKind thingKind);
 
+  // Delayed marking.
+  void delayMarkingChildren(gc::Cell* cell, MarkColor color,
+                            const AutoLockGC& lock);
+  bool hasDelayedMarking() const;
+  void markAllDelayedChildren(ShouldReportMarkTime reportTime);
+
   /*
    * Concurrent sweep infrastructure.
    */
   void startTask(GCParallelTask& task, AutoLockHelperThreadState& lock);
   void joinTask(GCParallelTask& task, AutoLockHelperThreadState& lock);
   void updateHelperThreadCount();
+  bool updateMarkersVector();
   size_t parallelWorkerCount() const;
+  size_t markingWorkerCount() const;
 
   // WeakRefs
   bool registerWeakRef(HandleObject target, HandleObject weakRef);
@@ -646,6 +656,11 @@ class GCRuntime {
 
  private:
   enum IncrementalResult { ResetIncremental = 0, Ok };
+
+  [[nodiscard]] bool setParameter(JSGCParamKey key, uint32_t value,
+                                  AutoLockGC& lock);
+  void resetParameter(JSGCParamKey key, AutoLockGC& lock);
+  uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
 
   JS::GCOptions gcOptions() const { return maybeGcOptions.ref().ref(); }
 
@@ -768,10 +783,33 @@ class GCRuntime {
   void findDeadCompartments();
 
   friend class BackgroundMarkTask;
+  enum ParallelMarking : bool {
+    SingleThreadedMarking = false,
+    AllowParallelMarking = true
+  };
   IncrementalProgress markUntilBudgetExhausted(
       SliceBudget& sliceBudget,
-      GCMarker::ShouldReportMarkTime reportTime = GCMarker::ReportMarkTime);
+      ParallelMarking allowParallelMarking = SingleThreadedMarking,
+      ShouldReportMarkTime reportTime = ReportMarkTime);
+
+  bool hasMarkingWork(MarkColor color) const;
+
   void drainMarkStack();
+
+#ifdef DEBUG
+  void assertNoMarkingWork() const;
+#else
+  void assertNoMarkingWork() const {}
+#endif
+
+  void markDelayedChildren(gc::Arena* arena, MarkColor color);
+  void processDelayedMarkingList(gc::MarkColor color);
+  void rebuildDelayedMarkingList();
+  void appendToDelayedMarkingList(gc::Arena** listTail, gc::Arena* arena);
+  void resetDelayedMarking();
+  template <typename F>
+  void forEachDelayedMarkingArena(F&& f);
+
   template <class ZoneIterT>
   IncrementalProgress markWeakReferences(SliceBudget& budget);
   IncrementalProgress markWeakReferencesInCurrentGroup(SliceBudget& budget);
@@ -951,10 +989,17 @@ class GCRuntime {
  public:
   js::StringStats stringStats;
 
-  GCMarker marker;
-  SweepingTracer sweepingTracer;
+  Vector<UniquePtr<GCMarker>, 1, SystemAllocPolicy> markers;
 
-  Vector<JS::GCCellPtr, 0, SystemAllocPolicy> unmarkGrayStack;
+  // Delayed marking support in case we OOM pushing work onto the mark stack.
+  MainThreadOrGCTaskData<js::gc::Arena*> delayedMarkingList;
+  MainThreadOrGCTaskData<bool> delayedMarkingWorkAdded;
+#ifdef DEBUG
+  /* Count of arenas that are currently in the stack. */
+  MainThreadOrGCTaskData<size_t> markLaterArenas;
+#endif
+
+  SweepingTracer sweepingTracer;
 
   /* Track total GC heap size for this runtime. */
   HeapSize heapSize;
@@ -967,7 +1012,7 @@ class GCRuntime {
   // Helper thread configuration.
   MainThreadData<double> helperThreadRatio;
   MainThreadData<size_t> maxHelperThreads;
-  MainThreadData<size_t> helperThreadCount;
+  MainThreadOrGCTaskData<size_t> helperThreadCount;
 
   // State used for managing atom mark bitmaps in each zone.
   AtomMarkingRuntime atomMarking;
@@ -1213,6 +1258,14 @@ class GCRuntime {
    */
   MainThreadData<bool> compactingEnabled;
 
+  /*
+   * Whether parallel marking is enabled globally.
+   *
+   * JSGC_PARALLEL_MARKING_ENABLED
+   * pref: javascript.options.mem.gc_parallel_marking
+   */
+  MainThreadData<bool> parallelMarkingEnabled;
+
   MainThreadData<bool> rootsRemoved;
 
   /*
@@ -1248,6 +1301,7 @@ class GCRuntime {
   MainThreadData<int> nextScheduled;
   MainThreadData<bool> deterministicOnly;
   MainThreadData<int> zealSliceBudget;
+  MainThreadData<size_t> maybeMarkStackLimit;
 
   MainThreadData<PersistentRooted<GCVector<JSObject*, 0, SystemAllocPolicy>>>
       selectedForMarking;

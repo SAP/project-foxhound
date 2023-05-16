@@ -8,17 +8,15 @@ Transform the repackage task into an actual task description.
 
 import copy
 
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.taskcluster import get_artifact_prefix
-from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
-from voluptuous import Required, Optional, Extra
-
 from gecko_taskgraph.loader.single_dep import schema
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.platforms import archive_format, architecture
-from gecko_taskgraph.util.workertypes import worker_type_implementation
 from gecko_taskgraph.transforms.job import job_description_schema
-
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
+from gecko_taskgraph.util.platforms import architecture, archive_format
+from gecko_taskgraph.util.workertypes import worker_type_implementation
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.taskcluster import get_artifact_prefix
+from voluptuous import Extra, Optional, Required
 
 packaging_description_schema = schema.extend(
     {
@@ -90,6 +88,8 @@ packaging_description_schema = schema.extend(
             # if true, perform a checkout of a comm-central based branch inside the
             # gecko checkout
             Optional("comm-checkout"): bool,
+            Optional("run-as-root"): bool,
+            Optional("use-caches"): bool,
         },
     }
 )
@@ -197,6 +197,13 @@ PACKAGE_FORMATS = {
         },
         "output": "target.dmg",
     },
+    "pkg": {
+        "args": ["pkg"],
+        "inputs": {
+            "input": "target{archive_format}",
+        },
+        "output": "target.pkg",
+    },
     "installer": {
         "args": [
             "installer",
@@ -225,6 +232,19 @@ PACKAGE_FORMATS = {
             "setupexe": "setup-stub.exe",
         },
         "output": "target.stub-installer.exe",
+    },
+    "deb": {
+        "args": [
+            "deb",
+            "--arch",
+            "{architecture}",
+            "--templates",
+            "browser/installer/linux/debian",
+        ],
+        "inputs": {
+            "input": "target{archive_format}",
+        },
+        "output": "target.deb",
     },
 }
 MOZHARNESS_EXPANSIONS = [
@@ -382,6 +402,16 @@ def make_job_description(config, jobs):
                     }
                 )
 
+        elif config.kind == "repackage-deb":
+            attributes["repackage_type"] = "repackage-deb"
+            description = (
+                "Repackaging the '{build_platform}/{build_type}' "
+                "build into a '.deb' package"
+            ).format(
+                build_platform=attributes.get("build_platform"),
+                build_type=attributes.get("build_type"),
+            )
+
         _fetch_subst_locale = "en-US"
         if locale:
             _fetch_subst_locale = locale
@@ -456,6 +486,8 @@ def make_job_description(config, jobs):
                 "extra-config": {
                     "repackage_config": repackage_config,
                 },
+                "run-as-root": run.get("run-as-root", False),
+                "use-caches": run.get("use-caches", True),
             }
         )
 
@@ -516,6 +548,8 @@ def make_job_description(config, jobs):
                     "linux64-libdmg",
                     "linux64-hfsplus",
                     "linux64-node",
+                    "linux64-xar",
+                    "linux64-mkbom",
                 ]
             )
         yield task

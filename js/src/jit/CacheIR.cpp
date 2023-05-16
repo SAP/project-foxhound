@@ -93,7 +93,6 @@ const uint32_t js::jit::CacheIROpHealth[] = {
 #undef OPHEALTH
 };
 
-#ifdef DEBUG
 size_t js::jit::NumInputsForCacheKind(CacheKind kind) {
   switch (kind) {
     case CacheKind::NewArray:
@@ -128,7 +127,6 @@ size_t js::jit::NumInputsForCacheKind(CacheKind kind) {
   }
   MOZ_CRASH("Invalid kind");
 }
-#endif
 
 #ifdef DEBUG
 void CacheIRWriter::assertSameCompartment(JSObject* obj) {
@@ -139,8 +137,8 @@ void CacheIRWriter::assertSameZone(Shape* shape) {
 }
 #endif
 
-StubField CacheIRWriter::readStubFieldForIon(uint32_t offset,
-                                             StubField::Type type) const {
+StubField CacheIRWriter::readStubField(uint32_t offset,
+                                       StubField::Type type) const {
   size_t index = 0;
   size_t currentOffset = 0;
 
@@ -768,6 +766,7 @@ static void ShapeGuardProtoChain(CacheIRWriter& writer, NativeObject* obj,
                                  ObjOperandId objId) {
   uint32_t depth = 0;
   static const uint32_t MAX_CACHED_LOADS = 4;
+  ObjOperandId receiverObjId = objId;
 
   while (true) {
     JSObject* proto = obj->staticPrototype();
@@ -785,7 +784,7 @@ static void ShapeGuardProtoChain(CacheIRWriter& writer, NativeObject* obj,
     // in the cross-compartment case.
     if (depth < MAX_CACHED_LOADS &&
         MaybeCrossCompartment == IsCrossCompartment::No) {
-      objId = writer.loadObject(obj);
+      objId = writer.loadProtoObject(obj, receiverObjId);
     } else {
       objId = writer.loadProto(objId);
     }
@@ -2384,19 +2383,22 @@ AttachDecision GetPropIRGenerator::tryAttachStringLength(ValOperandId valId,
   return AttachDecision::Attach;
 }
 
-static bool CanAttachStringChar(const Value& val, const Value& idVal) {
+enum class AttachStringChar { No, Yes, Linearize, OutOfBounds };
+
+static AttachStringChar CanAttachStringChar(const Value& val,
+                                            const Value& idVal) {
   if (!val.isString() || !idVal.isInt32()) {
-    return false;
+    return AttachStringChar::No;
   }
 
   int32_t index = idVal.toInt32();
   if (index < 0) {
-    return false;
+    return AttachStringChar::OutOfBounds;
   }
 
   JSString* str = val.toString();
   if (size_t(index) >= str->length()) {
-    return false;
+    return AttachStringChar::OutOfBounds;
   }
 
   // This follows JSString::getChar and MacroAssembler::loadStringChar.
@@ -2410,23 +2412,33 @@ static bool CanAttachStringChar(const Value& val, const Value& idVal) {
   }
 
   if (!str->isLinear()) {
-    return false;
+    return AttachStringChar::Linearize;
   }
 
-  return true;
+  return AttachStringChar::Yes;
 }
 
 AttachDecision GetPropIRGenerator::tryAttachStringChar(ValOperandId valId,
                                                        ValOperandId indexId) {
   MOZ_ASSERT(idVal_.isInt32());
 
-  if (!CanAttachStringChar(val_, idVal_)) {
+  auto attach = CanAttachStringChar(val_, idVal_);
+  if (attach == AttachStringChar::No) {
+    return AttachDecision::NoAction;
+  }
+
+  // Can't attach for out-of-bounds access without guarding that indexed
+  // properties aren't present along the prototype chain of |String.prototype|.
+  if (attach == AttachStringChar::OutOfBounds) {
     return AttachDecision::NoAction;
   }
 
   StringOperandId strId = writer.guardToString(valId);
   Int32OperandId int32IndexId = writer.guardToInt32Index(indexId);
-  writer.loadStringCharResult(strId, int32IndexId);
+  if (attach == AttachStringChar::Linearize) {
+    strId = writer.linearizeForCharAccess(strId, int32IndexId);
+  }
+  writer.loadStringCharResult(strId, int32IndexId, /* handleOOB = */ false);
   writer.returnFromIC();
 
   trackAttached("StringChar");
@@ -4992,6 +5004,8 @@ AttachDecision SetPropIRGenerator::tryAttachAddSlotStub(
     return AttachDecision::NoAction;
   }
 
+  SharedShape* oldSharedShape = &oldShape->asShared();
+
   ObjOperandId objId = writer.guardToObject(objValId);
   maybeEmitIdGuard(id);
 
@@ -5027,7 +5041,7 @@ AttachDecision SetPropIRGenerator::tryAttachAddSlotStub(
     trackAttached("AddSlot");
   } else {
     size_t offset = holder->dynamicSlotIndex(propInfo.slot()) * sizeof(Value);
-    uint32_t numOldSlots = NativeObject::calculateDynamicSlots(oldShape);
+    uint32_t numOldSlots = NativeObject::calculateDynamicSlots(oldSharedShape);
     uint32_t numNewSlots = holder->numDynamicSlots();
     if (numOldSlots == numNewSlots) {
       writer.addAndStoreDynamicSlot(objId, offset, rhsValId, newShape);
@@ -5270,7 +5284,7 @@ AttachDecision GetIteratorIRGenerator::tryAttachNativeIterator(
                               /* alwaysGuardFirstProto = */ false);
 
   ObjOperandId iterId = writer.guardAndGetIterator(
-      objId, iterobj, &ObjectRealm::get(obj).enumerators);
+      objId, iterobj, cx_->compartment()->enumeratorsAddr());
   writer.loadObjectResult(iterId);
   writer.returnFromIC();
 
@@ -5282,10 +5296,16 @@ AttachDecision GetIteratorIRGenerator::tryAttachMegamorphic(
     ValOperandId valId) {
   MOZ_ASSERT(JSOp(*pc_) == JSOp::Iter);
 
-  writer.valueToIteratorResult(valId);
+  if (val_.isObject()) {
+    ObjOperandId objId = writer.guardToObject(valId);
+    writer.objectToIteratorResult(objId, cx_->compartment()->enumeratorsAddr());
+    trackAttached("MegamorphicObject");
+  } else {
+    writer.valueToIteratorResult(valId);
+    trackAttached("MegamorphicValue");
+  }
   writer.returnFromIC();
 
-  trackAttached("Megamorphic");
   return AttachDecision::Attach;
 }
 
@@ -6660,9 +6680,13 @@ AttachDecision InlinableNativeIRGenerator::tryAttachObjectHasPrototype() {
   return AttachDecision::Attach;
 }
 
+static bool CanConvertToString(const Value& v) {
+  return v.isString() || v.isNumber() || v.isBoolean() || v.isNullOrUndefined();
+}
+
 AttachDecision InlinableNativeIRGenerator::tryAttachString() {
   // Need a single argument that is or can be converted to a string.
-  if (argc_ != 1 || !(args_[0].isString() || args_[0].isNumber())) {
+  if (argc_ != 1 || !CanConvertToString(args_[0])) {
     return AttachDecision::NoAction;
   }
 
@@ -6686,7 +6710,7 @@ AttachDecision InlinableNativeIRGenerator::tryAttachString() {
 
 AttachDecision InlinableNativeIRGenerator::tryAttachStringConstructor() {
   // Need a single argument that is or can be converted to a string.
-  if (argc_ != 1 || !(args_[0].isString() || args_[0].isNumber())) {
+  if (argc_ != 1 || !CanConvertToString(args_[0])) {
     return AttachDecision::NoAction;
   }
 
@@ -6805,9 +6829,12 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringChar(
     return AttachDecision::NoAction;
   }
 
-  if (!CanAttachStringChar(thisval_, args_[0])) {
+  auto attach = CanAttachStringChar(thisval_, args_[0]);
+  if (attach == AttachStringChar::No) {
     return AttachDecision::NoAction;
   }
+
+  bool handleOOB = attach == AttachStringChar::OutOfBounds;
 
   // Initialize the input operand.
   initializeInputOperand();
@@ -6825,11 +6852,21 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringChar(
       writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
   Int32OperandId int32IndexId = writer.guardToInt32Index(indexId);
 
+  // Linearize the string.
+  //
+  // AttachStringChar doesn't have a separate state when OOB access happens on
+  // a string which needs to be linearized, so just linearize unconditionally
+  // for out-of-bounds accesses.
+  if (attach == AttachStringChar::Linearize ||
+      attach == AttachStringChar::OutOfBounds) {
+    strId = writer.linearizeForCharAccess(strId, int32IndexId);
+  }
+
   // Load string char or code.
   if (kind == StringChar::CodeAt) {
-    writer.loadStringCharCodeResult(strId, int32IndexId);
+    writer.loadStringCharCodeResult(strId, int32IndexId, handleOOB);
   } else {
-    writer.loadStringCharResult(strId, int32IndexId);
+    writer.loadStringCharResult(strId, int32IndexId, handleOOB);
   }
 
   writer.returnFromIC();
@@ -6852,8 +6889,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringCharAt() {
 }
 
 AttachDecision InlinableNativeIRGenerator::tryAttachStringFromCharCode() {
-  // Need one int32 argument.
-  if (argc_ != 1 || !args_[0].isInt32()) {
+  // Need one number argument.
+  if (argc_ != 1 || !args_[0].isNumber()) {
     return AttachDecision::NoAction;
   }
 
@@ -6865,7 +6902,14 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringFromCharCode() {
 
   // Guard int32 argument.
   ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
-  Int32OperandId codeId = writer.guardToInt32(argId);
+  Int32OperandId codeId;
+  if (args_[0].isInt32()) {
+    codeId = writer.guardToInt32(argId);
+  } else {
+    // 'fromCharCode' performs ToUint16 on its input. We can use Uint32
+    // semantics, because ToUint16(ToUint32(v)) == ToUint16(v).
+    codeId = writer.guardToInt32ModUint32(argId);
+  }
 
   // Return string created from code.
   writer.stringFromCharCodeResult(codeId);
@@ -7704,8 +7748,120 @@ AttachDecision InlinableNativeIRGenerator::tryAttachMathFunction(
   return AttachDecision::Attach;
 }
 
+AttachDecision InlinableNativeIRGenerator::tryAttachNumber() {
+  // Expect a single string argument.
+  if (argc_ != 1 || !args_[0].isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  double num;
+  if (!StringToNumber(cx_, args_[0].toString(), &num)) {
+    cx_->recoverFromOutOfMemory();
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the `Number` function.
+  emitNativeCalleeGuard();
+
+  // Guard that the argument is a string.
+  ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  StringOperandId strId = writer.guardToString(argId);
+
+  // Return either an Int32 or Double result.
+  int32_t unused;
+  if (mozilla::NumberIsInt32(num, &unused)) {
+    Int32OperandId resultId = writer.guardStringToInt32(strId);
+    writer.loadInt32Result(resultId);
+  } else {
+    NumberOperandId resultId = writer.guardStringToNumber(strId);
+    writer.loadDoubleResult(resultId);
+  }
+  writer.returnFromIC();
+
+  trackAttached("Number");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachNumberParseInt() {
+  // Expected arguments: input (string or number), optional radix (int32).
+  if (argc_ < 1 || argc_ > 2) {
+    return AttachDecision::NoAction;
+  }
+  if (!args_[0].isString() && !args_[0].isNumber()) {
+    return AttachDecision::NoAction;
+  }
+  if (args_[0].isDouble()) {
+    double d = args_[0].toDouble();
+
+    // See num_parseInt for why we have to reject numbers smaller than 1.0e-6.
+    // Negative numbers in the exclusive range (-1, -0) return -0.
+    bool canTruncateToInt32 =
+        (DOUBLE_DECIMAL_IN_SHORTEST_LOW <= d && d <= double(INT32_MAX)) ||
+        (double(INT32_MIN) <= d && d <= -1.0) || (d == 0.0);
+    if (!canTruncateToInt32) {
+      return AttachDecision::NoAction;
+    }
+  }
+  if (argc_ > 1 && !args_[1].isInt32(10)) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'parseInt' native function.
+  emitNativeCalleeGuard();
+
+  auto guardRadix = [&]() {
+    ValOperandId radixId =
+        writer.loadArgumentFixedSlot(ArgumentKind::Arg1, argc_);
+    Int32OperandId intRadixId = writer.guardToInt32(radixId);
+    writer.guardSpecificInt32(intRadixId, 10);
+    return intRadixId;
+  };
+
+  ValOperandId inputId =
+      writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+
+  if (args_[0].isString()) {
+    StringOperandId strId = writer.guardToString(inputId);
+
+    Int32OperandId intRadixId;
+    if (argc_ > 1) {
+      intRadixId = guardRadix();
+    } else {
+      intRadixId = writer.loadInt32Constant(0);
+    }
+
+    writer.numberParseIntResult(strId, intRadixId);
+  } else if (args_[0].isInt32()) {
+    Int32OperandId intId = writer.guardToInt32(inputId);
+    if (argc_ > 1) {
+      guardRadix();
+    }
+    writer.loadInt32Result(intId);
+  } else {
+    MOZ_ASSERT(args_[0].isDouble());
+
+    NumberOperandId numId = writer.guardIsNumber(inputId);
+    if (argc_ > 1) {
+      guardRadix();
+    }
+    writer.doubleParseIntResult(numId);
+  }
+
+  writer.returnFromIC();
+
+  trackAttached("NumberParseInt");
+  return AttachDecision::Attach;
+}
+
 StringOperandId IRGenerator::emitToStringGuard(ValOperandId id,
                                                const Value& v) {
+  MOZ_ASSERT(CanConvertToString(v));
   if (v.isString()) {
     return writer.guardToString(id);
   }
@@ -7733,8 +7889,11 @@ StringOperandId IRGenerator::emitToStringGuard(ValOperandId id,
 }
 
 AttachDecision InlinableNativeIRGenerator::tryAttachNumberToString() {
-  // Expecting no arguments, which means base 10.
-  if (argc_ != 0) {
+  // Expecting no arguments or a single int32 argument.
+  if (argc_ > 1) {
+    return AttachDecision::NoAction;
+  }
+  if (argc_ == 1 && !args_[0].isInt32()) {
     return AttachDecision::NoAction;
   }
 
@@ -7742,6 +7901,21 @@ AttachDecision InlinableNativeIRGenerator::tryAttachNumberToString() {
   if (!thisval_.isNumber()) {
     return AttachDecision::NoAction;
   }
+
+  // No arguments means base 10.
+  int32_t base = 10;
+  if (argc_ > 0) {
+    base = args_[0].toInt32();
+    if (base < 2 || base > 36) {
+      return AttachDecision::NoAction;
+    }
+
+    // Non-decimal bases currently only support int32 inputs.
+    if (base != 10 && !thisval_.isInt32()) {
+      return AttachDecision::NoAction;
+    }
+  }
+  MOZ_ASSERT(2 <= base && base <= 36);
 
   // Initialize the input operand.
   initializeInputOperand();
@@ -7754,10 +7928,37 @@ AttachDecision InlinableNativeIRGenerator::tryAttachNumberToString() {
       writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
 
   // Guard on number and convert to string.
-  StringOperandId strId = emitToStringGuard(thisValId, thisval_);
+  if (base == 10) {
+    // If an explicit base was passed, guard its value.
+    if (argc_ > 0) {
+      // Guard the `base` argument is an int32.
+      ValOperandId baseId =
+          writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+      Int32OperandId intBaseId = writer.guardToInt32(baseId);
 
-  // Return the string.
-  writer.loadStringResult(strId);
+      // Guard `base` is 10 for decimal toString representation.
+      writer.guardSpecificInt32(intBaseId, 10);
+    }
+
+    StringOperandId strId = emitToStringGuard(thisValId, thisval_);
+
+    // Return the string.
+    writer.loadStringResult(strId);
+  } else {
+    MOZ_ASSERT(argc_ > 0);
+
+    // Guard the |this| value is an int32.
+    Int32OperandId thisIntId = writer.guardToInt32(thisValId);
+
+    // Guard the `base` argument is an int32.
+    ValOperandId baseId =
+        writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+    Int32OperandId intBaseId = writer.guardToInt32(baseId);
+
+    // Return the string.
+    writer.int32ToStringWithBaseResult(thisIntId, intBaseId);
+  }
+
   writer.returnFromIC();
 
   trackAttached("NumberToString");
@@ -9759,8 +9960,9 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
       case wasm::ValType::V128:
         MOZ_CRASH("Function should not have a Wasm JitEntry");
       case wasm::ValType::Ref:
-        // All values can be boxed as AnyRef.
-        MOZ_ASSERT(sig.args()[i].refTypeKind() == wasm::RefType::Extern,
+        // canHaveJitEntry restricts args to externref, where all JS values are
+        // valid and can be boxed.
+        MOZ_ASSERT(sig.args()[i].refType().isExtern(),
                    "Unexpected type for Wasm JitEntry");
         break;
     }
@@ -10142,6 +10344,10 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachGetNextMapSetEntryForIterator(/* isMap = */ true);
 
     // Number natives.
+    case InlinableNative::Number:
+      return tryAttachNumber();
+    case InlinableNative::NumberParseInt:
+      return tryAttachNumberParseInt();
     case InlinableNative::NumberToString:
       return tryAttachNumberToString();
 
@@ -11997,12 +12203,8 @@ AttachDecision BinaryArithIRGenerator::tryAttachStringConcat() {
 
   // One side must be a string, the other side a primitive value we can easily
   // convert to a string.
-  auto canConvertToString = [](const Value& v) {
-    return v.isString() || v.isNumber() || v.isBoolean() ||
-           v.isNullOrUndefined();
-  };
-  if (!(lhs_.isString() && canConvertToString(rhs_)) &&
-      !(canConvertToString(lhs_) && rhs_.isString())) {
+  if (!(lhs_.isString() && CanConvertToString(rhs_)) &&
+      !(CanConvertToString(lhs_) && rhs_.isString())) {
     return AttachDecision::NoAction;
   }
 

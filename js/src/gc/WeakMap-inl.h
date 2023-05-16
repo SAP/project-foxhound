@@ -10,10 +10,12 @@
 #include "gc/WeakMap.h"
 
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Maybe.h"
 
 #include <algorithm>
 #include <type_traits>
 
+#include "gc/GCLock.h"
 #include "gc/Marking.h"
 #include "gc/Zone.h"
 #include "js/TraceKind.h"
@@ -114,12 +116,18 @@ WeakMap<K, V>::WeakMap(JS::Zone* zone, JSObject* memOf)
 template <class K, class V>
 bool WeakMap<K, V>::markEntry(GCMarker* marker, K& key, V& value,
                               bool populateWeakKeysTable) {
+#ifdef DEBUG
   MOZ_ASSERT(mapColor);
+  if (marker->isParallelMarking()) {
+    marker->runtime()->gc.assertCurrentThreadHasLockedGC();
+  }
+#endif
 
   bool marked = false;
   CellColor markColor = marker->markColor();
   CellColor keyColor = gc::detail::GetEffectiveColor(marker, key);
   JSObject* delegate = gc::detail::GetDelegate(key);
+  JSTracer* trc = marker->tracer();
 
   if (delegate) {
     CellColor delegateColor = gc::detail::GetEffectiveColor(marker, delegate);
@@ -128,7 +136,7 @@ bool WeakMap<K, V>::markEntry(GCMarker* marker, K& key, V& value,
     if (keyColor < proxyPreserveColor) {
       MOZ_ASSERT(markColor >= proxyPreserveColor);
       if (markColor == proxyPreserveColor) {
-        TraceWeakMapKeyEdge(marker, zone(), &key,
+        TraceWeakMapKeyEdge(trc, zone(), &key,
                             "proxy-preserved WeakMap entry key");
         MOZ_ASSERT(key->color() >= proxyPreserveColor);
         marked = true;
@@ -145,7 +153,7 @@ bool WeakMap<K, V>::markEntry(GCMarker* marker, K& key, V& value,
       if (valueColor < targetColor) {
         MOZ_ASSERT(markColor >= targetColor);
         if (markColor == targetColor) {
-          TraceEdge(marker, &value, "WeakMap entry value");
+          TraceEdge(trc, &value, "WeakMap entry value");
           MOZ_ASSERT(cellValue->color() >= targetColor);
           marked = true;
         }
@@ -159,7 +167,7 @@ bool WeakMap<K, V>::markEntry(GCMarker* marker, K& key, V& value,
     // this.
 
     if (keyColor < mapColor) {
-      MOZ_ASSERT(marker->weakMapAction() == JS::WeakMapTraceAction::Expand);
+      MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
       // The final color of the key is not yet known. Record this weakmap and
       // the lookup key in the list of weak keys. If the key has a delegate,
       // then the lookup key is the delegate (because marking the key will end
@@ -187,6 +195,14 @@ void WeakMap<K, V>::trace(JSTracer* trc) {
   if (trc->isMarkingTracer()) {
     MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
     auto marker = GCMarker::fromTracer(trc);
+
+    // Lock if we are marking in parallel to synchronize updates to:
+    //  - the weak map's color
+    //  - the ephemeron edges table
+    mozilla::Maybe<AutoLockGC> lock;
+    if (marker->isParallelMarking()) {
+      lock.emplace(marker->runtime());
+    }
 
     // Don't downgrade the map color from black to gray. This can happen when a
     // barrier pushes the map object onto the black mark stack when it's
@@ -269,6 +285,12 @@ bool WeakMap<K, V>::markEntries(GCMarker* marker) {
   // This method is called whenever the map's mark color changes. Mark values
   // (and keys with delegates) as required for the new color and populate the
   // ephemeron edges if we're in incremental marking mode.
+
+#ifdef DEBUG
+  if (marker->isParallelMarking()) {
+    marker->runtime()->gc.assertCurrentThreadHasLockedGC();
+  }
+#endif
 
   MOZ_ASSERT(mapColor);
   bool markedAny = false;

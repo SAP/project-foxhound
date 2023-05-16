@@ -2,13 +2,24 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /* exported testVisibility */
-
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { ASRouter } = ChromeUtils.import(
+  "resource://activity-stream/lib/ASRouter.jsm"
+);
 const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-
+const { FeatureCalloutMessages } = ChromeUtils.import(
+  "resource://activity-stream/lib/FeatureCalloutMessages.jsm"
+);
 const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
 );
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
+});
 
 const MOBILE_PROMO_DISMISSED_PREF =
   "browser.tabs.firefox-view.mobilePromo.dismissed";
@@ -252,6 +263,10 @@ function setupSyncFxAMocks({ fxaDevices = null, state, syncEnabled = true }) {
     return {
       status: gUIStateStatus,
       syncEnabled,
+      email:
+        gUIStateStatus === UIState.STATUS_NOT_CONFIGURED
+          ? undefined
+          : "email@example.com",
     };
   });
 
@@ -277,6 +292,7 @@ function setupRecentDeviceListMocks() {
   sandbox.stub(UIState, "get").returns({
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: true,
+    email: "email@example.com",
   });
 
   return sandbox;
@@ -316,10 +332,7 @@ async function setupListState(browser) {
   const tabsContainer = browser.contentWindow.document.querySelector(
     "#tabpickup-tabs-container"
   );
-  // fake a sync completion, as UIState.UI_UPDATE with a signed-in status will have
-  // triggered a sync when we have 0 tabs
-  Services.obs.notifyObservers(null, "weave:service:sync:finish");
-
+  await tabsContainer.tabListAdded;
   await BrowserTestUtils.waitForMutationCondition(
     tabsContainer,
     { attributeFilter: ["class"], attributes: true },
@@ -327,6 +340,7 @@ async function setupListState(browser) {
       return !tabsContainer.classList.contains("loading");
     }
   );
+  info("tabsContainer isn't loading anymore, returning");
 }
 
 function checkMobilePromo(browser, expected = {}) {
@@ -449,6 +463,99 @@ const waitForCalloutRemoved = async doc => {
 const clickPrimaryButton = async doc => {
   doc.querySelector(primaryButtonSelector).click();
 };
+
+/**
+ * Closes a feature callout via a click to the dismiss button.
+ *
+ * @param {Document} doc The document where the callout appears.
+ */
+const closeCallout = async doc => {
+  // close the callout dialog
+  const dismissBtn = doc.querySelector(`${calloutSelector} .dismiss-button`);
+  if (!dismissBtn) {
+    return;
+  }
+  doc.querySelector(`${calloutSelector} .dismiss-button`).click();
+  await BrowserTestUtils.waitForCondition(() => {
+    return !document.querySelector(calloutSelector);
+  });
+};
+
+/**
+ * Get a Feature Callout message by id.
+ *
+ * @param {string} Message id
+ */
+const getCalloutMessageById = id => {
+  return {
+    message: FeatureCalloutMessages.getMessages().find(m => m.id === id),
+  };
+};
+
+/**
+ * Create a sinon sandbox with `sendTriggerMessage` stubbed
+ * to return a specified test message for featureCalloutCheck.
+ *
+ * @param {object} Test message
+ */
+const createSandboxWithCalloutTriggerStub = testMessage => {
+  const firefoxViewMatch = sinon.match({
+    id: "featureCalloutCheck",
+    context: { source: "firefoxview" },
+  });
+  const sandbox = sinon.createSandbox();
+  const sendTriggerStub = sandbox.stub(ASRouter, "sendTriggerMessage");
+  sendTriggerStub.withArgs(firefoxViewMatch).resolves(testMessage);
+  sendTriggerStub.callThrough();
+  return sandbox;
+};
+
+/**
+ * A helper to check that correct telemetry was sent by AWSendEventTelemetry.
+ * This is a wrapper around sinon's spy functionality.
+ *
+ * @example
+ *  let spy = new TelemetrySpy();
+ *  element.click();
+ *  spy.assertCalledWith({ event: "CLICK" });
+ *  spy.restore();
+ */
+class TelemetrySpy {
+  /**
+   * @param {object} [sandbox] A pre-existing sinon sandbox to build the spy in.
+   *                           If not provided, a new sandbox will be created.
+   */
+  constructor(sandbox = sinon.createSandbox()) {
+    this.sandbox = sandbox;
+    this.spy = this.sandbox
+      .spy(AboutWelcomeParent.prototype, "onContentMessage")
+      .withArgs("AWPage:TELEMETRY_EVENT");
+    registerCleanupFunction(() => this.restore());
+  }
+  /**
+   * Assert that AWSendEventTelemetry sent the expected telemetry object.
+   * @param {Object} expectedData
+   */
+  assertCalledWith(expectedData) {
+    let match = this.spy.calledWith("AWPage:TELEMETRY_EVENT", expectedData);
+    if (match) {
+      ok(true, "Expected telemetry sent");
+    } else if (this.spy.called) {
+      ok(
+        false,
+        "Wrong telemetry sent: " + JSON.stringify(this.spy.lastCall.args)
+      );
+    } else {
+      ok(false, "No telemetry sent");
+    }
+  }
+  reset() {
+    this.spy.resetHistory();
+  }
+  restore() {
+    this.sandbox.restore();
+  }
+}
 
 /**
  * Helper function to open and close a tab so the recently

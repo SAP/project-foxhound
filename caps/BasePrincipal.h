@@ -39,7 +39,8 @@ enum class ReferrerPolicy : uint8_t;
 
 namespace extensions {
 class WebExtensionPolicy;
-}
+class WebExtensionPolicyCore;
+}  // namespace extensions
 
 class BasePrincipal;
 
@@ -213,17 +214,23 @@ class BasePrincipal : public nsJSPrincipals {
   static already_AddRefed<BasePrincipal> CreateContentPrincipal(
       const nsACString& aOrigin);
 
-  // These following method may not create a content principal in case it's
-  // not possible to generate a correct origin from the passed URI. If this
-  // happens, a NullPrincipal is returned.
+  // This method may not create a content principal in case it's not possible to
+  // generate a correct origin from the passed URI. If this happens, a
+  // NullPrincipal is returned.
+  //
+  // If `aInitialDomain` is specified, and a ContentPrincipal is set, it will
+  // initially have its domain set to the given value, without re-computing js
+  // wrappers. Unlike `SetDomain()` this is safe to do off-main-thread.
 
   static already_AddRefed<BasePrincipal> CreateContentPrincipal(
-      nsIURI* aURI, const OriginAttributes& aAttrs);
+      nsIURI* aURI, const OriginAttributes& aAttrs,
+      nsIURI* aInitialDomain = nullptr);
 
   const OriginAttributes& OriginAttributesRef() final {
     return mOriginAttributes;
   }
   extensions::WebExtensionPolicy* AddonPolicy();
+  RefPtr<extensions::WebExtensionPolicyCore> AddonPolicyCore();
   uint32_t UserContextId() const { return mOriginAttributes.mUserContextId; }
   uint32_t PrivateBrowsingId() const {
     return mOriginAttributes.mPrivateBrowsingId;
@@ -240,6 +247,7 @@ class BasePrincipal : public nsJSPrincipals {
   // If this is an add-on content script principal, returns its AddonPolicy.
   // Otherwise returns null.
   extensions::WebExtensionPolicy* ContentScriptAddonPolicy();
+  RefPtr<extensions::WebExtensionPolicyCore> ContentScriptAddonPolicyCore();
 
   // Helper to check whether this principal is associated with an addon that
   // allows unprivileged code to load aURI.  aExplicit == true will prevent
@@ -270,20 +278,7 @@ class BasePrincipal : public nsJSPrincipals {
    * subsume the document principal, and add-on content principals regardless
    * of whether they subsume the document principal.
    */
-  bool OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
-    MOZ_ASSERT(aDocumentPrincipal);
-
-    // Expanded principals override CSP if and only if they subsume the document
-    // principal.
-    if (mKind == eExpandedPrincipal) {
-      return FastSubsumes(aDocumentPrincipal);
-    }
-    // Extension principals always override the CSP non-extension principals.
-    // This is primarily for the sake of their stylesheets, which are usually
-    // loaded from channels and cannot have expanded principals.
-    return (AddonPolicy() &&
-            !BasePrincipal::Cast(aDocumentPrincipal)->AddonPolicy());
-  }
+  bool OverridesCSP(nsIPrincipal* aDocumentPrincipal);
 
   uint32_t GetOriginNoSuffixHash() const { return mOriginNoSuffix->hash(); }
   uint32_t GetOriginSuffixHash() const { return mOriginSuffix->hash(); }
@@ -306,6 +301,8 @@ class BasePrincipal : public nsJSPrincipals {
   // Internal, side-effect-free check to determine whether the concrete
   // principal would allow the load ignoring any common behavior implemented in
   // BasePrincipal::CheckMayLoad.
+  //
+  // Safe to call from any thread, unlike CheckMayLoad.
   virtual bool MayLoadInternal(nsIURI* aURI) = 0;
   friend class ::ExpandedPrincipal;
 
@@ -314,6 +311,7 @@ class BasePrincipal : public nsJSPrincipals {
                               bool aReport, uint64_t aInnerWindowID);
 
   void SetHasExplicitDomain() { mHasExplicitDomain = true; }
+  bool GetHasExplicitDomain() { return mHasExplicitDomain; }
 
   // KeyValT holds a principal subtype-specific key value and the associated
   // parsed value after JSON parsing.
@@ -342,7 +340,7 @@ class BasePrincipal : public nsJSPrincipals {
  private:
   static already_AddRefed<BasePrincipal> CreateContentPrincipal(
       nsIURI* aURI, const OriginAttributes& aAttrs,
-      const nsACString& aOriginNoSuffix);
+      const nsACString& aOriginNoSuffix, nsIURI* aInitialDomain);
 
   bool FastSubsumesIgnoringFPD(nsIPrincipal* aOther,
                                DocumentDomainConsideration aConsideration);
@@ -352,7 +350,7 @@ class BasePrincipal : public nsJSPrincipals {
 
   const OriginAttributes mOriginAttributes;
   const PrincipalKind mKind;
-  bool mHasExplicitDomain;
+  std::atomic<bool> mHasExplicitDomain;
 };
 
 inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {

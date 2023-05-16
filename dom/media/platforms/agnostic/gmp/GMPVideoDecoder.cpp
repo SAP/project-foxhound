@@ -35,7 +35,8 @@ GMPVideoDecoderParams::GMPVideoDecoderParams(const CreateDecoderParams& aParams)
     : mConfig(aParams.VideoConfig()),
       mImageContainer(aParams.mImageContainer),
       mCrashHelper(aParams.mCrashHelper),
-      mKnowsCompositor(aParams.mKnowsCompositor) {}
+      mKnowsCompositor(aParams.mKnowsCompositor),
+      mTrackingId(aParams.mTrackingId) {}
 
 void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
   GMPUniquePtr<GMPVideoi420Frame> decodedFrame(aDecodedFrame);
@@ -69,6 +70,16 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
       media::TimeUnit::FromMicroseconds(-1), pictureRegion, mKnowsCompositor);
   RefPtr<GMPVideoDecoder> self = this;
   if (v) {
+    mPerformanceRecorder.Record(static_cast<int64_t>(decodedFrame->Timestamp()),
+                                [&](DecodeStage& aStage) {
+                                  aStage.SetImageFormat(DecodeStage::YUV420P);
+                                  aStage.SetResolution(decodedFrame->Width(),
+                                                       decodedFrame->Height());
+                                  aStage.SetYUVColorSpace(b.mYUVColorSpace);
+                                  aStage.SetColorDepth(b.mColorDepth);
+                                  aStage.SetColorRange(b.mColorRange);
+                                });
+
     mDecodedData.AppendElement(std::move(v));
   } else {
     mDecodedData.Clear();
@@ -101,6 +112,7 @@ void GMPVideoDecoder::DrainComplete() {
 
 void GMPVideoDecoder::ResetComplete() {
   MOZ_ASSERT(IsOnGMPThread());
+  mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
   mFlushPromise.ResolveIfExists(true, __func__);
 }
 
@@ -126,7 +138,8 @@ GMPVideoDecoder::GMPVideoDecoder(const GMPVideoDecoderParams& aParams)
       mConvertNALUnitLengths(false),
       mCrashHelper(aParams.mCrashHelper),
       mImageContainer(aParams.mImageContainer),
-      mKnowsCompositor(aParams.mKnowsCompositor) {}
+      mKnowsCompositor(aParams.mKnowsCompositor),
+      mTrackingId(aParams.mTrackingId) {}
 
 void GMPVideoDecoder::InitTags(nsTArray<nsCString>& aTags) {
   if (MP4Decoder::IsH264(mConfig.mMimeType)) {
@@ -283,6 +296,24 @@ RefPtr<MediaDataDecoder::DecodePromise> GMPVideoDecoder::Decode(
         __func__);
   }
 
+  if (mTrackingId) {
+    MediaInfoFlag flag = MediaInfoFlag::None;
+    flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                : MediaInfoFlag::NonKeyFrame);
+    if (mGMP->GetDisplayName().EqualsLiteral("gmpopenh264")) {
+      flag |= MediaInfoFlag::SoftwareDecoding;
+    }
+    if (MP4Decoder::IsH264(mConfig.mMimeType)) {
+      flag |= MediaInfoFlag::VIDEO_H264;
+    } else if (VPXDecoder::IsVP8(mConfig.mMimeType)) {
+      flag |= MediaInfoFlag::VIDEO_VP8;
+    } else if (VPXDecoder::IsVP9(mConfig.mMimeType)) {
+      flag |= MediaInfoFlag::VIDEO_VP9;
+    }
+    mPerformanceRecorder.Start(aSample->mTime.ToMicroseconds(),
+                               "GMPVideoDecoder"_ns, *mTrackingId, flag);
+  }
+
   mLastStreamOffset = sample->mOffset;
 
   GMPUniquePtr<GMPVideoEncodedFrame> frame = CreateFrame(sample);
@@ -313,6 +344,7 @@ RefPtr<MediaDataDecoder::FlushPromise> GMPVideoDecoder::Flush() {
   RefPtr<FlushPromise> p = mFlushPromise.Ensure(__func__);
   if (!mGMP || NS_FAILED(mGMP->Reset())) {
     // Abort the flush.
+    mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     mFlushPromise.Resolve(true, __func__);
   }
   return p;

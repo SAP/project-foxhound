@@ -4,28 +4,27 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import functools
+import glob
+import logging
 import os
 import re
-import sys
-import glob
 import shutil
-import logging
+import sys
 import tarfile
 import tempfile
-import requests
-import functools
 
 import mozfile
 import mozpack.path as mozpath
-
+import requests
 from mozbuild.base import MozbuildObject
 from mozbuild.vendor.rewrite_mozbuild import (
+    MozBuildRewriteException,
     add_file_to_moz_build_file,
     remove_file_from_moz_build_file,
-    MozBuildRewriteException,
 )
 
-DEFAULT_EXCLUDE_FILES = [".git*"]
+DEFAULT_EXCLUDE_FILES = [".git*", ".git*/**"]
 DEFAULT_KEEP_FILES = ["**/moz.build", "**/moz.yaml"]
 DEFAULT_INCLUDE_FILES = []
 
@@ -162,10 +161,10 @@ class VendorManifest(MozbuildObject):
         # for the last commit that modified a file; nor a way to get file
         # blame.  So really all we can do is just download and replace the
         # files and see if they changed...
-        for f in self.manifest["vendoring"]["individual-files"]:
-            url = self.source_host.upstream_path_to_file(new_revision, f["upstream"])
+
+        def download_and_write_file(url, destination):
             self.logInfo(
-                {"local_file": f["destination"], "url": url},
+                {"local_file": destination, "url": url},
                 "Downloading {local_file} from {url}...",
             )
 
@@ -176,12 +175,30 @@ class VendorManifest(MozbuildObject):
                         tmpfile.write(data)
                     tmpfile.seek(0)
 
-                    destination = self.get_full_path(f["destination"])
                     shutil.copy2(tmpfile.name, destination)
                 except Exception as e:
                     raise (e)
 
+        # Only one of these loops will have content, so just do them both
+        for f in self.manifest["vendoring"].get("individual-files", []):
+            url = self.source_host.upstream_path_to_file(new_revision, f["upstream"])
+            destination = self.get_full_path(f["destination"])
+            download_and_write_file(url, destination)
+
+        for f in self.manifest["vendoring"].get("individual-files-list", []):
+            url = self.source_host.upstream_path_to_file(
+                new_revision,
+                self.manifest["vendoring"]["individual-files-default-upstream"] + f,
+            )
+            destination = self.get_full_path(
+                self.manifest["vendoring"]["individual-files-default-destination"] + f
+            )
+            download_and_write_file(url, destination)
+
         self.spurious_check(new_revision, ignore_modified)
+
+        self.logInfo({}, "Checking for update actions")
+        self.update_files(new_revision)
 
         self.update_yaml(new_revision, timestamp)
 
@@ -307,7 +324,11 @@ class VendorManifest(MozbuildObject):
                 paths.extend(glob.iglob(pattern_full_path, recursive=True))
         # Remove folder names from list of paths in order to avoid prematurely
         # truncating directories elsewhere
-        return [mozpath.normsep(path) for path in paths if not os.path.isdir(path)]
+        # Sort the final list to ensure we preserve 01_, 02_ ordering for e.g. *.patch globs
+        final_paths = sorted(
+            [mozpath.normsep(path) for path in paths if not os.path.isdir(path)]
+        )
+        return final_paths
 
     def fetch_and_unpack(self, revision):
         """Fetch and unpack upstream source"""

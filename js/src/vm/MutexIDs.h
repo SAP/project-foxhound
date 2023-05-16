@@ -20,6 +20,7 @@
   _(ShellContextWatchdog, 100)        \
   _(ShellWorkerThreads, 100)          \
   _(ShellObjectMailbox, 100)          \
+  _(WellKnownParserAtomsInit, 100)    \
                                       \
   _(WasmInitBuiltinThunks, 250)       \
   _(WasmLazyStubsTier1, 250)          \
@@ -31,6 +32,7 @@
                                       \
   _(GlobalHelperThreadState, 400)     \
                                       \
+  _(StringsCache, 500)                \
   _(FutexThread, 500)                 \
   _(GeckoProfilerStrings, 500)        \
   _(ProtectedRegionTree, 500)         \

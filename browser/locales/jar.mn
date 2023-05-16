@@ -14,6 +14,7 @@
   preview/firefoxSuggest.ftl                       (../components/urlbar/content/firefoxSuggest.ftl)
   preview/identityCredentialNotification.ftl       (../components/credentialmanager/identityCredentialNotification.ftl)
   preview/protectionsPanel.ftl                     (../base/content/protectionsPanel.ftl)
+  locales-preview/migrationWizard.ftl              (../locales-preview/migrationWizard.ftl)
   browser                                          (%browser/**/*.ftl)
 
 @AB_CD@.jar:
@@ -26,9 +27,7 @@
     locale/browser/siteData.properties             (%chrome/browser/siteData.properties)
     locale/browser/sitePermissions.properties      (%chrome/browser/sitePermissions.properties)
     locale/browser/shellservice.properties         (%chrome/browser/shellservice.properties)
-    locale/browser/tabbrowser.properties           (%chrome/browser/tabbrowser.properties)
     locale/browser/taskbar.properties              (%chrome/browser/taskbar.properties)
-    locale/browser/translation.dtd                 (%chrome/browser/translation.dtd)
     locale/browser/downloads/downloads.properties  (%chrome/browser/downloads/downloads.properties)
     locale/browser/places/places.properties        (%chrome/browser/places/places.properties)
     locale/browser/places/bookmarkProperties.properties (%chrome/browser/places/bookmarkProperties.properties)

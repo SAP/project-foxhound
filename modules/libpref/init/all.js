@@ -694,12 +694,14 @@ pref("toolkit.telemetry.unified", true);
 
 // DAP related preferences
 pref("toolkit.telemetry.dap_enabled", false);
+// Verification tasks
+pref("toolkit.telemetry.dap_task1_enabled", false);
 // Leader endpoint for the DAP protocol
-pref("toolkit.telemetry.dap_leader", "https://interop-00.api.divviup.org");
+pref("toolkit.telemetry.dap_leader", "https://dap-02.api.divviup.org");
 // Not used for anything. Just additional information.
 pref("toolkit.telemetry.dap_leader_owner", "ISRG");
 // Second DAP server. Only two are currently supported.
-pref("toolkit.telemetry.dap_helper", "https://helper1.dap.cloudflareresearch.com/v01");
+pref("toolkit.telemetry.dap_helper", "https://helper1.dap.cloudflareresearch.com/v02");
 pref("toolkit.telemetry.dap_helper_owner", "Cloudflare");
 pref("toolkit.telemetry.dap.logLevel", "Warn");
 
@@ -1047,6 +1049,9 @@ pref("javascript.options.mem.gc_incremental_slice_ms", 5);
 // JSGC_COMPACTING_ENABLED
 pref("javascript.options.mem.gc_compacting", true);
 
+// JSGC_PARALLEL_MARKING_ENABLED
+pref("javascript.options.mem.gc_parallel_marking", false);
+
 // JSGC_HIGH_FREQUENCY_TIME_LIMIT
 pref("javascript.options.mem.gc_high_frequency_time_limit_ms", 1000);
 
@@ -1078,7 +1083,7 @@ pref("javascript.options.mem.gc_allocation_threshold_mb", 27);
 pref("javascript.options.mem.gc_malloc_threshold_base_mb", 38);
 
 // JSGC_SMALL_HEAP_INCREMENTAL_LIMIT
-pref("javascript.options.mem.gc_small_heap_incremental_limit", 140);
+pref("javascript.options.mem.gc_small_heap_incremental_limit", 150);
 
 // JSGC_LARGE_HEAP_INCREMENTAL_LIMIT
 pref("javascript.options.mem.gc_large_heap_incremental_limit", 110);
@@ -1973,23 +1978,18 @@ pref("extensions.eventPages.enabled", true);
 // (only allowing same extension urls to be used as action popup urls).
 pref("extensions.manifestV2.actionsPopupURLRestricted", false);
 // Whether "manifest_version: 3" extensions should be allowed to install successfully.
-#ifdef EARLY_BETA_OR_EARLIER
-  pref("extensions.manifestV3.enabled", true);
-#else
-  pref("extensions.manifestV3.enabled", false);
-#endif
-// Whether to enable the unified extensions feature.
-#ifdef NIGHTLY_BUILD
-  pref("extensions.unifiedExtensions.enabled", true);
-#else
-  pref("extensions.unifiedExtensions.enabled", false);
-#endif
+pref("extensions.manifestV3.enabled", true);
+// Whether to enable the unified extensions feature. Note that this pref is
+// enabled for Firefox Desktop in `browser/app/profile/firefox.js`.
+pref("extensions.unifiedExtensions.enabled", false);
 // Whether to enable the updated openPopup API.
 #ifdef NIGHTLY_BUILD
   pref("extensions.openPopupWithoutUserGesture.enabled", true);
 #else
   pref("extensions.openPopupWithoutUserGesture.enabled", false);
 #endif
+// Install origins restriction.
+pref("extensions.install_origins.enabled", false);
 
 // Modifier key prefs: default to Windows settings,
 // menu access key = alt, accelerator key = control.
@@ -3404,7 +3404,7 @@ pref("extensions.webcompat-reporter.newIssueEndpoint", "https://webcompat.com/is
 pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* http://localhost:* http://127.0.0.1:* moz-extension: blob: filesystem: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline';");
 pref("extensions.webextensions.base-content-security-policy.v3", "script-src 'self' 'wasm-unsafe-eval';");
 pref("extensions.webextensions.default-content-security-policy", "script-src 'self' 'wasm-unsafe-eval';");
-pref("extensions.webextensions.default-content-security-policy.v3", "script-src 'self';");
+pref("extensions.webextensions.default-content-security-policy.v3", "script-src 'self'; upgrade-insecure-requests;");
 
 
 pref("network.buffer.cache.count", 24);
@@ -4133,7 +4133,7 @@ pref("devtools.remote.wifi.scan", true);
 pref("devtools.remote.adb.extensionID", "adb@mozilla.org");
 // The URL for for devtools-adb-extension (overridden in tests to a local
 // path).
-pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/mozilla.org/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
+pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
 
 // Enable Inactive CSS detection; used both by the client and the server.
 pref("devtools.inspector.inactive.css.enabled", true);

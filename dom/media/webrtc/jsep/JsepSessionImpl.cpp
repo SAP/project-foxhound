@@ -520,25 +520,6 @@ void JsepSessionImpl::AddCommonExtmaps(const SdpMediaSection& remoteMsection,
   auto negotiatedRtpExtensions = GetRtpExtensions(*msection);
   mSdpHelper.NegotiateAndAddExtmaps(remoteMsection, negotiatedRtpExtensions,
                                     msection);
-  for (const auto& negotiatedExtension : negotiatedRtpExtensions) {
-    if (negotiatedExtension.entry == 0) {
-      MOZ_ASSERT(false, "This should have been caught sooner");
-      continue;
-    }
-
-    for (auto& originalExtension : mRtpExtensions) {
-      if (negotiatedExtension.extensionname ==
-          originalExtension.mExtmap.extensionname) {
-        // Update extmap to match what was negotiated
-        originalExtension.mExtmap.entry = negotiatedExtension.entry;
-        mExtmapEntriesEverUsed.insert(negotiatedExtension.entry);
-      } else if (originalExtension.mExtmap.entry == negotiatedExtension.entry) {
-        // If this extmap entry was claimed for a different extension, update it
-        // to a new value so we don't end up with a duplicate.
-        originalExtension.mExtmap.entry = GetNeverUsedExtmapEntry();
-      }
-    }
-  }
 }
 
 uint16_t JsepSessionImpl::GetNeverUsedExtmapEntry() {
@@ -1215,6 +1196,33 @@ nsresult JsepSessionImpl::MakeNegotiatedTransceiver(
     MOZ_MTLOG(ML_DEBUG, "[" << mName << "]: RTCP-MUX is off");
   }
 
+  if (answer.GetAttributeList().HasAttribute(SdpAttribute::kExtmapAttribute)) {
+    const auto extmaps = answer.GetAttributeList().GetExtmap().mExtmaps;
+    for (const auto& negotiatedExtension : extmaps) {
+      if (negotiatedExtension.entry == 0) {
+        MOZ_ASSERT(false, "This should have been caught sooner");
+        continue;
+      }
+
+      mExtmapEntriesEverNegotiated[negotiatedExtension.entry] =
+          negotiatedExtension.extensionname;
+
+      for (auto& originalExtension : mRtpExtensions) {
+        if (negotiatedExtension.extensionname ==
+            originalExtension.mExtmap.extensionname) {
+          // Update extmap to match what was negotiated
+          originalExtension.mExtmap.entry = negotiatedExtension.entry;
+          mExtmapEntriesEverUsed.insert(negotiatedExtension.entry);
+        } else if (originalExtension.mExtmap.entry ==
+                   negotiatedExtension.entry) {
+          // If this extmap entry was claimed for a different extension, update
+          // it to a new value so we don't end up with a duplicate.
+          originalExtension.mExtmap.entry = GetNeverUsedExtmapEntry();
+        }
+      }
+    }
+  }
+
   return NS_OK;
 }
 
@@ -1833,18 +1841,41 @@ nsresult JsepSessionImpl::ValidateLocalDescription(const Sdp& description,
 }
 
 nsresult JsepSessionImpl::ValidateRemoteDescription(const Sdp& description) {
-  if (!mCurrentRemoteDescription || !mCurrentLocalDescription) {
-    // Not renegotiation; checks for whether a remote answer are consistent
-    // with our offer are handled in ValidateAnswer()
+  if (!mCurrentLocalDescription) {
+    // Initial offer; nothing to validate besides the stuff in ParseSdp
     return NS_OK;
   }
 
-  if (mCurrentRemoteDescription->GetMediaSectionCount() >
+  if (mCurrentLocalDescription->GetMediaSectionCount() >
       description.GetMediaSectionCount()) {
     JSEP_SET_ERROR(
         "New remote description has fewer m-sections than the "
         "previous remote description.");
     return NS_ERROR_INVALID_ARG;
+  }
+
+  for (size_t i = 0; i < description.GetMediaSectionCount(); ++i) {
+    const SdpAttributeList& attrs =
+        description.GetMediaSection(i).GetAttributeList();
+
+    if (attrs.HasAttribute(SdpAttribute::kExtmapAttribute)) {
+      for (const auto& ext : attrs.GetExtmap().mExtmaps) {
+        if (mExtmapEntriesEverNegotiated.count(ext.entry) &&
+            mExtmapEntriesEverNegotiated[ext.entry] != ext.extensionname) {
+          JSEP_SET_ERROR(
+              "Remote description attempted to remap RTP extension id "
+              << ext.entry << " from "
+              << mExtmapEntriesEverNegotiated[ext.entry] << " to "
+              << ext.extensionname);
+          return NS_ERROR_INVALID_ARG;
+        }
+      }
+    }
+  }
+
+  if (!mCurrentRemoteDescription) {
+    // No further checking for initial answers
+    return NS_OK;
   }
 
   // These are solely to check that bundle is valid

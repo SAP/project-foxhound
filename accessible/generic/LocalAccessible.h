@@ -81,6 +81,9 @@ typedef nsRefPtrHashtable<nsPtrHashKey<const void>, LocalAccessible>
     }                                                \
   }
 
+/**
+ * An accessibility tree node that originated in mDoc's content process.
+ */
 class LocalAccessible : public nsISupports, public Accessible {
  public:
   LocalAccessible(nsIContent* aContent, DocAccessible* aDoc);
@@ -446,7 +449,8 @@ class LocalAccessible : public nsISupports, public Accessible {
   // Downcasting and types
 
   inline bool IsAbbreviation() const {
-    return mContent->IsAnyOfHTMLElements(nsGkAtoms::abbr, nsGkAtoms::acronym);
+    return mContent &&
+           mContent->IsAnyOfHTMLElements(nsGkAtoms::abbr, nsGkAtoms::acronym);
   }
 
   ApplicationAccessible* AsApplication();
@@ -463,11 +467,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   ImageAccessible* AsImage();
 
   HTMLImageMapAccessible* AsImageMap();
-
-  RemoteAccessible* Proxy() const {
-    MOZ_ASSERT(IsProxy());
-    return mBits.proxy;
-  }
 
   OuterDocAccessible* AsOuterDoc();
 
@@ -1036,10 +1035,7 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   friend class EmbeddedObjCollector;
 
-  union {
-    AccGroupInfo* groupInfo;
-    RemoteAccessible* proxy;
-  } mutable mBits;
+  mutable AccGroupInfo* mGroupInfo;
   friend class AccGroupInfo;
 
  private:

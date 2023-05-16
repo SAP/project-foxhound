@@ -66,7 +66,6 @@ const backgroundtaskPhases = {
         "@mozilla.org/network/idn-service;1",
         "@mozilla.org/network/io-service;1",
         "@mozilla.org/network/network-link-service;1",
-        "@mozilla.org/network/protocol;1?name=chrome",
         "@mozilla.org/network/protocol;1?name=file",
         "@mozilla.org/network/protocol;1?name=jar",
         "@mozilla.org/network/protocol;1?name=resource",
@@ -185,22 +184,9 @@ function getStackFromProfile(profile, stack, libs) {
 }
 
 add_task(async function test_xpcom_graph_wait() {
-  {
-    let omniJa = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
-    omniJa.append("omni.ja");
-    if (!omniJa.exists()) {
-      ok(
-        false,
-        "This test requires a packaged build, " +
-          "run 'mach package' and then use --appname=dist"
-      );
-      return;
-    }
-  }
+  TestUtils.assertPackagedBuild();
 
-  let profilePath = Cc["@mozilla.org/process/environment;1"]
-    .getService(Ci.nsIEnvironment)
-    .get("MOZ_UPLOAD_DIR");
+  let profilePath = Services.env.get("MOZ_UPLOAD_DIR");
   profilePath =
     profilePath ||
     (await IOUtils.createUniqueDirectory(

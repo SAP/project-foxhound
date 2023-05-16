@@ -6,16 +6,11 @@ This transform construct tasks to perform diffs between builds, as
 defined in kind.yml
 """
 
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.taskcluster import get_artifact_path
-from taskgraph.util.schema import Schema
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-)
-
 from gecko_taskgraph.transforms.task import task_description_schema
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema
+from taskgraph.util.taskcluster import get_artifact_path
+from voluptuous import Any, Optional, Required
 
 index_or_string = Any(
     str,
@@ -127,7 +122,7 @@ def fill_template(config, tasks):
                 "kind": "other",
                 "tier": task["tier"],
             },
-            "worker-type": "b-linux",
+            "worker-type": "b-linux-gcp",
             "worker": {
                 "docker-image": {"in-tree": "diffoscope"},
                 "artifacts": [

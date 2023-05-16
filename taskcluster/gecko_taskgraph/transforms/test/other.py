@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 
+from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
+from gecko_taskgraph.util.platforms import platform_family
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from mozbuild.util import ReadOnlyDict
 from taskgraph.transforms.base import TransformSequence
@@ -13,14 +15,7 @@ from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
 from taskgraph.util.schema import Schema, resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_path, get_index_url
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-)
-
-from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
-from gecko_taskgraph.util.platforms import platform_family
+from voluptuous import Any, Optional, Required
 
 transforms = TransformSequence()
 
@@ -134,37 +129,6 @@ def handle_artifact_prefix(config, tasks):
 
 
 @transforms.add
-def set_target(config, tasks):
-    for task in tasks:
-        build_platform = task["build-platform"]
-        target = None
-        if "target" in task:
-            resolve_keyed_by(
-                task, "target", item_name=task["test-name"], enforce_single_match=False
-            )
-            target = task["target"]
-        if not target:
-            if build_platform.startswith("macosx"):
-                target = "target.dmg"
-            elif build_platform.startswith("android"):
-                target = "target.apk"
-            elif build_platform.startswith("win"):
-                target = "target.zip"
-            else:
-                target = "target.tar.bz2"
-
-        if isinstance(target, dict):
-            # TODO Remove hardcoded mobile artifact prefix
-            index_url = get_index_url(target["index"])
-            installer_url = "{}/artifacts/public/{}".format(index_url, target["name"])
-            task["mozharness"]["installer-url"] = installer_url
-        else:
-            task["mozharness"]["build-artifact-name"] = get_artifact_path(task, target)
-
-        yield task
-
-
-@transforms.add
 def set_treeherder_machine_platform(config, tasks):
     """Set the appropriate task.extra.treeherder.machine.platform"""
     translation = {
@@ -266,6 +230,8 @@ def handle_keyed_by(config, tasks):
         "fetches.toolchain",
         "target",
         "webrender-run-on-projects",
+        "mozharness.requires-signed-builds",
+        "build-signing-label",
     ]
     for task in tasks:
         for field in fields:
@@ -277,6 +243,34 @@ def handle_keyed_by(config, tasks):
                 project=config.params["project"],
                 variant=task["attributes"].get("unittest_variant"),
             )
+        yield task
+
+
+@transforms.add
+def set_target(config, tasks):
+    for task in tasks:
+        build_platform = task["build-platform"]
+        target = None
+        if "target" in task:
+            target = task["target"]
+        if not target:
+            if build_platform.startswith("macosx"):
+                target = "target.dmg"
+            elif build_platform.startswith("android"):
+                target = "target.apk"
+            elif build_platform.startswith("win"):
+                target = "target.zip"
+            else:
+                target = "target.tar.bz2"
+
+        if isinstance(target, dict):
+            # TODO Remove hardcoded mobile artifact prefix
+            index_url = get_index_url(target["index"])
+            installer_url = "{}/artifacts/public/{}".format(index_url, target["name"])
+            task["mozharness"]["installer-url"] = installer_url
+        else:
+            task["mozharness"]["build-artifact-name"] = get_artifact_path(task, target)
+
         yield task
 
 
@@ -340,6 +334,7 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-105",
                 "linux64-chromedriver-106",
                 "linux64-chromedriver-107",
+                "linux64-chromedriver-108",
             ],
             "macosx.*": [
                 "mac64-chromedriver-102",
@@ -348,6 +343,7 @@ def setup_browsertime(config, tasks):
                 "mac64-chromedriver-105",
                 "mac64-chromedriver-106",
                 "mac64-chromedriver-107",
+                "mac64-chromedriver-108",
             ],
             "windows.*aarch64.*": [
                 "win32-chromedriver-102",
@@ -356,6 +352,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-105",
                 "win32-chromedriver-106",
                 "win32-chromedriver-107",
+                "win32-chromedriver-108",
             ],
             "windows.*-32.*": [
                 "win32-chromedriver-102",
@@ -364,6 +361,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-105",
                 "win32-chromedriver-106",
                 "win32-chromedriver-107",
+                "win32-chromedriver-108",
             ],
             "windows.*-64.*": [
                 "win32-chromedriver-102",
@@ -372,6 +370,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-105",
                 "win32-chromedriver-106",
                 "win32-chromedriver-107",
+                "win32-chromedriver-108",
             ],
         }
 

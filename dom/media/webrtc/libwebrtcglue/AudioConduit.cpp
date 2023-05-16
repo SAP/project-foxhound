@@ -237,8 +237,27 @@ void WebrtcAudioConduit::OnControlConfigChange() {
   if (auto filteredExtensions = FilterExtensions(
           LocalDirection::kSend, mControl.mLocalSendRtpExtensions);
       filteredExtensions != mSendStreamConfig.rtp.extensions) {
-    mSendStreamConfig.rtp.extensions = std::move(filteredExtensions);
+    // At the very least, we need a reconfigure. Recreation needed if the
+    // extmap for any extension has changed, but not for adding/removing
+    // extensions.
     sendStreamReconfigureNeeded = true;
+
+    for (const auto& newExt : filteredExtensions) {
+      if (sendStreamRecreationNeeded) {
+        break;
+      }
+      for (const auto& oldExt : mSendStreamConfig.rtp.extensions) {
+        if (newExt.uri == oldExt.uri) {
+          if (newExt.id != oldExt.id) {
+            sendStreamRecreationNeeded = true;
+          }
+          // We're done handling newExt, one way or another
+          break;
+        }
+      }
+    }
+
+    mSendStreamConfig.rtp.extensions = std::move(filteredExtensions);
   }
 
   mControl.mSendCodec.Ref().apply([&](const auto& aConfig) {
@@ -373,8 +392,8 @@ Maybe<Ssrc> WebrtcAudioConduit::GetRemoteSSRC() const {
              : Some(mRecvStreamConfig.rtp.remote_ssrc);
 }
 
-Maybe<webrtc::AudioReceiveStream::Stats> WebrtcAudioConduit::GetReceiverStats()
-    const {
+Maybe<webrtc::AudioReceiveStreamInterface::Stats>
+WebrtcAudioConduit::GetReceiverStats() const {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   if (!mRecvStream) {
     return Nothing();
@@ -470,7 +489,7 @@ MediaConduitErrorCode WebrtcAudioConduit::GetAudioFrame(
   // only way short of interfacing with a layer above (which mixes all streams,
   // which we don't want) or a layer below (which we try to avoid because it is
   // less stable).
-  auto info = static_cast<webrtc::internal::AudioReceiveStream*>(mRecvStream)
+  auto info = static_cast<webrtc::AudioReceiveStreamImpl*>(mRecvStream)
                   ->GetAudioFrameWithInfo(samplingFreqHz, frame);
 
   if (info == webrtc::AudioMixer::Source::AudioFrameInfo::kError) {

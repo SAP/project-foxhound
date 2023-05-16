@@ -1588,7 +1588,7 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
           rel: "noopener noreferrer"
         }, info.url), ")");
       } else if (provider.type === "remote-settings") {
-        label = `remote settings (${provider.bucket})`;
+        label = `remote settings (${provider.collection})`;
       } else if (provider.type === "remote-experiments") {
         label = /*#__PURE__*/external_React_default().createElement("span", null, "remote settings (", /*#__PURE__*/external_React_default().createElement("a", {
           className: "providerUrl",
@@ -8309,7 +8309,7 @@ function RecentSavesContainer({
     return null;
   }
 
-  let queryParams = `?utm_source=${utmSource}`;
+  let queryParams = `?utm_source=${utmSource}`; // We really only need to add these params to urls we own.
 
   if (utmCampaign && utmContent) {
     queryParams += `&utm_content=${utmContent}&utm_campaign=${utmCampaign}`;
@@ -11825,7 +11825,7 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
-        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : `url(${spocImgURL})`
+        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : `url('${spocImgURL}')`
       };
     } else if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
       // styles and class names for top sites with rich icons
@@ -13640,12 +13640,17 @@ class TopSites_TopSites_TopSites extends (external_React_default()).PureComponen
     // Spoc domains are in the format 'sponsorname.com'
 
     return spocs.find(spoc => !userTopSites.has(spoc.url) && !userTopSites.has(`http://${spoc.domain}`) && !userTopSites.has(`https://${spoc.domain}`) && !userTopSites.has(`http://www.${spoc.domain}`) && !userTopSites.has(`https://www.${spoc.domain}`));
+  }
+
+  reformatImageURL(url, width, height) {
+    // Change the image URL to request a size tailored for the parent container width
+    // Also: force JPEG, quality 60, no upscaling, no EXIF data
+    // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
+    return `https://img-getpocket.cdn.mozilla.net/${width}x${height}/filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(url)}`;
   } // For the time being we only support 1 position.
 
 
   insertSpocContent(TopSites, data, promoPosition) {
-    var _topSites$promoPositi;
-
     if (!TopSites.rows || TopSites.rows.length === 0 || !data.spocs || data.spocs.length === 0) {
       return null;
     }
@@ -13658,7 +13663,7 @@ class TopSites_TopSites_TopSites extends (external_React_default()).PureComponen
     }
 
     const link = {
-      customScreenshotURL: topSiteSpoc.image_src,
+      customScreenshotURL: this.reformatImageURL(topSiteSpoc.raw_image_src, 40, 40),
       type: "SPOC",
       label: topSiteSpoc.title || topSiteSpoc.sponsor,
       title: topSiteSpoc.title || topSiteSpoc.sponsor,
@@ -13672,9 +13677,15 @@ class TopSites_TopSites_TopSites extends (external_React_default()).PureComponen
       // We also hard code left and right to be 0 and 7.
       // We send the intended position in the ping.
       pos: promoPosition
-    };
-    const replaceCount = (_topSites$promoPositi = topSites[promoPosition]) !== null && _topSites$promoPositi !== void 0 && _topSites$promoPositi.show_sponsored_label ? 1 : 0;
-    topSites.splice(promoPosition, replaceCount, link);
+    }; // Remove first contile or regular topsite, then insert new spoc into position.
+
+    const replaceIndex = topSites.findIndex((topSite, index) => index >= promoPosition && (!topSite || topSite.show_sponsored_label || !(topSite.isPinned || topSite.searchTopSite))); // If we found something to replace, first remove it.
+
+    if (replaceIndex !== -1) {
+      topSites.splice(replaceIndex, 1);
+    }
+
+    topSites.splice(promoPosition, 0, link);
     return { ...TopSites,
       rows: topSites
     };

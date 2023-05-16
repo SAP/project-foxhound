@@ -6,15 +6,15 @@ from __future__ import absolute_import
 import os
 import pathlib
 
-from perfdocs.logger import PerfDocLogger
-from perfdocs.utils import read_yaml
 from perfdocs.framework_gatherers import (
+    AwsyGatherer,
     MozperftestGatherer,
     RaptorGatherer,
     StaticGatherer,
     TalosGatherer,
-    AwsyGatherer,
 )
+from perfdocs.logger import PerfDocLogger
+from perfdocs.utils import read_yaml
 
 logger = PerfDocLogger()
 
@@ -25,6 +25,9 @@ frameworks = {
     "talos": TalosGatherer,
     "awsy": AwsyGatherer,
 }
+
+# List of file types allowed to be used as static files
+ALLOWED_STATIC_FILETYPES = ("rst", "png")
 
 
 class Gatherer(object):
@@ -94,7 +97,7 @@ class Gatherer(object):
                     matched["yml"] = file
                 elif file == "index.rst":
                     matched["rst"] = file
-                elif file.endswith(".rst"):
+                elif file.split(".")[-1] in ALLOWED_STATIC_FILETYPES:
                     matched["static"].append(file)
 
             # Append to structdocs if all the searched files were found

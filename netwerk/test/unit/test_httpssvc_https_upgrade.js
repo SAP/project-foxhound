@@ -14,17 +14,20 @@ const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
+const ReferrerInfo = Components.Constructor(
+  "@mozilla.org/referrer-info;1",
+  "nsIReferrerInfo",
+  "init"
 );
 
 add_setup(async function setup() {
   trr_test_setup();
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -309,4 +312,44 @@ add_task(async function testHttpRequestBlocked() {
   Assert.equal(request.status, Cr.NS_BINDING_ABORTED);
   dnsRequestObserver.unregister();
   await new Promise(resolve => httpserv.stop(resolve));
+});
+
+function createPrincipal(url) {
+  return Services.scriptSecurityManager.createContentPrincipal(
+    Services.io.newURI(url),
+    {}
+  );
+}
+
+// Test if the Origin header stays the same after an internal HTTPS upgrade
+// caused by HTTPS RR.
+add_task(async function testHTTPSRRUpgradeWithOriginHeader() {
+  dns.clearCache(true);
+
+  const url = "http://test.httpssvc.com:80/origin_header";
+  const originURL = "http://example.com";
+  let chan = Services.io
+    .newChannelFromURIWithProxyFlags(
+      Services.io.newURI(url),
+      null,
+      Ci.nsIProtocolProxyService.RESOLVE_ALWAYS_TUNNEL,
+      null,
+      createPrincipal(originURL),
+      createPrincipal(url),
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_DOCUMENT
+    )
+    .QueryInterface(Ci.nsIHttpChannel);
+  chan.referrerInfo = new ReferrerInfo(
+    Ci.nsIReferrerInfo.EMPTY,
+    true,
+    NetUtil.newURI(url)
+  );
+  chan.setRequestHeader("Origin", originURL, false);
+
+  let [req, buf] = await channelOpenPromise(chan);
+
+  req.QueryInterface(Ci.nsIHttpChannel);
+  Assert.equal(req.getResponseHeader("x-connection-http2"), "yes");
+  Assert.equal(buf, originURL);
 });

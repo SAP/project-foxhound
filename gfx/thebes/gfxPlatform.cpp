@@ -1109,6 +1109,10 @@ void gfxPlatform::ReportTelemetry() {
                        adapterDriverDate);
 
   Telemetry::ScalarSet(Telemetry::ScalarID::GFX_HEADLESS, IsHeadless());
+
+  MOZ_ASSERT(gPlatform, "Need gPlatform to generate some telemetry.");
+  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_SUPPORTS_HDR,
+                       gPlatform->SupportsHDR());
 }
 
 static bool IsFeatureSupported(long aFeature, bool aDefault) {
@@ -2906,9 +2910,23 @@ void gfxPlatform::InitWebGLConfig() {
   threadsafeGL &= !StaticPrefs::webgl_threadsafe_gl_force_disabled_AtStartup();
   gfxVars::SetSupportsThreadsafeGL(threadsafeGL);
 
-  bool useCanvasRenderThread =
-      threadsafeGL && StaticPrefs::webgl_use_canvas_render_thread_AtStartup();
-  gfxVars::SetUseCanvasRenderThread(useCanvasRenderThread);
+  FeatureState& feature =
+      gfxConfig::GetFeature(Feature::CANVAS_RENDERER_THREAD);
+  if (!threadsafeGL) {
+    feature.DisableByDefault(FeatureStatus::Blocked, "Thread unsafe GL",
+                             "FEATURE_FAILURE_THREAD_UNSAFE_GL"_ns);
+  } else if (!StaticPrefs::webgl_use_canvas_render_thread_AtStartup()) {
+    feature.DisableByDefault(FeatureStatus::Blocked, "Disabled by pref",
+                             "FEATURE_FAILURE_DISABLED_BY_PREF"_ns);
+  } else {
+    feature.EnableByDefault();
+  }
+  gfxVars::SetUseCanvasRenderThread(feature.IsEnabled());
+
+  bool webglOopAsyncPresentForceSync =
+      !gfxVars::UseCanvasRenderThread() ||
+      StaticPrefs::webgl_out_of_process_async_present_force_sync();
+  gfxVars::SetWebglOopAsyncPresentForceSync(webglOopAsyncPresentForceSync);
 
   if (kIsAndroid) {
     // Don't enable robust buffer access on Adreno 630 devices.

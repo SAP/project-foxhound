@@ -4,16 +4,18 @@
 "use strict";
 
 /**
- * This test assumes that all opened and closed tabs will live
- * on the main gBrowser that is created as part of the test.
+ * The recently closed tab list is populated on a per-window basis.
  *
- * If you try to use the withFirefoxView helper with the
- * add_new_tab, close_tab, open_then_close functions, you're going
- * to have a bad time.
+ * By default, the withFirefoxView helper opens a new window.
+ * When using this helper for the tests in this file, we pass a
+ * { win: window } option to skip that step and open fx view in
+ * the current window. This ensures that the add_new_tab, close_tab,
+ * and open_then_close functions are creating sessionstore entries
+ * associated with the correct window where the tests are run.
  */
 
-XPCOMUtils.defineLazyModuleGetters(globalThis, {
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
+ChromeUtils.defineESModuleGetters(globalThis, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
 
 const { TabsSetupFlowManager } = ChromeUtils.importESModule(
@@ -29,6 +31,10 @@ const CLOSED_TABS_OPEN_EVENT = [
   ["firefoxview", "closed_tabs_open", "tabs", "false"],
 ];
 
+const RECENTLY_CLOSED_DISMISS_EVENT = [
+  ["firefoxview", "dismiss_closed_tab", "tabs", undefined],
+];
+
 async function add_new_tab(URL) {
   let tab = BrowserTestUtils.addTab(gBrowser, URL);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
@@ -41,58 +47,61 @@ async function close_tab(tab) {
   await sessionStorePromise;
 }
 
+async function dismiss_tab(tab, content) {
+  info(`Dismissing tab ${tab.dataset.targetURI}`);
+  const closedObjectsChanged = () =>
+    TestUtils.topicObserved("sessionstore-closed-objects-changed");
+  let dismissButton = tab.querySelector(".closed-tab-li-dismiss");
+  EventUtils.synthesizeMouseAtCenter(dismissButton, {}, content);
+  await closedObjectsChanged();
+}
+
 add_task(async function test_empty_list() {
   clearHistory();
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      const { document } = browser.contentWindow;
-      let container = document.querySelector("#collapsible-tabs-container");
-      ok(
-        container.classList.contains("empty-container"),
-        "collapsible container should have correct styling when the list is empty"
-      );
+  await withFirefoxView({ win: window }, async browser => {
+    const { document } = browser.contentWindow;
+    let container = document.querySelector("#collapsible-tabs-container");
+    ok(
+      container.classList.contains("empty-container"),
+      "collapsible container should have correct styling when the list is empty"
+    );
 
-      testVisibility(browser, {
-        expectedVisible: {
-          "#recently-closed-tabs-placeholder": true,
-          "ol.closed-tabs-list": false,
-        },
-      });
+    testVisibility(browser, {
+      expectedVisible: {
+        "#recently-closed-tabs-placeholder": true,
+        "ol.closed-tabs-list": false,
+      },
+    });
 
-      const tab1 = await add_new_tab(URLs[0]);
+    const tab1 = await add_new_tab(URLs[0]);
 
-      await close_tab(tab1);
+    await close_tab(tab1);
 
-      // The UI update happens asynchronously as we learn of the new closed tab.
-      await BrowserTestUtils.waitForMutationCondition(
-        container,
-        { attributeFilter: ["class"] },
-        () => !container.classList.contains("empty-container")
-      );
-      ok(
-        !container.classList.contains("empty-container"),
-        "collapsible container should have correct styling when the list is not empty"
-      );
+    // The UI update happens asynchronously as we learn of the new closed tab.
+    await BrowserTestUtils.waitForMutationCondition(
+      container,
+      { attributeFilter: ["class"] },
+      () => !container.classList.contains("empty-container")
+    );
+    ok(
+      !container.classList.contains("empty-container"),
+      "collapsible container should have correct styling when the list is not empty"
+    );
 
-      testVisibility(browser, {
-        expectedVisible: {
-          "#recently-closed-tabs-placeholder": false,
-          "ol.closed-tabs-list": true,
-        },
-      });
+    testVisibility(browser, {
+      expectedVisible: {
+        "#recently-closed-tabs-placeholder": false,
+        "ol.closed-tabs-list": true,
+      },
+    });
 
-      is(
-        document.querySelector("ol.closed-tabs-list").children.length,
-        1,
-        "recently-closed-tabs-list should have one list item"
-      );
-    }
-  );
+    is(
+      document.querySelector("ol.closed-tabs-list").children.length,
+      1,
+      "recently-closed-tabs-list should have one list item"
+    );
+  });
 });
 
 add_task(async function test_list_ordering() {
@@ -104,116 +113,108 @@ add_task(async function test_list_ordering() {
   );
   await clearAllParentTelemetryEvents();
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      const { document } = browser.contentWindow;
-      const closedObjectsChanged = () =>
-        TestUtils.topicObserved("sessionstore-closed-objects-changed");
+  const closedObjectsChanged = () =>
+    TestUtils.topicObserved("sessionstore-closed-objects-changed");
 
-      const tab1 = await add_new_tab(URLs[0]);
-      const tab2 = await add_new_tab(URLs[1]);
-      const tab3 = await add_new_tab(URLs[2]);
+  const tab1 = await add_new_tab(URLs[0]);
+  const tab2 = await add_new_tab(URLs[1]);
+  const tab3 = await add_new_tab(URLs[2]);
 
-      gBrowser.selectedTab = tab3;
+  gBrowser.selectedTab = tab3;
 
-      await close_tab(tab3);
-      await closedObjectsChanged();
+  await close_tab(tab3);
+  await closedObjectsChanged();
 
-      await close_tab(tab2);
-      await closedObjectsChanged();
+  await close_tab(tab2);
+  await closedObjectsChanged();
 
-      await close_tab(tab1);
-      await closedObjectsChanged();
+  await close_tab(tab1);
+  await closedObjectsChanged();
 
-      const tabsList = document.querySelector("ol.closed-tabs-list");
-      await BrowserTestUtils.waitForMutationCondition(
-        tabsList,
-        { childList: true },
-        () => tabsList.children.length > 1
-      );
+  await withFirefoxView({ win: window }, async browser => {
+    const { document } = browser.contentWindow;
+    const tabsList = document.querySelector("ol.closed-tabs-list");
+    await BrowserTestUtils.waitForMutationCondition(
+      tabsList,
+      { childList: true },
+      () => tabsList.children.length > 1
+    );
 
-      is(
-        document.querySelector("ol.closed-tabs-list").children.length,
-        3,
-        "recently-closed-tabs-list should have three list items"
-      );
+    is(
+      document.querySelector("ol.closed-tabs-list").children.length,
+      3,
+      "recently-closed-tabs-list should have three list items"
+    );
 
-      // check that the ordering is correct when user navigates to another tab, and then closes multiple tabs.
-      ok(
-        document
-          .querySelector("ol.closed-tabs-list")
-          .firstChild.textContent.includes("mochi.test"),
-        "first list item in recently-closed-tabs-list is in the correct order"
-      );
-
-      ok(
-        document
-          .querySelector("ol.closed-tabs-list")
-          .children[2].textContent.includes("example.net"),
-        "last list item in recently-closed-tabs-list is in the correct order"
-      );
-
-      let ele = document.querySelector("ol.closed-tabs-list").firstElementChild;
-      let uri = ele.getAttribute("data-target-u-r-i");
-      let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, uri);
-      ele.click();
-      await newTabPromise;
-
-      await TestUtils.waitForCondition(
-        () => {
-          let events = Services.telemetry.snapshotEvents(
-            Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-            false
-          ).parent;
-          return events && events.length >= 2;
-        },
-        "Waiting for entered and recently_closed firefoxview telemetry events.",
-        200,
-        100
-      );
-
-      TelemetryTestUtils.assertEvents(
-        RECENTLY_CLOSED_EVENT,
-        { category: "firefoxview" },
-        { clear: true, process: "parent" }
-      );
-
-      gBrowser.removeTab(gBrowser.selectedTab);
-
-      await clearAllParentTelemetryEvents();
-
-      await waitForElementVisible(
-        browser,
-        "#recently-closed-tabs-container > summary"
-      );
+    // check that the ordering is correct when user navigates to another tab, and then closes multiple tabs.
+    ok(
       document
-        .querySelector("#recently-closed-tabs-container > summary")
-        .click();
+        .querySelector("ol.closed-tabs-list")
+        .firstChild.textContent.includes("mochi.test"),
+      "first list item in recently-closed-tabs-list is in the correct order"
+    );
 
-      await TestUtils.waitForCondition(
-        () => {
-          let events = Services.telemetry.snapshotEvents(
-            Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-            false
-          ).parent;
-          return events && events.length >= 1;
-        },
-        "Waiting for closed_tabs_open firefoxview telemetry event.",
-        200,
-        100
-      );
+    ok(
+      document
+        .querySelector("ol.closed-tabs-list")
+        .children[2].textContent.includes("example.net"),
+      "last list item in recently-closed-tabs-list is in the correct order"
+    );
 
-      TelemetryTestUtils.assertEvents(
-        CLOSED_TABS_OPEN_EVENT,
-        { category: "firefoxview" },
-        { clear: true, process: "parent" }
-      );
-    }
-  );
+    let ele = document.querySelector("ol.closed-tabs-list").firstElementChild;
+    let uri = ele.getAttribute("data-target-u-r-i");
+    let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, uri);
+    ele.click();
+    await newTabPromise;
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 2;
+      },
+      "Waiting for entered and recently_closed firefoxview telemetry events.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      RECENTLY_CLOSED_EVENT,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
+    );
+
+    gBrowser.removeTab(gBrowser.selectedTab);
+
+    await clearAllParentTelemetryEvents();
+
+    await waitForElementVisible(
+      browser,
+      "#recently-closed-tabs-container > summary"
+    );
+    document.querySelector("#recently-closed-tabs-container > summary").click();
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 1;
+      },
+      "Waiting for closed_tabs_open firefoxview telemetry event.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      CLOSED_TABS_OPEN_EVENT,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
+    );
+  });
 });
 
 add_task(async function test_max_list_items() {
@@ -233,83 +234,109 @@ add_task(async function test_max_list_items() {
   // above.
   let mockMaxTabsLength = 3;
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      const { document } = browser.contentWindow;
+  await withFirefoxView({ win: window }, async browser => {
+    const { document } = browser.contentWindow;
 
-      // override this value for testing purposes
-      document.querySelector(
-        "recently-closed-tabs-list"
-      ).maxTabsLength = mockMaxTabsLength;
+    // override this value for testing purposes
+    document.querySelector(
+      "recently-closed-tabs-list"
+    ).maxTabsLength = mockMaxTabsLength;
 
-      ok(
-        !document
-          .querySelector("#collapsible-tabs-container")
-          .classList.contains("empty-container"),
-        "collapsible container should have correct styling when the list is not empty"
-      );
+    ok(
+      !document
+        .querySelector("#collapsible-tabs-container")
+        .classList.contains("empty-container"),
+      "collapsible container should have correct styling when the list is not empty"
+    );
 
-      testVisibility(browser, {
-        expectedVisible: {
-          "#recently-closed-tabs-placeholder": false,
-          "ol.closed-tabs-list": true,
-        },
-      });
+    testVisibility(browser, {
+      expectedVisible: {
+        "#recently-closed-tabs-placeholder": false,
+        "ol.closed-tabs-list": true,
+      },
+    });
 
-      is(
-        document.querySelector("ol.closed-tabs-list").childNodes.length,
-        mockMaxTabsLength,
-        `recently-closed-tabs-list should have ${mockMaxTabsLength} list items`
-      );
+    is(
+      document.querySelector("ol.closed-tabs-list").childNodes.length,
+      mockMaxTabsLength,
+      `recently-closed-tabs-list should have ${mockMaxTabsLength} list items`
+    );
 
-      const closedObjectsChanged = TestUtils.topicObserved(
-        "sessionstore-closed-objects-changed"
-      );
-      // add another tab
-      const tab = await add_new_tab(URLs[3]);
-      await close_tab(tab);
-      await closedObjectsChanged;
+    const closedObjectsChanged = TestUtils.topicObserved(
+      "sessionstore-closed-objects-changed"
+    );
+    // add another tab
+    const tab = await add_new_tab(URLs[3]);
+    await close_tab(tab);
+    await closedObjectsChanged;
 
-      let firstListItem = document.querySelector("ol.closed-tabs-list")
-        .firstChild;
-      await BrowserTestUtils.waitForMutationCondition(
-        firstListItem,
-        { characterData: true, childList: true, subtree: true },
-        () => firstListItem.textContent.includes(".org")
-      );
-      ok(
-        firstListItem.textContent.includes("example.org"),
-        "first list item in recently-closed-tabs-list should have been updated"
-      );
+    let firstListItem = document.querySelector("ol.closed-tabs-list")
+      .firstChild;
+    await BrowserTestUtils.waitForMutationCondition(
+      firstListItem,
+      { characterData: true, childList: true, subtree: true },
+      () => firstListItem.textContent.includes(".org")
+    );
+    ok(
+      firstListItem.textContent.includes("example.org"),
+      "first list item in recently-closed-tabs-list should have been updated"
+    );
 
-      is(
-        document.querySelector("ol.closed-tabs-list").childNodes.length,
-        mockMaxTabsLength,
-        `recently-closed-tabs-list should still have ${mockMaxTabsLength} list items`
-      );
-    }
-  );
+    is(
+      document.querySelector("ol.closed-tabs-list").childNodes.length,
+      mockMaxTabsLength,
+      `recently-closed-tabs-list should still have ${mockMaxTabsLength} list items`
+    );
+  });
 });
 
 add_task(async function test_time_updates_correctly() {
-  await BrowserTestUtils.withNewTab(
+  clearHistory();
+  is(
+    SessionStore.getClosedTabCount(window),
+    0,
+    "Closed tab count after purging session history"
+  );
+
+  // Set the closed tabs state to include one tab that was closed 2 seconds ago.
+  // This is well below the initial threshold for displaying the 'Just now' timestamp.
+  // It is also much greater than the 5ms threshold we use for the updated pref value,
+  // which results in the timestamp text changing after the pref value is changed.
+  const TAB_CLOSED_AGO_MS = 2000;
+  const TAB_UPDATE_TIME_MS = 5;
+  const TAB_CLOSED_STATE = {
+    windows: [
+      {
+        tabs: [{ entries: [] }],
+        _closedTabs: [
+          {
+            state: { entries: [{ url: "https://www.example.com/" }] },
+            closedId: 0,
+            closedAt: Date.now() - TAB_CLOSED_AGO_MS,
+            image: null,
+          },
+        ],
+      },
+    ],
+  };
+  await SessionStore.setBrowserState(JSON.stringify(TAB_CLOSED_STATE));
+
+  is(
+    SessionStore.getClosedTabCount(window),
+    1,
+    "Closed tab count after setting browser state"
+  );
+
+  await withFirefoxView(
     {
-      gBrowser,
-      url: "about:firefoxview",
+      win: window,
     },
     async browser => {
       const { document } = browser.contentWindow;
 
-      // Use session store data from previous tests; the last child is the oldest and has
-      // a data-timestamp of approx one minute ago which is below the 'Just now' threshold
       const lastListItem = document.querySelector("ol.closed-tabs-list")
         .lastChild;
       const timeLabel = lastListItem.querySelector("span.closed-tab-li-time");
-
       let initialTimeText = timeLabel.textContent;
       Assert.stringContains(
         initialTimeText,
@@ -318,7 +345,7 @@ add_task(async function test_time_updates_correctly() {
       );
 
       await SpecialPowers.pushPrefEnv({
-        set: [["browser.tabs.firefox-view.updateTimeMs", 5]],
+        set: [["browser.tabs.firefox-view.updateTimeMs", TAB_UPDATE_TIME_MS]],
       });
 
       await BrowserTestUtils.waitForMutationCondition(
@@ -336,6 +363,8 @@ add_task(async function test_time_updates_correctly() {
       await SpecialPowers.popPrefEnv();
     }
   );
+  // Cleanup recently closed tab data.
+  clearHistory();
 });
 
 add_task(async function test_list_maintains_focus_when_restoring_tab() {
@@ -358,29 +387,21 @@ add_task(async function test_list_maintains_focus_when_restoring_tab() {
   await open_then_close(URLs[1]);
   await open_then_close(URLs[2]);
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      let gBrowser = browser.getTabBrowser();
-      const { document } = browser.contentWindow;
-      const list = document.querySelectorAll(".closed-tab-li");
-      let expectedFocusedElement = list[1];
-      list[0].focus();
-      EventUtils.synthesizeKey("KEY_Enter");
-      let firefoxViewTab = gBrowser.tabs.find(
-        tab => tab.label == "Firefox View"
-      );
-      await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
-      is(
-        document.activeElement,
-        expectedFocusedElement,
-        "Focus should be on the first item in the recently closed list"
-      );
-    }
-  );
+  await withFirefoxView({ win: window }, async browser => {
+    let gBrowser = browser.getTabBrowser();
+    const { document } = browser.contentWindow;
+    const list = document.querySelectorAll(".closed-tab-li");
+    let expectedFocusedElement = list[1].querySelector(".closed-tab-li-main");
+    list[0].querySelector(".closed-tab-li-main").focus();
+    EventUtils.synthesizeKey("KEY_Enter");
+    let firefoxViewTab = gBrowser.tabs.find(tab => tab.label == "Firefox View");
+    await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
+    is(
+      document.activeElement,
+      expectedFocusedElement,
+      "Focus should be on the first item in the recently closed list"
+    );
+  });
 
   // clean up extra tabs
   while (gBrowser.tabs.length > 1) {
@@ -389,32 +410,24 @@ add_task(async function test_list_maintains_focus_when_restoring_tab() {
 
   clearHistory();
   await open_then_close(URLs[2]);
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      let gBrowser = browser.getTabBrowser();
-      const { document } = browser.contentWindow;
-      let expectedFocusedElement = document.getElementById(
-        "recently-closed-tabs-header-section"
-      );
-      const list = document.querySelectorAll(".closed-tab-li");
-      list[0].focus();
+  await withFirefoxView({ win: window }, async browser => {
+    let gBrowser = browser.getTabBrowser();
+    const { document } = browser.contentWindow;
+    let expectedFocusedElement = document.getElementById(
+      "recently-closed-tabs-header-section"
+    );
+    const list = document.querySelectorAll(".closed-tab-li");
+    list[0].querySelector(".closed-tab-li-main").focus();
 
-      EventUtils.synthesizeKey("KEY_Enter");
-      let firefoxViewTab = gBrowser.tabs.find(
-        tab => tab.label == "Firefox View"
-      );
-      await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
-      is(
-        document.activeElement,
-        expectedFocusedElement,
-        "Focus should be on the section header"
-      );
-    }
-  );
+    EventUtils.synthesizeKey("KEY_Enter");
+    let firefoxViewTab = gBrowser.tabs.find(tab => tab.label == "Firefox View");
+    await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
+    is(
+      document.activeElement,
+      expectedFocusedElement,
+      "Focus should be on the section header"
+    );
+  });
 
   // clean up extra tabs
   while (gBrowser.tabs.length > 1) {
@@ -427,7 +440,7 @@ add_task(async function test_switch_before_closing() {
 
   const INITIAL_URL = "https://example.org/iwilldisappear";
   const FINAL_URL = "https://example.com/ishouldappear";
-  await withFirefoxView({}, async function(browser) {
+  await withFirefoxView({ win: window }, async function(browser) {
     let gBrowser = browser.getTabBrowser();
     let newTab = await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
@@ -482,27 +495,21 @@ add_task(async function test_alt_click_no_launch() {
 
   await open_then_close(URLs[0]);
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      let gBrowser = browser.getTabBrowser();
-      let originalTabsLength = gBrowser.tabs.length;
-      await BrowserTestUtils.synthesizeMouseAtCenter(
-        ".closed-tab-li",
-        { altKey: true },
-        browser
-      );
+  await withFirefoxView({ win: window }, async browser => {
+    let gBrowser = browser.getTabBrowser();
+    let originalTabsLength = gBrowser.tabs.length;
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      ".closed-tab-li",
+      { altKey: true },
+      browser
+    );
 
-      is(
-        gBrowser.tabs.length,
-        originalTabsLength,
-        `Opened tabs length should still be ${originalTabsLength}`
-      );
-    }
-  );
+    is(
+      gBrowser.tabs.length,
+      originalTabsLength,
+      `Opened tabs length should still be ${originalTabsLength}`
+    );
+  });
 });
 
 /**
@@ -545,7 +552,7 @@ add_task(async function test_restore_recently_closed_tabs() {
   );
 
   tabRestored = BrowserTestUtils.waitForNewTab(gBrowser, URLs[1]);
-  document.querySelector(".closed-tab-li").focus();
+  document.querySelector(".closed-tab-li .closed-tab-li-main").focus();
   EventUtils.synthesizeKey("KEY_Enter", {}, gBrowser.contentWindow);
 
   await tabRestored;
@@ -558,7 +565,7 @@ add_task(async function test_restore_recently_closed_tabs() {
   );
 
   tabRestored = BrowserTestUtils.waitForNewTab(gBrowser, URLs[0]);
-  document.querySelector(".closed-tab-li").focus();
+  document.querySelector(".closed-tab-li .closed-tab-li-main").focus();
   EventUtils.synthesizeKey(" ", {}, gBrowser.contentWindow);
 
   await tabRestored;
@@ -568,4 +575,140 @@ add_task(async function test_restore_recently_closed_tabs() {
   while (gBrowser.tabs.length > 1) {
     BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
   }
+});
+
+/**
+ * Asserts that tabs that have been recently closed can be
+ * dismissed by clicking on their respective dismiss buttons.
+ */
+add_task(async function test_dismiss_tab() {
+  Services.obs.notifyObservers(null, "browser:purge-session-history");
+  Assert.equal(
+    SessionStore.getClosedTabCount(window),
+    0,
+    "Closed tab count after purging session history"
+  );
+  await clearAllParentTelemetryEvents();
+
+  await withFirefoxView({ win: window }, async browser => {
+    const { document } = browser.contentWindow;
+
+    const closedObjectsChanged = () =>
+      TestUtils.topicObserved("sessionstore-closed-objects-changed");
+
+    const tab1 = await add_new_tab(URLs[0]);
+    const tab2 = await add_new_tab(URLs[1]);
+    const tab3 = await add_new_tab(URLs[2]);
+
+    await close_tab(tab3);
+    await closedObjectsChanged();
+
+    await close_tab(tab2);
+    await closedObjectsChanged();
+
+    await close_tab(tab1);
+    await closedObjectsChanged();
+
+    const tabsList = document.querySelector("ol.closed-tabs-list");
+
+    await clearAllParentTelemetryEvents();
+
+    await dismiss_tab(tabsList.children[0], content);
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 1;
+      },
+      "Waiting for dismiss_closed_tab firefoxview telemetry event.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      RECENTLY_CLOSED_DISMISS_EVENT,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
+    );
+
+    Assert.equal(
+      tabsList.children[0].dataset.targetURI,
+      URLs[1],
+      `First recently closed item should be ${URLs[1]}`
+    );
+
+    Assert.equal(
+      tabsList.children.length,
+      2,
+      "recently-closed-tabs-list should have two list items"
+    );
+
+    await clearAllParentTelemetryEvents();
+
+    await dismiss_tab(tabsList.children[0], content);
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 1;
+      },
+      "Waiting for dismiss_closed_tab firefoxview telemetry event.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      RECENTLY_CLOSED_DISMISS_EVENT,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
+    );
+
+    Assert.equal(
+      tabsList.children[0].dataset.targetURI,
+      URLs[2],
+      `First recently closed item should be ${URLs[2]}`
+    );
+
+    Assert.equal(
+      tabsList.children.length,
+      1,
+      "recently-closed-tabs-list should have one list item"
+    );
+
+    await clearAllParentTelemetryEvents();
+
+    await dismiss_tab(tabsList.children[0], content);
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 1;
+      },
+      "Waiting for dismiss_closed_tab firefoxview telemetry event.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      RECENTLY_CLOSED_DISMISS_EVENT,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
+    );
+
+    testVisibility(browser, {
+      expectedVisible: {
+        "#recently-closed-tabs-placeholder": true,
+        "ol.closed-tabs-list": false,
+      },
+    });
+  });
 });

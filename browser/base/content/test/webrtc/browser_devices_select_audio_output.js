@@ -24,6 +24,36 @@ async function requestAudioOutputExpectingPrompt() {
   checkDeviceSelectors(["speaker"]);
 }
 
+async function simulateAudioOutputRequest(options) {
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [options],
+    function simPrompt({ deviceCount, deviceId }) {
+      const devices = [...Array(deviceCount).keys()].map(i => ({
+        type: "audiooutput",
+        rawName: `name ${i}`,
+        deviceIndex: i,
+        rawId: `rawId ${i}`,
+        id: `id ${i}`,
+        QueryInterface: ChromeUtils.generateQI([Ci.nsIMediaDevice]),
+      }));
+      const req = {
+        type: "selectaudiooutput",
+        windowID: content.windowGlobalChild.outerWindowId,
+        devices,
+        getConstraints: () => ({}),
+        getAudioOutputOptions: () => ({ deviceId }),
+        isSecure: true,
+        isHandlingUserInput: true,
+      };
+      const { WebRTCChild } = SpecialPowers.ChromeUtils.import(
+        "resource:///actors/WebRTCChild.jsm"
+      );
+      WebRTCChild.observe(req, "getUserMedia:request");
+    }
+  );
+}
+
 async function allow() {
   const observerPromise = expectObserverCalled("getUserMedia:response:allow");
   await promiseMessage("ok", () => {
@@ -40,12 +70,14 @@ async function deny() {
   await observerPromise;
 }
 
-async function escape() {
+async function escapePrompt() {
   const observerPromise = expectObserverCalled("getUserMedia:response:deny");
-  await promiseMessage(permissionError, () => {
-    EventUtils.synthesizeKey("KEY_Escape");
-  });
+  EventUtils.synthesizeKey("KEY_Escape");
   await observerPromise;
+}
+
+async function escape() {
+  await Promise.all([promiseMessage(permissionError), escapePrompt()]);
 }
 
 var gTests = [
@@ -68,12 +100,38 @@ var gTests = [
   },
   {
     desc: 'User presses "Esc"',
-    run: async function checkBlock() {
+    run: async function checkEsc() {
       await requestAudioOutputExpectingPrompt();
       await escape();
       info("selectAudioOutput() after Esc should prompt again.");
       await requestAudioOutputExpectingPrompt();
       await allow();
+    },
+  },
+  {
+    desc: "Single Device",
+    run: async function checkSingle() {
+      await Promise.all([
+        promisePopupNotificationShown("webRTC-shareDevices"),
+        simulateAudioOutputRequest({ deviceCount: 1 }),
+      ]);
+      checkDeviceSelectors(["speaker"]);
+      await escapePrompt();
+    },
+  },
+  {
+    desc: "Multi Device with deviceId",
+    run: async function checkMulti() {
+      await Promise.all([
+        promisePopupNotificationShown("webRTC-shareDevices"),
+        simulateAudioOutputRequest({ deviceCount: 4, deviceId: "id 2" }),
+      ]);
+      const selectorList = document.getElementById(
+        `webRTC-selectSpeaker-menulist`
+      );
+      is(selectorList.selectedIndex, 2, "pre-selected index");
+      checkDeviceSelectors(["speaker"]);
+      await escapePrompt();
     },
   },
 ];

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { GeckoViewActorChild } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewActorChild.jsm"
+const { GeckoViewActorChild } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewActorChild.sys.mjs"
 );
 
 var { XPCOMUtils } = ChromeUtils.importESModule(
@@ -130,7 +130,18 @@ class GeckoViewContentChild extends GeckoViewActorChild {
     switch (name) {
       case "GeckoView:DOMFullscreenEntered":
         this.lastOrientation = this.orientation();
-        this.contentWindow?.windowUtils.handleFullscreenRequests();
+        if (
+          !this.contentWindow?.windowUtils.handleFullscreenRequests() &&
+          !this.contentWindow?.document.fullscreenElement
+        ) {
+          // If we don't actually have any pending fullscreen request
+          // to handle, neither we have been in fullscreen, tell the
+          // parent to just exit.
+          const actor = this.contentWindow?.windowGlobalChild?.getActor(
+            "ContentDelegate"
+          );
+          actor?.sendAsyncMessage("GeckoView:DOMFullscreenExit", {});
+        }
         break;
       case "GeckoView:DOMFullscreenExited":
         // During fullscreen, window size is changed. So don't restore viewport size.

@@ -13,11 +13,8 @@ const DEFAULT_FAVICON_TAB = `data:text/html,<meta%20charset="utf-8"><title>No%20
 const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
-);
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 var Tabs = {
@@ -132,13 +129,12 @@ var Tabs = {
         await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
         });
+
         // Make sure the tabstrip is scrolled all the way to the left.
-        let scrolled = BrowserTestUtils.waitForEvent(
-          browserWindow.gBrowser.tabContainer.arrowScrollbox,
-          "scrollend"
+        browserWindow.gBrowser.tabContainer.arrowScrollbox.scrollByIndex(
+          -100,
+          true
         );
-        browserWindow.gBrowser.tabContainer.arrowScrollbox.scrollByIndex(-100);
-        await scrolled;
 
         await allTabTitlesDisplayed(browserWindow);
       },

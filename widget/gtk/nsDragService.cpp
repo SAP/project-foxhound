@@ -32,6 +32,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/WidgetUtilsGtk.h"
 #include "GRefPtr.h"
+#include "nsAppShell.h"
 
 #ifdef MOZ_X11
 #  include "gfxXlibSurface.h"
@@ -85,6 +86,19 @@ extern mozilla::LazyLogModule gWidgetDragLog;
 #  define LOGDRAGSERVICE(...)
 #endif
 
+// Helper class to block native events processing.
+class MOZ_STACK_CLASS AutoSuspendNativeEvents {
+ public:
+  AutoSuspendNativeEvents() {
+    mAppShell = do_GetService(NS_APPSHELL_CID);
+    mAppShell->SuspendNative();
+  }
+  ~AutoSuspendNativeEvents() { mAppShell->ResumeNative(); }
+
+ private:
+  nsCOMPtr<nsIAppShell> mAppShell;
+};
+
 // data used for synthetic periodic motion events sent to the source widget
 // grabbing real events for the drag.
 static guint sMotionEventTimerID;
@@ -120,6 +134,12 @@ static const char gTextUriListType[] = "text/uri-list";
 static const char gTextPlainUTF8Type[] = "text/plain;charset=utf-8";
 static const char gXdndDirectSaveType[] = "XdndDirectSave0";
 static const char gTabDropType[] = "application/x-moz-tabbrowser-tab";
+
+// See https://docs.gtk.org/gtk3/enum.DragResult.html
+static const char kGtkDragResults[][100]{
+    "GTK_DRAG_RESULT_SUCCESS",        "GTK_DRAG_RESULT_NO_TARGET",
+    "GTK_DRAG_RESULT_USER_CANCELLED", "GTK_DRAG_RESULT_TIMEOUT_EXPIRED",
+    "GTK_DRAG_RESULT_GRAB_BROKEN",    "GTK_DRAG_RESULT_ERROR"};
 
 static void invisibleSourceDragBegin(GtkWidget* aWidget,
                                      GdkDragContext* aContext, gpointer aData);
@@ -355,6 +375,9 @@ nsresult nsDragService::InvokeDragSessionImpl(
   // the transferables since we're going to hang onto this beyond the
   // length of this call
   mSourceDataItems = aArrayTransferables;
+
+  LOGDRAGSERVICE("nsDragService::InvokeDragSessionImpl");
+
   // get the list of items we offer for drags
   GtkTargetList* sourceList = GetSourceList();
 
@@ -406,9 +429,8 @@ nsresult nsDragService::InvokeDragSessionImpl(
     }
   }
 
-  LOGDRAGSERVICE(
-      "nsDragService::InvokeDragSessionImpl GdkDragContext [%p] nsWindow [%p]",
-      context, mSourceWindow.get());
+  LOGDRAGSERVICE("  GdkDragContext [%p] nsWindow [%p]", context,
+                 mSourceWindow.get());
 
   nsresult rv;
   if (context) {
@@ -443,7 +465,9 @@ bool nsDragService::SetAlphaPixmap(SourceSurface* aSurface,
 
   // Transparent drag icons need, like a lot of transparency-related things,
   // a compositing X window manager
-  if (!gdk_screen_is_composited(screen)) return false;
+  if (!gdk_screen_is_composited(screen)) {
+    return false;
+  }
 
 #ifdef cairo_image_surface_create
 #  error "Looks like we're including Mozilla's cairo instead of system cairo"
@@ -486,7 +510,7 @@ bool nsDragService::SetAlphaPixmap(SourceSurface* aSurface,
 NS_IMETHODIMP
 nsDragService::StartDragSession() {
   LOGDRAGSERVICE("nsDragService::StartDragSession");
-  mTempFileUrl.Truncate();
+  mTempFileUrls.Clear();
   return nsBaseDragService::StartDragSession();
 }
 
@@ -556,7 +580,7 @@ nsDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
     // removed in the nsDragService destructor.
     mTempFileTimerID =
         g_timeout_add(NS_DND_TMP_CLEANUP_TIMEOUT, TaskRemoveTempFiles, this);
-    mTempFileUrl.Truncate();
+    mTempFileUrls.Clear();
   }
 
   // We're done with the drag context.
@@ -789,14 +813,9 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
       // Dragging and dropping from the file manager would cause us
       // to parse the source text as a nsIFile URL.
       if (flavorStr.EqualsLiteral(kFileMime)) {
-        gdkFlavor = gdk_atom_intern(kTextMime, FALSE);
-        LOGDRAGSERVICE("  conversion %s => %s", kFileMime, kTextMime);
+        LOGDRAGSERVICE("  conversion %s => %s", kFileMime, gTextUriListType);
+        gdkFlavor = gdk_atom_intern(gTextUriListType, FALSE);
         GetTargetDragData(gdkFlavor, dragFlavors);
-        if (!mTargetDragData) {
-          LOGDRAGSERVICE("  conversion %s => %s", kFileMime, gTextUriListType);
-          gdkFlavor = gdk_atom_intern(gTextUriListType, FALSE);
-          GetTargetDragData(gdkFlavor, dragFlavors);
-        }
         if (mTargetDragData) {
           const char* text = static_cast<char*>(mTargetDragData);
           char16_t* convertedText = nullptr;
@@ -1045,8 +1064,7 @@ nsDragService::IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) {
     }
     // check for auto text/plain -> text/unicode mapping
     else if (strcmp(name.get(), kTextMime) == 0 &&
-             ((strcmp(aDataFlavor, kUnicodeMime) == 0) ||
-              (strcmp(aDataFlavor, kFileMime) == 0))) {
+             (strcmp(aDataFlavor, kUnicodeMime) == 0)) {
       *_retval = true;
     }
 
@@ -1116,6 +1134,7 @@ void nsDragService::ReplyToDragMotion(GdkDragContext* aDragContext,
     action = GDK_ACTION_MOVE;
   }
 
+  LOGDRAGSERVICE("  gdk_drag_status() action %d", action);
   gdk_drag_status(aDragContext, action, aTime);
 }
 
@@ -1285,7 +1304,7 @@ static void TargetArrayAddTarget(nsTArray<GtkTargetEntry*>& aTargetArray,
   LOGDRAGSERVICESTATIC("adding target %s\n", aTarget);
 }
 
-static bool CanExportAsURLTarget(char16_t* aURLData, uint32_t aURLLen) {
+static bool CanExportAsURLTarget(const char16_t* aURLData, uint32_t aURLLen) {
   for (const nsLiteralString& disallowed : kDisallowedExportedSchemes) {
     auto len = disallowed.AsString().Length();
     if (len < aURLLen) {
@@ -1312,6 +1331,7 @@ GtkTargetList* nsDragService::GetSourceList(void) {
   unsigned int numDragItems = 0;
 
   mSourceDataItems->GetLength(&numDragItems);
+  LOGDRAGSERVICE("  numDragItems = %d", numDragItems);
 
   // Check to see if we're dragging > 1 item.
   if (numDragItems > 1) {
@@ -1388,8 +1408,8 @@ GtkTargetList* nsDragService::GetSourceList(void) {
         else if (flavorStr.EqualsLiteral(kFilePromiseURLMime)) {
           TargetArrayAddTarget(targetArray, gTextUriListType);
         }
-        // XdndDirectSave
-        else if (widget::GdkIsX11Display() &&
+        // XdndDirectSave, use on X.org only.
+        else if (widget::GdkIsX11Display() && !widget::IsXWaylandProtocol() &&
                  flavorStr.EqualsLiteral(kFilePromiseMime)) {
           TargetArrayAddTarget(targetArray, gXdndDirectSaveType);
         }
@@ -1434,7 +1454,8 @@ GtkTargetList* nsDragService::GetSourceList(void) {
 
 void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
                                          gint aResult) {
-  LOGDRAGSERVICE("SourceEndDragSession(%p) result %d\n", aContext, aResult);
+  LOGDRAGSERVICE("SourceEndDragSession(%p) result %s\n", aContext,
+                 kGtkDragResults[aResult]);
 
   // this just releases the list of data items that we provide
   mSourceDataItems = nullptr;
@@ -1515,57 +1536,6 @@ void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
   Schedule(eDragTaskSourceEnd, nullptr, nullptr, LayoutDeviceIntPoint(), 0);
 }
 
-static void CreateURIList(nsIArray* aItems, nsACString& aURIList) {
-  uint32_t length = 0;
-  aItems->GetLength(&length);
-
-  for (uint32_t i = 0; i < length; ++i) {
-    nsCOMPtr<nsITransferable> item = do_QueryElementAt(aItems, i);
-    if (!item) {
-      continue;
-    }
-
-    nsCOMPtr<nsISupports> data;
-    nsresult rv = item->GetTransferData(kURLMime, getter_AddRefs(data));
-    if (NS_SUCCEEDED(rv)) {
-      nsCOMPtr<nsISupportsString> string = do_QueryInterface(data);
-
-      nsAutoString text;
-      if (string) {
-        string->GetData(text);
-      }
-
-      // text/x-moz-url is of form url + "\n" + title.
-      // We just want the url.
-      int32_t separatorPos = text.FindChar(u'\n');
-      if (separatorPos >= 0) {
-        text.Truncate(separatorPos);
-      }
-
-      AppendUTF16toUTF8(text, aURIList);
-      aURIList.AppendLiteral("\r\n");
-      continue;
-    }
-
-    // There is no URI available. If there is a file available, create
-    // a URI from the file.
-    rv = item->GetTransferData(kFileMime, getter_AddRefs(data));
-    if (NS_SUCCEEDED(rv)) {
-      if (nsCOMPtr<nsIFile> file = do_QueryInterface(data)) {
-        nsCOMPtr<nsIURI> fileURI;
-        NS_NewFileURI(getter_AddRefs(fileURI), file);
-        if (fileURI) {
-          nsAutoCString spec;
-          fileURI->GetSpec(spec);
-
-          aURIList.Append(spec);
-          aURIList.AppendLiteral("\r\n");
-        }
-      }
-    }
-  }
-}
-
 static nsresult GetDownloadDetails(nsITransferable* aTransferable,
                                    nsIURI** aSourceURI, nsAString& aFilename) {
   *aSourceURI = nullptr;
@@ -1623,12 +1593,11 @@ static nsresult GetDownloadDetails(nsITransferable* aTransferable,
 
 // See nsContentAreaDragDropDataProvider::GetFlavorData() for reference.
 nsresult nsDragService::CreateTempFile(nsITransferable* aItem,
-                                       GtkSelectionData* aSelectionData) {
+                                       nsACString& aURI) {
   LOGDRAGSERVICE("nsDragService::CreateTempFile()");
 
   nsCOMPtr<nsIFile> tmpDir;
   nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(tmpDir));
-
   if (NS_FAILED(rv)) {
     LOGDRAGSERVICE("  Failed to get temp directory\n");
     return rv;
@@ -1647,6 +1616,22 @@ nsresult nsDragService::CreateTempFile(nsITransferable* aItem,
     return rv;
   }
 
+  // Check if the file is already stored at /tmp.
+  // It happens when drop destination is changed and SourceDataGet() is caled
+  // more than once.
+  nsAutoCString fileName;
+  CopyUTF16toUTF8(wideFileName, fileName);
+  auto fileLen = fileName.Length();
+  for (const auto& url : mTempFileUrls) {
+    auto URLLen = url.Length();
+    if (URLLen > fileLen &&
+        fileName.Equals(nsDependentCString(url, URLLen - fileLen))) {
+      aURI = url;
+      LOGDRAGSERVICE("  recycle file %s", PromiseFlatCString(aURI).get());
+      return NS_OK;
+    }
+  }
+
   // create and open channel for source uri
   nsCOMPtr<nsIPrincipal> principal = aItem->GetRequestingPrincipal();
   nsContentPolicyType contentPolicyType = aItem->GetContentPolicyType();
@@ -1655,10 +1640,6 @@ nsresult nsDragService::CreateTempFile(nsITransferable* aItem,
   rv = NS_NewChannel(getter_AddRefs(channel), sourceURI, principal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      contentPolicyType, cookieJarSettings);
-  /*
-                       contentPolicyType, nsIContentPolicy::TYPE_OTHER,
-                       cookieJarSettings);
-  */
   if (NS_FAILED(rv)) {
     LOGDRAGSERVICE("  Failed to create new channel for source uri");
     return rv;
@@ -1682,9 +1663,7 @@ nsresult nsDragService::CreateTempFile(nsITransferable* aItem,
   // clean them up when nsDragService is destructed
   nsCOMPtr<nsIFile> tempFile;
   tmpDir->Clone(getter_AddRefs(tempFile));
-
   mTemporaryFiles.AppendObject(tempFile);
-
   if (mTempFileTimerID) {
     g_source_remove(mTempFileTimerID);
     mTempFileTimerID = 0;
@@ -1728,21 +1707,298 @@ nsresult nsDragService::CreateTempFile(nsITransferable* aItem,
 
   nsCOMPtr<nsIURI> uri;
   rv = NS_NewFileURI(getter_AddRefs(uri), tmpDir);
-  if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIURL> fileURL(do_QueryInterface(uri));
-    if (fileURL) {
-      nsAutoCString urltext;
-      rv = fileURL->GetSpec(urltext);
-      if (NS_SUCCEEDED(rv)) {
-        // store url of temporary file
-        LOGDRAGSERVICE("  storing tmp file as %s", urltext.get());
-        mTempFileUrl = urltext;
-        return NS_OK;
+  if (NS_FAILED(rv)) {
+    LOGDRAGSERVICE("  Failed to get file URI");
+    return rv;
+  }
+  nsCOMPtr<nsIURL> fileURL(do_QueryInterface(uri));
+  if (!fileURL) {
+    LOGDRAGSERVICE("  Failed to query file interface");
+    return NS_ERROR_FAILURE;
+  }
+  rv = fileURL->GetSpec(aURI);
+  if (NS_FAILED(rv)) {
+    LOGDRAGSERVICE("  Failed to get filepath");
+    return rv;
+  }
+
+  // store url of temporary file
+  mTempFileUrls.AppendElement()->Assign(aURI);
+  LOGDRAGSERVICE("  storing tmp file as %s", PromiseFlatCString(aURI).get());
+  return NS_OK;
+}
+
+bool nsDragService::SourceDataAppendURLFileItem(nsACString& aURI,
+                                                nsITransferable* aItem) {
+  // If there is a file available, create a URI from the file.
+  nsCOMPtr<nsISupports> data;
+  nsresult rv = aItem->GetTransferData(kFileMime, getter_AddRefs(data));
+  NS_ENSURE_SUCCESS(rv, false);
+  if (nsCOMPtr<nsIFile> file = do_QueryInterface(data)) {
+    nsCOMPtr<nsIURI> fileURI;
+    NS_NewFileURI(getter_AddRefs(fileURI), file);
+    if (fileURI) {
+      fileURI->GetSpec(aURI);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool nsDragService::SourceDataAppendURLItem(nsITransferable* aItem,
+                                            bool aExternalDrop,
+                                            nsACString& aURI) {
+  nsCOMPtr<nsISupports> data;
+  nsresult rv = aItem->GetTransferData(kURLMime, getter_AddRefs(data));
+  if (NS_FAILED(rv)) {
+    return SourceDataAppendURLFileItem(aURI, aItem);
+  }
+
+  nsCOMPtr<nsISupportsString> string = do_QueryInterface(data);
+  if (!string) {
+    return false;
+  }
+
+  nsAutoString text;
+  string->GetData(text);
+  if (!aExternalDrop || CanExportAsURLTarget(text.get(), text.Length())) {
+    AppendUTF16toUTF8(text, aURI);
+    return true;
+  }
+
+  // We're dropping to another application and the URL can't be exported
+  // as it's internal one (mailbox:// etc.)
+  // Try to get file target directly.
+  if (SourceDataAppendURLFileItem(aURI, aItem)) {
+    return true;
+  }
+
+  // We can't get the file directly so try to download it and save to tmp.
+  // The desktop or file manager expects for drags of promise-file data
+  // the text/uri-list flavor set to a temporary file that contains the
+  // promise-file data.
+  // We open a stream on the <protocol>:// url here and save the content
+  // to file:///tmp/dnd_file/<filename> and pass this url
+  // as text/uri-list flavor.
+
+  // check whether transferable contains FilePromiseUrl flavor...
+  nsCOMPtr<nsISupports> promiseData;
+  rv = aItem->GetTransferData(kFilePromiseURLMime, getter_AddRefs(promiseData));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  // ... if so, create a temporary file and pass its url
+  return NS_SUCCEEDED(CreateTempFile(aItem, aURI));
+}
+
+void nsDragService::SourceDataGetUriList(GdkDragContext* aContext,
+                                         GtkSelectionData* aSelectionData,
+                                         uint32_t aDragItems) {
+  // Check if we're transfering data to another application.
+  // gdk_drag_context_get_dest_window() on X11 returns GdkWindow even for
+  // different application so use nsWindow::GetWindow() to check if that's
+  // our window.
+  const bool isExternalDrop =
+      widget::GdkIsX11Display()
+          ? !nsWindow::GetWindow(gdk_drag_context_get_dest_window(aContext))
+          : !gdk_drag_context_get_dest_window(aContext);
+
+  LOGDRAGSERVICE("nsDragService::SourceDataGetUriLists() len %d external %d",
+                 aDragItems, isExternalDrop);
+
+  // Disable processing of native events until we store all files to /tmp.
+  // Otherwise user can quit drop before we have all files saved
+  // and that cancels whole D&D.
+  AutoSuspendNativeEvents suspend;
+
+  nsAutoCString uriList;
+  for (uint32_t i = 0; i < aDragItems; i++) {
+    nsCOMPtr<nsITransferable> item = do_QueryElementAt(mSourceDataItems, i);
+    if (!item) {
+      continue;
+    }
+    nsAutoCString uri;
+    if (!SourceDataAppendURLItem(item, isExternalDrop, uri)) {
+      continue;
+    }
+    // text/x-moz-url is of form url + "\n" + title.
+    // We just want the url.
+    int32_t separatorPos = uri.FindChar(u'\n');
+    if (separatorPos >= 0) {
+      uri.Truncate(separatorPos);
+    }
+    uriList.Append(uri);
+    uriList.AppendLiteral("\r\n");
+  }
+
+  LOGDRAGSERVICE("URI list\n%s", uriList.get());
+  GdkAtom target = gtk_selection_data_get_target(aSelectionData);
+  gtk_selection_data_set(aSelectionData, target, 8, (guchar*)uriList.get(),
+                         uriList.Length());
+}
+
+void nsDragService::SourceDataGetImage(nsITransferable* aItem,
+                                       GtkSelectionData* aSelectionData) {
+  LOGDRAGSERVICE("nsDragService::SourceDataGetImage()");
+
+  nsresult rv;
+  nsCOMPtr<nsISupports> data;
+  rv = aItem->GetTransferData(kNativeImageMime, getter_AddRefs(data));
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  LOGDRAGSERVICE("  posting image\n");
+  nsCOMPtr<imgIContainer> image = do_QueryInterface(data);
+  if (!image) {
+    LOGDRAGSERVICE("  do_QueryInterface failed\n");
+    return;
+  }
+  RefPtr<GdkPixbuf> pixbuf = nsImageToPixbuf::ImageToPixbuf(image);
+  if (!pixbuf) {
+    LOGDRAGSERVICE("  ImageToPixbuf failed\n");
+    return;
+  }
+  gtk_selection_data_set_pixbuf(aSelectionData, pixbuf);
+  LOGDRAGSERVICE("  image data set\n");
+  return;
+}
+
+void nsDragService::SourceDataGetXDND(nsITransferable* aItem,
+                                      GdkDragContext* aContext,
+                                      GtkSelectionData* aSelectionData) {
+  LOGDRAGSERVICE("nsDragService::SourceDataGetXDND");
+
+  // Indicate failure by default.
+  GdkAtom target = gtk_selection_data_get_target(aSelectionData);
+  gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"E", 1);
+
+  GdkAtom property = gdk_atom_intern(gXdndDirectSaveType, FALSE);
+  GdkAtom type = gdk_atom_intern(kTextMime, FALSE);
+
+  GdkWindow* srcWindow = gdk_drag_context_get_source_window(aContext);
+  if (!srcWindow) {
+    LOGDRAGSERVICE("  failed to get source GdkWindow!");
+    return;
+  }
+
+  // Ensure null termination.
+  nsAutoCString data;
+  {
+    GUniquePtr<guchar> gdata;
+    gint length = 0;
+    if (!gdk_property_get(srcWindow, property, type, 0, INT32_MAX, FALSE,
+                          nullptr, nullptr, &length, getter_Transfers(gdata))) {
+      LOGDRAGSERVICE("  failed to get gXdndDirectSaveType GdkWindow property.");
+      return;
+    }
+    data.Assign(nsDependentCSubstring((const char*)gdata.get(), length));
+  }
+
+  GUniquePtr<char> hostname;
+  GUniquePtr<char> fullpath(
+      g_filename_from_uri(data.get(), getter_Transfers(hostname), nullptr));
+  if (!fullpath) {
+    LOGDRAGSERVICE("  failed to get file from uri.");
+    return;
+  }
+
+  // If there is no hostname in the URI, NULL will be stored.
+  // We should not accept uris with from a different host.
+  if (hostname) {
+    nsCOMPtr<nsIPropertyBag2> infoService =
+        do_GetService(NS_SYSTEMINFO_CONTRACTID);
+    if (!infoService) {
+      return;
+    }
+    nsAutoCString host;
+    if (NS_SUCCEEDED(infoService->GetPropertyAsACString(u"host"_ns, host))) {
+      if (!host.Equals(hostname.get())) {
+        LOGDRAGSERVICE("  ignored drag because of different host.");
+        // Special error code "F" for this case.
+        gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"F", 1);
+        return;
       }
     }
   }
 
-  return NS_ERROR_FAILURE;
+  LOGDRAGSERVICE("  XdndDirectSave filepath is %s", fullpath.get());
+
+  nsCOMPtr<nsIFile> file;
+  if (NS_FAILED(NS_NewNativeLocalFile(nsDependentCString(fullpath.get()), false,
+                                      getter_AddRefs(file)))) {
+    LOGDRAGSERVICE("  failed to get local file");
+    return;
+  }
+
+  // We have to split the path into a directory and filename,
+  // because our internal file-promise API is based on these.
+  nsCOMPtr<nsIFile> directory;
+  file->GetParent(getter_AddRefs(directory));
+
+  aItem->SetTransferData(kFilePromiseDirectoryMime, directory);
+
+  nsCOMPtr<nsISupportsString> filenamePrimitive =
+      do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID);
+  if (!filenamePrimitive) {
+    return;
+  }
+
+  nsAutoString leafName;
+  file->GetLeafName(leafName);
+  filenamePrimitive->SetData(leafName);
+
+  aItem->SetTransferData(kFilePromiseDestFilename, filenamePrimitive);
+
+  nsCOMPtr<nsISupports> promiseData;
+  nsresult rv =
+      aItem->GetTransferData(kFilePromiseMime, getter_AddRefs(promiseData));
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  // Indicate success.
+  gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"S", 1);
+  return;
+}
+
+bool nsDragService::SourceDataGetText(nsITransferable* aItem,
+                                      const nsACString& aMIMEType,
+                                      bool aNeedToDoConversionToPlainText,
+                                      GtkSelectionData* aSelectionData) {
+  LOGDRAGSERVICE("nsDragService::SourceDataGetPlain()");
+
+  nsresult rv;
+  nsCOMPtr<nsISupports> data;
+  rv = aItem->GetTransferData(PromiseFlatCString(aMIMEType).get(),
+                              getter_AddRefs(data));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  void* tmpData = nullptr;
+  uint32_t tmpDataLen = 0;
+
+  nsPrimitiveHelpers::CreateDataFromPrimitive(aMIMEType, data, &tmpData,
+                                              &tmpDataLen);
+  // if required, do the extra work to convert unicode to plain
+  // text and replace the output values with the plain text.
+  if (aNeedToDoConversionToPlainText) {
+    char* plainTextData = nullptr;
+    char16_t* castedUnicode = reinterpret_cast<char16_t*>(tmpData);
+    uint32_t plainTextLen = 0;
+    UTF16ToNewUTF8(castedUnicode, tmpDataLen / 2, &plainTextData,
+                   &plainTextLen);
+    if (tmpData) {
+      // this was not allocated using glib
+      free(tmpData);
+      tmpData = plainTextData;
+      tmpDataLen = plainTextLen;
+    }
+  }
+  if (tmpData) {
+    // this copies the data
+    GdkAtom target = gtk_selection_data_get_target(aSelectionData);
+    gtk_selection_data_set(aSelectionData, target, 8, (guchar*)tmpData,
+                           tmpDataLen);
+    // this wasn't allocated with glib
+    free(tmpData);
+  }
+
+  return true;
 }
 
 // We're asked to get data from mSourceDataItems and pass it to
@@ -1768,233 +2024,64 @@ void nsDragService::SourceDataGet(GtkWidget* aWidget, GdkDragContext* aContext,
     return;
   }
 
-  nsCOMPtr<nsITransferable> item;
-  item = do_QueryElementAt(mSourceDataItems, 0);
-  if (!item) {
+  uint32_t dragItems;
+  mSourceDataItems->GetLength(&dragItems);
+  LOGDRAGSERVICE("  source data items %d", dragItems);
+
+  nsDependentCString mimeFlavor(requestedTypeName.get());
+  if (mimeFlavor.EqualsLiteral(gTextUriListType)) {
+    SourceDataGetUriList(aContext, aSelectionData, dragItems);
     return;
   }
 
 #ifdef MOZ_LOGGING
-  PRUint32 dragItems;
-  mSourceDataItems->GetLength(&dragItems);
-  LOGDRAGSERVICE("  source data items %d", dragItems);
+  if (dragItems > 1) {
+    LOGDRAGSERVICE(
+        "  There are %d data items but we're asked for %s MIME type. Only "
+        "first data element can be transfered!",
+        dragItems, mimeFlavor.get());
+  }
 #endif
 
-  // if someone was asking for text/plain, lookup unicode instead so
-  // we can convert it.
-  bool needToDoConversionToPlainText = false;
-  bool needToDoConversionToImage = false;
+  nsCOMPtr<nsITransferable> item = do_QueryElementAt(mSourceDataItems, 0);
+  if (!item) {
+    LOGDRAGSERVICE("  Failed to get SourceDataItems!");
+    return;
+  }
 
-  nsDependentCString mimeFlavor(requestedTypeName.get());
-  const char* actualFlavor = nullptr;
   if (mimeFlavor.EqualsLiteral(kTextMime) ||
       mimeFlavor.EqualsLiteral(gTextPlainUTF8Type)) {
-    actualFlavor = kUnicodeMime;
-    needToDoConversionToPlainText = true;
-    LOGDRAGSERVICE("  convert %s => %s", actualFlavor, requestedTypeName.get());
-  }
-  // if someone was asking for _NETSCAPE_URL we need to convert to
-  // plain text but we also need to look for x-moz-url
-  else if (mimeFlavor.EqualsLiteral(gMozUrlType)) {
-    actualFlavor = kURLMime;
-    needToDoConversionToPlainText = true;
-    LOGDRAGSERVICE("  convert %s => %s", actualFlavor, requestedTypeName.get());
-  }
-  // if someone was asking for text/uri-list we need to convert to
-  // plain text.
-  else if (mimeFlavor.EqualsLiteral(gTextUriListType)) {
-    actualFlavor = gTextUriListType;
-    needToDoConversionToPlainText = true;
-    LOGDRAGSERVICE("  convert %s => %s", actualFlavor, requestedTypeName.get());
-
-    // The desktop or file manager expects for drags of promise-file data
-    // the text/uri-list flavor set to a temporary file that contains the
-    // promise-file data.
-    // We open a stream on the <protocol>:// url here and save the content
-    // to file:///tmp/dnd_file/<filename> and pass this url
-    // as text/uri-list flavor.
-
-    // check whether transferable contains FilePromiseUrl flavor...
-    nsresult rv;
-    nsCOMPtr<nsISupports> data;
-    rv = item->GetTransferData(kFilePromiseURLMime, getter_AddRefs(data));
-
-    // ... if so, create a temporary file and pass its url as
-    // text/uri-list flavor
-    if (NS_SUCCEEDED(rv)) {
-      if (mTempFileUrl.IsEmpty()) {
-        rv = CreateTempFile(item, aSelectionData);
-      }
-      if (NS_SUCCEEDED(rv)) {
-        LOGDRAGSERVICE("  save tmp file %s", mTempFileUrl.get());
-        gtk_selection_data_set(aSelectionData, target, 8,
-                               (guchar*)mTempFileUrl.get(),
-                               mTempFileUrl.Length());
-        // We're done here, data is set.
-        return;
-      }
-    }
+    SourceDataGetText(item, nsDependentCString(kUnicodeMime),
+                      /* aNeedToDoConversionToPlainText */ true,
+                      aSelectionData);
+    // no fallback for text mime types
+    return;
   }
   // Someone is asking for the special Direct Save Protocol type.
   else if (mimeFlavor.EqualsLiteral(gXdndDirectSaveType)) {
-    // Indicate failure by default.
-    gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"E", 1);
-
-    GdkAtom property = gdk_atom_intern(gXdndDirectSaveType, FALSE);
-    GdkAtom type = gdk_atom_intern(kTextMime, FALSE);
-
-    guchar* data;
-    gint length;
-    if (!gdk_property_get(gdk_drag_context_get_source_window(aContext),
-                          property, type, 0, INT32_MAX, FALSE, nullptr, nullptr,
-                          &length, &data)) {
-      return;
-    }
-
-    // Zero-terminate the string.
-    data = (guchar*)g_realloc(data, length + 1);
-    if (!data) return;
-    data[length] = '\0';
-
-    gchar* hostname;
-    char* gfullpath =
-        g_filename_from_uri((const gchar*)data, &hostname, nullptr);
-    g_free(data);
-    if (!gfullpath) return;
-
-    nsCString fullpath(gfullpath);
-    g_free(gfullpath);
-
-    LOGDRAGSERVICE("  XdndDirectSave filepath is %s\n", fullpath.get());
-
-    // If there is no hostname in the URI, NULL will be stored.
-    // We should not accept uris with from a different host.
-    if (hostname) {
-      nsCOMPtr<nsIPropertyBag2> infoService =
-          do_GetService(NS_SYSTEMINFO_CONTRACTID);
-      if (!infoService) return;
-
-      nsAutoCString host;
-      if (NS_SUCCEEDED(infoService->GetPropertyAsACString(u"host"_ns, host))) {
-        if (!host.Equals(hostname)) {
-          LOGDRAGSERVICE("  ignored drag because of different host.\n");
-
-          // Special error code "F" for this case.
-          gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"F", 1);
-          g_free(hostname);
-          return;
-        }
-      }
-
-      g_free(hostname);
-    }
-
-    nsCOMPtr<nsIFile> file;
-    if (NS_FAILED(
-            NS_NewNativeLocalFile(fullpath, false, getter_AddRefs(file)))) {
-      return;
-    }
-
-    // We have to split the path into a directory and filename,
-    // because our internal file-promise API is based on these.
-
-    nsCOMPtr<nsIFile> directory;
-    file->GetParent(getter_AddRefs(directory));
-
-    item->SetTransferData(kFilePromiseDirectoryMime, directory);
-
-    nsCOMPtr<nsISupportsString> filenamePrimitive =
-        do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID);
-    if (!filenamePrimitive) return;
-
-    nsAutoString leafName;
-    file->GetLeafName(leafName);
-    filenamePrimitive->SetData(leafName);
-
-    item->SetTransferData(kFilePromiseDestFilename, filenamePrimitive);
-
-    // Request a different type in GetTransferData.
-    actualFlavor = kFilePromiseMime;
-    // if someone was asking for image we need to convert it
-    // from kNativeImageMime
+    SourceDataGetXDND(item, aContext, aSelectionData);
+    // no fallback for XDND mime types
+    return;
   } else if (mimeFlavor.EqualsLiteral(kPNGImageMime) ||
              mimeFlavor.EqualsLiteral(kJPEGImageMime) ||
              mimeFlavor.EqualsLiteral(kJPGImageMime) ||
              mimeFlavor.EqualsLiteral(kGIFImageMime)) {
-    actualFlavor = kNativeImageMime;
-    needToDoConversionToImage = true;
-    LOGDRAGSERVICE("  convert %s => %s", actualFlavor, requestedTypeName.get());
-  } else {
-    actualFlavor = requestedTypeName.get();
-    LOGDRAGSERVICE("  use %s", requestedTypeName.get());
-  }
-  nsresult rv;
-  nsCOMPtr<nsISupports> data;
-  rv = item->GetTransferData(actualFlavor, getter_AddRefs(data));
-
-  if (strcmp(actualFlavor, kFilePromiseMime) == 0) {
-    if (NS_SUCCEEDED(rv)) {
-      // Indicate success.
-      gtk_selection_data_set(aSelectionData, target, 8, (guchar*)"S", 1);
-    }
+    // no fallback for image mime types
+    SourceDataGetImage(item, aSelectionData);
     return;
-  }
-
-  if (NS_SUCCEEDED(rv)) {
-    if (needToDoConversionToImage) {
-      LOGDRAGSERVICE("  posting image\n");
-      nsCOMPtr<imgIContainer> image = do_QueryInterface(data);
-      if (!image) {
-        LOGDRAGSERVICE("  do_QueryInterface failed\n");
-        return;
-      }
-      RefPtr<GdkPixbuf> pixbuf = nsImageToPixbuf::ImageToPixbuf(image);
-      if (!pixbuf) {
-        LOGDRAGSERVICE("  ImageToPixbuf failed\n");
-        return;
-      }
-      gtk_selection_data_set_pixbuf(aSelectionData, pixbuf);
-      LOGDRAGSERVICE("  image data set\n");
-    } else {
-      void* tmpData = nullptr;
-      uint32_t tmpDataLen = 0;
-
-      nsPrimitiveHelpers::CreateDataFromPrimitive(
-          nsDependentCString(actualFlavor), data, &tmpData, &tmpDataLen);
-      // if required, do the extra work to convert unicode to plain
-      // text and replace the output values with the plain text.
-      if (needToDoConversionToPlainText) {
-        char* plainTextData = nullptr;
-        char16_t* castedUnicode = reinterpret_cast<char16_t*>(tmpData);
-        uint32_t plainTextLen = 0;
-        UTF16ToNewUTF8(castedUnicode, tmpDataLen / 2, &plainTextData,
-                       &plainTextLen);
-        if (tmpData) {
-          // this was not allocated using glib
-          free(tmpData);
-          tmpData = plainTextData;
-          tmpDataLen = plainTextLen;
-        }
-      }
-      if (tmpData) {
-        // this copies the data
-        gtk_selection_data_set(aSelectionData, target, 8, (guchar*)tmpData,
-                               tmpDataLen);
-        // this wasn't allocated with glib
-        free(tmpData);
-      }
-    }
-  } else {
-    if (mimeFlavor.EqualsLiteral(gTextUriListType)) {
-      // fall back for text/uri-list
-      LOGDRAGSERVICE("  fall back to %s\n", requestedTypeName.get());
-      nsAutoCString list;
-      CreateURIList(mSourceDataItems, list);
-      gtk_selection_data_set(aSelectionData, target, 8, (guchar*)list.get(),
-                             list.Length());
+  } else if (mimeFlavor.EqualsLiteral(gMozUrlType)) {
+    // Someone was asking for _NETSCAPE_URL. We need to get it from
+    // transferable as x-moz-url and convert it to plain text.
+    // No need to check
+    if (SourceDataGetText(item, nsDependentCString(kURLMime),
+                          /* aNeedToDoConversionToPlainText */ true,
+                          aSelectionData)) {
       return;
     }
   }
+  // Just try to get and set whatever we're asked for.
+  SourceDataGetText(item, mimeFlavor,
+                    /* aNeedToDoConversionToPlainText */ false, aSelectionData);
 }
 
 void nsDragService::SourceBeginDrag(GdkDragContext* aContext) {
@@ -2014,11 +2101,14 @@ void nsDragService::SourceBeginDrag(GdkDragContext* aContext) {
       rv = transferable->GetTransferData(kFilePromiseDestFilename,
                                          getter_AddRefs(data));
       if (NS_FAILED(rv)) {
+        LOGDRAGSERVICE("  transferable doesn't contain '%s",
+                       kFilePromiseDestFilename);
         return;
       }
 
       nsCOMPtr<nsISupportsString> fileName = do_QueryInterface(data);
       if (!fileName) {
+        LOGDRAGSERVICE("  failed to get file name");
         return;
       }
 
@@ -2035,6 +2125,7 @@ void nsDragService::SourceBeginDrag(GdkDragContext* aContext) {
                           property, type, 8, GDK_PROP_MODE_REPLACE,
                           (const guchar*)fileNameCStr.get(),
                           fileNameCStr.Length());
+      break;
     }
   }
 }
@@ -2048,7 +2139,10 @@ void nsDragService::SetDragIcon(GdkDragContext* aContext) {
   nsPresContext* pc;
   RefPtr<SourceSurface> surface;
   DrawDrag(mSourceNode, mRegion, mScreenPosition, &dragRect, &surface, &pc);
-  if (!pc) return;
+  if (!pc) {
+    LOGDRAGSERVICE("  PresContext is missing!");
+    return;
+  }
 
   const auto screenPoint =
       LayoutDeviceIntPoint::Round(mScreenPosition * pc->CSSToDevPixelScale());
@@ -2086,20 +2180,31 @@ void nsDragService::SetDragIcon(GdkDragContext* aContext) {
           OpenDragPopup();
           gtk_drag_set_icon_widget(aContext, gtkWidget, offsetX, offsetY);
           return;
+        } else {
+          LOGDRAGSERVICE("  NS_NATIVE_SHELLWIDGET is missing!");
         }
+      } else {
+        LOGDRAGSERVICE("  NearestWidget is missing!");
       }
+    } else {
+      LOGDRAGSERVICE("  PrimaryFrame is missing!");
     }
   }
 
   if (surface) {
+    LOGDRAGSERVICE("  We have a surface");
     if (!SetAlphaPixmap(surface, aContext, offsetX, offsetY, dragRect)) {
       RefPtr<GdkPixbuf> dragPixbuf = nsImageToPixbuf::SourceSurfaceToPixbuf(
           surface, dragRect.width, dragRect.height);
       if (dragPixbuf) {
         LOGDRAGSERVICE("  set drag pixbuf");
         gtk_drag_set_icon_pixbuf(aContext, dragPixbuf, offsetX, offsetY);
+      } else {
+        LOGDRAGSERVICE("  SourceSurfaceToPixbuf failed!");
       }
     }
+  } else {
+    LOGDRAGSERVICE("  Surface is missing!");
   }
 }
 
@@ -2141,14 +2246,15 @@ static gboolean invisibleSourceDragFailed(GtkWidget* aWidget,
       GUniquePtr<gchar> name(gdk_atom_name(atom));
       if (name && !strcmp(name.get(), gTabDropType)) {
         aResult = GTK_DRAG_RESULT_NO_TARGET;
-        LOGDRAGSERVICESTATIC(
-            "invisibleSourceDragFailed(%p): Wayland tab drop\n", aContext);
+        LOGDRAGSERVICESTATIC("invisibleSourceDragFailed(%p): Wayland tab drop",
+                             aContext);
         break;
       }
     }
   }
 #endif
-  LOGDRAGSERVICESTATIC("invisibleSourceDragFailed(%p) %i", aContext, aResult);
+  LOGDRAGSERVICESTATIC("invisibleSourceDragFailed(%p) %s", aContext,
+                       kGtkDragResults[aResult]);
   nsDragService* dragService = (nsDragService*)aData;
   // End the drag session now (rather than waiting for the drag-end signal)
   // so that operations performed on dropEffect == none can start immediately
@@ -2480,7 +2586,7 @@ void nsDragService::UpdateDragAction(GdkDragContext* aDragContext) {
   GdkDragAction gdkAction = GDK_ACTION_DEFAULT;
   if (aDragContext) {
     gdkAction = gdk_drag_context_get_actions(aDragContext);
-    LOGDRAGSERVICE("  gdk_drag_context_get_actions() returns %x", gdkAction);
+    LOGDRAGSERVICE("  gdk_drag_context_get_actions() returns 0x%X", gdkAction);
 
     // When D&D modifiers (CTRL/SHIFT) are involved,
     // gdk_drag_context_get_actions() on X11 returns selected action but
@@ -2493,7 +2599,7 @@ void nsDragService::UpdateDragAction(GdkDragContext* aDragContext) {
     if (widget::GdkIsWaylandDisplay()) {
       GdkDragAction gdkActionSelected =
           gdk_drag_context_get_selected_action(aDragContext);
-      LOGDRAGSERVICE("  gdk_drag_context_get_selected_action() returns %x",
+      LOGDRAGSERVICE("  gdk_drag_context_get_selected_action() returns 0x%X",
                      gdkActionSelected);
       if (gdkActionSelected) {
         gdkAction = gdkActionSelected;

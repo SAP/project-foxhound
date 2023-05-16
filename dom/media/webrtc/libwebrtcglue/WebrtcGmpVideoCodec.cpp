@@ -20,6 +20,7 @@
 #include "transport/runnable_utils.h"
 #include "api/video/video_frame_type.h"
 #include "common_video/include/video_frame_buffer.h"
+#include "media/base/media_constants.h"
 // #include "rtc_base/bind.h"
 
 namespace mozilla {
@@ -29,11 +30,13 @@ static const int kLowH264QpThreshold = 24;
 static const int kHighH264QpThreshold = 37;
 
 // Encoder.
-WebrtcGmpVideoEncoder::WebrtcGmpVideoEncoder(std::string aPCHandle)
+WebrtcGmpVideoEncoder::WebrtcGmpVideoEncoder(
+    const webrtc::SdpVideoFormat& aFormat, std::string aPCHandle)
     : mGMP(nullptr),
       mInitting(false),
       mHost(nullptr),
       mMaxPayloadSize(0),
+      mFormatParams(aFormat.parameters),
       mCallbackMutex("WebrtcGmpVideoEncoder encoded callback mutex"),
       mCallback(nullptr),
       mPCHandle(std::move(aPCHandle)),
@@ -148,7 +151,8 @@ int32_t WebrtcGmpVideoEncoder::InitEncode(
          sizeof(mCodecSpecificInfo.codecSpecific));
   mCodecSpecificInfo.codecType = webrtc::kVideoCodecH264;
   mCodecSpecificInfo.codecSpecific.H264.packetization_mode =
-      aCodecSettings->H264().packetizationMode == 1
+      mFormatParams.count(cricket::kH264FmtpPacketizationMode) == 1 &&
+              mFormatParams.at(cricket::kH264FmtpPacketizationMode) == "1"
           ? webrtc::H264PacketizationMode::NonInterleaved
           : webrtc::H264PacketizationMode::SingleNalUnit;
 
@@ -638,14 +642,16 @@ void WebrtcGmpVideoEncoder::Encoded(
 }
 
 // Decoder.
-WebrtcGmpVideoDecoder::WebrtcGmpVideoDecoder(std::string aPCHandle)
+WebrtcGmpVideoDecoder::WebrtcGmpVideoDecoder(std::string aPCHandle,
+                                             TrackingId aTrackingId)
     : mGMP(nullptr),
       mInitting(false),
       mHost(nullptr),
       mCallbackMutex("WebrtcGmpVideoDecoder decoded callback mutex"),
       mCallback(nullptr),
       mDecoderStatus(GMPNoErr),
-      mPCHandle(std::move(aPCHandle)) {
+      mPCHandle(std::move(aPCHandle)),
+      mTrackingId(std::move(aTrackingId)) {
   MOZ_ASSERT(!mPCHandle.empty());
 }
 
@@ -786,6 +792,15 @@ int32_t WebrtcGmpVideoDecoder::Decode(const webrtc::EncodedImage& aInputImage,
   if (!aInputImage.size()) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
+
+  MediaInfoFlag flag = MediaInfoFlag::None;
+  flag |= (aInputImage._frameType == webrtc::VideoFrameType::kVideoFrameKey
+               ? MediaInfoFlag::KeyFrame
+               : MediaInfoFlag::NonKeyFrame);
+  flag |= MediaInfoFlag::SoftwareDecoding;
+  flag |= MediaInfoFlag::VIDEO_H264;
+  mPerformanceRecorder.Start((aInputImage.Timestamp() * 1000ll) / 90,
+                             "WebrtcGmpVideoDecoder"_ns, mTrackingId, flag);
 
   // This is an ugly solution to asynchronous decoding errors
   // from Decode_g() not being returned to the synchronous Decode() method.
@@ -996,6 +1011,14 @@ void WebrtcGmpVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
                   // round up
                   (aDecodedFrame->Timestamp() * 90ll + 999) / 1000)
               .build();
+      mPerformanceRecorder.Record(
+          static_cast<int64_t>(aDecodedFrame->Timestamp()),
+          [&](DecodeStage& aStage) {
+            aStage.SetImageFormat(DecodeStage::YUV420P);
+            aStage.SetResolution(aDecodedFrame->Width(),
+                                 aDecodedFrame->Height());
+            aStage.SetColorDepth(gfx::ColorDepth::COLOR_8);
+          });
       mCallback->Decoded(videoFrame);
     }
   }

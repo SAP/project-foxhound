@@ -9,6 +9,7 @@
 
 #  include "MFTDecoder.h"
 #  include "MediaResult.h"
+#  include "PerformanceRecorder.h"
 #  include "WMF.h"
 #  include "WMFDecoderModule.h"
 #  include "WMFMediaDataDecoder.h"
@@ -26,7 +27,7 @@ class WMFVideoMFTManager : public MFTManager {
                      layers::KnowsCompositor* aKnowsCompositor,
                      layers::ImageContainer* aImageContainer, float aFramerate,
                      const CreateDecoderParams::OptionSet& aOptions,
-                     bool aDXVAEnabled);
+                     bool aDXVAEnabled, Maybe<TrackingId> aTrackingId);
   ~WMFVideoMFTManager();
 
   MediaResult Init();
@@ -34,6 +35,8 @@ class WMFVideoMFTManager : public MFTManager {
   HRESULT Input(MediaRawData* aSample) override;
 
   HRESULT Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) override;
+
+  void Flush() override;
 
   void Shutdown() override;
 
@@ -117,6 +120,9 @@ class WMFVideoMFTManager : public MFTManager {
   bool mIMFUsable = false;
   const float mFramerate;
   const bool mLowLatency;
+
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
+  const Maybe<TrackingId> mTrackingId;
 };
 
 }  // namespace mozilla

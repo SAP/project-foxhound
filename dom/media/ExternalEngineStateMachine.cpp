@@ -108,8 +108,7 @@ void ExternalEngineStateMachine::ChangeStateTo(State aNextState) {
 
 ExternalEngineStateMachine::ExternalEngineStateMachine(
     MediaDecoder* aDecoder, MediaFormatReader* aReader)
-    : MediaDecoderStateMachineBase(aDecoder, aReader),
-      mVideoFrameContainer(aDecoder->GetVideoFrameContainer()) {
+    : MediaDecoderStateMachineBase(aDecoder, aReader) {
   LOG("Created ExternalEngineStateMachine");
   MOZ_ASSERT(mState.IsInitEngine());
 #ifdef MOZ_WMF_MEDIA_ENGINE
@@ -416,11 +415,7 @@ RefPtr<ShutdownPromise> ExternalEngineStateMachine::Shutdown() {
   mVideoDataRequest.DisconnectIfExists();
   mAudioWaitRequest.DisconnectIfExists();
   mVideoWaitRequest.DisconnectIfExists();
-  mBuffered.DisconnectIfConnected();
-  mPlayState.DisconnectIfConnected();
-  mVolume.DisconnectIfConnected();
-  mPreservesPitch.DisconnectIfConnected();
-  mLooping.DisconnectIfConnected();
+
   mDuration.DisconnectAll();
   mCurrentPosition.DisconnectAll();
   // TODO : implement audible check
@@ -663,15 +658,14 @@ void ExternalEngineStateMachine::OnRequestAudio() {
   }
 
   LOGV("Start requesting audio");
-  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::RequestData);
-  perfRecorder.Start();
+  PerformanceRecorder<PlaybackStage> perfRecorder(MediaStage::RequestData);
   RefPtr<ExternalEngineStateMachine> self = this;
   mReader->RequestAudioData()
       ->Then(
           OwnerThread(), __func__,
           [this, self, perfRecorder(std::move(perfRecorder))](
               const RefPtr<AudioData>& aAudio) mutable {
-            perfRecorder.End();
+            perfRecorder.Record();
             mAudioDataRequest.Complete();
             LOGV("Completed requesting audio");
             AUTO_PROFILER_LABEL(
@@ -723,25 +717,34 @@ void ExternalEngineStateMachine::OnRequestVideo() {
   }
 
   LOGV("Start requesting video");
-  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::RequestData,
-                                   Info().mVideo.mImage.height);
-  perfRecorder.Start();
+  PerformanceRecorder<PlaybackStage> perfRecorder(MediaStage::RequestData,
+                                                  Info().mVideo.mImage.height);
   RefPtr<ExternalEngineStateMachine> self = this;
   mReader->RequestVideoData(GetVideoThreshold(), false)
       ->Then(
           OwnerThread(), __func__,
           [this, self, perfRecorder(std::move(perfRecorder))](
               const RefPtr<VideoData>& aVideo) mutable {
-            perfRecorder.End();
+            perfRecorder.Record();
             mVideoDataRequest.Complete();
             LOGV("Completed requesting video");
             AUTO_PROFILER_LABEL(
                 "ExternalEngineStateMachine::OnRequestVideo:Resolved",
                 MEDIA_PLAYBACK);
             MOZ_ASSERT(aVideo);
+            if (!mHasReceivedFirstDecodedVideoFrame) {
+              mHasReceivedFirstDecodedVideoFrame = true;
+              OnLoadedFirstFrame();
+            }
             RunningEngineUpdate(MediaData::Type::VIDEO_DATA);
-            mVideoFrameContainer->SetCurrentFrame(
-                mInfo->mVideo.mDisplay, aVideo->mImage, TimeStamp::Now());
+            // Send image to PIP window.
+            if (mSecondaryVideoContainer.Ref()) {
+              mSecondaryVideoContainer.Ref()->SetCurrentFrame(
+                  mInfo->mVideo.mDisplay, aVideo->mImage, TimeStamp::Now());
+            } else {
+              mVideoFrameContainer->SetCurrentFrame(
+                  mInfo->mVideo.mDisplay, aVideo->mImage, TimeStamp::Now());
+            }
           },
           [this, self](const MediaResult& aError) {
             mVideoDataRequest.Complete();
@@ -770,12 +773,19 @@ void ExternalEngineStateMachine::OnRequestVideo() {
 
 void ExternalEngineStateMachine::OnLoadedFirstFrame() {
   AssertOnTaskQueue();
+  // We will wait until receive the first video frame.
+  if (mInfo->HasVideo() && !mHasReceivedFirstDecodedVideoFrame) {
+    LOGV("Hasn't received first decoded video frame");
+    return;
+  }
+  LOGV("OnLoadedFirstFrame");
   MediaDecoderEventVisibility visibility =
       mSentFirstFrameLoadedEvent ? MediaDecoderEventVisibility::Suppressed
                                  : MediaDecoderEventVisibility::Observable;
   mSentFirstFrameLoadedEvent = true;
   mFirstFrameLoadedEvent.Notify(UniquePtr<MediaInfo>(new MediaInfo(Info())),
                                 visibility);
+  mOnNextFrameStatus.Notify(MediaDecoderOwner::NEXT_FRAME_AVAILABLE);
 }
 
 void ExternalEngineStateMachine::OnLoadedData() {
@@ -954,6 +964,12 @@ media::TimeUnit ExternalEngineStateMachine::GetVideoThreshold() {
     return state->GetTargetTime();
   }
   return mCurrentPosition.Ref();
+}
+
+void ExternalEngineStateMachine::UpdateSecondaryVideoContainer() {
+  AssertOnTaskQueue();
+  LOG("UpdateSecondaryVideoContainer=%p", mSecondaryVideoContainer.Ref().get());
+  mOnSecondaryVideoContainerInstalled.Notify(mSecondaryVideoContainer.Ref());
 }
 
 #undef FMT

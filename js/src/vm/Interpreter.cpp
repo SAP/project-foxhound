@@ -1943,15 +1943,19 @@ void js::ReportInNotObjectError(JSContext* cx, HandleValue lref,
     if (str->length() > MaxStringLength) {
       JSStringBuilder buf(cx);
       if (!buf.appendSubstring(str, 0, MaxStringLength)) {
+        buf.failure();
         return nullptr;
       }
       if (!buf.append("...")) {
+        buf.failure();
         return nullptr;
       }
       str = buf.finishString();
       if (!str) {
+        buf.failure();
         return nullptr;
       }
+      buf.ok();
     }
     return QuoteString(cx, str, '"');
   };
@@ -3589,10 +3593,9 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
     END_CASE(Object)
 
     CASE(CallSiteObj) {
-      JSObject* cso = ProcessCallSiteObjOperation(cx, script, REGS.pc);
-      if (!cso) {
-        goto error;
-      }
+      JSObject* cso = script->getObject(REGS.pc);
+      MOZ_ASSERT(!cso->as<ArrayObject>().isExtensible());
+      MOZ_ASSERT(cso->as<ArrayObject>().containsPure(cx->names().raw));
       PUSH_OBJECT(*cso);
     }
     END_CASE(CallSiteObj)
@@ -5304,7 +5307,7 @@ ArrayObject* js::ArrayFromArgumentsObject(JSContext* cx,
 JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
                                  const jsbytecode* pc) {
   if (JSOp(*pc) == JSOp::NewObject) {
-    Rooted<Shape*> shape(cx, script->getShape(pc));
+    Rooted<SharedShape*> shape(cx, script->getShape(pc));
     return PlainObject::createWithShape(cx, shape);
   }
 
@@ -5313,7 +5316,7 @@ JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
 }
 
 JSObject* js::NewPlainObjectBaselineFallback(JSContext* cx,
-                                             Handle<Shape*> shape,
+                                             Handle<SharedShape*> shape,
                                              gc::AllocKind allocKind,
                                              gc::AllocSite* site) {
   MOZ_ASSERT(shape->getObjectClass() == &PlainObject::class_);
@@ -5329,7 +5332,7 @@ JSObject* js::NewPlainObjectBaselineFallback(JSContext* cx,
 }
 
 JSObject* js::NewPlainObjectOptimizedFallback(JSContext* cx,
-                                              Handle<Shape*> shape,
+                                              Handle<SharedShape*> shape,
                                               gc::AllocKind allocKind,
                                               gc::InitialHeap initialHeap) {
   MOZ_ASSERT(shape->getObjectClass() == &PlainObject::class_);

@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "js/Value.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/FetchDriver.h"
 
@@ -223,17 +224,11 @@ AlternativeDataStreamListener::OnStartRequest(nsIRequest* aRequest) {
       NS_SUCCEEDED(cic->GetCacheEntryId(&mAlternativeDataCacheEntryId))) {
     MOZ_DIAGNOSTIC_ASSERT(!mPipeAlternativeInputStream);
     MOZ_DIAGNOSTIC_ASSERT(!mPipeAlternativeOutputStream);
-    nsresult rv =
-        NS_NewPipe(getter_AddRefs(mPipeAlternativeInputStream),
-                   getter_AddRefs(mPipeAlternativeOutputStream),
-                   0 /* default segment size */, UINT32_MAX /* infinite pipe */,
-                   true /* non-blocking input, otherwise you deadlock */,
-                   false /* blocking output, since the pipe is 'in'finite */);
-
-    if (NS_FAILED(rv)) {
-      mFetchDriver->FailWithNetworkError(rv);
-      return rv;
-    }
+    NS_NewPipe(getter_AddRefs(mPipeAlternativeInputStream),
+               getter_AddRefs(mPipeAlternativeOutputStream),
+               0 /* default segment size */, UINT32_MAX /* infinite pipe */,
+               true /* non-blocking input, otherwise you deadlock */,
+               false /* blocking output, since the pipe is 'in'finite */);
 
     MOZ_DIAGNOSTIC_ASSERT(!mCacheInfoChannel);
     mCacheInfoChannel = cic;
@@ -464,7 +459,7 @@ nsresult FetchDriver::Fetch(AbortSignalImpl* aSignalImpl,
   // the operation.
   if (aSignalImpl) {
     if (aSignalImpl->Aborted()) {
-      RunAbortAlgorithm();
+      FetchDriverAbortActions(aSignalImpl);
       return NS_OK;
     }
 
@@ -594,7 +589,7 @@ nsresult FetchDriver::HttpFetch(
     secFlags |= nsILoadInfo::SEC_DONT_FOLLOW_REDIRECTS;
   }
 
-  // This is handles the use credentials flag in "HTTP
+  // This handles the use credentials flag in "HTTP
   // network or cache fetch" in the spec and decides whether to transmit
   // cookies and other identifying information.
   if (mRequest->GetCredentialsMode() == RequestCredentials::Include) {
@@ -937,7 +932,8 @@ void FetchDriver::FailWithNetworkError(nsresult rv) {
 
   // mObserver could be null after OnResponseAvailable().
   if (mObserver) {
-    mObserver->OnResponseEnd(FetchDriverObserver::eByNetworking);
+    mObserver->OnResponseEnd(FetchDriverObserver::eByNetworking,
+                             JS::UndefinedHandleValue);
     mObserver = nullptr;
   }
 
@@ -1057,13 +1053,13 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
       if (NS_SUCCEEDED(rv) && !contentCharset.IsEmpty()) {
         contentType += ";charset="_ns + contentCharset;
       }
-
-      IgnoredErrorResult result;
-      response->Headers()->Append("Content-Type"_ns, contentType, result);
-      MOZ_ASSERT(!result.Failed());
     }
 
-    if (contentLength > 0) {
+    IgnoredErrorResult result;
+    response->Headers()->Append("Content-Type"_ns, contentType, result);
+    MOZ_ASSERT(!result.Failed());
+
+    if (contentLength >= 0) {
       nsAutoCString contentLenStr;
       contentLenStr.AppendInt(contentLength);
 
@@ -1144,17 +1140,11 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
   // to suspend the channel and then resume when there is space available, but
   // for now use an infinite pipe to avoid blocking.
   nsCOMPtr<nsIInputStream> pipeInputStream;
-  rv = NS_NewPipe(getter_AddRefs(pipeInputStream),
-                  getter_AddRefs(mPipeOutputStream),
-                  0, /* default segment size */
-                  UINT32_MAX /* infinite pipe */,
-                  true /* non-blocking input, otherwise you deadlock */,
-                  false /* blocking output, since the pipe is 'in'finite */);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    FailWithNetworkError(rv);
-    // Cancel request.
-    return rv;
-  }
+  NS_NewPipe(getter_AddRefs(pipeInputStream), getter_AddRefs(mPipeOutputStream),
+             0, /* default segment size */
+             UINT32_MAX /* infinite pipe */,
+             true /* non-blocking input, otherwise you deadlock */,
+             false /* blocking output, since the pipe is 'in'finite */);
   response->SetBody(pipeInputStream, contentLength);
 
   // If the request is a file channel, then remember the local path to
@@ -1472,7 +1462,8 @@ void FetchDriver::FinishOnStopRequest(
   }
 
   if (mObserver) {
-    mObserver->OnResponseEnd(FetchDriverObserver::eByNetworking);
+    mObserver->OnResponseEnd(FetchDriverObserver::eByNetworking,
+                             JS::UndefinedHandleValue);
     mObserver = nullptr;
   }
 
@@ -1639,14 +1630,20 @@ void FetchDriver::SetRequestHeaders(nsIHttpChannel* aChannel,
   }
 }
 
-void FetchDriver::RunAbortAlgorithm() {
+void FetchDriver::RunAbortAlgorithm() { FetchDriverAbortActions(Signal()); }
+
+void FetchDriver::FetchDriverAbortActions(AbortSignalImpl* aSignalImpl) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
   if (mObserver) {
 #ifdef DEBUG
     mResponseAvailableCalled = true;
 #endif
-    mObserver->OnResponseEnd(FetchDriverObserver::eAborted);
+    JS::Rooted<JS::Value> reason(RootingCx());
+    if (aSignalImpl) {
+      reason.set(aSignalImpl->RawReason());
+    }
+    mObserver->OnResponseEnd(FetchDriverObserver::eAborted, reason);
     mObserver = nullptr;
   }
 

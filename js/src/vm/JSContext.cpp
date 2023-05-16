@@ -293,9 +293,7 @@ void JSContext::onOutOfMemory() {
 JS_PUBLIC_API void js::ReportOutOfMemory(JSContext* cx) {
   MaybeReportOutOfMemoryForDifferentialTesting();
 
-  if (cx->isHelperThreadContext()) {
-    return cx->addPendingOutOfMemory();
-  }
+  MOZ_ASSERT(cx->isMainThreadContext());
 
   cx->onOutOfMemory();
 }
@@ -345,6 +343,7 @@ JS_PUBLIC_API void js::ReportOverRecursed(JSContext* maybecx) {
   if (!maybecx) {
     return;
   }
+  MOZ_ASSERT(maybecx->isMainThreadContext());
 
   maybecx->onOverRecursed();
 }
@@ -984,7 +983,6 @@ mozilla::GenericErrorResult<JS::Error> JSContext::alreadyReportedError() {
 JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
     : runtime_(runtime),
       kind_(ContextKind::Uninitialized),
-      nurserySuppressions_(this),
       options_(this, options),
       freeUnusedMemory(false),
       measuringExecutionTime_(this, false),
@@ -1181,19 +1179,24 @@ void JSContext::setPendingException(HandleValue value,
 
 bool JSContext::getPendingException(MutableHandleValue rval) {
   MOZ_ASSERT(isExceptionPending());
-  rval.set(unwrappedException());
+
+  RootedValue exception(this, unwrappedException());
   if (zone()->isAtomsZone()) {
+    rval.set(exception);
     return true;
   }
+
   Rooted<SavedFrame*> stack(this, unwrappedExceptionStack());
   JS::ExceptionStatus prevStatus = status;
   clearPendingException();
-  if (!compartment()->wrap(this, rval)) {
+  if (!compartment()->wrap(this, &exception)) {
     return false;
   }
-  this->check(rval);
-  setPendingException(rval, stack);
+  this->check(exception);
+  setPendingException(exception, stack);
   status = prevStatus;
+
+  rval.set(exception);
   return true;
 }
 

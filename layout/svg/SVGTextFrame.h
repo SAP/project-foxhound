@@ -199,21 +199,21 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   NS_DECL_FRAMEARENA_HELPERS(SVGTextFrame)
 
   // nsIFrame:
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  virtual nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual nsContainerFrame* GetContentInsertionFrame() override {
+  nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGText"_ns, aResult);
   }
 #endif
@@ -221,18 +221,18 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   /**
    * Finds the nsTextFrame for the closest rendered run to the specified point.
    */
-  virtual void FindCloserFrameForSelection(
+  void FindCloserFrameForSelection(
       const nsPoint& aPoint, FrameWithDistance* aCurrentBestFrame) override;
 
   // ISVGDisplayableFrame interface:
-  virtual void NotifySVGChanged(uint32_t aFlags) override;
-  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                        imgDrawingParams& aImgParams,
-                        const nsIntRect* aDirtyRect = nullptr) override;
-  virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual void ReflowSVG() override;
-  virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                      uint32_t aFlags) override;
+  void NotifySVGChanged(uint32_t aFlags) override;
+  void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                imgDrawingParams& aImgParams,
+                const nsIntRect* aDirtyRect = nullptr) override;
+  nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
+  void ReflowSVG() override;
+  SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
+                              uint32_t aFlags) override;
 
   // SVG DOM text methods:
   uint32_t GetNumberOfChars(nsIContent* aContent);
@@ -297,10 +297,11 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * it.
    *
    * We have to do this in two cases: in response to a style change on a
-   * non-display <text>, where aReason will be eStyleChange (the common case),
-   * and also in response to glyphs changes on non-display <text> (i.e.,
-   * animated SVG-in-OpenType glyphs), in which case aReason will be eResize,
-   * since layout doesn't need to be recomputed.
+   * non-display <text>, where aReason will be
+   * IntrinsicDirty::FrameAncestorsAndDescendants (the common case), and also in
+   * response to glyphs changes on non-display <text> (i.e., animated
+   * SVG-in-OpenType glyphs), in which case aReason will be None, since layout
+   * doesn't need to be recomputed.
    */
   void ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason);
 

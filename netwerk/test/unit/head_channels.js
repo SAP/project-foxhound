@@ -352,24 +352,10 @@ function deserialize_from_escaped_string(str) {
   return objectInStream.readObject(true);
 }
 
-// Copied from head_psm.js.
-function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
-  add_test(function() {
-    _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot);
-  });
-}
-
-// Do not call this directly; use add_tls_server_setup
-function _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot) {
-  asyncStartTLSTestServer(serverBinName, certsPath, addDefaultRoot).then(
-    run_next_test
-  );
-}
-
 async function asyncStartTLSTestServer(
   serverBinName,
   certsPath,
-  addDefaultRoot
+  addDefaultRoot = true
 ) {
   const { HttpServer } = ChromeUtils.import(
     "resource://testing-common/httpd.js"
@@ -384,16 +370,13 @@ async function asyncStartTLSTestServer(
 
   const CALLBACK_PORT = 8444;
 
-  let envSvc = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   let greBinDir = Services.dirsvc.get("GreBinD", Ci.nsIFile);
-  envSvc.set("DYLD_LIBRARY_PATH", greBinDir.path);
+  Services.env.set("DYLD_LIBRARY_PATH", greBinDir.path);
   // TODO(bug 1107794): Android libraries are in /data/local/xpcb, but "GreBinD"
   // does not return this path on Android, so hard code it here.
-  envSvc.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
-  envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
-  envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
+  Services.env.set("LD_LIBRARY_PATH", greBinDir.path + ":/data/local/xpcb");
+  Services.env.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
+  Services.env.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
   let httpServer = new HttpServer();
   let serverReady = new Promise(resolve => {

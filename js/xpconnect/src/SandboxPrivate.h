@@ -11,6 +11,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
@@ -88,9 +89,18 @@ class SandboxPrivate : public nsIGlobalObject,
 
   JS::loader::ModuleLoaderBase* GetModuleLoader(JSContext* aCx) override;
 
+  mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult> GetStorageKey()
+      override;
+
   size_t ObjectMoved(JSObject* obj, JSObject* old) {
     UpdateWrapper(obj, old);
     return 0;
+  }
+
+  bool ShouldResistFingerprinting() const override {
+    return nsContentUtils::ShouldResistFingerprinting(
+        "Presently we don't have enough context to make an informed decision"
+        "on JS Sandboxes. See 1782853");
   }
 
  private:

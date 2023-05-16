@@ -17,6 +17,10 @@
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/StorageManager.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "nsJSPrincipals.h"
+#include "nsString.h"
 #include "prio.h"
 #include "private/pprio.h"
 #include "xpcpublic.h"
@@ -25,7 +29,8 @@ namespace mozilla::dom {
 
 namespace {
 
-bool ConstructHandleMetadata(JSContext* aCx, JSStructuredCloneReader* aReader,
+bool ConstructHandleMetadata(JSContext* aCx, nsIGlobalObject* aGlobal,
+                             JSStructuredCloneReader* aReader,
                              const bool aDirectory,
                              fs::FileSystemEntryMetadata& aMetadata) {
   using namespace mozilla::dom::fs;
@@ -48,6 +53,22 @@ bool ConstructHandleMetadata(JSContext* aCx, JSStructuredCloneReader* aReader,
   if (!AssignJSString(aCx, name, tmpVal)) {
     return false;
   }
+
+  mozilla::ipc::PrincipalInfo storageKey;
+  if (!nsJSPrincipals::ReadPrincipalInfo(aReader, storageKey)) {
+    return false;
+  }
+
+  QM_TRY_UNWRAP(auto hasEqualStorageKey,
+                aGlobal->HasEqualStorageKey(storageKey), false);
+
+  if (!hasEqualStorageKey) {
+    LOG(("Blocking deserialization of %s due to cross-origin",
+         NS_ConvertUTF16toUTF8(name).get()));
+    return false;
+  }
+
+  LOG_VERBOSE(("Deserializing %s", NS_ConvertUTF16toUTF8(name).get()));
 
   aMetadata = fs::FileSystemEntryMetadata(entryId, name, aDirectory);
   return true;
@@ -234,7 +255,15 @@ bool FileSystemHandle::WriteStructuredClone(
   }
   JS::Rooted<JSString*> name(aCx, nameValue.toString());
 
-  return JS_WriteString(aWriter, name);
+  if (!JS_WriteString(aWriter, name)) {
+    return false;
+  }
+
+  // Needed to make sure the destination nsIGlobalObject is from the same
+  // origin/principal
+  QM_TRY_INSPECT(const auto& storageKey, mGlobal->GetStorageKey(), false);
+
+  return nsJSPrincipals::WritePrincipalInfo(aWriter, storageKey);
 }
 
 // static
@@ -244,18 +273,27 @@ already_AddRefed<FileSystemFileHandle> FileSystemHandle::ConstructFileHandle(
   using namespace mozilla::dom::fs;
 
   FileSystemEntryMetadata metadata;
-  if (!ConstructHandleMetadata(aCx, aReader, /* aDirectory */ false,
+  if (!ConstructHandleMetadata(aCx, aGlobal, aReader, /* aDirectory */ false,
                                metadata)) {
     return nullptr;
   }
 
+  // We used to create a FileSystemManager which is not connected to the chain
+  // of Navigator->StorageManager->FileSystemManager. That isn't possible
+  // anymore because FileSystemManager must always be properly shutdown before
+  // it's destroyed.
+#if 0
   // XXX Get the manager from Navigator!
+  // Note that the actor may not exist or may not be connected yet.
   auto fileSystemManager = MakeRefPtr<FileSystemManager>(aGlobal, nullptr);
 
   RefPtr<FileSystemFileHandle> fsHandle =
       new FileSystemFileHandle(aGlobal, fileSystemManager, metadata);
 
   return fsHandle.forget();
+#else
+  return nullptr;
+#endif
 }
 
 // static
@@ -266,17 +304,27 @@ FileSystemHandle::ConstructDirectoryHandle(JSContext* aCx,
   using namespace mozilla::dom::fs;
 
   FileSystemEntryMetadata metadata;
-  if (!ConstructHandleMetadata(aCx, aReader, /* aDirectory */ true, metadata)) {
+  if (!ConstructHandleMetadata(aCx, aGlobal, aReader, /* aDirectory */ true,
+                               metadata)) {
     return nullptr;
   }
 
+  // We used to create a FileSystemManager which is not connected to the chain
+  // of Navigator->StorageManager->FileSystemManager. That isn't possible
+  // anymore because FileSystemManager must always be properly shutdown before
+  // it's destroyed.
+#if 0
   // XXX Get the manager from Navigator!
+  // Note that the actor may not exist or may not be connected yet.
   auto fileSystemManager = MakeRefPtr<FileSystemManager>(aGlobal, nullptr);
 
   RefPtr<FileSystemDirectoryHandle> fsHandle =
       new FileSystemDirectoryHandle(aGlobal, fileSystemManager, metadata);
 
   return fsHandle.forget();
+#else
+  return nullptr;
+#endif
 }
 
 }  // namespace mozilla::dom

@@ -172,38 +172,37 @@ JS_PUBLIC_API bool JS::ThrowOnModuleEvaluationFailure(
   return OnModuleEvaluationFailure(cx, evaluationPromise, errorBehaviour);
 }
 
-JS_PUBLIC_API JSObject* JS::GetRequestedModules(JSContext* cx,
-                                                Handle<JSObject*> moduleArg) {
+JS_PUBLIC_API uint32_t
+JS::GetRequestedModulesCount(JSContext* cx, Handle<JSObject*> moduleRecord) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  cx->check(moduleArg);
+  cx->check(moduleRecord);
 
-  return &moduleArg->as<ModuleObject>().requestedModules();
+  return moduleRecord->as<ModuleObject>().requestedModules().length();
 }
 
-JS_PUBLIC_API JSString* JS::GetRequestedModuleSpecifier(JSContext* cx,
-                                                        Handle<Value> value) {
+JS_PUBLIC_API JSString* JS::GetRequestedModuleSpecifier(
+    JSContext* cx, Handle<JSObject*> moduleRecord, uint32_t index) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  cx->check(value);
+  cx->check(moduleRecord);
 
-  JSObject* obj = &value.toObject();
-  return obj->as<RequestedModuleObject>().moduleRequest()->specifier();
+  auto& module = moduleRecord->as<ModuleObject>();
+  return module.requestedModules()[index].moduleRequest()->specifier();
 }
 
-JS_PUBLIC_API void JS::GetRequestedModuleSourcePos(JSContext* cx,
-                                                   JS::HandleValue value,
-                                                   uint32_t* lineNumber,
-                                                   uint32_t* columnNumber) {
+JS_PUBLIC_API void JS::GetRequestedModuleSourcePos(
+    JSContext* cx, Handle<JSObject*> moduleRecord, uint32_t index,
+    uint32_t* lineNumber, uint32_t* columnNumber) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  cx->check(value);
+  cx->check(moduleRecord);
   MOZ_ASSERT(lineNumber);
   MOZ_ASSERT(columnNumber);
 
-  auto& requested = value.toObject().as<RequestedModuleObject>();
-  *lineNumber = requested.lineNumber();
-  *columnNumber = requested.columnNumber();
+  auto& module = moduleRecord->as<ModuleObject>();
+  *lineNumber = module.requestedModules()[index].lineNumber();
+  *columnNumber = module.requestedModules()[index].columnNumber();
 }
 
 JS_PUBLIC_API JSScript* JS::GetModuleScript(JS::HandleObject moduleRecord) {
@@ -415,15 +414,10 @@ static bool ModuleGetExportedNames(JSContext* cx, Handle<ModuleObject*> module,
   }
 
   // Step 5. For each ExportEntry Record e of module.[[LocalExportEntries]], do:
-  Rooted<ArrayObject*> localExportEntries(cx, &module->localExportEntries());
-  Rooted<ExportEntryObject*> e(cx);
-  for (uint32_t i = 0; i != localExportEntries->length(); i++) {
-    e = &localExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
+  for (const ExportEntry& e : module->localExportEntries()) {
     // Step 5.a. Assert: module provides the direct binding for this export.
     // Step 5.b. Append e.[[ExportName]] to exportedNames.
-    if (!exportedNames.append(e->exportName())) {
+    if (!exportedNames.append(e.exportName())) {
       ReportOutOfMemory(cx);
       return false;
     }
@@ -431,34 +425,24 @@ static bool ModuleGetExportedNames(JSContext* cx, Handle<ModuleObject*> module,
 
   // Step 6. For each ExportEntry Record e of module.[[IndirectExportEntries]],
   //         do:
-  Rooted<ArrayObject*> indirectExportEntries(cx,
-                                             &module->indirectExportEntries());
-  for (uint32_t i = 0; i != indirectExportEntries->length(); i++) {
-    e = &indirectExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
+  for (const ExportEntry& e : module->indirectExportEntries()) {
     // Step 6.a. Assert: module imports a specific binding for this export.
     // Step 6.b. Append e.[[ExportName]] to exportedNames.
-    if (!exportedNames.append(e->exportName())) {
+    if (!exportedNames.append(e.exportName())) {
       ReportOutOfMemory(cx);
       return false;
     }
   }
 
   // Step 7. For each ExportEntry Record e of module.[[StarExportEntries]], do:
-  Rooted<ArrayObject*> starExportEntries(cx, &module->starExportEntries());
   Rooted<ModuleRequestObject*> moduleRequest(cx);
   Rooted<ModuleObject*> requestedModule(cx);
   Rooted<ArrayObject*> starNames(cx);
   Rooted<JSAtom*> name(cx);
-  for (uint32_t i = 0; i != starExportEntries->length(); i++) {
-    e = &starExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
-
+  for (const ExportEntry& e : module->starExportEntries()) {
     // Step 7.a. Let requestedModule be ? HostResolveImportedModule(module,
     //           e.[[ModuleRequest]]).
-    moduleRequest = e->moduleRequest();
+    moduleRequest = e.moduleRequest();
     requestedModule = HostResolveImportedModule(cx, module, moduleRequest,
                                                 ModuleStatus::Unlinked);
     if (!requestedModule) {
@@ -581,39 +565,28 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
   }
 
   // Step 4. For each ExportEntry Record e of module.[[LocalExportEntries]], do:
-  Rooted<ArrayObject*> localExportEntries(cx, &module->localExportEntries());
-  Rooted<ExportEntryObject*> e(cx);
-  for (uint32_t i = 0; i != localExportEntries->length(); i++) {
-    e = &localExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
-
+  for (const ExportEntry& e : module->localExportEntries()) {
     // Step 4.a. If SameValue(exportName, e.[[ExportName]]) is true, then:
-    if (exportName == e->exportName()) {
+    if (exportName == e.exportName()) {
       // Step 4.a.i. Assert: module provides the direct binding for this export.
       // Step 4.a.ii. Return ResolvedBinding Record { [[Module]]: module,
       //              [[BindingName]]: e.[[LocalName]] }.
-      Rooted<JSAtom*> localName(cx, e->localName());
+      Rooted<JSAtom*> localName(cx, e.localName());
       return CreateResolvedBindingObject(cx, module, localName, result);
     }
   }
 
   // Step 5. For each ExportEntry Record e of module.[[IndirectExportEntries]],
   //         do:
-  Rooted<ArrayObject*> indirectExportEntries(cx,
-                                             &module->indirectExportEntries());
   Rooted<ModuleRequestObject*> moduleRequest(cx);
   Rooted<ModuleObject*> importedModule(cx);
   Rooted<JSAtom*> name(cx);
-  for (uint32_t i = 0; i != indirectExportEntries->length(); i++) {
-    e = &indirectExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
+  for (const ExportEntry& e : module->indirectExportEntries()) {
     // Step 5.a. If SameValue(exportName, e.[[ExportName]]) is true, then:
-    if (exportName == e->exportName()) {
+    if (exportName == e.exportName()) {
       // Step 5.a.i. Let importedModule be ? HostResolveImportedModule(module,
       //             e.[[ModuleRequest]]).
-      moduleRequest = e->moduleRequest();
+      moduleRequest = e.moduleRequest();
       importedModule = HostResolveImportedModule(cx, module, moduleRequest,
                                                  ModuleStatus::Unlinked);
       if (!importedModule) {
@@ -621,7 +594,7 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
       }
 
       // Step 5.a.ii. If e.[[ImportName]] is all, then:
-      if (!e->importName()) {
+      if (!e.importName()) {
         // Step 5.a.ii.1. Assert: module does not provide the direct binding for
         //                this export.
         // Step 5.a.ii.2. Return ResolvedBinding Record { [[Module]]:
@@ -634,7 +607,7 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
         // Step 5.a.iii.2. Return ?
         // importedModule.ResolveExport(e.[[ImportName]],
         //                 resolveSet).
-        name = e->importName();
+        name = e.importName();
         return ModuleResolveExport(cx, importedModule, name, resolveSet,
                                    result);
       }
@@ -656,16 +629,12 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
   Rooted<ResolvedBindingObject*> starResolution(cx);
 
   // Step 8. For each ExportEntry Record e of module.[[StarExportEntries]], do:
-  Rooted<ArrayObject*> starExportEntries(cx, &module->starExportEntries());
   Rooted<Value> resolution(cx);
   Rooted<ResolvedBindingObject*> binding(cx);
-  for (uint32_t i = 0; i != starExportEntries->length(); i++) {
-    e = &starExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
+  for (const ExportEntry& e : module->starExportEntries()) {
     // Step 8.a. Let importedModule be ? HostResolveImportedModule(module,
     //           e.[[ModuleRequest]]).
-    moduleRequest = e->moduleRequest();
+    moduleRequest = e.moduleRequest();
     importedModule = HostResolveImportedModule(cx, module, moduleRequest,
                                                ModuleStatus::Unlinked);
     if (!importedModule) {
@@ -924,18 +893,11 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
 
   // Step 1. For each ExportEntry Record e of module.[[IndirectExportEntries]],
   //         do:
-  Rooted<ArrayObject*> indirectExportEntries(cx,
-                                             &module->indirectExportEntries());
-  Rooted<ExportEntryObject*> e(cx);
   Rooted<JSAtom*> exportName(cx);
   Rooted<Value> resolution(cx);
-  for (uint32_t i = 0; i != indirectExportEntries->length(); i++) {
-    e = &indirectExportEntries->getDenseElement(i)
-             .toObject()
-             .as<ExportEntryObject>();
-
+  for (const ExportEntry& e : module->indirectExportEntries()) {
     // Step 1.a. Let resolution be ? module.ResolveExport(e.[[ExportName]]).
-    exportName = e->exportName();
+    exportName = e.exportName();
     if (!ModuleResolveExport(cx, module, exportName, &resolution)) {
       return false;
     }
@@ -944,7 +906,7 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
     //           exception.
     if (!IsResolvedBinding(cx, resolution)) {
       ThrowResolutionError(cx, module, resolution, false, exportName,
-                           e->lineNumber(), e->columnNumber());
+                           e.lineNumber(), e.columnNumber());
       return false;
     }
   }
@@ -955,28 +917,24 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
   Rooted<ModuleEnvironmentObject*> env(cx, &module->initialEnvironment());
 
   // Step 7. For each ImportEntry Record in of module.[[ImportEntries]], do:
-  Rooted<ArrayObject*> importEntries(cx, &module->importEntries());
-  Rooted<ImportEntryObject*> in(cx);
   Rooted<ModuleRequestObject*> moduleRequest(cx);
   Rooted<ModuleObject*> importedModule(cx);
   Rooted<JSAtom*> importName(cx);
   Rooted<JSAtom*> localName(cx);
   Rooted<ModuleObject*> sourceModule(cx);
   Rooted<JSAtom*> bindingName(cx);
-  for (uint32_t i = 0; i != importEntries->length(); i++) {
-    in = &importEntries->getDenseElement(i).toObject().as<ImportEntryObject>();
-
+  for (const ImportEntry& in : module->importEntries()) {
     // Step 7.a. Let importedModule be ! HostResolveImportedModule(module,
     //           in.[[ModuleRequest]]).
-    moduleRequest = in->moduleRequest();
+    moduleRequest = in.moduleRequest();
     importedModule = HostResolveImportedModule(cx, module, moduleRequest,
                                                ModuleStatus::Linking);
     if (!importedModule) {
       return false;
     }
 
-    localName = in->localName();
-    importName = in->importName();
+    localName = in.localName();
+    importName = in.importName();
 
     // Step 7.c. If in.[[ImportName]] is namespace-object, then:
     if (!importName) {
@@ -1005,7 +963,7 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
       //              exception.
       if (!IsResolvedBinding(cx, resolution)) {
         ThrowResolutionError(cx, module, resolution, true, importName,
-                             in->lineNumber(), in->columnNumber());
+                             in.lineNumber(), in.columnNumber());
         return false;
       }
 
@@ -1161,14 +1119,10 @@ static bool InnerModuleLinking(JSContext* cx, Handle<ModuleObject*> module,
 
   // Step 9. For each String required that is an element of
   //         module.[[RequestedModules]], do:
-  Rooted<ArrayObject*> requestedModules(cx, &module->requestedModules());
   Rooted<ModuleRequestObject*> moduleRequest(cx);
   Rooted<ModuleObject*> requiredModule(cx);
-  for (uint32_t i = 0; i != requestedModules->length(); i++) {
-    moduleRequest = requestedModules->getDenseElement(i)
-                        .toObject()
-                        .as<RequestedModuleObject>()
-                        .moduleRequest();
+  for (const RequestedModule& request : module->requestedModules()) {
+    moduleRequest = request.moduleRequest();
 
     // Step 9.a. Let requiredModule be ? HostResolveImportedModule(module,
     //           required).
@@ -1426,14 +1380,10 @@ static bool InnerModuleEvaluation(JSContext* cx, Handle<ModuleObject*> module,
   index++;
 
   // Step 11. For each String required of module.[[RequestedModules]], do:
-  Rooted<ArrayObject*> requestedModules(cx, &module->requestedModules());
   Rooted<ModuleRequestObject*> required(cx);
   Rooted<ModuleObject*> requiredModule(cx);
-  for (uint32_t i = 0; i != requestedModules->length(); i++) {
-    required = requestedModules->getDenseElement(i)
-                   .toObject()
-                   .as<RequestedModuleObject>()
-                   .moduleRequest();
+  for (const RequestedModule& request : module->requestedModules()) {
+    required = request.moduleRequest();
 
     // Step 11.a. Let requiredModule be ! HostResolveImportedModule(module,
     //            required).

@@ -29,10 +29,18 @@ EarlyHintsService::EarlyHintsService()
 EarlyHintsService::~EarlyHintsService() = default;
 
 void EarlyHintsService::EarlyHint(const nsACString& aLinkHeader,
-                                  nsIURI* aBaseURI, nsIChannel* aChannel) {
+                                  nsIURI* aBaseURI, nsIChannel* aChannel,
+                                  const nsACString& aReferrerPolicy) {
   mEarlyHintsCount++;
-  if (!mFirstEarlyHint) {
+  if (mFirstEarlyHint.isNothing()) {
     mFirstEarlyHint.emplace(TimeStamp::NowLoRes());
+  } else {
+    // Only allow one early hint response with link headers. See
+    // https://html.spec.whatwg.org/multipage/semantics.html#early-hints
+    // > Note: Only the first early hint response served during the navigation
+    // > is handled, and it is discarded if it is succeeded by a cross-origin
+    // > redirect.
+    return;
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
@@ -78,7 +86,8 @@ void EarlyHintsService::EarlyHint(const nsACString& aLinkHeader,
   for (auto& linkHeader : linkHeaders) {
     CollectLinkTypeTelemetry(linkHeader.mRel);
     EarlyHintPreloader::MaybeCreateAndInsertPreload(
-        mOngoingEarlyHints, linkHeader, aBaseURI, principal, cookieJarSettings);
+        mOngoingEarlyHints, linkHeader, aBaseURI, principal, cookieJarSettings,
+        aReferrerPolicy);
   }
 }
 
@@ -86,18 +95,16 @@ void EarlyHintsService::FinalResponse(uint32_t aResponseStatus) {
   // We will collect telemetry mosly once for a document.
   // In case of a reddirect this will be called multiple times.
   CollectTelemetry(Some(aResponseStatus));
-  if (aResponseStatus >= 300 && aResponseStatus < 400) {
-    mOngoingEarlyHints->CancelAllOngoingPreloads();
-    mCanceled = true;
-  }
 }
 
-void EarlyHintsService::Cancel() {
-  if (!mCanceled) {
-    CollectTelemetry(Nothing());
-    mOngoingEarlyHints->CancelAllOngoingPreloads();
-    mCanceled = true;
-  }
+void EarlyHintsService::Cancel(const nsACString& aReason) {
+  CollectTelemetry(Nothing());
+  mOngoingEarlyHints->CancelAllOngoingPreloads(aReason);
+}
+
+void EarlyHintsService::RegisterLinksAndGetConnectArgs(
+    nsTArray<EarlyHintConnectArgs>& aOutLinks) {
+  mOngoingEarlyHints->RegisterLinksAndGetConnectArgs(aOutLinks);
 }
 
 void EarlyHintsService::CollectTelemetry(Maybe<uint32_t> aResponseStatus) {

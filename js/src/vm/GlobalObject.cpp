@@ -610,6 +610,15 @@ GlobalObject* GlobalObject::new_(JSContext* cx, const JSClass* clasp,
       return nullptr;
     }
 
+    // Make transactional initialization of these constructors by discarding the
+    // incompletely initialized global if an error occur. This also ensures the
+    // global's prototype chain is initialized (in FinishObjectClassInit).
+    if (!ensureConstructor(cx, global, JSProto_Object) ||
+        !ensureConstructor(cx, global, JSProto_Function)) {
+      return nullptr;
+    }
+
+    realm->clearInitializingGlobal();
     if (hookOption == JS::FireOnNewGlobalHook) {
       JS_FireOnNewGlobalObject(cx, global);
     }
@@ -620,17 +629,6 @@ GlobalObject* GlobalObject::new_(JSContext* cx, const JSClass* clasp,
 
 GlobalScope& GlobalObject::emptyGlobalScope() const {
   return *data().emptyGlobalScope;
-}
-
-/* static */
-bool GlobalObject::getOrCreateEval(JSContext* cx, Handle<GlobalObject*> global,
-                                   MutableHandleObject eval) {
-  if (!getOrCreateObjectPrototype(cx, global)) {
-    return false;
-  }
-  eval.set(global->data().eval);
-  MOZ_ASSERT(eval);
-  return true;
 }
 
 bool GlobalObject::valueIsEval(const Value& val) {
@@ -698,11 +696,7 @@ static NativeObject* CreateBlankProto(JSContext* cx, const JSClass* clasp,
 NativeObject* GlobalObject::createBlankPrototype(JSContext* cx,
                                                  Handle<GlobalObject*> global,
                                                  const JSClass* clasp) {
-  RootedObject objectProto(cx, getOrCreateObjectPrototype(cx, global));
-  if (!objectProto) {
-    return nullptr;
-  }
-
+  RootedObject objectProto(cx, &global->getObjectPrototype());
   return CreateBlankProto(cx, clasp, objectProto);
 }
 

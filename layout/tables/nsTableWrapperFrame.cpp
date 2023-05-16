@@ -25,19 +25,31 @@
 using namespace mozilla;
 using namespace mozilla::layout;
 
+nscoord nsTableWrapperFrame::GetFallbackLogicalBaseline(
+    mozilla::WritingMode aWritingMode) const {
+  // Our fallback baseline is the block-end margin-edge, with respect to the
+  // given writing mode.
+  return BSize(aWritingMode) +
+         GetLogicalUsedMargin(aWritingMode).BEnd(aWritingMode);
+}
+
 /* virtual */
 nscoord nsTableWrapperFrame::GetLogicalBaseline(
     WritingMode aWritingMode) const {
-  if (StyleDisplay()->IsContainLayout()) {
-    // We have no baseline. Fall back to the inherited impl which is
-    // appropriate for this situation.
-    return nsContainerFrame::GetLogicalBaseline(aWritingMode);
+  // Baseline is determined by row
+  // (https://drafts.csswg.org/css-align-3/#baseline-export). If the row
+  // direction is going to be orthogonal to the parent's writing mode, the
+  // resulting baseline wouldn't be valid, so we use the fallback baseline
+  // instead.
+  if (StyleDisplay()->IsContainLayout() ||
+      GetWritingMode().IsOrthogonalTo(aWritingMode)) {
+    return GetFallbackLogicalBaseline(aWritingMode);
   }
 
   nsIFrame* kid = mFrames.FirstChild();
   if (!kid) {
     MOZ_ASSERT_UNREACHABLE("no inner table");
-    return nsContainerFrame::GetLogicalBaseline(aWritingMode);
+    return GetFallbackLogicalBaseline(aWritingMode);
   }
 
   return kid->GetLogicalBaseline(aWritingMode) +
@@ -116,7 +128,7 @@ void nsTableWrapperFrame::AppendFrames(ChildListID aListID,
 
   // Reflow the new caption frame. It's already marked dirty, so
   // just tell the pres shell.
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   // The presence of caption frames makes us sort our display
   // list differently, so mark us as changed for the new
@@ -136,7 +148,7 @@ void nsTableWrapperFrame::InsertFrames(
 
   // Reflow the new caption frame. It's already marked dirty, so
   // just tell the pres shell.
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   MarkNeedsDisplayItemRebuild();
 }
@@ -156,7 +168,7 @@ void nsTableWrapperFrame::RemoveFrame(ChildListID aListID,
   // Remove the frame and destroy it
   mCaptionFrames.DestroyFrame(aOldFrame);
 
-  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   MarkNeedsDisplayItemRebuild();
 }

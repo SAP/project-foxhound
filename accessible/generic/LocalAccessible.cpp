@@ -130,10 +130,9 @@ LocalAccessible::LocalAccessible(nsIContent* aContent, DocAccessible* aDoc)
       mContextFlags(0),
       mReorderEventTarget(false),
       mShowEventTarget(false),
-      mHideEventTarget(false) {
-  mBits.groupInfo = nullptr;
-  mIndexOfEmbeddedChild = -1;
-}
+      mHideEventTarget(false),
+      mIndexOfEmbeddedChild(-1),
+      mGroupInfo(nullptr) {}
 
 LocalAccessible::~LocalAccessible() {
   NS_ASSERTION(!mDoc, "LastRelease was never called!?!");
@@ -401,7 +400,6 @@ uint64_t LocalAccessible::NativeState() const {
     }
 
     state |= NativeInteractiveState();
-    if (FocusMgr()->IsFocused(this)) state |= states::FOCUSED;
   }
 
   // Gather states::INVISIBLE and states::OFFSCREEN flags for this object.
@@ -1641,7 +1639,9 @@ void LocalAccessible::Value(nsString& aValue) const {
       }
     }
 
-    if (option) nsTextEquivUtils::GetTextEquivFromSubtree(option, aValue);
+    // If there's a selected item, get the value from it. Otherwise, determine
+    // the value from descendant elements.
+    nsTextEquivUtils::GetTextEquivFromSubtree(option ? option : this, aValue);
   }
 }
 
@@ -1754,13 +1754,6 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
     // mapping to menu.
     if (mParent && mParent->IsCombobox()) {
       return roles::COMBOBOX_LIST;
-    } else {
-      // Listbox is owned by a combobox
-      Relation rel = RelationByType(RelationType::NODE_CHILD_OF);
-      LocalAccessible* targetAcc = nullptr;
-      while ((targetAcc = rel.LocalNext())) {
-        if (targetAcc->IsCombobox()) return roles::COMBOBOX_LIST;
-      }
     }
 
   } else if (aRole == roles::OPTION) {
@@ -2502,10 +2495,9 @@ void LocalAccessible::UnbindFromParent() {
   mParent = nullptr;
   mIndexInParent = -1;
   mIndexOfEmbeddedChild = -1;
-  if (IsProxy()) MOZ_CRASH("this should never be called on proxy wrappers");
 
-  delete mBits.groupInfo;
-  mBits.groupInfo = nullptr;
+  delete mGroupInfo;
+  mGroupInfo = nullptr;
   mContextFlags &= ~eHasNameDependent & ~eInsideAlert;
 }
 
@@ -3051,28 +3043,26 @@ uint32_t LocalAccessible::GetActionRule() const {
 }
 
 AccGroupInfo* LocalAccessible::GetGroupInfo() const {
-  if (mBits.groupInfo && !(mStateFlags & eGroupInfoDirty)) {
-    return mBits.groupInfo;
+  if (mGroupInfo && !(mStateFlags & eGroupInfoDirty)) {
+    return mGroupInfo;
   }
 
   return nullptr;
 }
 
 AccGroupInfo* LocalAccessible::GetOrCreateGroupInfo() {
-  if (IsProxy()) MOZ_CRASH("This should never be called on proxy wrappers");
-
-  if (mBits.groupInfo) {
+  if (mGroupInfo) {
     if (mStateFlags & eGroupInfoDirty) {
-      mBits.groupInfo->Update();
+      mGroupInfo->Update();
       mStateFlags &= ~eGroupInfoDirty;
     }
 
-    return mBits.groupInfo;
+    return mGroupInfo;
   }
 
-  mBits.groupInfo = AccGroupInfo::CreateGroupInfo(this);
+  mGroupInfo = AccGroupInfo::CreateGroupInfo(this);
   mStateFlags &= ~eGroupInfoDirty;
-  return mBits.groupInfo;
+  return mGroupInfo;
 }
 
 void LocalAccessible::SendCache(uint64_t aCacheDomain,
@@ -3096,9 +3086,12 @@ void LocalAccessible::SendCache(uint64_t aCacheDomain,
 
   RefPtr<AccAttributes> fields =
       BundleFieldsForCache(aCacheDomain, aUpdateType);
+  if (!fields->Count()) {
+    return;
+  }
   nsTArray<CacheData> data;
   data.AppendElement(CacheData(ID(), fields));
-  ipcDoc->SendCache(aUpdateType, data, true);
+  ipcDoc->SendCache(aUpdateType, data, false);
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     nsAutoCString updateTypeStr;
@@ -3651,7 +3644,8 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
       if (data.mType == RelationType::LABEL_FOR) {
         // Labels are a special case -- we need to validate that the target of
         // their `for` attribute is in fact labelable. DOM checks this when we
-        // call GetControl().
+        // call GetControl(). If a label contains an element we will return it
+        // here.
         if (dom::HTMLLabelElement* labelEl =
                 dom::HTMLLabelElement::FromNode(mContent)) {
           rel.AppendTarget(mDoc, labelEl->GetControl());

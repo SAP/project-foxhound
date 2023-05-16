@@ -6,9 +6,16 @@ const { ExtensionPermissions } = ChromeUtils.import(
 
 loadTestSubscript("head_unified_extensions.js");
 
+let win;
+
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.manifestV3.enabled", true]],
+  });
+
+  win = await promiseEnableUnifiedExtensions();
+  registerCleanupFunction(async () => {
+    await BrowserTestUtils.closeWindow(win);
   });
 });
 
@@ -33,6 +40,7 @@ async function makeExtension({
     content_scripts,
     action: {
       default_popup: "popup.html",
+      default_area: "navbar",
     },
   };
   if (manifest_version < 3) {
@@ -79,22 +87,21 @@ async function testOriginControls(
 
   let buttonOrWidget;
   let menu;
-  let manageExtensionClassName;
+  let nextMenuItemClassName;
 
   switch (contextMenuId) {
     case "toolbar-context-menu":
       let target = `#${CSS.escape(makeWidgetId(extension.id))}-BAP`;
       buttonOrWidget = win.document.querySelector(target).parentElement;
       menu = await openChromeContextMenu(contextMenuId, target, win);
-      manageExtensionClassName = "customize-context-manageExtension";
+      nextMenuItemClassName = "customize-context-manageExtension";
       break;
 
     case "unified-extensions-context-menu":
       await openExtensionsPanel(win);
       buttonOrWidget = getUnifiedExtensionsItem(win, extension.id);
       menu = await openUnifiedExtensionsContextMenu(win, extension.id);
-      manageExtensionClassName =
-        "unified-extensions-context-menu-manage-extension";
+      nextMenuItemClassName = "unified-extensions-context-menu-pin-to-toolbar";
       break;
 
     default:
@@ -102,25 +109,32 @@ async function testOriginControls(
   }
 
   let doc = menu.ownerDocument;
+  let visibleOriginItems = menu.querySelectorAll(
+    ":is(menuitem, menuseparator):not([hidden])"
+  );
 
   info("Check expected menu items.");
   for (let i = 0; i < items.length; i++) {
-    let l10n = doc.l10n.getAttributes(menu.children[i]);
-    Assert.deepEqual(l10n, items[i], `Menu item ${i} has correct l10n attrs.`);
+    let l10n = doc.l10n.getAttributes(visibleOriginItems[i]);
+    Assert.deepEqual(
+      l10n,
+      items[i],
+      `Visible menu item ${i} has correct l10n attrs.`
+    );
 
-    let checked = menu.children[i].getAttribute("checked") === "true";
+    let checked = visibleOriginItems[i].getAttribute("checked") === "true";
     is(i === selected, checked, `Expected checked value for item ${i}.`);
   }
 
   if (items.length) {
     is(
-      menu.children[items.length].nodeName,
+      visibleOriginItems[items.length].nodeName,
       "menuseparator",
       "Found separator."
     );
     is(
-      menu.children[items.length + 1].className,
-      manageExtensionClassName,
+      visibleOriginItems[items.length + 1].className,
+      nextMenuItemClassName,
       "All items accounted for."
     );
   }
@@ -131,13 +145,40 @@ async function testOriginControls(
     "Expected attention badge before clicking."
   );
 
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(
+      buttonOrWidget.querySelector(".unified-extensions-item-action-button")
+    ),
+    {
+      id: attention
+        ? "origin-controls-toolbar-button-permission-needed"
+        : "origin-controls-toolbar-button",
+      args: {
+        extensionTitle: "Generated extension",
+      },
+    },
+    "Correct l10n message."
+  );
+
   let itemToClick;
   if (click) {
-    itemToClick = menu.children[click];
+    itemToClick = visibleOriginItems[click];
   }
-  await closeChromeContextMenu(contextMenuId, itemToClick, win);
 
-  if (contextMenuId === "unified-extensions-context-menu") {
+  // Clicking a menu item of the unified extensions context menu should close
+  // the unified extensions panel automatically.
+  let panelHidden =
+    itemToClick && contextMenuId === "unified-extensions-context-menu"
+      ? BrowserTestUtils.waitForEvent(win.document, "popuphidden", true)
+      : Promise.resolve();
+
+  await closeChromeContextMenu(contextMenuId, itemToClick, win);
+  await panelHidden;
+
+  // When there is no menu item to close, we should manually close the unified
+  // extensions panel because simply closing the context menu will not close
+  // it.
+  if (!itemToClick && contextMenuId === "unified-extensions-context-menu") {
     await closeExtensionsPanel(win);
   }
 
@@ -153,11 +194,13 @@ async function testOriginControls(
   }
 }
 
-// Move the widget to the toolbar or the overflow panel.
-function moveWidget(ext, pinToToolbar = false) {
-  let area = pinToToolbar
-    ? CustomizableUI.AREA_NAVBAR
+// Move the widget to the toolbar or the addons panel (if Unified Extensions
+// is enabled) or the overflow panel otherwise.
+function moveWidget(ext, win, pinToToolbar = false) {
+  let overflowPanelArea = win.gUnifiedExtensions.isEnabled
+    ? CustomizableUI.AREA_ADDONS
     : CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
+  let area = pinToToolbar ? CustomizableUI.AREA_NAVBAR : overflowPanelArea;
   let widgetId = `${makeWidgetId(ext.id)}-browser-action`;
   CustomizableUI.addWidgetToArea(widgetId, area);
 }
@@ -206,16 +249,23 @@ const originControlsInContextMenu = async options => {
   if (options.contextMenuId === "unified-extensions-context-menu") {
     // Unified button should only show a notification indicator when extensions
     // asking for attention are not already visible in the toolbar.
-    moveWidget(ext2, false);
-    moveWidget(ext3, false);
+    moveWidget(ext1, options.win, false);
+    moveWidget(ext2, options.win, false);
+    moveWidget(ext3, options.win, false);
+    moveWidget(ext4, options.win, false);
+    moveWidget(ext5, options.win, false);
     unifiedButton = options.win.document.querySelector(
       "#unified-extensions-button"
     );
   } else {
     // TestVerify runs this again in the same Firefox instance, so move the
-    // widgets back to the toolbar for testing outside the unified button.
-    moveWidget(ext2, true);
-    moveWidget(ext3, true);
+    // widgets back to the toolbar for testing outside the unified extensions
+    // panel.
+    moveWidget(ext1, options.win, true);
+    moveWidget(ext2, options.win, true);
+    moveWidget(ext3, options.win, true);
+    moveWidget(ext4, options.win, true);
+    moveWidget(ext5, options.win, true);
   }
 
   const NO_ACCESS = { id: "origin-controls-no-access", args: null };
@@ -223,6 +273,12 @@ const originControlsInContextMenu = async options => {
   const ALL_SITES = { id: "origin-controls-option-all-domains", args: null };
   const WHEN_CLICKED = {
     id: "origin-controls-option-when-clicked",
+    args: null,
+  };
+
+  const UNIFIED_NO_ATTENTION = { id: "unified-extensions-button", args: null };
+  const UNIFIED_ATTENTION = {
+    id: "unified-extensions-button-permissions-needed",
     args: null,
   };
 
@@ -237,6 +293,11 @@ const originControlsInContextMenu = async options => {
       ok(
         !unifiedButton.hasAttribute("attention"),
         "No extension will have attention indicator on about:blank."
+      );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_NO_ATTENTION,
+        "Unified button has no permissions needed tooltip."
       );
     }
   });
@@ -277,6 +338,11 @@ const originControlsInContextMenu = async options => {
         unifiedButton.hasAttribute("attention"),
         "Both ext2 and ext3 are WHEN_CLICKED for example.com, so show attention indicator."
       );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_ATTENTION,
+        "UEB has permissions needed tooltip."
+      );
     }
   });
 
@@ -315,6 +381,11 @@ const originControlsInContextMenu = async options => {
         unifiedButton.hasAttribute("attention"),
         "ext2 is WHEN_CLICKED for example.com, show attention indicator."
       );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_ATTENTION,
+        "UEB attention for only one extension."
+      );
     }
 
     // Click the other option, expect example.com permission granted/revoked.
@@ -330,6 +401,11 @@ const originControlsInContextMenu = async options => {
         !unifiedButton.hasAttribute("attention"),
         "Bot ext2 and ext3 are ALWAYS_ON for example.com, so no attention indicator."
       );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_NO_ATTENTION,
+        "Unified button has no permissions needed tooltip."
+      );
     }
 
     await testOriginControls(ext3, options, {
@@ -343,6 +419,11 @@ const originControlsInContextMenu = async options => {
       ok(
         unifiedButton.hasAttribute("attention"),
         "ext3 is now WHEN_CLICKED for example.com, show attention indicator."
+      );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_ATTENTION,
+        "UEB attention for only one extension."
       );
     }
 
@@ -363,6 +444,11 @@ const originControlsInContextMenu = async options => {
         unifiedButton.hasAttribute("attention"),
         "Still showing the attention indicator."
       );
+      Assert.deepEqual(
+        options.win.document.l10n.getAttributes(unifiedButton),
+        UNIFIED_ATTENTION,
+        "UEB attention for only one extension."
+      );
     }
   });
 
@@ -371,23 +457,95 @@ const originControlsInContextMenu = async options => {
 
 add_task(async function originControls_in_browserAction_contextMenu() {
   await originControlsInContextMenu({
-    win: window,
+    win,
     contextMenuId: "toolbar-context-menu",
   });
 });
 
 add_task(async function originControls_in_unifiedExtensions_contextMenu() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.unifiedExtensions.enabled", true]],
-  });
-
-  const win = await promiseEnableUnifiedExtensions();
-
   await originControlsInContextMenu({
     win,
     contextMenuId: "unified-extensions-context-menu",
   });
+});
 
-  await BrowserTestUtils.closeWindow(win);
-  await SpecialPowers.popPrefEnv();
+add_task(async function test_attention_dot_when_pinning_extension() {
+  const extension = await makeExtension({ permissions: ["activeTab"] });
+  await extension.startup();
+
+  const unifiedButton = win.document.querySelector(
+    "#unified-extensions-button"
+  );
+  const extensionWidgetID = AppUiTestInternals.getBrowserActionWidgetId(
+    extension.id
+  );
+  const extensionWidget = CustomizableUI.getWidget(extensionWidgetID).forWindow(
+    win
+  ).node;
+
+  await BrowserTestUtils.withNewTab("http://mochi.test:8888/", async () => {
+    // The extensions should be placed in the navbar by default so we do not
+    // expect an attention dot on the Unifed Extensions Button (UEB), only on
+    // the extension (widget) itself.
+    ok(
+      !unifiedButton.hasAttribute("attention"),
+      "expected no attention attribute on the UEB"
+    );
+    ok(
+      extensionWidget.hasAttribute("attention"),
+      "expected attention attribute on the extension widget"
+    );
+
+    // Open the context menu of the extension and unpin the extension.
+    let contextMenu = await openChromeContextMenu(
+      "toolbar-context-menu",
+      `#${CSS.escape(extensionWidgetID)}`,
+      win
+    );
+    let pinToToolbar = contextMenu.querySelector(
+      ".customize-context-pinToToolbar"
+    );
+    ok(pinToToolbar, "expected a 'Pin to Toolbar' menu item");
+    // Passing the `pinToToolbar` item to `closeChromeContextMenu()` will
+    // activate it before closing the context menu.
+    await closeChromeContextMenu(contextMenu.id, pinToToolbar, win);
+
+    ok(
+      unifiedButton.hasAttribute("attention"),
+      "expected attention attribute on the UEB"
+    );
+    // We still expect the attention dot on the extension.
+    ok(
+      extensionWidget.hasAttribute("attention"),
+      "expected attention attribute on the extension widget"
+    );
+
+    // Now let's open the unified extensions panel, and pin the same extension
+    // to the toolbar, which should hide the attention dot on the UEB again.
+    await openExtensionsPanel(win);
+    contextMenu = await openUnifiedExtensionsContextMenu(win, extension.id);
+    pinToToolbar = contextMenu.querySelector(
+      ".unified-extensions-context-menu-pin-to-toolbar"
+    );
+    ok(pinToToolbar, "expected a 'Pin to Toolbar' menu item");
+    const hidden = BrowserTestUtils.waitForEvent(
+      win.gUnifiedExtensions.panel,
+      "popuphidden",
+      true
+    );
+    contextMenu.activateItem(pinToToolbar);
+    await hidden;
+
+    ok(
+      !unifiedButton.hasAttribute("attention"),
+      "expected no attention attribute on the UEB"
+    );
+    // We still expect the attention dot on the extension.
+    ok(
+      extensionWidget.hasAttribute("attention"),
+      "expected attention attribute on the extension widget"
+    );
+  });
+
+  await extension.unload();
 });

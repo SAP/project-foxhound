@@ -35,6 +35,12 @@
           "nsIMacSharingService",
         ],
       });
+      XPCOMUtils.defineLazyGetter(this, "tabLocalization", () => {
+        return new Localization(
+          ["browser/tabbrowser.ftl", "branding/brand.ftl"],
+          true
+        );
+      });
 
       if (AppConstants.MOZ_CRASHREPORTER) {
         ChromeUtils.defineModuleGetter(
@@ -243,6 +249,10 @@
 
     _hoverTabTimer: null,
 
+    _featureCallout: null,
+
+    _featureCalloutPanelId: null,
+
     get tabContainer() {
       delete this.tabContainer;
       return (this.tabContainer = document.getElementById("tabbrowser-tabs"));
@@ -316,6 +326,35 @@
       return this._selectedBrowser;
     },
 
+    get featureCallout() {
+      return this._featureCallout;
+    },
+
+    set featureCallout(val) {
+      this._featureCallout = val;
+    },
+
+    get instantiateFeatureCalloutTour() {
+      return this._instantiateFeatureCalloutTour;
+    },
+
+    get featureCalloutPanelId() {
+      return this._featureCalloutPanelId;
+    },
+
+    _instantiateFeatureCalloutTour(location, panelId) {
+      this._featureCalloutPanelId = panelId;
+      const { FeatureCallout } = ChromeUtils.importESModule(
+        "chrome://browser/content/featureCallout.mjs"
+      );
+      // Note - once we have additional browser chrome messages,
+      // only use PDF.js pref value when navigating to PDF viewer
+      this._featureCallout = new FeatureCallout({
+        win: window,
+        prefName: "browser.pdfjs.feature-tour",
+        source: location.spec,
+      });
+    },
     _setupInitialBrowserAndTab() {
       // See browser.js for the meaning of window.arguments.
       // Bug 1485961 covers making this more sane.
@@ -1054,6 +1093,28 @@
 
       let newTab = this.getTabForBrowser(newBrowser);
 
+      if (
+        this._featureCallout &&
+        this._featureCalloutPanelId !== newTab.linkedPanel
+      ) {
+        this._featureCallout._endTour(true);
+        this._featureCallout = null;
+      }
+
+      // For now, only check for Feature Callout messages
+      // when viewing PDFs. Later, we can expand this to check
+      // for callout messages on every change of tab location.
+      if (
+        !this._featureCallout &&
+        newBrowser.currentURI.spec.endsWith(".pdf")
+      ) {
+        this._instantiateFeatureCalloutTour(
+          newBrowser.currentURI,
+          newTab.linkedPanel
+        );
+        window.gBrowser.featureCallout.showFeatureCallout();
+      }
+
       if (!aForceUpdate) {
         TelemetryStopwatch.start("FX_TAB_SWITCH_UPDATE_MS");
 
@@ -1378,7 +1439,7 @@
           return;
         }
 
-        if (!window.fullScreen || newTab.isEmpty) {
+        let selectURL = () => {
           if (this._asyncTabSwitching) {
             // Set _awaitingSetURI flag to suppress popup notification
             // explicitly while tab switching asynchronously.
@@ -1404,6 +1465,22 @@
           } else {
             gURLBar.select();
           }
+        };
+
+        // This inDOMFullscreen attribute indicates that the page has something
+        // such as a video in fullscreen mode. Opening a new tab will cancel
+        // fullscreen mode, so we need to wait for that to happen and then
+        // select the url field.
+        if (window.document.documentElement.hasAttribute("inDOMFullscreen")) {
+          window.addEventListener("MozDOMFullscreen:Exited", selectURL, {
+            once: true,
+            wantsUntrusted: false,
+          });
+          return;
+        }
+
+        if (!window.fullScreen || newTab.isEmpty) {
+          selectURL();
           return;
         }
       }
@@ -1542,11 +1619,9 @@
       var title = browser.contentTitle;
 
       if (aTab.hasAttribute("customizemode")) {
-        let brandBundle = document.getElementById("bundle_brand");
-        let brandShortName = brandBundle.getString("brandShortName");
-        title = gNavigatorBundle.getFormattedString("customizeMode.tabTitle", [
-          brandShortName,
-        ]);
+        title = this.tabLocalization.formatValueSync(
+          "tabbrowser-customizemode-tab-title"
+        );
       }
 
       // Don't replace an initially set label with the URL while the tab
@@ -1671,6 +1746,7 @@
       var aCsp;
       var aSkipLoad;
       var aGlobalHistoryOptions;
+      var aTriggeringRemoteType;
       if (
         arguments.length == 2 &&
         typeof arguments[1] == "object" &&
@@ -1701,6 +1777,7 @@
         aCsp = params.csp;
         aSkipLoad = params.skipLoad;
         aGlobalHistoryOptions = params.globalHistoryOptions;
+        aTriggeringRemoteType = params.triggeringRemoteType;
       }
 
       // all callers of loadOneTab need to pass a valid triggeringPrincipal.
@@ -1741,6 +1818,7 @@
         csp: aCsp,
         skipLoad: aSkipLoad,
         globalHistoryOptions: aGlobalHistoryOptions,
+        triggeringRemoteType: aTriggeringRemoteType,
       });
       if (!bgLoad) {
         this.selectedTab = tab;
@@ -2591,6 +2669,7 @@
         skipLoad,
         batchInsertingTabs,
         globalHistoryOptions,
+        triggeringRemoteType,
       } = {}
     ) {
       // all callers of addTab that pass a params object need to pass
@@ -2923,6 +3002,7 @@
               postData,
               csp,
               globalHistoryOptions,
+              triggeringRemoteType,
             });
           } catch (ex) {
             Cu.reportError(ex);
@@ -3180,26 +3260,25 @@
       // solve the problem of windows "obscuring" the prompt.
       // see bug #350299 for more details
       window.focus();
-      let warningTitle = gTabBrowserBundle.GetStringFromName(
-        "tabs.closeTabsTitle"
-      );
-      warningTitle = PluralForm.get(tabsToClose, warningTitle).replace(
-        "#1",
-        tabsToClose
-      );
+      const [title, button, checkbox] = this.tabLocalization.formatValuesSync([
+        {
+          id: "tabbrowser-confirm-close-tabs-title",
+          args: { tabCount: tabsToClose },
+        },
+        { id: "tabbrowser-confirm-close-tabs-button" },
+        { id: "tabbrowser-confirm-close-tabs-checkbox" },
+      ]);
       let flags =
         ps.BUTTON_TITLE_IS_STRING * ps.BUTTON_POS_0 +
         ps.BUTTON_TITLE_CANCEL * ps.BUTTON_POS_1;
       let checkboxLabel =
-        aCloseTabs == this.closingTabsEnum.ALL
-          ? gTabBrowserBundle.GetStringFromName("tabs.closeTabsConfirmCheckbox")
-          : null;
+        aCloseTabs == this.closingTabsEnum.ALL ? checkbox : null;
       var buttonPressed = ps.confirmEx(
         window,
-        warningTitle,
+        title,
         null,
         flags,
-        gTabBrowserBundle.GetStringFromName("tabs.closeButtonMultiple"),
+        button,
         null,
         null,
         checkboxLabel,
@@ -5449,19 +5528,26 @@
 
         try {
           this._awaitingToggleCaretBrowsingPrompt = true;
+          const [
+            title,
+            message,
+            checkbox,
+          ] = this.tabLocalization.formatValuesSync([
+            "tabbrowser-confirm-caretbrowsing-title",
+            "tabbrowser-confirm-caretbrowsing-message",
+            "tabbrowser-confirm-caretbrowsing-checkbox",
+          ]);
           var buttonPressed = promptService.confirmEx(
             window,
-            gTabBrowserBundle.GetStringFromName(
-              "browsewithcaret.checkWindowTitle"
-            ),
-            gTabBrowserBundle.GetStringFromName("browsewithcaret.checkLabel"),
+            title,
+            message,
             // Make "No" the default:
             promptService.STD_YES_NO_BUTTONS |
               promptService.BUTTON_POS_1_DEFAULT,
             null,
             null,
             null,
-            gTabBrowserBundle.GetStringFromName("browsewithcaret.checkMsg"),
+            checkbox,
             checkValue
           );
         } catch (ex) {
@@ -5562,12 +5648,12 @@
         }
       }
       if (tab.userContextId) {
-        label = gTabBrowserBundle.formatStringFromName(
-          "tabs.containers.tooltip",
-          [
-            label,
-            ContextualIdentityService.getUserContextLabel(tab.userContextId),
-          ]
+        const containerName = ContextualIdentityService.getUserContextLabel(
+          tab.userContextId
+        );
+        label = this.tabLocalization.formatValueSync(
+          "tabbrowser-container-tab-title",
+          { title: label, containerName }
         );
       }
       return label;
@@ -5581,64 +5667,34 @@
         return;
       }
 
-      let stringWithShortcut = (stringId, keyElemId, pluralCount) => {
-        let keyElem = document.getElementById(keyElemId);
-        let shortcut = ShortcutUtils.prettifyShortcut(keyElem);
-        return PluralForm.get(
-          pluralCount,
-          gTabBrowserBundle.GetStringFromName(stringId)
-        )
-          .replace("%S", shortcut)
-          .replace("#1", pluralCount);
-      };
-
-      let label;
-      const selectedTabs = this.selectedTabs;
-      const contextTabInSelection = selectedTabs.includes(tab);
-      const affectedTabsLength = contextTabInSelection
-        ? selectedTabs.length
+      let l10nId, l10nArgs;
+      const tabCount = this.selectedTabs.includes(tab)
+        ? this.selectedTabs.length
         : 1;
       if (tab.mOverCloseButton) {
-        label = tab.selected
-          ? stringWithShortcut(
-              "tabs.closeTabs.tooltip",
-              "key_close",
-              affectedTabsLength
-            )
-          : PluralForm.get(
-              affectedTabsLength,
-              gTabBrowserBundle.GetStringFromName("tabs.closeTabs.tooltip")
-            ).replace("#1", affectedTabsLength);
+        l10nId = "tabbrowser-close-tabs-tooltip";
+        l10nArgs = { tabCount };
       } else if (tab._overPlayingIcon) {
-        let stringID;
+        l10nArgs = { tabCount };
         if (tab.selected) {
-          stringID = tab.linkedBrowser.audioMuted
-            ? "tabs.unmuteAudio2.tooltip"
-            : "tabs.muteAudio2.tooltip";
-          label = stringWithShortcut(
-            stringID,
-            "key_toggleMute",
-            affectedTabsLength
-          );
+          l10nId = tab.linkedBrowser.audioMuted
+            ? "tabbrowser-unmute-tab-audio-tooltip"
+            : "tabbrowser-mute-tab-audio-tooltip";
+          const keyElem = document.getElementById("key_toggleMute");
+          l10nArgs.shortcut = ShortcutUtils.prettifyShortcut(keyElem);
+        } else if (tab.hasAttribute("activemedia-blocked")) {
+          l10nId = "tabbrowser-unblock-tab-audio-tooltip";
         } else {
-          if (tab.hasAttribute("activemedia-blocked")) {
-            stringID = "tabs.unblockAudio2.tooltip";
-          } else {
-            stringID = tab.linkedBrowser.audioMuted
-              ? "tabs.unmuteAudio2.background.tooltip"
-              : "tabs.muteAudio2.background.tooltip";
-          }
-
-          label = PluralForm.get(
-            affectedTabsLength,
-            gTabBrowserBundle.GetStringFromName(stringID)
-          ).replace("#1", affectedTabsLength);
+          l10nId = tab.linkedBrowser.audioMuted
+            ? "tabbrowser-unmute-tab-audio-background-tooltip"
+            : "tabbrowser-mute-tab-audio-background-tooltip";
         }
       } else {
-        label = this.getTabTooltip(tab);
+        l10nId = "tabbrowser-tab-tooltip";
+        l10nArgs = { title: this.getTabTooltip(tab, true) };
       }
 
-      event.target.setAttribute("label", label);
+      document.l10n.setAttributes(event.target, l10nId, l10nArgs);
     },
 
     handleEvent(aEvent) {
@@ -5695,32 +5751,20 @@
       //  - sameURI (bool)
       //     true if we're refreshing the page. false if we're redirecting.
 
-      let brandBundle = document.getElementById("bundle_brand");
-      let brandShortName = brandBundle.getString("brandShortName");
-      let message = gNavigatorBundle.getFormattedString(
-        "refreshBlocked." + (data.sameURI ? "refreshLabel" : "redirectLabel"),
-        [brandShortName]
-      );
-
       let notificationBox = this.getNotificationBox(browser);
       let notification = notificationBox.getNotificationWithValue(
         "refresh-blocked"
       );
 
+      let l10nId = data.sameURI
+        ? "refresh-blocked-refresh-label"
+        : "refresh-blocked-redirect-label";
       if (notification) {
-        notification.label = message;
+        notification.label = { "l10n-id": l10nId };
       } else {
-        let refreshButtonText = gNavigatorBundle.getString(
-          "refreshBlocked.goButton"
-        );
-        let refreshButtonAccesskey = gNavigatorBundle.getString(
-          "refreshBlocked.goButton.accesskey"
-        );
-
-        let buttons = [
+        const buttons = [
           {
-            label: refreshButtonText,
-            accessKey: refreshButtonAccesskey,
+            "l10n-id": "refresh-blocked-allow",
             callback() {
               actor.sendAsyncMessage("RefreshBlocker:Refresh", data);
             },
@@ -5730,7 +5774,7 @@
         notificationBox.appendNotification(
           "refresh-blocked",
           {
-            label: message,
+            label: { "l10n-id": l10nId },
             image: "chrome://browser/skin/notification-icons/popup.svg",
             priority: notificationBox.PRIORITY_INFO_MEDIUM,
           },
@@ -6810,6 +6854,27 @@
             gBrowser._tabLayerCache.splice(tabCacheIndex, 1);
             gBrowser._getSwitcher().cleanUpTabAfterEviction(this.mTab);
           }
+        } else {
+          if (
+            gBrowser.featureCallout &&
+            (gBrowser.featureCalloutPanelId !==
+              gBrowser.selectedTab.linkedPanel ||
+              gBrowser.featureCallout.source !== aLocation.spec)
+          ) {
+            gBrowser.featureCallout._endTour(true);
+            gBrowser.featureCallout = null;
+          }
+
+          // For now, only check for Feature Callout messages
+          // when viewing PDFs. Later, we can expand this to check
+          // for callout messages on every change of tab location.
+          if (!gBrowser.featureCallout && aLocation.spec.endsWith(".pdf")) {
+            gBrowser.instantiateFeatureCalloutTour(
+              aLocation,
+              gBrowser.selectedTab.linkedPanel
+            );
+            gBrowser.featureCallout.showFeatureCallout();
+          }
         }
       }
 
@@ -7052,14 +7117,10 @@ var TabBarVisibility = {
     navbar.setAttribute("tabs-hidden", collapse);
 
     document.getElementById("menu_closeWindow").hidden = collapse;
-    document
-      .getElementById("menu_close")
-      .setAttribute(
-        "label",
-        gTabBrowserBundle.GetStringFromName(
-          collapse ? "tabs.close" : "tabs.closeTab"
-        )
-      );
+    document.l10n.setAttributes(
+      document.getElementById("menu_close"),
+      collapse ? "tabbrowser-menuitem-close" : "tabbrowser-menuitem-close-tab"
+    );
 
     TabsInTitlebar.allowedBy("tabs-visible", !collapse);
   },
@@ -7250,31 +7311,17 @@ var TabContextMenu = {
     toggleMute.hidden = multiselectionContext;
     toggleMultiSelectMute.hidden = !multiselectionContext;
 
-    // Adjust the state of the toggle mute menu item.
-    if (this.contextTab.hasAttribute("muted")) {
-      toggleMute.label = gNavigatorBundle.getString("unmuteTab.label");
-      toggleMute.accessKey = gNavigatorBundle.getString("unmuteTab.accesskey");
-    } else {
-      toggleMute.label = gNavigatorBundle.getString("muteTab.label");
-      toggleMute.accessKey = gNavigatorBundle.getString("muteTab.accesskey");
-    }
-
-    // Adjust the state of the toggle mute menu item for multi-selected tabs.
-    if (this.contextTab.hasAttribute("muted")) {
-      toggleMultiSelectMute.label = gNavigatorBundle.getString(
-        "unmuteSelectedTabs2.label"
-      );
-      toggleMultiSelectMute.accessKey = gNavigatorBundle.getString(
-        "unmuteSelectedTabs2.accesskey"
-      );
-    } else {
-      toggleMultiSelectMute.label = gNavigatorBundle.getString(
-        "muteSelectedTabs2.label"
-      );
-      toggleMultiSelectMute.accessKey = gNavigatorBundle.getString(
-        "muteSelectedTabs2.accesskey"
-      );
-    }
+    const isMuted = this.contextTab.hasAttribute("muted");
+    document.l10n.setAttributes(
+      toggleMute,
+      isMuted ? "tabbrowser-context-unmute-tab" : "tabbrowser-context-mute-tab"
+    );
+    document.l10n.setAttributes(
+      toggleMultiSelectMute,
+      isMuted
+        ? "tabbrowser-context-unmute-selected-tabs"
+        : "tabbrowser-context-mute-selected-tabs"
+    );
 
     this.contextTab.toggleMuteMenuItem = toggleMute;
     this.contextTab.toggleMultiSelectMuteMenuItem = toggleMultiSelectMute;

@@ -256,7 +256,7 @@ void gc::GCRuntime::startVerifyPreBarriers() {
 
   verifyPreData = trc;
   incrementalState = State::Mark;
-  marker.start();
+  marker().start();
 
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     zone->changeGCState(Zone::NoGC, Zone::VerifyPreBarriers);
@@ -391,8 +391,9 @@ void gc::GCRuntime::endVerifyPreBarriers() {
     }
   }
 
-  marker.reset();
-  marker.stop();
+  marker().reset();
+  marker().stop();
+  resetDelayedMarking();
 
   js_delete(trc);
 }
@@ -491,7 +492,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
    */
 
   JSRuntime* runtime = gc->rt;
-  GCMarker* gcmarker = &gc->marker;
+  GCMarker* gcmarker = &gc->marker();
 
   MOZ_ASSERT(!gcmarker->isWeakMarking());
 
@@ -587,7 +588,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
   {
     gcstats::AutoPhase ap(gc->stats(), gcstats::PhaseKind::MARK);
 
-    gc->traceRuntimeForMajorGC(gcmarker, session);
+    gc->traceRuntimeForMajorGC(gcmarker->tracer(), session);
 
     gc->incrementalState = State::Mark;
     gc->drainMarkStack();
@@ -614,7 +615,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     for (GCZonesIter zone(gc); !zone.done(); zone.next()) {
       zone->changeGCState(Zone::MarkBlackAndGray, zone->initialMarkingState());
     }
-    MOZ_ASSERT(gc->marker.isDrained());
+    MOZ_ASSERT(gc->marker().isDrained());
   }
 
   /* Take a copy of the non-incremental mark state and restore the original. */
@@ -666,7 +667,7 @@ void js::gc::MarkingValidator::validate() {
     return;
   }
 
-  MOZ_ASSERT(!gc->marker.isWeakMarking());
+  MOZ_ASSERT(!gc->marker().isWeakMarking());
 
   gc->waitBackgroundSweepEnd();
 

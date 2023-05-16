@@ -52,25 +52,20 @@ var MigrationWizard = {
     this._wiz = document.querySelector("wizard");
 
     let args = window.arguments;
-    let entryPointId = args[0] || MigrationUtils.MIGRATION_ENTRYPOINT_UNKNOWN;
+    let entryPointId = args[0] || MigrationUtils.MIGRATION_ENTRYPOINTS.UNKNOWN;
     Services.telemetry
       .getHistogramById("FX_MIGRATION_ENTRY_POINT")
       .add(entryPointId);
     this.isInitialMigration =
-      entryPointId == MigrationUtils.MIGRATION_ENTRYPOINT_FIRSTRUN;
+      entryPointId == MigrationUtils.MIGRATION_ENTRYPOINTS.FIRSTRUN;
 
-    {
-      // Record that the uninstaller requested a profile refresh
-      let env = Cc["@mozilla.org/process/environment;1"].getService(
-        Ci.nsIEnvironment
+    // Record that the uninstaller requested a profile refresh
+    if (Services.env.get("MOZ_UNINSTALLER_PROFILE_REFRESH")) {
+      Services.env.set("MOZ_UNINSTALLER_PROFILE_REFRESH", "");
+      Services.telemetry.scalarSet(
+        "migration.uninstaller_profile_refresh",
+        true
       );
-      if (env.get("MOZ_UNINSTALLER_PROFILE_REFRESH")) {
-        env.set("MOZ_UNINSTALLER_PROFILE_REFRESH", "");
-        Services.telemetry.scalarSet(
-          "migration.uninstaller_profile_refresh",
-          true
-        );
-      }
     }
 
     if (args.length == 2) {
@@ -194,19 +189,6 @@ var MigrationWizard = {
 
   // 1 - Import Source
   onImportSourcePageShow() {
-    // Show warning message to close the selected browser when needed
-    let toggleCloseBrowserWarning = () => {
-      let visibility = "hidden";
-      if (group.selectedItem.id != "nothing") {
-        let migrator = this.spinResolve(
-          MigrationUtils.getMigrator(group.selectedItem.id)
-        );
-        visibility = migrator.sourceLocked ? "visible" : "hidden";
-      }
-      document.getElementById(
-        "closeSourceBrowser"
-      ).style.visibility = visibility;
-    };
     this._wiz.canRewind = false;
 
     var selectedMigrator = null;
@@ -246,11 +228,8 @@ var MigrationWizard = {
         .add(defaultBrowser);
     }
 
-    group.addEventListener("command", toggleCloseBrowserWarning);
-
     if (selectedMigrator) {
       group.selectedItem = selectedMigrator;
-      toggleCloseBrowserWarning();
     } else {
       // We didn't find a migrator, notify the user
       document.getElementById("noSources").hidden = false;

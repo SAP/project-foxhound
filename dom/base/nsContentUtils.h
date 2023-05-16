@@ -1019,7 +1019,8 @@ class nsContentUtils {
       imgRequestProxy** aRequest,
       nsContentPolicyType aContentPolicyType =
           nsIContentPolicy::TYPE_INTERNAL_IMAGE,
-      bool aUseUrgentStartForChannel = false, bool aLinkPreload = false);
+      bool aUseUrgentStartForChannel = false, bool aLinkPreload = false,
+      uint64_t aEarlyHintPreloaderId = 0);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy
@@ -1409,6 +1410,12 @@ class nsContentUtils {
    */
   static inline ExtContentPolicyType InternalContentPolicyTypeToExternal(
       nsContentPolicyType aType);
+
+  /**
+   * check whether the Link header field applies to the context resource
+   * see <http://tools.ietf.org/html/rfc5988#section-5.2>
+   */
+  static bool LinkContextIsURI(const nsAString& aAnchor, nsIURI* aDocURI);
 
   /**
    * Returns true if the content policy type is any of:
@@ -1948,17 +1955,17 @@ class nsContentUtils {
    * @param aResult the result. Out param.
    * @return false on out of memory errors, true otherwise.
    */
-  [[nodiscard]] static bool GetNodeTextContent(nsINode* aNode, bool aDeep,
+  [[nodiscard]] static bool GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                                nsAString& aResult,
                                                const mozilla::fallible_t&);
 
-  static void GetNodeTextContent(nsINode* aNode, bool aDeep,
+  static void GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                  nsAString& aResult);
 
   /**
    * Same as GetNodeTextContents but appends the result rather than sets it.
    */
-  static bool AppendNodeTextContent(nsINode* aNode, bool aDeep,
+  static bool AppendNodeTextContent(const nsINode* aNode, bool aDeep,
                                     nsAString& aResult,
                                     const mozilla::fallible_t&);
 

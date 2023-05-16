@@ -218,12 +218,14 @@ const startupPhases = {
       // bug 1541226
       path: "ProfD:",
       condition: WIN,
+      ignoreIfUnused: true, // Sometimes happens in the next phase
       stat: 1,
     },
     {
       // bug 1534745
       path: "ProfD:cookies.sqlite-journal",
       condition: !LINUX,
+      ignoreIfUnused: true, // Sometimes happens in the next phase
       stat: 3,
       write: 4,
     },
@@ -231,6 +233,7 @@ const startupPhases = {
       // bug 1534745
       path: "ProfD:cookies.sqlite",
       condition: !LINUX,
+      ignoreIfUnused: true, // Sometimes happens in the next phase
       stat: 2,
       read: 3,
       write: 1,
@@ -238,6 +241,7 @@ const startupPhases = {
     {
       // bug 1534745
       path: "ProfD:cookies.sqlite-wal",
+      ignoreIfUnused: true, // Sometimes happens in the next phase
       condition: WIN,
       stat: 2,
     },
@@ -295,6 +299,12 @@ const startupPhases = {
       close: 1,
     },
     {
+      path: "XREAppFeat:webcompat@mozilla.org.xpi",
+      condition: LINUX,
+      ignoreIfUnused: true, // Sometimes happens in the previous phase
+      close: 1,
+    },
+    {
       // We only hit this for new profiles.
       path: "XREAppDist:distribution.ini",
       condition: WIN,
@@ -339,6 +349,37 @@ const startupPhases = {
       path: "GreD:EventArtifactDefinitions.json",
       condition: WIN && !AppConstants.MOZILLA_OFFICIAL,
       stat: 1,
+    },
+    {
+      // bug 1541226
+      path: "ProfD:",
+      condition: WIN,
+      ignoreIfUnused: true, // Usually happens in the previous phase
+      stat: 1,
+    },
+    {
+      // bug 1534745
+      path: "ProfD:cookies.sqlite-journal",
+      condition: WIN,
+      ignoreIfUnused: true, // Usually happens in the previous phase
+      stat: 3,
+      write: 4,
+    },
+    {
+      // bug 1534745
+      path: "ProfD:cookies.sqlite",
+      condition: WIN,
+      ignoreIfUnused: true, // Usually happens in the previous phase
+      stat: 2,
+      read: 3,
+      write: 1,
+    },
+    {
+      // bug 1534745
+      path: "ProfD:cookies.sqlite-wal",
+      condition: WIN,
+      ignoreIfUnused: true, // Usually happens in the previous phase
+      stat: 2,
     },
   ],
 
@@ -607,18 +648,7 @@ add_task(async function() {
     return;
   }
 
-  {
-    let omniJa = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
-    omniJa.append("omni.ja");
-    if (!omniJa.exists()) {
-      ok(
-        false,
-        "This test requires a packaged build, " +
-          "run 'mach package' and then use --appname=dist"
-      );
-      return;
-    }
-  }
+  TestUtils.assertPackagedBuild();
 
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
     .wrappedJSObject;
@@ -837,9 +867,7 @@ add_task(async function() {
     ok(shouldPass, "No unexpected main thread I/O during startup");
   } else {
     const filename = "profile_startup_mainthreadio.json";
-    let path = Cc["@mozilla.org/process/environment;1"]
-      .getService(Ci.nsIEnvironment)
-      .get("MOZ_UPLOAD_DIR");
+    let path = Services.env.get("MOZ_UPLOAD_DIR");
     let profilePath = PathUtils.join(path, filename);
     await IOUtils.writeJSON(profilePath, startupRecorder.data.profile);
     ok(

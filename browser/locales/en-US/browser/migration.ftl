@@ -33,6 +33,9 @@ import-from-safari =
 import-from-opera =
     .label = Opera
     .accesskey = O
+import-from-vivaldi =
+    .label = Vivaldi
+    .accesskey = V
 import-from-brave =
     .label = Brave
     .accesskey = r
@@ -57,6 +60,9 @@ import-from-firefox =
 import-from-360se =
     .label = 360 Secure Browser
     .accesskey = 3
+import-from-opera-gx =
+    .label = Opera GX
+    .accesskey = G
 
 no-migration-sources = No programs that contain bookmarks, history or password data could be found.
 

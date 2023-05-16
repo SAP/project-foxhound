@@ -247,10 +247,6 @@ criteria = "safe-to-deploy"
 version = "0.26.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.authenticator]]
-version = "0.3.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.base64]]
 version = "0.13.0"
 criteria = "safe-to-deploy"
@@ -337,10 +333,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.clap_lex]]
 version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.codespan-reporting]]
-version = "0.11.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.cookie]]
@@ -1343,20 +1335,8 @@ criteria = "safe-to-deploy"
 version = "1.15.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.unicase]]
-version = "2.6.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.unicode-bidi]]
-version = "0.3.8"
-criteria = "safe-to-deploy"
-
 [[exemptions.unicode-ident]]
 version = "1.0.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.unicode-normalization]]
-version = "0.1.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-segmentation]]
@@ -1454,4 +1434,3 @@ criteria = "safe-to-deploy"
 [[exemptions.zip]]
 version = "0.6.2"
 criteria = "safe-to-run"
-

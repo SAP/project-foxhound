@@ -279,6 +279,12 @@ var whitelist = [
     file: "resource://gre/localization/en-US/toolkit/about/aboutThirdParty.ftl",
     platforms: ["linux", "macosx"],
   },
+  // Bug 1973834 - referenced by aboutWindowsMessages.html which is only for Windows
+  {
+    file:
+      "resource://gre/localization/en-US/toolkit/about/aboutWindowsMessages.ftl",
+    platforms: ["linux", "macosx"],
+  },
   // Bug 1721741:
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
@@ -289,14 +295,8 @@ var whitelist = [
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
 
-  // References to esm generated from jsm programatically
+  // References to esm generated from jsm programmatically
   { file: "resource://gre/modules/LangPackMatcher.sys.mjs" },
-  { file: "resource://gre/modules/PluralForm.sys.mjs" },
-
-  // Bug 1788595 - used by Firefox Translations extension
-  // see also https://github.com/mozilla/firefox-translations/issues/496
-  { file: "chrome://browser/locale/translation.dtd" },
-  { file: "chrome://global/locale/notification.dtd" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
@@ -811,6 +811,8 @@ function findChromeUrlsFromArray(array, prefix) {
 }
 
 add_task(async function checkAllTheFiles() {
+  TestUtils.assertPackagedBuild();
+
   const libxul = await IOUtils.read(PathUtils.xulLibraryPath);
   findChromeUrlsFromArray(libxul, "chrome://");
   findChromeUrlsFromArray(libxul, "resource://");

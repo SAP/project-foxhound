@@ -475,8 +475,8 @@ WebTransportSessionProxy::AsyncOnChannelRedirect(
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-WebTransportSessionProxy::OnRedirectResult(bool aProceeding) {
-  if (aProceeding && mRedirectChannel) {
+WebTransportSessionProxy::OnRedirectResult(nsresult aStatus) {
+  if (NS_SUCCEEDED(aStatus) && mRedirectChannel) {
     mChannel = mRedirectChannel;
   }
 
@@ -540,6 +540,47 @@ WebTransportSessionProxy::OnSessionReadyInternal(
       // mWebTransportSession.
       break;
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebTransportSessionProxy::OnIncomingStreamAvailableInternal(
+    Http3WebTransportStream* aStream) {
+  if (!NS_IsMainThread()) {
+    RefPtr<WebTransportSessionProxy> self(this);
+    RefPtr<Http3WebTransportStream> stream = aStream;
+    Unused << NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "WebTransportSessionProxy::OnIncomingStreamAvailableInternal",
+        [self{std::move(self)}, stream{std::move(stream)}]() {
+          self->OnIncomingStreamAvailableInternal(stream);
+        }));
+    return NS_OK;
+  }
+
+  MutexAutoLock lock(mMutex);
+  if (mState != WebTransportSessionProxyState::ACTIVE || !mListener) {
+    return NS_OK;
+  }
+
+  RefPtr<WebTransportStreamProxy> streamProxy =
+      new WebTransportStreamProxy(aStream);
+  if (aStream->StreamType() == WebTransportStreamType::BiDi) {
+    Unused << mListener->OnIncomingBidirectionalStreamAvailable(streamProxy);
+  } else {
+    Unused << mListener->OnIncomingUnidirectionalStreamAvailable(streamProxy);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebTransportSessionProxy::OnIncomingBidirectionalStreamAvailable(
+    nsIWebTransportBidirectionalStream* aStream) {
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebTransportSessionProxy::OnIncomingUnidirectionalStreamAvailable(
+    nsIWebTransportReceiveStream* aStream) {
   return NS_OK;
 }
 

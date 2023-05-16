@@ -34,6 +34,37 @@ using mozilla::ipc::RejectCallback;
 
 namespace {
 
+void HandleFailedStatus(nsresult aError, const RefPtr<Promise>& aPromise) {
+  switch (aError) {
+    case NS_ERROR_FILE_ACCESS_DENIED:
+      aPromise->MaybeRejectWithNotAllowedError("Permission denied");
+      break;
+    case NS_ERROR_DOM_NOT_FOUND_ERR:
+      aPromise->MaybeRejectWithNotFoundError("Entry not found");
+      break;
+    case NS_ERROR_DOM_FILESYSTEM_NO_MODIFICATION_ALLOWED_ERR:
+      aPromise->MaybeRejectWithInvalidModificationError("Disallowed by system");
+      break;
+    case NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR:
+      aPromise->MaybeRejectWithNoModificationAllowedError(
+          "No modification allowed");
+      break;
+    case NS_ERROR_DOM_TYPE_MISMATCH_ERR:
+      aPromise->MaybeRejectWithTypeMismatchError("Wrong type");
+      break;
+    case NS_ERROR_DOM_INVALID_MODIFICATION_ERR:
+      aPromise->MaybeRejectWithInvalidModificationError("Invalid modification");
+      break;
+    default:
+      if (NS_FAILED(aError)) {
+        aPromise->MaybeRejectWithUnknownError("Unknown failure");
+      } else {
+        aPromise->MaybeResolveWithUndefined();
+      }
+      break;
+  }
+}
+
 bool MakeResolution(nsIGlobalObject* aGlobal,
                     FileSystemGetEntriesResponse&& aResponse,
                     const bool& /* aResult */,
@@ -153,7 +184,7 @@ void ResolveCallback(
   QM_TRY(OkIf(Promise::PromiseState::Pending == aPromise->State()), QM_VOID);
 
   if (TResponse::Tnsresult == aResponse.type()) {
-    aPromise->MaybeReject(aResponse.get_nsresult());
+    HandleFailedStatus(aResponse.get_nsresult(), aPromise);
     return;
   }
 
@@ -161,7 +192,7 @@ void ResolveCallback(
                                    std::forward<TResponse>(aResponse),
                                    std::forward<Args>(args)...);
   if (!resolution) {
-    aPromise->MaybeReject(NS_ERROR_UNEXPECTED);
+    aPromise->MaybeRejectWithUnknownError("Could not complete request");
     return;
   }
 
@@ -181,32 +212,7 @@ void ResolveCallback(
   }
 
   MOZ_ASSERT(FileSystemRemoveEntryResponse::Tnsresult == aResponse.type());
-  const auto& status = aResponse.get_nsresult();
-  switch (status) {
-    case NS_ERROR_FILE_ACCESS_DENIED:
-      aPromise->MaybeRejectWithNotAllowedError("Permission denied");
-      break;
-    case NS_ERROR_DOM_NOT_FOUND_ERR:
-      aPromise->MaybeRejectWithNotFoundError("Entry not found");
-      break;
-    case NS_ERROR_DOM_FILESYSTEM_NO_MODIFICATION_ALLOWED_ERR:
-      aPromise->MaybeRejectWithInvalidModificationError("Disallowed by system");
-      break;
-    case NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR:
-      aPromise->MaybeRejectWithNoModificationAllowedError(
-          "No modification allowed");
-      break;
-    case NS_ERROR_DOM_INVALID_MODIFICATION_ERR:
-      aPromise->MaybeRejectWithInvalidModificationError("Invalid modification");
-      break;
-    default:
-      if (NS_FAILED(status)) {
-        aPromise->MaybeRejectWithUnknownError("Unknown failure");
-      } else {
-        aPromise->MaybeResolveWithUndefined();
-      }
-      break;
-  }
+  HandleFailedStatus(aResponse.get_nsresult(), aPromise);
 }
 
 template <>
@@ -218,34 +224,11 @@ void ResolveCallback(
 
   MOZ_ASSERT(FileSystemMoveEntryResponse::Tnsresult == aResponse.type());
   const auto& status = aResponse.get_nsresult();
-  switch (status) {
-    case NS_OK:
-      aPromise->MaybeResolveWithUndefined();
-      break;
-    case NS_ERROR_FILE_ACCESS_DENIED:
-      aPromise->MaybeRejectWithNotAllowedError("Permission denied");
-      break;
-    case NS_ERROR_DOM_NOT_FOUND_ERR:
-      aPromise->MaybeRejectWithNotFoundError("Entry not found");
-      break;
-    case NS_ERROR_DOM_FILESYSTEM_NO_MODIFICATION_ALLOWED_ERR:
-      aPromise->MaybeRejectWithInvalidModificationError("Disallowed by system");
-      break;
-    case NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR:
-      aPromise->MaybeRejectWithNoModificationAllowedError(
-          "No modification allowed");
-      break;
-    case NS_ERROR_DOM_INVALID_MODIFICATION_ERR:
-      aPromise->MaybeRejectWithInvalidModificationError("Invalid modification");
-      break;
-    default:
-      if (NS_FAILED(status)) {
-        aPromise->MaybeRejectWithUnknownError("Unknown failure");
-      } else {
-        aPromise->MaybeResolveWithUndefined();
-      }
-      break;
+  if (NS_OK == status) {
+    aPromise->MaybeResolveWithUndefined();
+    return;
   }
+  HandleFailedStatus(status, aPromise);
 }
 
 template <>
@@ -256,7 +239,7 @@ void ResolveCallback(FileSystemResolveResponse&& aResponse,
   QM_TRY(OkIf(Promise::PromiseState::Pending == aPromise->State()), QM_VOID);
 
   if (FileSystemResolveResponse::Tnsresult == aResponse.type()) {
-    aPromise->MaybeReject(aResponse.get_nsresult());
+    HandleFailedStatus(aResponse.get_nsresult(), aPromise);
     return;
   }
 
@@ -334,6 +317,22 @@ mozilla::ipc::RejectCallback GetRejectCallback(
       std::bind(RejectCallback, aPromise, std::placeholders::_1));
 }
 
+struct BeginRequestFailureCallback {
+  explicit BeginRequestFailureCallback(RefPtr<Promise> aPromise)
+      : mPromise(std::move(aPromise)) {}
+
+  void operator()(nsresult aRv) const {
+    if (aRv == NS_ERROR_DOM_SECURITY_ERR) {
+      mPromise->MaybeRejectWithSecurityError(
+          "Security error when calling GetDirectory");
+      return;
+    }
+    mPromise->MaybeRejectWithUnknownError("Could not create actor");
+  }
+
+  RefPtr<Promise> mPromise;
+};
+
 }  // namespace
 
 void FileSystemRequestHandler::GetRootHandle(
@@ -356,9 +355,7 @@ void FileSystemRequestHandler::GetRootHandle(
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendGetRootHandle(std::move(onResolve), std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::GetDirectoryHandle(
@@ -390,9 +387,7 @@ void FileSystemRequestHandler::GetDirectoryHandle(
         actor->SendGetDirectoryHandle(request, std::move(onResolve),
                                       std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::GetFileHandle(
@@ -424,9 +419,7 @@ void FileSystemRequestHandler::GetFileHandle(
         actor->SendGetFileHandle(request, std::move(onResolve),
                                  std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::GetAccessHandle(
@@ -450,9 +443,7 @@ void FileSystemRequestHandler::GetAccessHandle(
         actor->SendGetAccessHandle(request, std::move(onResolve),
                                    std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::GetWritable(RefPtr<FileSystemManager>& aManager,
@@ -514,9 +505,7 @@ void FileSystemRequestHandler::GetFile(
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendGetFile(request, std::move(onResolve), std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::GetEntries(
@@ -542,9 +531,7 @@ void FileSystemRequestHandler::GetEntries(
         actor->SendGetEntries(request, std::move(onResolve),
                               std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::RemoveEntry(
@@ -575,9 +562,7 @@ void FileSystemRequestHandler::RemoveEntry(
         actor->SendRemoveEntry(request, std::move(onResolve),
                                std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::MoveEntry(
@@ -608,9 +593,7 @@ void FileSystemRequestHandler::MoveEntry(
         actor->SendMoveEntry(request, std::move(onResolve),
                              std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::RenameEntry(
@@ -641,9 +624,7 @@ void FileSystemRequestHandler::RenameEntry(
         actor->SendRenameEntry(request, std::move(onResolve),
                                std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 void FileSystemRequestHandler::Resolve(
@@ -669,9 +650,7 @@ void FileSystemRequestHandler::Resolve(
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendResolve(request, std::move(onResolve), std::move(onReject));
       },
-      [promise = aPromise](const auto&) {
-        promise->MaybeRejectWithUnknownError("Could not create actor");
-      });
+      BeginRequestFailureCallback(aPromise));
 }
 
 }  // namespace mozilla::dom::fs

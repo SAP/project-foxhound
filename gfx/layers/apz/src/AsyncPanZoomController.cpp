@@ -73,7 +73,6 @@
 #include "mozilla/layers/APZPublicUtils.h"  // for GetScrollMode
 #include "mozilla/mozalloc.h"               // for operator new, etc
 #include "mozilla/Unused.h"                 // for unused
-#include "mozilla/FloatingPoint.h"          // for FuzzyEquals*
 #include "nsAlgorithm.h"                    // for clamped
 #include "nsCOMPtr.h"                       // for already_AddRefed
 #include "nsDebug.h"                        // for NS_WARNING
@@ -564,8 +563,7 @@ bool AsyncPanZoomController::IsZero(ParentLayerCoord aCoord) const {
     return true;
   }
 
-  return FuzzyEqualsAdditive((aCoord / zoom).value, 0.0f,
-                             COORDINATE_EPSILON.value);
+  return FuzzyEqualsAdditive((aCoord / zoom), CSSCoord(), COORDINATE_EPSILON);
 }
 
 bool AsyncPanZoomController::FuzzyGreater(ParentLayerCoord aCoord1,
@@ -1542,12 +1540,6 @@ nsEventStatus AsyncPanZoomController::OnScaleBegin(
     return nsEventStatus_eIgnore;
   }
 
-  // If zooming is not allowed, this is a two-finger pan.
-  // Start tracking panning distance and velocity.
-  if (!ZoomConstraintsAllowZoom()) {
-    StartTouch(aEvent.mLocalFocusPoint, aEvent.mTimeStamp);
-  }
-
   // For platforms that don't support APZ zooming, dispatch a message to the
   // content controller, it may want to do something else with this gesture.
   // FIXME: bug 1525793 -- this may need to handle zooming or not on a
@@ -1594,11 +1586,11 @@ nsEventStatus AsyncPanZoomController::OnScale(const PinchGestureInput& aEvent) {
   HandlePinchLocking(aEvent);
   bool allowZoom = ZoomConstraintsAllowZoom() && !mPinchLocked;
 
-  // If zooming is not allowed, this is a two-finger pan.
+  // If we are pinch-locked, this is a two-finger pan.
   // Tracking panning distance and velocity.
   // UpdateWithTouchAtDevicePoint() acquires the tree lock, so
   // it cannot be called while the mRecursiveMutex lock is held.
-  if (!allowZoom) {
+  if (mPinchLocked) {
     mX.UpdateWithTouchAtDevicePoint(aEvent.mLocalFocusPoint.x,
                                     aEvent.mTimeStamp);
     mY.UpdateWithTouchAtDevicePoint(aEvent.mLocalFocusPoint.y,
@@ -1798,7 +1790,7 @@ nsEventStatus AsyncPanZoomController::OnScaleEnd(
 
   if (aEvent.mType == PinchGestureInput::PINCHGESTURE_FINGERLIFTED) {
     // One finger is still down, so transition to a TOUCHING state
-    if (ZoomConstraintsAllowZoom()) {
+    if (!mPinchLocked) {
       mPanDirRestricted = false;
       mLastTouch.mPosition = mStartTouch =
           ToExternalPoint(aEvent.mScreenOffset, aEvent.mFocusPoint);
@@ -1806,8 +1798,8 @@ nsEventStatus AsyncPanZoomController::OnScaleEnd(
       StartTouch(aEvent.mLocalFocusPoint, aEvent.mTimeStamp);
       SetState(TOUCHING);
     } else {
-      // If zooming isn't allowed, StartTouch() was already called
-      // in OnScaleBegin().
+      // If we are pinch locked, StartTouch() was already called
+      // when we entered the pinch lock.
       StartPanning(ToExternalPoint(aEvent.mScreenOffset, aEvent.mFocusPoint),
                    aEvent.mTimeStamp);
     }
@@ -5216,11 +5208,10 @@ void AsyncPanZoomController::NotifyLayersUpdated(
   // XXX Suspicious comparison between layout and visual scroll offsets.
   // This may not do the right thing when we're zoomed in.
   CSSPoint lastScrollOffset = mLastContentPaintMetrics.GetLayoutScrollOffset();
-  bool userScrolled =
-      !FuzzyEqualsAdditive(Metrics().GetVisualScrollOffset().x.value,
-                           lastScrollOffset.x.value) ||
-      !FuzzyEqualsAdditive(Metrics().GetVisualScrollOffset().y.value,
-                           lastScrollOffset.y.value);
+  bool userScrolled = !FuzzyEqualsAdditive(Metrics().GetVisualScrollOffset().x,
+                                           lastScrollOffset.x) ||
+                      !FuzzyEqualsAdditive(Metrics().GetVisualScrollOffset().y,
+                                           lastScrollOffset.y);
 
   if (aScrollMetadata.DidContentGetPainted()) {
     mLastContentPaintMetadata = aScrollMetadata;
@@ -5339,10 +5330,10 @@ void AsyncPanZoomController::NotifyLayersUpdated(
 
     // TODO: Rely entirely on |aScrollMetadata.IsResolutionUpdated()| to
     //       determine which branch to take, and drop the other conditions.
+    CSSToParentLayerScale oldZoom = Metrics().GetZoom();
     if (FuzzyEqualsAdditive(
-            Metrics().GetCompositionBoundsWidthIgnoringScrollbars().value,
-            aLayerMetrics.GetCompositionBoundsWidthIgnoringScrollbars()
-                .value) &&
+            Metrics().GetCompositionBoundsWidthIgnoringScrollbars(),
+            aLayerMetrics.GetCompositionBoundsWidthIgnoringScrollbars()) &&
         Metrics().GetDevPixelsPerCSSPixel() ==
             aLayerMetrics.GetDevPixelsPerCSSPixel() &&
         !viewportSizeUpdated && !aScrollMetadata.IsResolutionUpdated()) {
@@ -5372,13 +5363,21 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     } else {
       // Take the new zoom as either device scale or composition width or
       // viewport size got changed (e.g. due to orientation change, or content
-      // changing the meta-viewport tag).
+      // changing the meta-viewport tag), or the main thread originated a
+      // resolution change for another reason (e.g. Ctrl+0 was pressed to
+      // reset the zoom).
       Metrics().SetZoom(aLayerMetrics.GetZoom());
       for (auto& sampledState : mSampledState) {
         sampledState.UpdateZoomProperties(aLayerMetrics);
       }
       Metrics().SetDevPixelsPerCSSPixel(
           aLayerMetrics.GetDevPixelsPerCSSPixel());
+    }
+
+    if (Metrics().GetZoom() != oldZoom) {
+      // If the zoom changed, the scroll range in CSS pixels may have changed
+      // even if the composition bounds didn't.
+      needToReclampScroll = true;
     }
 
     mExpectedGeckoMetrics.UpdateZoomFrom(aLayerMetrics);

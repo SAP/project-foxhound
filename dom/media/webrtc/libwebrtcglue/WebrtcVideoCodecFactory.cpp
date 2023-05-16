@@ -27,7 +27,7 @@ WebrtcVideoDecoderFactory::CreateVideoDecoder(
   auto type = webrtc::PayloadStringToCodecType(aFormat.name);
 
   // Attempt to create a decoder using MediaDataDecoder.
-  decoder.reset(MediaDataCodec::CreateDecoder(type));
+  decoder.reset(MediaDataCodec::CreateDecoder(type, mTrackingId));
   if (decoder) {
     return decoder;
   }
@@ -35,7 +35,8 @@ WebrtcVideoDecoderFactory::CreateVideoDecoder(
   switch (type) {
     case webrtc::VideoCodecType::kVideoCodecH264: {
       // Get an external decoder
-      auto gmpDecoder = WrapUnique(GmpVideoCodec::CreateDecoder(mPCHandle));
+      auto gmpDecoder =
+          WrapUnique(GmpVideoCodec::CreateDecoder(mPCHandle, mTrackingId));
       mCreatedGmpPluginEvent.Forward(*gmpDecoder->InitPluginEvent());
       mReleasedGmpPluginEvent.Forward(*gmpDecoder->ReleasePluginEvent());
       decoder.reset(gmpDecoder.release());
@@ -105,7 +106,8 @@ WebrtcVideoEncoderFactory::InternalFactory::CreateVideoEncoder(
   switch (webrtc::PayloadStringToCodecType(aFormat.name)) {
     case webrtc::VideoCodecType::kVideoCodecH264: {
       // get an external encoder
-      auto gmpEncoder = WrapUnique(GmpVideoCodec::CreateEncoder(mPCHandle));
+      auto gmpEncoder =
+          WrapUnique(GmpVideoCodec::CreateEncoder(aFormat, mPCHandle));
       mCreatedGmpPluginEvent.Forward(*gmpEncoder->InitPluginEvent());
       mReleasedGmpPluginEvent.Forward(*gmpEncoder->ReleasePluginEvent());
       encoder.reset(gmpEncoder.release());

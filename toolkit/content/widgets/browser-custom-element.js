@@ -59,9 +59,9 @@
   Object.defineProperty(lazy, "SessionStore", {
     configurable: true,
     get() {
-      const kURL = "resource:///modules/sessionstore/SessionStore.jsm";
-      if (Cu.isModuleLoaded(kURL)) {
-        let { SessionStore } = ChromeUtils.import(kURL);
+      const kURL = "resource:///modules/sessionstore/SessionStore.sys.mjs";
+      if (Cu.isESModuleLoaded(kURL)) {
+        let { SessionStore } = ChromeUtils.importESModule(kURL);
         // eslint-disable-next-line mozilla/valid-lazy
         Object.defineProperty(lazy, "SessionStore", {
           value: SessionStore,
@@ -802,6 +802,7 @@
       let {
         referrerInfo,
         triggeringPrincipal,
+        triggeringRemoteType,
         postData,
         headers,
         csp,
@@ -813,6 +814,7 @@
         Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
       let loadURIOptions = {
         triggeringPrincipal,
+        triggeringRemoteType,
         csp,
         referrerInfo,
         loadFlags,
@@ -1219,6 +1221,24 @@
       }
     }
 
+    _acquireAutoScrollWakeLock() {
+      const pm = Cc["@mozilla.org/power/powermanagerservice;1"].getService(
+        Ci.nsIPowerManagerService
+      );
+      this._autoScrollWakelock = pm.newWakeLock("autoscroll", window);
+    }
+
+    _releaseAutoScrollWakeLock() {
+      if (this._autoScrollWakelock) {
+        try {
+          this._autoScrollWakelock.unlock();
+        } catch (e) {
+          // Ignore error since wake lock is already unlocked
+        }
+        this._autoScrollWakelock = null;
+      }
+    }
+
     stopScroll() {
       if (this._autoScrollBrowsingContext) {
         window.removeEventListener("mousemove", this, true);
@@ -1254,6 +1274,7 @@
         }
 
         this._autoScrollBrowsingContext = null;
+        this._releaseAutoScrollWakeLock();
       }
     }
 
@@ -1365,6 +1386,7 @@
       this._startX = screenX;
       this._startY = screenY;
       this._autoScrollBrowsingContext = browsingContext;
+      this._acquireAutoScrollWakeLock();
 
       window.addEventListener("mousemove", this, true);
       window.addEventListener("mousedown", this, true);

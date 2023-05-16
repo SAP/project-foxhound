@@ -10,6 +10,7 @@
 #include "js/loader/ScriptLoadRequest.h"
 #include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerLoadContext.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/Maybe.h"
 #include "nsIContentPolicy.h"
@@ -41,7 +42,7 @@ namespace workerinternals {
 
 namespace loader {
 class ScriptExecutorRunnable;
-class AbruptCancellationRunnable;
+class ScriptLoaderRunnable;
 class CachePromiseHandler;
 class CacheLoadHandler;
 class CacheCreator;
@@ -68,18 +69,30 @@ class NetworkLoadHandler;
  *    +----------------------------+
  *    | new WorkerScriptLoader(..) |
  *    +----------------------------+
- *                |
- *                | Create the loader, along with the ScriptLoadRequests
- *                | call DispatchLoadScripts()
- *                |
+ *                   |
+ *                   V
+ *            +-------------------------------------------+
+ *            | WorkerScriptLoader::DispatchLoadScripts() |
+ *            +-------------------------------------------+
+ *                   |
+ *                   V
+ *            +............................+
+ *            | new ScriptLoaderRunnable() |
+ *            +............................+
+ *                   :
+ *                   V
  *  #####################################################################
  *                             Enter Main thread
  *  #####################################################################
- *                |
- *                V
- *            +---------------+    For each request: Is a normal Worker?
- *            | LoadScripts() |--------------------------------------+
- *            +---------------+                                      |
+ *                   :
+ *                   V
+ *  +.............................+     For each: Is a normal Worker?
+ *  | ScriptLoaderRunnable::Run() |----------------------------------+
+ *  +.............................+                                  |
+ *                   |                                               V
+ *                   |               +----------------------------------+
+ *                   |               | WorkerScriptLoader::LoadScript() |
+ *                   |               +----------------------------------+
  *                   |                                               |
  *                   | For each request: Is a ServiceWorker?         |
  *                   |                                               |
@@ -87,39 +100,43 @@ class NetworkLoadHandler;
  *   +==================+   No script in cache?   +====================+
  *   | CacheLoadHandler |------------------------>| NetworkLoadHandler |
  *   +==================+                         +====================+
- *      :                                            :
- *      : Loaded from Cache                          : Loaded by Network
- *      :            +--------------------+          :
- *      +----------->| OnStreamComplete() |<---------+
- *                   +--------------------+
+ *      :                                                    :
+ *      : Loaded from Cache                                  : Loaded by Network
+ *      :   +..........................................+     :
+ *      +---| ScriptLoaderRunnable::OnStreamComplete() |<----+
+ *          +..........................................+
  *                             |
  *                             | A request is ready, is it in post order?
  *                             |
  *                             | call DispatchPendingProcessRequests()
  *                             | This creates ScriptExecutorRunnable
- *                             |
+ *            +..............................+
+ *            | new ScriptLoaderExecutable() |
+ *            +..............................+
+ *                             :
+ *                             V
  *  #####################################################################
  *                           Enter worker thread
  *  #####################################################################
- *                             |
- *                             |
+ *                             :
  *                             V
- *               +-------------------------+       All Scripts Executed?
- *               | ProcessPendingScripts() |-------------+
- *               +-------------------------+             |
- *                                                       |
- *                                                       | yes.
- *                                                       |
- *                                                       V
- *                                          +------------------------+
- *                                          | ShutdownScriptLoader() |
- *                                          +------------------------+
+ *          +...............................+         All Scripts Executed?
+ *          | ScriptLoaderExecutable::Run() | -------------+
+ *          +...............................+              :
+ *                                                         :
+ *                                                         : yes. Do execution
+ *                                                         : then shutdown.
+ *                                                         :
+ *                                                         V
+ *                       +--------------------------------------------+
+ *                       | WorkerScriptLoader::ShutdownScriptLoader() |
+ *                       +--------------------------------------------+
  */
 
 class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
                            public nsINamed {
   friend class ScriptExecutorRunnable;
-  friend class AbruptCancellationRunnable;
+  friend class ScriptLoaderRunnable;
   friend class CachePromiseHandler;
   friend class CacheLoadHandler;
   friend class CacheCreator;
@@ -128,7 +145,7 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   RefPtr<ThreadSafeWorkerRef> mWorkerRef;
   UniquePtr<SerializedStackHolder> mOriginStack;
   nsString mOriginStackJSON;
-  nsCOMPtr<nsIEventTarget> mSyncLoopTarget;
+  nsCOMPtr<nsISerialEventTarget> mSyncLoopTarget;
   ScriptLoadRequestList mLoadingRequests;
   ScriptLoadRequestList mLoadedRequests;
   Maybe<ServiceWorkerDescriptor> mController;
@@ -164,11 +181,8 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   WorkerScriptLoader(WorkerPrivate* aWorkerPrivate,
                      UniquePtr<SerializedStackHolder> aOriginStack,
-                     nsIEventTarget* aSyncLoopTarget,
+                     nsISerialEventTarget* aSyncLoopTarget,
                      WorkerScriptType aWorkerScriptType, ErrorResult& aRv);
-
-  void CancelMainThreadWithBindingAborted(
-      nsTArray<WorkerLoadContext*>&& aContextList);
 
   void CreateScriptRequests(const nsTArray<nsString>& aScriptURLs,
                             const mozilla::Encoding* aDocumentEncoding,
@@ -187,8 +201,6 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   nsIURI* GetInitialBaseURI();
 
-  void MaybeExecuteFinishedScripts(ScriptLoadRequest* aRequest);
-
   void MaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
 
   bool StoreCSP();
@@ -199,8 +211,6 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
     return mLoadingRequests.isEmpty() && mLoadedRequests.isEmpty();
   }
 
-  nsresult OnStreamComplete(ScriptLoadRequest* aRequest, nsresult aStatus);
-
   bool IsDebuggerScript() const { return mWorkerScriptType == DebuggerScript; }
 
   void SetController(const Maybe<ServiceWorkerDescriptor>& aDescriptor) {
@@ -209,22 +219,9 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   Maybe<ServiceWorkerDescriptor>& GetController() { return mController; }
 
-  bool IsCancelled() { return mCancelMainThread.isSome(); }
-
-  nsresult GetCancelResult() {
-    return (IsCancelled()) ? mCancelMainThread.ref() : NS_OK;
-  }
-
-  void CancelMainThread(nsresult aCancelResult,
-                        nsTArray<WorkerLoadContext*>* aContextList);
-
-  nsresult LoadScripts(nsTArray<WorkerLoadContext*>&& aContextList);
-
-  nsresult LoadScript(ScriptLoadRequest* aRequest);
+  nsresult LoadScript(ThreadSafeRequestHandle* aRequestHandle);
 
   void ShutdownScriptLoader(bool aResult, bool aMutedError);
-
-  void AbruptShutdown();
 
  private:
   ~WorkerScriptLoader() = default;
@@ -237,17 +234,10 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   void TryShutdown();
 
-  void DispatchAbruptShutdown();
-
-  nsTArray<WorkerLoadContext*> GetLoadingList();
+  nsTArray<RefPtr<ThreadSafeRequestHandle>> GetLoadingList();
 
   nsIGlobalObject* GetGlobal();
 
-  void LoadingFinished(ScriptLoadRequest* aRequest, nsresult aRv);
-
-  void DispatchMaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
-
-  bool HasLoadErrors(WorkerLoadContext* aLoadContext);
   bool EvaluateScript(JSContext* aCx, ScriptLoadRequest* aRequest);
 
   nsresult FillCompileOptionsForRequest(
@@ -265,8 +255,63 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   }
 
   void LogExceptionToConsole(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+};
 
+/* ScriptLoaderRunnable
+ *
+ * Responsibilities of this class:
+ *   - the actual dispatch
+ *   - delegating the load back to WorkerScriptLoader
+ *   - handling the collections of scripts being requested
+ *   - handling main thread cancellation
+ *   - dispatching back to the worker thread
+ */
+class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
+  RefPtr<WorkerScriptLoader> mScriptLoader;
+  RefPtr<ThreadSafeWorkerRef> mWorkerRef;
+  nsTArrayView<RefPtr<ThreadSafeRequestHandle>> mLoadingRequests;
   Maybe<nsresult> mCancelMainThread;
+  RefPtr<CacheCreator> mCacheCreator;
+
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  explicit ScriptLoaderRunnable(
+      WorkerScriptLoader* aScriptLoader,
+      nsTArray<RefPtr<ThreadSafeRequestHandle>> aLoadingRequests);
+
+  nsresult OnStreamComplete(ThreadSafeRequestHandle* aRequestHandle,
+                            nsresult aStatus);
+
+  void LoadingFinished(ThreadSafeRequestHandle* aRequestHandle, nsresult aRv);
+
+  void MaybeExecuteFinishedScripts(ThreadSafeRequestHandle* aRequestHandle);
+
+  bool IsCancelled() { return mCancelMainThread.isSome(); }
+
+  nsresult GetCancelResult() {
+    return (IsCancelled()) ? mCancelMainThread.ref() : NS_OK;
+  }
+
+  void CancelMainThreadWithBindingAborted();
+
+  CacheCreator* GetCacheCreator() { return mCacheCreator; };
+
+ private:
+  ~ScriptLoaderRunnable() = default;
+
+  void CancelMainThread(nsresult aCancelResult);
+
+  void DispatchProcessPendingRequests();
+
+  NS_IMETHOD
+  Run() override;
+
+  NS_IMETHOD
+  GetName(nsACString& aName) override {
+    aName.AssignLiteral("ScriptLoaderRunnable");
+    return NS_OK;
+  }
 };
 
 }  // namespace loader

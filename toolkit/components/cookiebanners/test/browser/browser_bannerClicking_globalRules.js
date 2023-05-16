@@ -28,10 +28,11 @@ add_task(async function test_clicking_global_rules() {
     Ci.nsICookieBannerRule
   );
   ruleA.id = genUUID();
-  ruleA.domain = "*";
+  ruleA.domains = [];
   ruleA.addClickRule(
     "div#banner",
     false,
+    Ci.nsIClickRule.RUN_TOP,
     null,
     "button#optOut",
     "button#optIn"
@@ -45,10 +46,11 @@ add_task(async function test_clicking_global_rules() {
     Ci.nsICookieBannerRule
   );
   ruleC.id = genUUID();
-  ruleC.domain = "*";
+  ruleC.domains = [];
   ruleC.addClickRule(
     "div#banner",
     false,
+    Ci.nsIClickRule.RUN_TOP,
     null,
     "button#nonExistingOptOut",
     "button#nonExistingOptIn"
@@ -60,15 +62,18 @@ add_task(async function test_clicking_global_rules() {
     Ci.nsICookieBannerRule
   );
   ruleD.id = genUUID();
-  ruleD.domain = "*";
+  ruleD.domains = [];
   ruleD.addClickRule(
     "div#nonExistingBanner",
     false,
+    Ci.nsIClickRule.RUN_TOP,
     null,
     null,
     "button#optIn"
   );
   Services.cookieBanners.insertRule(ruleD);
+
+  await testClickResultTelemetry({});
 
   info("The global rule ruleA should handle both test pages with div#banner.");
   await openPageAndVerify({
@@ -77,12 +82,29 @@ add_task(async function test_clicking_global_rules() {
     visible: false,
     expected: "OptOut",
   });
+
+  await testClickResultTelemetry(
+    {
+      success: 1,
+      success_dom_content_loaded: 1,
+    },
+    false
+  );
+
   await openPageAndVerify({
     domain: TEST_DOMAIN_B,
     testURL: TEST_PAGE_B,
     visible: false,
     expected: "OptOut",
   });
+
+  await testClickResultTelemetry(
+    {
+      success: 2,
+      success_dom_content_loaded: 2,
+    },
+    false
+  );
 
   info("No global rule should handle TEST_PAGE_C with div#bannerB.");
   await openPageAndVerify({
@@ -93,6 +115,16 @@ add_task(async function test_clicking_global_rules() {
     bannerId: "bannerB",
   });
 
+  await testClickResultTelemetry(
+    {
+      success: 2,
+      success_dom_content_loaded: 2,
+      fail: 1,
+      fail_banner_not_found: 1,
+    },
+    false
+  );
+
   info("Test delayed banner handling with global rules.");
   let TEST_PAGE =
     TEST_ORIGIN_A + TEST_PATH + "file_delayed_banner.html?delay=100";
@@ -101,6 +133,14 @@ add_task(async function test_clicking_global_rules() {
     testURL: TEST_PAGE,
     visible: false,
     expected: "OptOut",
+  });
+
+  await testClickResultTelemetry({
+    success: 3,
+    success_dom_content_loaded: 2,
+    fail: 1,
+    fail_banner_not_found: 1,
+    success_mutation_pre_load: 1,
   });
 });
 
@@ -130,8 +170,15 @@ add_task(async function test_clicking_global_rules_precedence() {
     Ci.nsICookieBannerRule
   );
   ruleGlobal.id = genUUID();
-  ruleGlobal.domain = "*";
-  ruleGlobal.addClickRule("div#banner", false, null, "button#optOut", null);
+  ruleGlobal.domains = [];
+  ruleGlobal.addClickRule(
+    "div#banner",
+    false,
+    Ci.nsIClickRule.RUN_TOP,
+    null,
+    "button#optOut",
+    null
+  );
   Services.cookieBanners.insertRule(ruleGlobal);
 
   info("Add domain specific rule which also targets the existing banner.");
@@ -139,9 +186,18 @@ add_task(async function test_clicking_global_rules_precedence() {
     Ci.nsICookieBannerRule
   );
   ruleDomain.id = genUUID();
-  ruleDomain.domain = TEST_DOMAIN_A;
-  ruleDomain.addClickRule("div#banner", false, null, null, "button#optIn");
+  ruleDomain.domains = [TEST_DOMAIN_A];
+  ruleDomain.addClickRule(
+    "div#banner",
+    false,
+    Ci.nsIClickRule.RUN_TOP,
+    null,
+    null,
+    "button#optIn"
+  );
   Services.cookieBanners.insertRule(ruleDomain);
+
+  await testClickResultTelemetry({});
 
   info("Test that the domain-specific rule applies, not the global one.");
   await openPageAndVerify({
@@ -151,5 +207,10 @@ add_task(async function test_clicking_global_rules_precedence() {
     // Because of the way the rules are setup OptOut would mean the global rule
     // applies, opt-in means the domain specific rule applies.
     expected: "OptIn",
+  });
+
+  await testClickResultTelemetry({
+    success: 1,
+    success_dom_content_loaded: 1,
   });
 });

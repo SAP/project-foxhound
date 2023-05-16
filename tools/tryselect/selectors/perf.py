@@ -2,26 +2,26 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os
+import copy
+import enum
 import itertools
+import os
 import re
 import sys
-
 from contextlib import redirect_stdout
 
 from mozbuild.base import MozbuildObject
 from mozversioncontrol import get_repository_object
 
-from .compare import CompareParser
-from ..push import push_to_try, generate_try_task_config
+from ..push import generate_try_task_config, push_to_try
 from ..util.fzf import (
+    FZF_NOT_FOUND,
     build_base_cmd,
     fzf_bootstrap,
-    FZF_NOT_FOUND,
-    setup_tasks_for_fzf,
     run_fzf,
+    setup_tasks_for_fzf,
 )
-
+from .compare import CompareParser
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
@@ -35,6 +35,18 @@ PERFHERDER_BASE_URL = (
 # it's more likely that a query is broken and is selecting far too much.
 MAX_PERF_TASKS = 300
 REVISION_MATCHER = re.compile(r"remote:.*/try/rev/([\w]*)[ \t]*$")
+
+# Name of the base category with no variants applied to it
+BASE_CATEGORY_NAME = "base"
+
+
+class InvalidCategoryException(Exception):
+    """Thrown when a category is found to be invalid.
+
+    See the `PerfParser.run_category_checks()` method for more info.
+    """
+
+    pass
 
 
 class LogProcessor:
@@ -73,6 +85,81 @@ class LogProcessor:
                 self._revision = match.group(1)
 
 
+class ClassificationEnum(enum.Enum):
+    """This class provides the ability to use Enums as array indices."""
+
+    @property
+    def value(self):
+        return self._value_["value"]
+
+    def __index__(self):
+        return self._value_["index"]
+
+    def __int__(self):
+        return self._value_["index"]
+
+
+class Platforms(ClassificationEnum):
+    ANDROID_A51 = {"value": "android-a51", "index": 0}
+    ANDROID = {"value": "android", "index": 1}
+    WINDOWS = {"value": "windows", "index": 2}
+    LINUX = {"value": "linux", "index": 3}
+    MACOSX = {"value": "macosx", "index": 4}
+    DESKTOP = {"value": "desktop", "index": 5}
+
+
+class Apps(ClassificationEnum):
+    FIREFOX = {"value": "firefox", "index": 0}
+    CHROME = {"value": "chrome", "index": 1}
+    CHROMIUM = {"value": "chromium", "index": 2}
+    GECKOVIEW = {"value": "geckoview", "index": 3}
+    FENIX = {"value": "fenix", "index": 4}
+    CHROME_M = {"value": "chrome-m", "index": 5}
+    SAFARI = {"value": "safari", "index": 6}
+
+
+class Suites(ClassificationEnum):
+    RAPTOR = {"value": "raptor", "index": 0}
+    TALOS = {"value": "talos", "index": 1}
+    AWSY = {"value": "awsy", "index": 2}
+
+
+class Variants(ClassificationEnum):
+    NO_FISSION = {"value": "no-fission", "index": 0}
+    BYTECODE_CACHED = {"value": "bytecode-cached", "index": 1}
+    LIVE_SITES = {"value": "live-sites", "index": 2}
+    PROFILING = {"value": "profiling", "index": 3}
+    SWR = {"value": "swr", "index": 4}
+
+
+"""
+The following methods and constants are used for restricting
+certain platforms and applications such as chrome, safari, and
+android tests. These all require a flag such as --android to
+enable (see build_category_matrix for more info).
+"""
+
+
+def check_for_android(android=False, **kwargs):
+    return android
+
+
+def check_for_chrome(chrome=False, **kwargs):
+    return chrome
+
+
+def check_for_safari(safari=False, **kwargs):
+    return safari
+
+
+def check_for_live_sites(live_sites=False, **kwargs):
+    return live_sites
+
+
+def check_for_profile(profile=False, **kwargs):
+    return profile
+
+
 class PerfParser(CompareParser):
     name = "perf"
     common_groups = ["push", "task"]
@@ -87,114 +174,248 @@ class PerfParser(CompareParser):
     ]
 
     platforms = {
-        "android-a51": {
+        Platforms.ANDROID_A51.value: {
             "query": "'android 'a51 'shippable 'aarch64",
-            "platform": "android",
+            "restriction": check_for_android,
+            "platform": Platforms.ANDROID.value,
         },
-        "android": {
+        Platforms.ANDROID.value: {
             # The android, and android-a51 queries are expected to be the same,
             # we don't want to run the tests on other mobile platforms.
             "query": "'android 'a51 'shippable 'aarch64",
-            "platform": "android",
+            "restriction": check_for_android,
+            "platform": Platforms.ANDROID.value,
         },
-        "windows": {
+        Platforms.WINDOWS.value: {
             "query": "!-32 'windows 'shippable",
-            "platform": "desktop",
+            "platform": Platforms.DESKTOP.value,
         },
-        "linux": {
+        Platforms.LINUX.value: {
             "query": "!clang 'linux 'shippable",
-            "platform": "desktop",
+            "platform": Platforms.DESKTOP.value,
         },
-        "macosx": {
+        Platforms.MACOSX.value: {
             "query": "'osx 'shippable",
-            "platform": "desktop",
+            "platform": Platforms.DESKTOP.value,
         },
-        "desktop": {
+        Platforms.DESKTOP.value: {
             "query": "!android 'shippable !-32 !clang",
-            "platform": "desktop",
+            "platform": Platforms.DESKTOP.value,
         },
     }
 
     apps = {
-        "firefox": {
-            "query": "!chrom !geckoview !fenix",
-            "platforms": ["desktop"],
+        Apps.FIREFOX.value: {
+            "query": "!chrom !geckoview !fenix !safari",
+            "platforms": [Platforms.DESKTOP.value],
         },
-        "chrome": {
+        Apps.CHROME.value: {
             "query": "'chrome",
-            "platforms": ["desktop"],
+            "negation": "!chrom",
+            "restriction": check_for_chrome,
+            "platforms": [Platforms.DESKTOP.value],
         },
-        "chromium": {
+        Apps.CHROMIUM.value: {
             "query": "'chromium",
-            "platforms": ["desktop"],
+            "negation": "!chrom",
+            "restriction": check_for_chrome,
+            "platforms": [Platforms.DESKTOP.value],
         },
-        "geckoview": {
+        Apps.GECKOVIEW.value: {
             "query": "'geckoview",
-            "platforms": ["android"],
+            "platforms": [Platforms.ANDROID.value],
         },
-        "fenix": {
+        Apps.FENIX.value: {
             "query": "'fenix",
-            "platforms": ["android"],
+            "platforms": [Platforms.ANDROID.value],
         },
-        "chrome-m": {
+        Apps.CHROME_M.value: {
             "query": "'chrome-m",
-            "platforms": ["android"],
+            "negation": "!chrom",
+            "restriction": check_for_chrome,
+            "platforms": [Platforms.ANDROID.value],
+        },
+        Apps.SAFARI.value: {
+            "query": "'safari",
+            "negation": "!safari",
+            "restriction": check_for_safari,
+            "platforms": [Platforms.MACOSX.value],
         },
     }
 
     variants = {
-        "no-fission": {
+        Variants.NO_FISSION.value: {
             "query": "'nofis",
             "negation": "!nofis",
-            "platforms": ["android"],
-            "apps": ["fenix", "geckoview"],
+            "platforms": [Platforms.ANDROID.value],
+            "apps": [Apps.FENIX.value, Apps.GECKOVIEW.value],
         },
-        "bytecode-cached": {
+        Variants.BYTECODE_CACHED.value: {
             "query": "'bytecode",
             "negation": "!bytecode",
-            "platforms": ["desktop"],
-            "apps": ["firefox"],
+            "platforms": [Platforms.DESKTOP.value],
+            "apps": [Apps.FIREFOX.value],
         },
-        "live-sites": {
+        Variants.LIVE_SITES.value: {
             "query": "'live",
             "negation": "!live",
-            "platforms": ["desktop", "android"],
+            "restriction": check_for_live_sites,
+            "platforms": [Platforms.DESKTOP.value, Platforms.ANDROID.value],
             "apps": list(apps.keys()),
         },
-        "profiling": {
+        Variants.PROFILING.value: {
             "query": "'profil",
             "negation": "!profil",
-            "platforms": ["desktop", "android"],
-            "apps": ["firefox", "geckoview", "fenix"],
+            "restriction": check_for_profile,
+            "platforms": [Platforms.DESKTOP.value, Platforms.ANDROID.value],
+            "apps": [Apps.FIREFOX.value, Apps.GECKOVIEW.value, Apps.FENIX.value],
+        },
+        Variants.SWR.value: {
+            "query": "'swr",
+            "negation": "!swr",
+            "platforms": [Platforms.DESKTOP.value],
+            "apps": [Apps.FIREFOX.value],
         },
     }
 
-    # The tasks field can be used to hardcode tasks to run,
-    # otherwise we run the query selector combined with the platform
-    # and variants queries
+    suites = {
+        Suites.RAPTOR.value: {
+            "apps": list(apps.keys()),
+            "platforms": list(platforms.keys()),
+            "variants": [
+                Variants.NO_FISSION.value,
+                Variants.LIVE_SITES.value,
+                Variants.PROFILING.value,
+                Variants.BYTECODE_CACHED.value,
+            ],
+        },
+        Suites.TALOS.value: {
+            "apps": [Apps.FIREFOX.value],
+            "platforms": [Platforms.DESKTOP.value],
+            "variants": [
+                Variants.PROFILING.value,
+                Variants.SWR.value,
+            ],
+        },
+        Suites.AWSY.value: {
+            "apps": [Apps.FIREFOX.value],
+            "platforms": [Platforms.DESKTOP.value],
+            "variants": [],
+        },
+    }
+
+    """
+    Here you can find the base categories that are defined for the perf
+    selector. The following fields are available:
+        * query: Set the queries to use for each suite you need.
+        * suites: The suites that are needed for this category.
+        * tasks: A hard-coded list of tasks to select.
+        * platforms: The platforms that it can run on.
+        * app-restrictions: A list of apps that the category can run.
+        * variant-restrictions: A list of variants available for each suite.
+
+    Note that setting the App/Variant-Restriction fields should be used to
+    restrict the available apps and variants, not expand them.
+    """
     categories = {
         "Pageload": {
-            "query": "'browsertime 'tp6",
+            "query": {
+                Suites.RAPTOR.value: ["'browsertime 'tp6"],
+            },
+            "suites": [Suites.RAPTOR.value],
             "tasks": [],
         },
         "Pageload (essential)": {
-            "query": "'browsertime 'tp6 'essential",
-            "tasks": [],
-        },
-        "Pageload (live)": {
-            "query": "'browsertime 'tp6 'live",
-            "tasks": [],
-        },
-        "Bytecode Cached": {
-            "query": "'browsertime 'bytecode",
+            "query": {
+                Suites.RAPTOR.value: ["'browsertime 'tp6 'essential"],
+            },
+            "variant-restrictions": {Suites.RAPTOR.value: [Variants.NO_FISSION.value]},
+            "suites": [Suites.RAPTOR.value],
+            "app-restrictions": {
+                Suites.RAPTOR.value: [
+                    Apps.FIREFOX.value,
+                    Apps.CHROME.value,
+                    Apps.CHROMIUM.value,
+                    Apps.FENIX.value,
+                    Apps.GECKOVIEW.value,
+                ],
+            },
             "tasks": [],
         },
         "Responsiveness": {
-            "query": "'browsertime 'responsive",
+            "query": {
+                Suites.RAPTOR.value: ["'browsertime 'responsive"],
+            },
+            "suites": [Suites.RAPTOR.value],
+            "variant-restrictions": {Suites.RAPTOR.value: []},
+            "app-restrictions": {
+                Suites.RAPTOR.value: [
+                    Apps.FIREFOX.value,
+                    Apps.CHROME.value,
+                    Apps.CHROMIUM.value,
+                    Apps.FENIX.value,
+                    Apps.GECKOVIEW.value,
+                ],
+            },
             "tasks": [],
         },
         "Benchmarks": {
-            "query": "'browsertime 'benchmark",
+            "query": {
+                Suites.RAPTOR.value: ["'browsertime 'benchmark"],
+            },
+            "suites": [Suites.RAPTOR.value],
+            "variant-restrictions": {Suites.RAPTOR.value: []},
+            "tasks": [],
+        },
+        "DAMP (Devtools)": {
+            "query": {
+                Suites.TALOS.value: ["'talos 'damp"],
+            },
+            "suites": [Suites.TALOS.value],
+            "tasks": [],
+        },
+        "Talos PerfTests": {
+            "query": {
+                Suites.TALOS.value: ["'talos"],
+            },
+            "suites": [Suites.TALOS.value],
+            "tasks": [],
+        },
+        "Resource Usage": {
+            "query": {
+                Suites.TALOS.value: ["'talos 'xperf | 'tp5"],
+                Suites.RAPTOR.value: ["'power 'osx"],
+                Suites.AWSY.value: ["'awsy"],
+            },
+            "suites": [Suites.TALOS.value, Suites.RAPTOR.value, Suites.AWSY.value],
+            "platform-restrictions": [Platforms.DESKTOP.value],
+            "variant-restrictions": {
+                Suites.RAPTOR.value: [],
+                Suites.TALOS.value: [],
+            },
+            "app-restrictions": {
+                Suites.RAPTOR.value: [Apps.FIREFOX.value],
+                Suites.TALOS.value: [Apps.FIREFOX.value],
+            },
+            "tasks": [],
+        },
+        "Graphics, & Media Playback": {
+            "query": {
+                # XXX This might not be an exhaustive list for talos atm
+                Suites.TALOS.value: ["'talos 'svgr | 'bcv | 'webgl"],
+                Suites.RAPTOR.value: ["'browsertime 'youtube-playback"],
+            },
+            "suites": [Suites.TALOS.value, Suites.RAPTOR.value],
+            "variant-restrictions": {Suites.RAPTOR.value: [Variants.NO_FISSION.value]},
+            "app-restrictions": {
+                Suites.RAPTOR.value: [
+                    Apps.FIREFOX.value,
+                    Apps.CHROME.value,
+                    Apps.CHROMIUM.value,
+                    Apps.FENIX.value,
+                    Apps.GECKOVIEW.value,
+                ],
+            },
             "tasks": [],
         },
     }
@@ -226,6 +447,14 @@ class PerfParser(CompareParser):
             },
         ],
         [
+            ["--safari"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Show tests available for Safari (disabled by default).",
+            },
+        ],
+        [
             ["--live-sites"],
             {
                 "action": "store_true",
@@ -248,7 +477,7 @@ class PerfParser(CompareParser):
             {
                 "nargs": "*",
                 "type": str,
-                "default": [],
+                "default": [BASE_CATEGORY_NAME],
                 "dest": "requested_variants",
                 "choices": list(variants.keys()),
                 "help": "Select variants to display in the selector from: "
@@ -308,28 +537,38 @@ class PerfParser(CompareParser):
                 continue
             print("Gathering tasks for %s category" % category)
 
-            # Either perform a query to get the tasks (recommended), or
-            # use a hardcoded task list
             category_tasks = set()
-            if category_info["queries"]:
-                print("Executing queries: %s" % ", ".join(category_info["queries"]))
+            for suite in PerfParser.suites:
+                # Either perform a query to get the tasks (recommended), or
+                # use a hardcoded task list
+                suite_queries = category_info["queries"].get(suite)
 
-                for perf_query in category_info["queries"]:
-                    if not category_tasks:
-                        # Get all tasks selected with the first query
-                        category_tasks |= PerfParser.get_tasks(
-                            base_cmd, queries, perf_query, all_tg_tasks
-                        )
-                    else:
-                        # Keep only those tasks that matched in all previous queries
-                        category_tasks &= PerfParser.get_tasks(
-                            base_cmd, queries, perf_query, category_tasks
-                        )
+                category_suite_tasks = set()
+                if suite_queries:
+                    print(
+                        "Executing %s queries: %s" % (suite, ", ".join(suite_queries))
+                    )
 
-                    if len(category_tasks) == 0:
-                        print("Failed to find any tasks for query: %s" % perf_query)
-                        break
-            else:
+                    for perf_query in suite_queries:
+                        if not category_suite_tasks:
+                            # Get all tasks selected with the first query
+                            category_suite_tasks |= PerfParser.get_tasks(
+                                base_cmd, queries, perf_query, all_tg_tasks
+                            )
+                        else:
+                            # Keep only those tasks that matched in all previous queries
+                            category_suite_tasks &= PerfParser.get_tasks(
+                                base_cmd, queries, perf_query, category_suite_tasks
+                            )
+
+                        if len(category_suite_tasks) == 0:
+                            print("Failed to find any tasks for query: %s" % perf_query)
+                            break
+
+                    if category_suite_tasks:
+                        category_tasks |= category_suite_tasks
+
+            if category_info["tasks"]:
                 category_tasks = set(category_info["tasks"]) & all_tg_tasks
                 if category_tasks != set(category_info["tasks"]):
                     print(
@@ -353,179 +592,523 @@ class PerfParser(CompareParser):
 
         return selected_tasks, selected_categories, queries
 
-    def expand_categories(
-        android=False,
-        chrome=False,
-        live_sites=False,
-        profile=False,
-        requested_variants=[],
-        requested_platforms=[],
-        requested_apps=[],
-    ):
-        """Setup the perf categories.
+    def _check_app(app, target):
+        """Checks if the app exists in the target."""
+        if app.value in target:
+            return True
+        return False
 
-        This has multiple steps:
-            (1) Expand the variants to all possible combinations
-            (2) Expand the test categories for all valid platform+app combinations
-            (3) Expand the categories from (2) into all possible combinations,
-                by combining them with those created in (1). At this stage,
-                we also check to make sure the variant combination is valid
-                in the sense that it COULD run on the platform. It may still
-                be undefined.
+    def _check_platform(platform, target):
+        """Checks if the platform, or it's type exists in the target."""
+        if (
+            platform.value in target
+            or PerfParser.platforms[platform.value]["platform"] in target
+        ):
+            return True
+        return False
 
-        We make use of global queries to provide a thorough protection
-        against unwillingly scheduling tasks we very often don't want.
+    def _build_initial_decision_matrix():
+        # Build first stage of matrix APPS X PLATFORMS
+        initial_decision_matrix = []
+        for platform in Platforms:
+            platform_row = []
+            for app in Apps:
+                if PerfParser._check_platform(
+                    platform, PerfParser.apps[app.value]["platforms"]
+                ):
+                    # This app can run on this platform
+                    platform_row.append(True)
+                else:
+                    platform_row.append(False)
+            initial_decision_matrix.append(platform_row)
+        return initial_decision_matrix
 
-        Note that the flags are not intersectional. This means that if you
-        have live_sites=True, and profile=False, you will get tasks which
-        have profiling available to them. However, all of those tasks must
-        also be live sites.
+    def _build_intermediate_decision_matrix():
+        # Second stage of matrix building applies the 2D matrix found above
+        # to each suite
+        initial_decision_matrix = PerfParser._build_initial_decision_matrix()
+
+        intermediate_decision_matrix = []
+        for suite in Suites:
+            suite_matrix = copy.deepcopy(initial_decision_matrix)
+            suite_info = PerfParser.suites[suite.value]
+
+            # Restric the platforms for this suite now
+            for platform in Platforms:
+                for app in Apps:
+                    runnable = False
+                    if PerfParser._check_app(
+                        app, suite_info["apps"]
+                    ) and PerfParser._check_platform(platform, suite_info["platforms"]):
+                        runnable = True
+                    suite_matrix[platform][app] = (
+                        runnable and suite_matrix[platform][app]
+                    )
+
+            intermediate_decision_matrix.append(suite_matrix)
+        return intermediate_decision_matrix
+
+    def _build_variants_matrix():
+        # Third stage is expanding the intermediate matrix
+        # across all the variants (non-expanded). Start with the
+        # intermediate matrix in the list since it provides our
+        # base case with no variants
+        intermediate_decision_matrix = PerfParser._build_intermediate_decision_matrix()
+
+        variants_matrix = []
+        for variant in Variants:
+            variant_matrix = copy.deepcopy(intermediate_decision_matrix)
+
+            for suite in Suites:
+                if variant.value in PerfParser.suites[suite.value]["variants"]:
+                    # Allow the variant through and set it's platforms and apps
+                    # based on how it sets it -> only restrict, don't make allowances
+                    # here
+                    for platform in Platforms:
+                        for app in Apps:
+                            if not (
+                                PerfParser._check_platform(
+                                    platform,
+                                    PerfParser.variants[variant.value]["platforms"],
+                                )
+                                and PerfParser._check_app(
+                                    app, PerfParser.variants[variant.value]["apps"]
+                                )
+                            ):
+                                variant_matrix[suite][platform][app] = False
+                else:
+                    # This variant matrix needs to be completely False
+                    variant_matrix[suite] = [
+                        [False] * len(platform_row)
+                        for platform_row in variant_matrix[suite]
+                    ]
+
+            variants_matrix.append(variant_matrix)
+
+        return variants_matrix, intermediate_decision_matrix
+
+    def _build_decision_matrix():
+        """Build the decision matrix.
+
+        This method builds the decision matrix that is used
+        to determine what categories will be shown to the user.
+        This matrix has the following form (as lists):
+            - Variants
+                - Suites
+                    - Platforms
+                        - Apps
+
+        Each element in the 4D Matrix is either True or False and tells us
+        whether the particular combination is "runnable" according to
+        the given specifications. This does not mean that the combination
+        exists, just that it's fully configured in this selector.
+
+        The ("base",) variant combination found in the matrix has
+        no variants applied to it. At this stage, it's a catch-all for those
+        categories. The query it uses is reduced further in later stages.
         """
-        expanded_categories = {}
+        # Get the variants matrix (see methods above) and the intermediate decision
+        # matrix to act as the base category
+        (
+            variants_matrix,
+            intermediate_decision_matrix,
+        ) = PerfParser._build_variants_matrix()
 
-        # These global queries get applied to all of the categories. They make it
-        # simpler to prevent, for example, chrome tests running in the
-        # "Pageload desktop" category
-        global_queries = []
-
-        # Rather than dealing with these flags below, simply add the
-        # variants related to them here
-        if live_sites:
-            requested_variants.append("live-sites")
-        else:
-            global_queries.append(PerfParser.variants["live-sites"]["negation"])
-        if profile:
-            requested_variants.append("profiling")
-        else:
-            global_queries.append(PerfParser.variants["profiling"]["negation"])
-
-        if not chrome:
-            global_queries.append("!chrom")
-
-        # Start by expanding the variants the variants to include combinatorial
-        # options, searching for these tasks is "best-effort" and we can't
-        # guarantee all of them will have tasks selected as some may not be
-        # defined in the Taskcluster config files
+        # Get all possible combinations of the variants
         expanded_variants = [
             variant_combination
-            for set_size in range(len(PerfParser.variants.keys()) + 1)
-            for variant_combination in itertools.combinations(
-                list(PerfParser.variants.keys()), set_size
-            )
+            for set_size in range(len(Variants) + 1)
+            for variant_combination in itertools.combinations(list(Variants), set_size)
         ]
 
-        # Expand the test categories to show combined platforms and apps. By default,
-        # we'll show all desktop platforms and no variants.
-        for category, category_info in PerfParser.categories.items():
+        # Final stage combines the intermediate matrix with the
+        # expanded variants and leaves a "base" category which
+        # doesn't have any variant specifications (it catches them all)
+        decision_matrix = {(BASE_CATEGORY_NAME,): intermediate_decision_matrix}
+        for variant_combination in expanded_variants:
+            expanded_variant_matrix = []
 
-            # Setup the platforms
-            for platform, platform_info in PerfParser.platforms.items():
-                if len(requested_platforms) > 0 and platform not in requested_platforms:
-                    # Skip the platform because it wasn't requested
-                    continue
+            # Perform an AND operation on the combination of variants
+            # to determine where this particular combination can run
+            for suite in Suites:
+                suite_matrix = []
+                suite_variants = PerfParser.suites[suite.value]["variants"]
 
-                platform_type = platform_info["platform"]
-                if not android and platform_type == "android":
-                    # Skip android if it wasn't requested
-                    continue
+                # Disable the variant combination if none of them
+                # are found in the suite
+                disable_variant = not any(
+                    [variant.value in suite_variants for variant in variant_combination]
+                )
 
-                # The queries field will hold all the queries needed to run
-                # (in any order). Combinations of queries are used to make the
-                # selected tests increasingly more specific.
-                new_category = category + " %s" % platform
-                cur_cat = {
-                    "queries": [category_info["query"]]
-                    + [platform_info["query"]]
-                    + global_queries,
-                    "tasks": category_info["tasks"],
-                    "platform": platform_type,
-                }
-                # If we didn't request apps, add the global category
-                if len(requested_apps) == 0:
-                    expanded_categories[new_category] = cur_cat
-
-                for app, app_info in PerfParser.apps.items():
-                    if len(requested_apps) > 0 and app not in requested_apps:
-                        # Skip the app because it wasn't requested
-                        continue
-
-                    if app.lower() in ("chrome", "chromium", "chrome-m") and not chrome:
-                        # Skip chrome tests if not requested
-                        continue
-                    if platform_type not in app_info["platforms"]:
-                        # Ensure this app can run on this platform
-                        continue
-
-                    new_app_category = new_category + " %s" % app
-                    expanded_categories[new_app_category] = {
-                        "queries": cur_cat["queries"] + [app_info["query"]],
-                        "tasks": category_info["tasks"],
-                        "platform": platform_type,
-                    }
-
-        # Finally, handle expanding the variants. This needs to be done
-        # outside the upper for-loop because variants can apply to all
-        # of the expanded categories that get produced there.
-        if len(requested_variants) > 0:
-            new_categories = {}
-
-            for expanded_category, info in expanded_categories.items():
-                for variant_combination in expanded_variants:
-                    if not variant_combination:
-                        continue
-                    # Check if the combination contains the requested variant
-                    if not any(
-                        variant in variant_combination for variant in requested_variants
-                    ):
-                        continue
-
-                    # Ensure that this variant combination can run on this platform
-                    runnable = True
-                    for variant in variant_combination:
-                        if (
-                            info["platform"]
-                            not in PerfParser.variants[variant]["platforms"]
-                        ):
-                            runnable = False
-                            break
-                    if not runnable:
-                        continue
-
-                    # Build the category name, and setup the queries/tasks
-                    # that it would use/select
-                    new_variant_category = expanded_category + " %s" % "+".join(
-                        variant_combination
-                    )
-                    variant_queries = [
-                        v_info["query"]
-                        for v, v_info in PerfParser.variants.items()
-                        if v in variant_combination
-                    ]
-                    new_categories[new_variant_category] = {
-                        "queries": info["queries"] + variant_queries,
-                        "tasks": info["tasks"],
-                    }
-
-                    # Now ensure that the queries for this new category
-                    # don't contain negations for the variant which could
-                    # come from the global queries
-                    new_queries = []
-                    for query in new_categories[new_variant_category]["queries"]:
-                        if any(
-                            [
-                                query == PerfParser.variants.get(variant)["negation"]
+                for platform in Platforms:
+                    if disable_variant:
+                        platform_row = [False for _ in Apps]
+                    else:
+                        platform_row = [
+                            all(
+                                variants_matrix[variant][suite][platform][app]
                                 for variant in variant_combination
-                            ]
-                        ):
-                            # This query is a negation of one of the variants,
-                            # exclude it
+                                if variant.value in suite_variants
+                            )
+                            for app in Apps
+                        ]
+                    suite_matrix.append(platform_row)
+
+                expanded_variant_matrix.append(suite_matrix)
+            decision_matrix[variant_combination] = expanded_variant_matrix
+
+        return decision_matrix
+
+    def _skip_with_restrictions(value, restrictions, requested=[]):
+        """Determines if we should skip an app, platform, or variant.
+
+        We add base here since it's the base category variant that
+        would always be displayed and it won't affect the app, or
+        platform selections.
+        """
+        if restrictions is not None and value not in restrictions + [
+            BASE_CATEGORY_NAME
+        ]:
+            return True
+        if requested and value not in requested + [BASE_CATEGORY_NAME]:
+            return True
+        return False
+
+    def build_category_matrix(
+        requested_variants=[BASE_CATEGORY_NAME],
+        requested_platforms=[],
+        requested_apps=[],
+        **kwargs,
+    ):
+        """Build a decision matrix for all the categories.
+
+        It will have the form:
+            - Category
+                - Variants
+                    - ...
+        """
+        # Build the base decision matrix
+        decision_matrix = PerfParser._build_decision_matrix()
+
+        # Here, the variants are further restricted by the category settings
+        # using the `_skip_with_restrictions` method. This part also handles
+        # explicitly requested platforms, apps, and variants.
+        category_decision_matrix = {}
+        for category, category_info in PerfParser.categories.items():
+            category_matrix = copy.deepcopy(decision_matrix)
+
+            for variant_combination, variant_matrix in decision_matrix.items():
+                variant_runnable = True
+                if BASE_CATEGORY_NAME not in variant_combination:
+                    # Make sure that all portions of the variant combination
+                    # target at least one of the suites in the category
+                    tmp_variant_combination = set(
+                        [v.value for v in variant_combination]
+                    )
+                    for suite in Suites:
+                        if suite.value not in category_info["suites"]:
                             continue
-                        new_queries.append(query)
-                    new_categories[new_variant_category]["queries"] = new_queries
+                        tmp_variant_combination = tmp_variant_combination - set(
+                            [
+                                variant.value
+                                for variant in variant_combination
+                                if variant.value
+                                in PerfParser.suites[suite.value]["variants"]
+                            ]
+                        )
+                    if tmp_variant_combination:
+                        # If it's not empty, then some variants
+                        # are non-existent
+                        variant_runnable = False
 
-            expanded_categories.update(new_categories)
+                for suite, platform, app in itertools.product(Suites, Platforms, Apps):
+                    runnable = variant_runnable
 
-        return expanded_categories
+                    # Disable this combination if there are any variant
+                    # restrictions for this suite, or if the user didn't request it
+                    # (and did request some variants). The same is done below with
+                    # the apps, and platforms.
+                    if any(
+                        PerfParser._skip_with_restrictions(
+                            variant.value if not isinstance(variant, str) else variant,
+                            category_info.get("variant-restrictions", {}).get(
+                                suite.value, None
+                            ),
+                            requested_variants,
+                        )
+                        for variant in variant_combination
+                    ):
+                        runnable = False
+
+                    if PerfParser._skip_with_restrictions(
+                        platform.value,
+                        category_info.get("platform-restrictions", None),
+                        requested_platforms,
+                    ):
+                        runnable = False
+
+                    # If the platform is restricted, check if the appropriate
+                    # flags were provided (or appropriate conditions hit). We do
+                    # the same thing for apps below.
+                    if (
+                        PerfParser.platforms[platform.value].get("restriction", None)
+                        is not None
+                    ):
+                        runnable = runnable and PerfParser.platforms[platform.value][
+                            "restriction"
+                        ](**kwargs)
+
+                    if PerfParser._skip_with_restrictions(
+                        app.value,
+                        category_info.get("app-restrictions", {}).get(
+                            suite.value, None
+                        ),
+                        requested_apps,
+                    ):
+                        runnable = False
+                    if PerfParser.apps[app.value].get("restriction", None) is not None:
+                        runnable = runnable and PerfParser.apps[app.value][
+                            "restriction"
+                        ](**kwargs)
+
+                    category_matrix[variant_combination][suite][platform][app] = (
+                        runnable and variant_matrix[suite][platform][app]
+                    )
+
+            category_decision_matrix[category] = category_matrix
+
+        return category_decision_matrix
+
+    def _enable_restriction(restriction, **kwargs):
+        """Used to simplify checking a restriction."""
+        return restriction is not None and restriction(**kwargs)
+
+    def _category_suites(category_info):
+        """Returns all the suite enum entries in this category."""
+        return [suite for suite in Suites if suite.value in category_info["suites"]]
+
+    def _add_variant_queries(
+        category_info, variant_matrix, variant_combination, platform, queries, app=None
+    ):
+        """Used to add the variant queries to various categories."""
+        for variant in variant_combination:
+            for suite in PerfParser._category_suites(category_info):
+                if (app is not None and variant_matrix[suite][platform][app]) or (
+                    app is None and any(variant_matrix[suite][platform])
+                ):
+                    queries[suite.value].append(
+                        PerfParser.variants[variant.value]["query"]
+                    )
+
+    def _build_categories(category, category_info, category_matrix):
+        """Builds the categories to display."""
+        categories = {}
+
+        for variant_combination, variant_matrix in category_matrix.items():
+            base_category = BASE_CATEGORY_NAME in variant_combination
+
+            for platform in Platforms:
+                if not any(
+                    any(variant_matrix[suite][platform])
+                    for suite in PerfParser._category_suites(category_info)
+                ):
+                    # There are no apps available on this platform in either
+                    # of the requested suites
+                    continue
+
+                # This code has the effect of restricting all suites to
+                # a platform. This means categories with mixed suites will
+                # be available even if some suites will no longer run
+                # given this platform constraint. The reasoning for this is that
+                # it's unexpected to receive desktop tests when you explcitly
+                # request android.
+                platform_queries = {
+                    suite: (
+                        category_info["query"][suite]
+                        + [PerfParser.platforms[platform.value]["query"]]
+                    )
+                    for suite in category_info["suites"]
+                }
+
+                platform_category_name = f"{category} {platform.value}"
+                platform_category_info = {
+                    "queries": platform_queries,
+                    "tasks": category_info["tasks"],
+                    "platform": platform,
+                    "app": None,
+                    "suites": category_info["suites"],
+                    "base-category": base_category,
+                    "base-category-name": category,
+                }
+                for app in Apps:
+                    if not any(
+                        variant_matrix[suite][platform][app]
+                        for suite in PerfParser._category_suites(category_info)
+                    ):
+                        # This app is not available on the given platform
+                        # for any of the suites
+                        continue
+
+                    # Add the queries for the app for any suites that need it and
+                    # the variant queries if needed
+                    app_queries = copy.deepcopy(platform_queries)
+                    for suite in Suites:
+                        if suite.value not in app_queries:
+                            continue
+                        app_queries[suite.value].append(
+                            PerfParser.apps[app.value]["query"]
+                        )
+                    if not base_category:
+                        PerfParser._add_variant_queries(
+                            category_info,
+                            variant_matrix,
+                            variant_combination,
+                            platform,
+                            app_queries,
+                            app=app,
+                        )
+
+                    app_category_name = f"{platform_category_name} {app.value}"
+                    if not base_category:
+                        app_category_name = (
+                            f"{app_category_name} "
+                            f"{'+'.join([v.value for v in variant_combination])}"
+                        )
+                    categories[app_category_name] = {
+                        "queries": app_queries,
+                        "tasks": category_info["tasks"],
+                        "platform": platform,
+                        "app": app,
+                        "suites": category_info["suites"],
+                        "base-category": base_category,
+                    }
+
+                if not base_category:
+                    platform_category_name = (
+                        f"{platform_category_name} "
+                        f"{'+'.join([v.value for v in variant_combination])}"
+                    )
+                    PerfParser._add_variant_queries(
+                        category_info,
+                        variant_matrix,
+                        variant_combination,
+                        platform,
+                        platform_queries,
+                    )
+                categories[platform_category_name] = platform_category_info
+
+        return categories
+
+    def _handle_variant_negations(category, category_info, **kwargs):
+        """Handle variant negations.
+
+        The reason why we're negating variants here instead of where we add
+        them to the queries is because we need to iterate over all of the variants
+        but when we add them, we only look at the variants in the combination. It's
+        possible to combine these, but that increases the complexity of the code
+        by quite a bit so it's best to do it separately.
+        """
+        for variant in Variants:
+            if category_info["base-category"] and variant.value in kwargs.get(
+                "requested_variants", [BASE_CATEGORY_NAME]
+            ):
+                # When some particular variant(s) are requested, and we are at a
+                # base category, don't negate it. Otherwise, if the variant
+                # wasn't requested negate it
+                continue
+            if variant.value in category:
+                # If this variant is in the category name, skip negations
+                continue
+            if not PerfParser._check_platform(
+                category_info["platform"],
+                PerfParser.variants[variant.value]["platforms"],
+            ):
+                # Make sure the variant applies to the platform
+                continue
+
+            for suite in category_info["suites"]:
+                if variant.value not in PerfParser.suites[suite]["variants"]:
+                    continue
+                category_info["queries"][suite].append(
+                    PerfParser.variants[variant.value]["negation"]
+                )
+
+    def _handle_app_negations(category, category_info, **kwargs):
+        """Handle app negations.
+
+        This is where the global chrome/safari negations get added. We use kwargs
+        along with the app restriction method to make this decision.
+        """
+        for app in Apps:
+            if PerfParser.apps[app.value].get("negation", None) is None:
+                continue
+            elif any(
+                PerfParser.apps[app.value]["negation"]
+                in category_info["queries"][suite]
+                for suite in category_info["suites"]
+            ):
+                # Already added the negations
+                continue
+            if category_info.get("app", None) is not None:
+                # We only need to handle this for categories that
+                # don't specify an app
+                continue
+            if PerfParser._enable_restriction(
+                PerfParser.apps[app.value].get("restriction", None), **kwargs
+            ):
+                continue
+
+            for suite in category_info["suites"]:
+                if app.value not in PerfParser.suites[suite]["apps"]:
+                    continue
+                category_info["queries"][suite].append(
+                    PerfParser.apps[app.value]["negation"]
+                )
+
+    def _handle_negations(category, category_info, **kwargs):
+        """This method handles negations.
+
+        This method should only include things that should be globally applied
+        to all the queries. The apps are included as chrome is negated if
+        --chrome isn't provided, and the variants are negated here too.
+        """
+        PerfParser._handle_variant_negations(category, category_info, **kwargs)
+        PerfParser._handle_app_negations(category, category_info, **kwargs)
+
+    def get_categories(**kwargs):
+        """Get the categories to be displayed.
+
+        The categories are built using the decision matrices from `build_category_matrix`.
+        The methods above provide more detail on how this is done. Here, we use
+        this matrix to determine if we should show a category to a user.
+
+        We also apply the negations for restricted apps/platforms and variants
+        at the end before displaying the categories.
+        """
+        categories = {}
+
+        # Setup the restrictions, and ease-of-use variants requested (if any)
+        for variant in Variants:
+            if PerfParser._enable_restriction(
+                PerfParser.variants[variant.value].get("restriction", None), **kwargs
+            ):
+                kwargs.setdefault("requested_variants", []).append(variant.value)
+
+        category_decision_matrix = PerfParser.build_category_matrix(**kwargs)
+
+        # Now produce the categories by finding all the entries that are True
+        for category, category_matrix in category_decision_matrix.items():
+            categories.update(
+                PerfParser._build_categories(
+                    category, PerfParser.categories[category], category_matrix
+                )
+            )
+
+        # Handle the restricted app queries, and variant negations
+        for category, category_info in categories.items():
+            PerfParser._handle_negations(category, category_info, **kwargs)
+
+        return categories
 
     def perf_push_to_try(
         selected_tasks, selected_categories, queries, try_config, dry_run
@@ -603,17 +1186,10 @@ class PerfParser(CompareParser):
     def run(
         update=False,
         show_all=False,
-        android=False,
-        chrome=False,
-        live_sites=False,
         parameters=None,
-        profile=False,
-        requested_variants=[],
-        requested_platforms=[],
-        requested_apps=[],
         try_config=None,
         dry_run=False,
-        **kwargs
+        **kwargs,
     ):
         # Setup fzf
         fzf = fzf_bootstrap(update)
@@ -635,17 +1211,9 @@ class PerfParser(CompareParser):
         selected_categories = []
         if not show_all:
             # Expand the categories first
-            expanded_categories = PerfParser.expand_categories(
-                android=android,
-                chrome=chrome,
-                live_sites=live_sites,
-                profile=profile,
-                requested_variants=requested_variants,
-                requested_platforms=requested_platforms,
-                requested_apps=requested_apps,
-            )
+            categories = PerfParser.get_categories(**kwargs)
             selected_tasks, selected_categories, queries = PerfParser.get_perf_tasks(
-                base_cmd, all_tasks, expanded_categories
+                base_cmd, all_tasks, categories
             )
         else:
             selected_tasks = PerfParser.get_tasks(base_cmd, queries, None, all_tasks)
@@ -658,32 +1226,49 @@ class PerfParser(CompareParser):
             selected_tasks, selected_categories, queries, try_config, dry_run
         )
 
+    def run_category_checks():
+        # XXX: Add a jsonschema check for the category definition
+        # Make sure the queries don't specify variants in them
+        variant_queries = {
+            suite: [
+                PerfParser.variants[variant]["query"]
+                for variant in suite_info.get(
+                    "variants", list(PerfParser.variants.keys())
+                )
+            ]
+            + [
+                PerfParser.variants[variant]["negation"]
+                for variant in suite_info.get(
+                    "variants", list(PerfParser.variants.keys())
+                )
+            ]
+            for suite, suite_info in PerfParser.suites.items()
+        }
 
-def run(
-    dry_run=False,
-    show_all=False,
-    android=False,
-    chrome=False,
-    live_sites=False,
-    parameters=None,
-    profile=False,
-    requested_variants=[],
-    requested_platforms=[],
-    requested_apps=[],
-    **kwargs
-):
+        for category, category_info in PerfParser.categories.items():
+            for suite, query in category_info["query"].items():
+                if len(variant_queries[suite]) == 0:
+                    # This suite has no variants
+                    continue
+                if any(any(v in q for q in query) for v in variant_queries[suite]):
+                    raise InvalidCategoryException(
+                        f"The '{category}' category suite query for '{suite}' "
+                        f"uses a variant in it's query '{query}'."
+                        "If you don't want a particular variant use the "
+                        "`variant-restrictions` field in the category."
+                    )
+
+        return True
+
+
+def run(**kwargs):
+    # Make sure the categories are following
+    # the rules we've setup
+    PerfParser.run_category_checks()
+
     revisions = PerfParser.run(
-        dry_run=dry_run,
-        show_all=show_all,
-        android=android,
-        chrome=chrome,
-        live_sites=live_sites,
-        parameters=parameters,
-        profile=profile,
-        requested_variants=requested_variants,
-        requested_platforms=requested_platforms,
-        requested_apps=requested_apps,
-        **kwargs
+        profile=kwargs.get("try_config", {}).get("gecko-profile", False),
+        **kwargs,
     )
 
     if revisions is None:
@@ -697,8 +1282,8 @@ def run(
         "framework): %s\n" % perfcompare_url
     )
     print(
-        "If you need any help, you can find us in the #perf-help Element channel:\n"
-        "https://matrix.to/#/#perf-help:mozilla.org"
+        "If you need any help, you can find us in the #perf-help Matrix channel:\n"
+        "https://matrix.to/#/#perf-help:mozilla.org\n"
     )
     print(
         "For more information on the performance tests, see our PerfDocs here:\n"

@@ -16,6 +16,7 @@ const helpers = require("../helpers");
 // on all platforms.
 const platformSpecificInterfaces = new Map([
   ["nsIAboutThirdParty", "windows"],
+  ["nsIAboutWindowsMessages", "windows"],
   ["nsIJumpListItem", "windows"],
   ["nsIJumpListLink", "windows"],
   ["nsIJumpListSeparator", "windows"],
@@ -28,9 +29,15 @@ const platformSpecificInterfaces = new Map([
   ["nsIWindowsRegKey", "windows"],
   ["nsIWindowsPackageManager", "windows"],
   ["nsIWindowsShellService", "windows"],
+  ["nsIAccessibleMacEvent", "darwin"],
+  ["nsIAccessibleMacInterface", "darwin"],
+  ["nsILocalFileMac", "darwin"],
+  ["nsIAccessibleMacEvent", "darwin"],
+  ["nsIMacAttributionService", "darwin"],
   ["nsIMacShellService", "darwin"],
   ["nsIMacDockSupport", "darwin"],
   ["nsIMacFinderProgress", "darwin"],
+  ["nsIMacPreferencesReader", "darwin"],
   ["nsIMacSharingService", "darwin"],
   ["nsIMacUserActivityUpdater", "darwin"],
   ["nsIMacWebAppUtils", "darwin"],

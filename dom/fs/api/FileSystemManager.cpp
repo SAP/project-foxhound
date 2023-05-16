@@ -12,44 +12,10 @@
 #include "mozilla/dom/FileSystemManagerChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/StorageManager.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "nsIScriptObjectPrincipal.h"
 
 namespace mozilla::dom {
-
-namespace {
-
-Result<mozilla::ipc::PrincipalInfo, nsresult> GetPrincipalInfo(
-    nsIGlobalObject* aGlobal) {
-  using mozilla::ipc::PrincipalInfo;
-
-  if (NS_IsMainThread()) {
-    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aGlobal);
-    QM_TRY(MOZ_TO_RESULT(sop));
-
-    nsCOMPtr<nsIPrincipal> principal = sop->GetEffectiveStoragePrincipal();
-    QM_TRY(MOZ_TO_RESULT(principal));
-
-    PrincipalInfo principalInfo;
-    QM_TRY(MOZ_TO_RESULT(PrincipalToPrincipalInfo(principal, &principalInfo)));
-
-    return std::move(principalInfo);
-  }
-
-  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-  QM_TRY(MOZ_TO_RESULT(workerPrivate));
-
-  const PrincipalInfo& principalInfo =
-      workerPrivate->GetEffectiveStoragePrincipalInfo();
-
-  return principalInfo;
-}
-
-}  // namespace
 
 FileSystemManager::FileSystemManager(
     nsIGlobalObject* aGlobal, RefPtr<StorageManager> aStorageManager,
@@ -64,7 +30,7 @@ FileSystemManager::FileSystemManager(nsIGlobalObject* aGlobal,
     : FileSystemManager(aGlobal, std::move(aStorageManager),
                         MakeRefPtr<FileSystemBackgroundRequestHandler>()) {}
 
-FileSystemManager::~FileSystemManager() = default;
+FileSystemManager::~FileSystemManager() { MOZ_ASSERT(mShutdown); }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemManager)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -90,14 +56,20 @@ void FileSystemManager::BeginRequest(
     std::function<void(nsresult)>&& aFailure) {
   MOZ_ASSERT(!mShutdown);
 
+  MOZ_ASSERT(mGlobal);
+
+  // Check if we're allowed to use storage
+  if (mGlobal->GetStorageAccess() < StorageAccess::eSessionScoped) {
+    aFailure(NS_ERROR_DOM_SECURITY_ERR);
+    return;
+  }
+
   if (mBackgroundRequestHandler->FileSystemManagerChildStrongRef()) {
     aSuccess(mBackgroundRequestHandler->FileSystemManagerChildStrongRef());
     return;
   }
 
-  MOZ_ASSERT(mGlobal);
-
-  QM_TRY_INSPECT(const auto& principalInfo, GetPrincipalInfo(mGlobal), QM_VOID,
+  QM_TRY_INSPECT(const auto& principalInfo, mGlobal->GetStorageKey(), QM_VOID,
                  [&aFailure](nsresult rv) { aFailure(rv); });
 
   mBackgroundRequestHandler->CreateFileSystemManagerChild(principalInfo)

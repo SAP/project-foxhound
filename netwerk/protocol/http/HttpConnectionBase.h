@@ -24,7 +24,7 @@
 #include "nsITimer.h"
 
 class nsISocketTransport;
-class nsISSLSocketControl;
+class nsITLSSocketControl;
 
 namespace mozilla {
 namespace net {
@@ -108,12 +108,14 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual bool NoClientCertAuth() const { return true; }
 
   // HTTP/2 websocket support
-  virtual bool CanAcceptWebsocket() { return false; }
+  virtual WebSocketSupport GetWebSocketSupport() {
+    return WebSocketSupport::NO_SUPPORT;
+  }
 
   void GetConnectionInfo(nsHttpConnectionInfo** ci) {
     *ci = do_AddRef(mConnInfo).take();
   }
-  virtual void GetTLSSocketControl(nsISSLSocketControl** result) = 0;
+  virtual void GetTLSSocketControl(nsITLSSocketControl** result) = 0;
 
   [[nodiscard]] virtual nsresult ResumeSend() = 0;
   [[nodiscard]] virtual nsresult ResumeRecv() = 0;
@@ -183,7 +185,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionBase, HTTPCONNECTIONBASE_IID)
   void PrintDiagnostics(nsCString&) override;                                  \
   bool TestJoinConnection(const nsACString&, int32_t) override;                \
   bool JoinConnection(const nsACString&, int32_t) override;                    \
-  void GetTLSSocketControl(nsISSLSocketControl** result) override;             \
+  void GetTLSSocketControl(nsITLSSocketControl** result) override;             \
   [[nodiscard]] nsresult ResumeSend() override;                                \
   [[nodiscard]] nsresult ResumeRecv() override;                                \
   [[nodiscard]] nsresult ForceSend() override;                                 \

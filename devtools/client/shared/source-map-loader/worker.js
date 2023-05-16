@@ -14,7 +14,6 @@ const {
   getOriginalRanges,
   getGeneratedRanges,
   getGeneratedLocation,
-  getAllGeneratedLocations,
   getOriginalLocation,
   getOriginalLocations,
   getOriginalSourceText,
@@ -27,9 +26,6 @@ const {
 const {
   getOriginalStackFrames,
 } = require("resource://devtools/client/shared/source-map-loader/utils/getOriginalStackFrames.js");
-const {
-  setAssetRootURL,
-} = require("resource://devtools/client/shared/source-map-loader/utils/assetRoot.js");
 
 const {
   workerHandler,
@@ -38,13 +34,11 @@ const {
 // The interface is implemented in source-map to be
 // easier to unit test.
 self.onmessage = workerHandler({
-  setAssetRootURL,
   getOriginalURLs,
   hasOriginalURL,
   getOriginalRanges,
   getGeneratedRanges,
   getGeneratedLocation,
-  getAllGeneratedLocations,
   getOriginalLocation,
   getOriginalLocations,
   getOriginalSourceText,

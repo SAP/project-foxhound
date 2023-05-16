@@ -1322,6 +1322,7 @@ Document::Document(const char* aContentType)
 #ifdef DEBUG
       mStyledLinksCleared(false),
 #endif
+      mCachedStateObjectValid(false),
       mBlockAllMixedContent(false),
       mBlockAllMixedContentPreloads(false),
       mUpgradeInsecureRequests(false),
@@ -2127,6 +2128,13 @@ void Document::AccumulatePageLoadTelemetry(
     }
   }
 
+  TimeStamp asyncOpen;
+  timedChannel->GetAsyncOpen(&asyncOpen);
+  if (asyncOpen) {
+    Telemetry::AccumulateTimeDelta(Telemetry::DNS_PERF_FIRST_BYTE_MS, dnsKey,
+                                   asyncOpen, responseStart);
+  }
+
   // First Contentful Composite
   if (TimeStamp firstContentfulComposite =
           GetNavigationTiming()->GetFirstContentfulCompositeTimeStamp()) {
@@ -2512,6 +2520,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLazyLoadImageObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLazyLoadImageObserverViewport)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLastRememberedSizeObserver)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContentVisibilityObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDOMImplementation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImageMaps)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOrientationPendingPromise)
@@ -2591,9 +2600,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Document)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  if (tmp->mStateObjectCached.isSome()) {
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mStateObjectCached.ref())
-  }
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mCachedStateObject)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
@@ -2632,6 +2639,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDisplayDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLazyLoadImageObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLazyLoadImageObserverViewport)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mContentVisibilityObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLastRememberedSizeObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadyForIdle)
@@ -2749,9 +2757,7 @@ nsresult Document::Init() {
   mOnloadBlocker = new OnloadBlocker();
   mStyleImageLoader = new css::ImageLoader(this);
 
-  mNodeInfoManager = new nsNodeInfoManager();
-  nsresult rv = mNodeInfoManager->Init(this);
-  NS_ENSURE_SUCCESS(rv, rv);
+  mNodeInfoManager = new nsNodeInfoManager(this);
 
   // mNodeInfo keeps NodeInfoManager alive!
   mNodeInfo = mNodeInfoManager->GetDocumentNodeInfo();
@@ -6758,6 +6764,11 @@ void Document::SetHeaderData(nsAtom* aHeaderField, const nsAString& aData) {
   if (aHeaderField == nsGkAtoms::handheldFriendly) {
     mViewportType = Unknown;
   }
+}
+
+void Document::SetEarlyHints(
+    nsTArray<net::EarlyHintConnectArgs>&& aEarlyHints) {
+  mEarlyHints = std::move(aEarlyHints);
 }
 
 void Document::TryChannelCharset(nsIChannel* aChannel, int32_t& aCharsetSource,
@@ -12229,7 +12240,7 @@ already_AddRefed<nsIURI> Document::ResolvePreloadImage(
 
 void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
                             ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                            bool aLinkPreload) {
+                            bool aLinkPreload, uint64_t aEarlyHintPreloaderId) {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL |
                           nsIRequest::LOAD_RECORD_START_REQUEST_DELAY |
                           nsContentUtils::CORSModeToLoadImageFlags(
@@ -12243,11 +12254,15 @@ void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
       ReferrerInfo::CreateFromDocumentAndPolicyOverride(this, aReferrerPolicy);
 
   RefPtr<imgRequestProxy> request;
+
+  nsLiteralString initiator = aEarlyHintPreloaderId
+                                  ? u"early-hints"_ns
+                                  : (aLinkPreload ? u"link"_ns : u"img"_ns);
+
   nsresult rv = nsContentUtils::LoadImage(
       aUri, static_cast<nsINode*>(this), this, NodePrincipal(), 0, referrerInfo,
-      nullptr /* no observer */, loadFlags,
-      aLinkPreload ? u"link"_ns : u"img"_ns, getter_AddRefs(request),
-      policyType, false /* urgent */, aLinkPreload);
+      nullptr /* no observer */, loadFlags, initiator, getter_AddRefs(request),
+      policyType, false /* urgent */, aLinkPreload, aEarlyHintPreloaderId);
 
   // Pin image-reference to avoid evicting it from the img-cache before
   // the "real" load occurs. Unpinned in DispatchContentLoadedEvents and
@@ -12270,7 +12285,7 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
         dom::Element::StringToCORSMode(aCrossOriginAttr));
     if (!mPreloadService.PreloadExists(key)) {
       PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
-                   aLinkPreload);
+                   aLinkPreload, 0);
     }
     return;
   }
@@ -12290,8 +12305,8 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
 #endif
 
   // Image not in cache - trigger preload
-  PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
-               aLinkPreload);
+  PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet, aLinkPreload,
+               0);
 }
 
 void Document::MaybePreconnect(nsIURI* aOrigURI, mozilla::CORSMode aCORSMode) {
@@ -12415,7 +12430,7 @@ NS_IMPL_ISUPPORTS(StubCSSLoaderObserver, nsICSSLoaderObserver)
 SheetPreloadStatus Document::PreloadStyle(
     nsIURI* uri, const Encoding* aEncoding, const nsAString& aCrossOriginAttr,
     const enum ReferrerPolicy aReferrerPolicy, const nsAString& aIntegrity,
-    css::StylePreloadKind aKind) {
+    css::StylePreloadKind aKind, uint64_t aEarlyHintPreloaderId) {
   MOZ_ASSERT(aKind != css::StylePreloadKind::None);
 
   // The CSSLoader will retain this object after we return.
@@ -12426,7 +12441,7 @@ SheetPreloadStatus Document::PreloadStyle(
 
   // Charset names are always ASCII.
   auto result = CSSLoader()->LoadSheet(
-      uri, aKind, aEncoding, referrerInfo, obs,
+      uri, aKind, aEncoding, referrerInfo, obs, aEarlyHintPreloaderId,
       Element::StringToCORSMode(aCrossOriginAttr), aIntegrity);
   if (result.isErr()) {
     return SheetPreloadStatus::Errored;
@@ -13222,7 +13237,7 @@ nsresult Document::GetStateObject(JS::MutableHandle<JS::Value> aState) {
   // mStateObjectContainer may be null; this just means that there's no
   // current state object.
 
-  if (mStateObjectCached.isNothing()) {
+  if (!mCachedStateObjectValid) {
     if (mStateObjectContainer) {
       AutoJSAPI jsapi;
       // Init with null is "OK" in the sense that it will just fail.
@@ -13234,17 +13249,17 @@ nsresult Document::GetStateObject(JS::MutableHandle<JS::Value> aState) {
           mStateObjectContainer->DeserializeToJsval(jsapi.cx(), &value);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      mStateObjectCached.emplace(value);
+      mCachedStateObject = value;
       if (!value.isNullOrUndefined()) {
         mozilla::HoldJSObjects(this);
       }
     } else {
-      mStateObjectCached.emplace(JS::NullValue());
+      mCachedStateObject = JS::NullValue();
     }
+    mCachedStateObjectValid = true;
   }
 
-  aState.set(mStateObjectCached.ref());
-
+  aState.set(mCachedStateObject);
   return NS_OK;
 }
 
@@ -15793,6 +15808,24 @@ DOMIntersectionObserver& Document::EnsureLazyLoadImageObserver() {
   return *mLazyLoadImageObserver;
 }
 
+DOMIntersectionObserver& Document::EnsureContentVisibilityObserver() {
+  if (!mContentVisibilityObserver) {
+    mContentVisibilityObserver =
+        DOMIntersectionObserver::CreateContentVisibilityObserver(*this);
+  }
+  return *mContentVisibilityObserver;
+}
+
+void Document::ObserveForContentVisibility(Element& aElement) {
+  EnsureContentVisibilityObserver().Observe(aElement);
+}
+
+void Document::UnobserveForContentVisibility(Element& aElement) {
+  if (mContentVisibilityObserver) {
+    mContentVisibilityObserver->Unobserve(aElement);
+  }
+}
+
 ResizeObserver& Document::EnsureLastRememberedSizeObserver() {
   if (!mLastRememberedSizeObserver) {
     mLastRememberedSizeObserver =
@@ -15843,7 +15876,8 @@ nsIDocShell* Document::GetDocShell() const { return mDocumentContainer; }
 
 void Document::SetStateObject(nsIStructuredCloneContainer* scContainer) {
   mStateObjectContainer = scContainer;
-  mStateObjectCached.reset();
+  mCachedStateObject = JS::UndefinedValue();
+  mCachedStateObjectValid = false;
 }
 
 bool Document::ComputeDocumentLWTheme() const {

@@ -130,6 +130,12 @@ class KeyBinding {
   };
 };
 
+/**
+ * The base type for an accessibility tree node. Methods and attributes in this
+ * class are available in both the content process and the parent process.
+ * Overrides for these methods live primarily in LocalAccessible and
+ * RemoteAccessibleBase.
+ */
 class Accessible {
  protected:
   Accessible();
@@ -516,8 +522,6 @@ class Accessible {
   bool IsMenuButton() const { return HasGenericType(eMenuButton); }
 
   bool IsMenuPopup() const { return mType == eMenuPopupType; }
-
-  bool IsProxy() const { return mType == eProxyType; }
 
   bool IsOuterDoc() const { return mType == eOuterDocType; }
 

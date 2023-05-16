@@ -39,8 +39,8 @@
 #  include "mozilla/widget/WinCompositorWindowThread.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/webrender/DCLayerTree.h"
-//#  include "nsWindowsHelpers.h"
-//#  include <d3d11.h>
+// #  include "nsWindowsHelpers.h"
+// #  include <d3d11.h>
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -376,18 +376,28 @@ Maybe<layers::CollectedFrames> RenderThread::GetCollectedFramesForWindow(
   return renderer->GetCollectedFrames();
 }
 
-void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
+void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
+                                     bool aTrackedFrame) {
   if (mHasShutdown) {
     return;
   }
 
   if (!IsInRenderThread()) {
-    PostRunnable(NewRunnableMethod<wr::WindowId, bool>(
+    PostRunnable(NewRunnableMethod<wr::WindowId, bool, bool>(
         "wr::RenderThread::HandleFrameOneDoc", this,
-        &RenderThread::HandleFrameOneDoc, aWindowId, aRender));
+        &RenderThread::HandleFrameOneDoc, aWindowId, aRender, aTrackedFrame));
     return;
   }
 
+  HandleFrameOneDocInner(aWindowId, aRender, aTrackedFrame);
+
+  if (aTrackedFrame) {
+    DecPendingFrameCount(aWindowId);
+  }
+}
+
+void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
+                                          bool aTrackedFrame) {
   if (IsDestroyed(aWindowId)) {
     return;
   }
@@ -396,9 +406,10 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
     return;
   }
 
-  bool render = false;
+  bool render = aRender;
   PendingFrameInfo frame;
-  {  // scope lock
+  if (aTrackedFrame) {
+    // scope lock
     auto windows = mWindowInfos.Lock();
     auto it = windows->find(AsUint64(aWindowId));
     if (it == windows->end()) {
@@ -412,6 +423,9 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
     render = frameInfo.mFrameNeedsRender;
 
     frame = frameInfo;
+  } else {
+    // Just give the frame info default values.
+    frame = {TimeStamp::Now(), VsyncId(), aRender};
   }
 
   // Sadly this doesn't include the lock, since we don't have the frame there
@@ -427,17 +441,6 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
                   /* aReadbackSize */ Nothing(),
                   /* aReadbackFormat */ Nothing(),
                   /* aReadbackBuffer */ Nothing());
-
-  {  // scope lock
-    auto windows = mWindowInfos.Lock();
-    auto it = windows->find(AsUint64(aWindowId));
-    if (it == windows->end()) {
-      MOZ_ASSERT(false);
-      return;
-    }
-    WindowInfo* info = it->second;
-    info->mPendingFrames.pop();
-  }
 
   // The start time is from WebRenderBridgeParent::CompositeToTarget. From that
   // point until now (when the frame is finally pushed to the screen) is
@@ -527,15 +530,13 @@ static void NotifyDidRender(layers::CompositorBridgeParent* aBridge,
   }
 
   if (aBridge->GetWrBridge()) {
-    aBridge->GetWrBridge()->CompositeIfNeeded();
+    aBridge->GetWrBridge()->RetrySkippedComposite();
   }
 }
 
 static void NotifyDidStartRender(layers::CompositorBridgeParent* aBridge) {
-  // Starting a render will change mIsRendering, and potentially
-  // change whether we can allow the bridge to intiate another frame.
   if (aBridge->GetWrBridge()) {
-    aBridge->GetWrBridge()->CompositeIfNeeded();
+    aBridge->GetWrBridge()->RetrySkippedComposite();
   }
 }
 
@@ -733,6 +734,17 @@ void RenderThread::DecPendingFrameBuildCount(wr::WindowId aWindowId) {
   WindowInfo* info = it->second;
   MOZ_RELEASE_ASSERT(info->mPendingFrameBuild >= 1);
   info->mPendingFrameBuild--;
+}
+
+void RenderThread::DecPendingFrameCount(wr::WindowId aWindowId) {
+  auto windows = mWindowInfos.Lock();
+  auto it = windows->find(AsUint64(aWindowId));
+  if (it == windows->end()) {
+    MOZ_ASSERT(false);
+    return;
+  }
+  WindowInfo* info = it->second;
+  info->mPendingFrames.pop();
 }
 
 void RenderThread::RegisterExternalImage(
@@ -1334,23 +1346,20 @@ extern "C" {
 
 void wr_notifier_wake_up(mozilla::wr::WrWindowId aWindowId,
                          bool aCompositeNeeded) {
-  mozilla::wr::RenderThread::Get()->IncPendingFrameCount(aWindowId, VsyncId(),
-                                                         TimeStamp::Now());
-  mozilla::wr::RenderThread::Get()->DecPendingFrameBuildCount(aWindowId);
-  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(aWindowId,
-                                                      aCompositeNeeded);
+  // wake_up is used for things like propagating debug options or memory
+  // pressure events, so we are not tracking pending frame counts.
+  bool isTrackedFrame = false;
+  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(
+      aWindowId, aCompositeNeeded, isTrackedFrame);
 }
 
-void wr_notifier_new_frame_ready(mozilla::wr::WrWindowId aWindowId) {
-  mozilla::wr::RenderThread::Get()->DecPendingFrameBuildCount(aWindowId);
-  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(aWindowId,
-                                                      /* aRender */ true);
-}
+void wr_notifier_new_frame_ready(mozilla::wr::WrWindowId aWindowId,
+                                 bool aCompositeNeeded) {
+  auto* renderThread = mozilla::wr::RenderThread::Get();
+  renderThread->DecPendingFrameBuildCount(aWindowId);
 
-void wr_notifier_nop_frame_done(mozilla::wr::WrWindowId aWindowId) {
-  mozilla::wr::RenderThread::Get()->DecPendingFrameBuildCount(aWindowId);
-  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(aWindowId,
-                                                      /* aRender */ false);
+  bool isTrackedFrame = true;
+  renderThread->HandleFrameOneDoc(aWindowId, aCompositeNeeded, isTrackedFrame);
 }
 
 void wr_notifier_external_event(mozilla::wr::WrWindowId aWindowId,

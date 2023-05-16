@@ -23,7 +23,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -102,7 +101,10 @@ async function isPlaceholder(path) {
       return true;
     }
   } catch (ex) {
-    Cu.reportError(ex);
+    // Canceling the download may have removed the placeholder already.
+    if (ex.name != "NotFoundError") {
+      console.error(ex);
+    }
   }
   return false;
 }
@@ -300,7 +302,7 @@ Download.prototype = {
         this.onchange();
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
   },
 
@@ -1720,7 +1722,7 @@ DownloadTarget.prototype = {
       // Report any error not caused by the file not being there. In any case,
       // the size of the download is not updated and the known value is kept.
       if (ex.name != "NotFoundError") {
-        Cu.reportError(ex);
+        console.error(ex);
       }
       this.exists = false;
     }
@@ -1736,7 +1738,7 @@ DownloadTarget.prototype = {
       this.partFileExists = (await IOUtils.stat(this.partFilePath)).size > 0;
     } catch (ex) {
       if (ex.name != "NotFoundError") {
-        Cu.reportError(ex);
+        console.error(ex);
       }
       this.partFileExists = false;
     }
@@ -2184,16 +2186,15 @@ DownloadCopySaver.prototype = {
     // download is in progress.
     try {
       // If the file already exists, don't delete its contents yet.
-      let file = await lazy.OS.File.open(targetPath, { write: true });
-      await file.close();
+      await IOUtils.writeUTF8(targetPath, "", { mode: "appendOrCreate" });
     } catch (ex) {
-      if (!(ex instanceof lazy.OS.File.Error)) {
+      if (!DOMException.isInstance(ex)) {
         throw ex;
       }
       // Throw a DownloadError indicating that the operation failed because of
       // the target file.  We cannot translate this into a specific result
-      // code, but we preserve the original message using the toString method.
-      let error = new DownloadError({ message: ex.toString() });
+      // code, but we preserve the original message.
+      let error = new DownloadError({ message: ex.message });
       error.becauseTargetFailed = true;
       throw error;
     }
@@ -2626,7 +2627,7 @@ DownloadCopySaver.prototype = {
         // is likely to happen when the component that executed the download has
         // just deleted the target file itself.
         if (!["NotFoundError", "NotAllowedError"].includes(ex.name)) {
-          Cu.reportError(ex);
+          console.error(ex);
         }
       }
     }
@@ -2934,12 +2935,14 @@ DownloadLegacySaver.prototype = {
       if (!this.download.target.partFilePath) {
         try {
           // This atomic operation is more efficient than an existence check.
-          let file = await lazy.OS.File.open(this.download.target.path, {
-            create: true,
+          await IOUtils.writeUTF8(this.download.target.path, "", {
+            mode: "create",
           });
-          await file.close();
         } catch (ex) {
-          if (!(ex instanceof lazy.OS.File.Error) || !ex.becauseExists) {
+          if (
+            !DOMException.isInstance(ex) ||
+            ex.name !== "NoModificationAllowedError"
+          ) {
             throw ex;
           }
         }

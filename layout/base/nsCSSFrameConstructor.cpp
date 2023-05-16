@@ -39,6 +39,7 @@
 #include "mozilla/Unused.h"
 #include "RetainedDisplayListBuilder.h"
 #include "nsAbsoluteContainingBlock.h"
+#include "nsMenuBarListener.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCheckboxRadioFrame.h"
 #include "nsCRT.h"
@@ -66,6 +67,7 @@
 #include "nsIFormControl.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsTextFragment.h"
+#include "nsTextBoxFrame.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
@@ -1503,7 +1505,7 @@ struct nsGenConInitializer {
 };
 
 already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGenConTextNode(
-    nsFrameConstructorState& aState, const nsString& aString,
+    nsFrameConstructorState& aState, const nsAString& aString,
     UniquePtr<nsGenConInitializer> aInitializer) {
   RefPtr<nsTextNode> content = new (mDocument->NodeInfoManager())
       nsTextNode(mDocument->NodeInfoManager());
@@ -1518,21 +1520,28 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGenConTextNode(
   return content.forget();
 }
 
-already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
+void nsCSSFrameConstructor::CreateGeneratedContent(
     nsFrameConstructorState& aState, Element& aOriginatingElement,
-    ComputedStyle& aPseudoStyle, uint32_t aContentIndex) {
+    ComputedStyle& aPseudoStyle, uint32_t aContentIndex,
+    const FunctionRef<void(nsIContent*)> aAddChild) {
   using Type = StyleContentItem::Tag;
   // Get the content value
   const auto& item = aPseudoStyle.StyleContent()->ContentAt(aContentIndex);
   const Type type = item.tag;
 
   switch (type) {
-    case Type::Image:
-      return GeneratedImageContent::Create(*mDocument, aContentIndex);
+    case Type::Image: {
+      RefPtr c = GeneratedImageContent::Create(*mDocument, aContentIndex);
+      aAddChild(c);
+      return;
+    }
 
-    case Type::String:
-      return CreateGenConTextNode(
+    case Type::String: {
+      RefPtr text = CreateGenConTextNode(
           aState, NS_ConvertUTF8toUTF16(item.AsString().AsString()), nullptr);
+      aAddChild(text);
+      return;
+    }
 
     case Type::Attr: {
       const auto& attr = item.AsAttr();
@@ -1542,7 +1551,7 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
       if (!ns->IsEmpty()) {
         nsresult rv = nsNameSpaceManager::GetInstance()->RegisterNameSpace(
             ns.forget(), attrNameSpace);
-        NS_ENSURE_SUCCESS(rv, nullptr);
+        NS_ENSURE_SUCCESS_VOID(rv);
       }
 
       if (mDocument->IsHTMLDocument() && aOriginatingElement.IsHTMLElement()) {
@@ -1552,7 +1561,8 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
       nsCOMPtr<nsIContent> content;
       NS_NewAttributeContent(mDocument->NodeInfoManager(), attrNameSpace,
                              attrName, getter_AddRefs(content));
-      return content.forget();
+      aAddChild(content);
+      return;
     }
 
     case Type::Counter:
@@ -1579,7 +1589,9 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
 
       auto initializer = MakeUnique<nsGenConInitializer>(
           std::move(node), counterList, &nsCSSFrameConstructor::CountersDirty);
-      return CreateGenConTextNode(aState, u""_ns, std::move(initializer));
+      RefPtr c = CreateGenConTextNode(aState, u""_ns, std::move(initializer));
+      aAddChild(c);
+      return;
     }
     case Type::OpenQuote:
     case Type::CloseQuote:
@@ -1590,9 +1602,99 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
           mContainStyleScopeManager.QuoteListFor(aOriginatingElement);
       auto initializer = MakeUnique<nsGenConInitializer>(
           std::move(node), quoteList, &nsCSSFrameConstructor::QuotesDirty);
-      return CreateGenConTextNode(aState, u""_ns, std::move(initializer));
+      RefPtr c = CreateGenConTextNode(aState, u""_ns, std::move(initializer));
+      aAddChild(c);
+      return;
     }
 
+    case Type::MozLabelContent: {
+      nsAutoString accesskey;
+      if (!aOriginatingElement.GetAttr(nsGkAtoms::accesskey, accesskey) ||
+          accesskey.IsEmpty() || !nsMenuBarListener::GetMenuAccessKey()) {
+        // Easy path: just return a regular value attribute content.
+        nsCOMPtr<nsIContent> content;
+        NS_NewAttributeContent(mDocument->NodeInfoManager(), kNameSpaceID_None,
+                               nsGkAtoms::value, getter_AddRefs(content));
+        aAddChild(content);
+        return;
+      }
+
+      nsAutoString value;
+      aOriginatingElement.GetAttr(nsGkAtoms::value, value);
+
+      auto AppendAccessKeyLabel = [&] {
+        // Always append accesskey text in uppercase, see bug 1806167.
+        ToUpperCase(accesskey);
+        nsAutoString accessKeyLabel = u"("_ns + accesskey + u")"_ns;
+        if (!StringEndsWith(value, accessKeyLabel)) {
+          if (nsTextBoxFrame::InsertSeparatorBeforeAccessKey() &&
+              !value.IsEmpty() && !NS_IS_SPACE(value.Last())) {
+            value.Append(' ');
+          }
+          value.Append(accessKeyLabel);
+        }
+      };
+      if (nsTextBoxFrame::AlwaysAppendAccessKey()) {
+        AppendAccessKeyLabel();
+        RefPtr c = CreateGenConTextNode(aState, value, nullptr);
+        aAddChild(c);
+        return;
+      }
+
+      const auto accessKeyStart = [&]() -> Maybe<size_t> {
+        nsAString::const_iterator start, end;
+        value.BeginReading(start);
+        value.EndReading(end);
+
+        const auto originalStart = start;
+        // not appending access key - do case-sensitive search
+        // first
+        bool found = true;
+        if (!FindInReadable(accesskey, start, end)) {
+          start = originalStart;
+          // didn't find it - perform a case-insensitive search
+          found = FindInReadable(accesskey, start, end,
+                                 nsCaseInsensitiveStringComparator);
+        }
+        if (!found) {
+          return Nothing();
+        }
+        return Some(Distance(originalStart, start));
+      }();
+
+      if (accessKeyStart.isNothing()) {
+        AppendAccessKeyLabel();
+        RefPtr c = CreateGenConTextNode(aState, value, nullptr);
+        aAddChild(c);
+        return;
+      }
+
+      if (*accessKeyStart != 0) {
+        RefPtr beginning = CreateGenConTextNode(
+            aState, Substring(value, 0, *accessKeyStart), nullptr);
+        aAddChild(beginning);
+      }
+
+      {
+        RefPtr accessKeyText = CreateGenConTextNode(
+            aState, Substring(value, *accessKeyStart, accesskey.Length()),
+            nullptr);
+        RefPtr<nsIContent> underline =
+            mDocument->CreateHTMLElement(nsGkAtoms::u);
+        underline->AppendChildTo(accessKeyText, /* aNotify = */ false,
+                                 IgnoreErrors());
+        aAddChild(underline);
+      }
+
+      size_t accessKeyEnd = *accessKeyStart + accesskey.Length();
+      if (accessKeyEnd != value.Length()) {
+        RefPtr valueEnd = CreateGenConTextNode(
+            aState, Substring(value, *accessKeyStart + accesskey.Length()),
+            nullptr);
+        aAddChild(valueEnd);
+      }
+      break;
+    }
     case Type::MozAltContent: {
       // Use the "alt" attribute; if that fails and the node is an HTML
       // <input>, try the value attribute and then fall back to some default
@@ -1603,7 +1705,8 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
         nsCOMPtr<nsIContent> content;
         NS_NewAttributeContent(mDocument->NodeInfoManager(), kNameSpaceID_None,
                                nsGkAtoms::alt, getter_AddRefs(content));
-        return content.forget();
+        aAddChild(content);
+        return;
       }
 
       if (aOriginatingElement.IsHTMLElement(nsGkAtoms::input)) {
@@ -1612,20 +1715,22 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
           NS_NewAttributeContent(mDocument->NodeInfoManager(),
                                  kNameSpaceID_None, nsGkAtoms::value,
                                  getter_AddRefs(content));
-          return content.forget();
+          aAddChild(content);
+          return;
         }
 
         nsAutoString temp;
         nsContentUtils::GetMaybeLocalizedString(
             nsContentUtils::eFORMS_PROPERTIES, "Submit", mDocument, temp);
-        return CreateGenConTextNode(aState, temp, nullptr);
+        RefPtr c = CreateGenConTextNode(aState, temp, nullptr);
+        aAddChild(c);
+        return;
       }
-
       break;
     }
   }
 
-  return nullptr;
+  return;
 }
 
 void nsCSSFrameConstructor::CreateGeneratedContentFromListStyle(
@@ -1655,13 +1760,13 @@ void nsCSSFrameConstructor::CreateGeneratedContentFromListStyleType(
           styleList->mCounterStyle);
   bool needUseNode = false;
   switch (counterStyle->GetStyle()) {
-    case NS_STYLE_LIST_STYLE_NONE:
+    case ListStyle::None:
       return;
-    case NS_STYLE_LIST_STYLE_DISC:
-    case NS_STYLE_LIST_STYLE_CIRCLE:
-    case NS_STYLE_LIST_STYLE_SQUARE:
-    case NS_STYLE_LIST_STYLE_DISCLOSURE_CLOSED:
-    case NS_STYLE_LIST_STYLE_DISCLOSURE_OPEN:
+    case ListStyle::Disc:
+    case ListStyle::Circle:
+    case ListStyle::Square:
+    case ListStyle::DisclosureClosed:
+    case ListStyle::DisclosureOpen:
       break;
     default:
       const auto* anonStyle = counterStyle->AsAnonymous();
@@ -1817,10 +1922,8 @@ void nsCSSFrameConstructor::CreateGeneratedContentItem(
   };
   const uint32_t contentCount = pseudoStyle->StyleContent()->ContentCount();
   for (uint32_t contentIndex = 0; contentIndex < contentCount; contentIndex++) {
-    if (RefPtr<nsIContent> content = CreateGeneratedContent(
-            aState, aOriginatingElement, *pseudoStyle, contentIndex)) {
-      AppendChild(content);
-    }
+    CreateGeneratedContent(aState, aOriginatingElement, *pseudoStyle,
+                           contentIndex, AppendChild);
   }
   // If a ::marker has no 'content' then generate it from its 'list-style-*'.
   if (contentCount == 0 && aPseudoElement == PseudoStyleType::marker) {
@@ -2172,6 +2275,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructTableCell(
 
   nsFrameList childList;
   if (aItem.mFCData->mBits & FCDATA_USE_CHILD_ITEMS) {
+    AutoFrameConstructionPageName pageNameTracker(aState, cellInnerFrame);
     ConstructFramesFromItemList(
         aState, aItem.mChildItems, cellInnerFrame,
         aItem.mFCData->mBits & FCDATA_IS_WRAPPER_ANON_BOX, childList);
@@ -4098,6 +4202,12 @@ nsCSSFrameConstructor::FindXULLabelOrDescriptionData(const Element& aElement,
     return nullptr;
   }
 
+  // Follow CSS display if there's no crop="center".
+  if (!aElement.AttrValueIs(kNameSpaceID_None, nsGkAtoms::crop,
+                            nsGkAtoms::center, eCaseMatters)) {
+    return nullptr;
+  }
+
   static constexpr FrameConstructionData sXULTextBoxData =
       SIMPLE_XUL_FCDATA(NS_NewTextBoxFrame);
   return &sXULTextBoxData;
@@ -4700,8 +4810,8 @@ nsCSSFrameConstructor::FindMathMLData(const Element& aElement,
       SIMPLE_MATHML_CREATE(mphantom_, NS_NewMathMLmrowFrame),
       SIMPLE_MATHML_CREATE(mpadded_, NS_NewMathMLmpaddedFrame),
       SIMPLE_MATHML_CREATE(mspace_, NS_NewMathMLmspaceFrame),
-      SIMPLE_MATHML_CREATE(none, NS_NewMathMLmspaceFrame),
-      SIMPLE_MATHML_CREATE(mprescripts_, NS_NewMathMLmspaceFrame),
+      SIMPLE_MATHML_CREATE(none, NS_NewMathMLmrowFrame),
+      SIMPLE_MATHML_CREATE(mprescripts_, NS_NewMathMLmrowFrame),
       SIMPLE_MATHML_CREATE(mfenced_, NS_NewMathMLmrowFrame),
       SIMPLE_MATHML_CREATE(mmultiscripts_, NS_NewMathMLmmultiscriptsFrame),
       SIMPLE_MATHML_CREATE(mstyle_, NS_NewMathMLmrowFrame),
@@ -5763,7 +5873,8 @@ void nsCSSFrameConstructor::AppendFramesToParent(
       // Make sure to trigger reflow of the inline that used to be our
       // last one and now isn't anymore, since its GetSkipSides() has
       // changed.
-      mPresShell->FrameNeedsReflow(aParentFrame, IntrinsicDirty::TreeChange,
+      mPresShell->FrameNeedsReflow(aParentFrame,
+                                   IntrinsicDirty::FrameAndAncestors,
                                    NS_FRAME_HAS_DIRTY_CHILDREN);
 
       // Recurse so we create new ib siblings as needed for aParentFrame's
@@ -6730,8 +6841,7 @@ void nsCSSFrameConstructor::ContentAppended(nsIContent* aFirstNewContent,
 #endif
 
 #ifdef ACCESSIBILITY
-  if (nsAccessibilityService* accService =
-          PresShell::GetAccessibilityService()) {
+  if (nsAccessibilityService* accService = GetAccService()) {
     accService->ContentRangeInserted(mPresShell, aFirstNewContent, nullptr);
   }
 #endif
@@ -6834,8 +6944,7 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
     }
 
 #ifdef ACCESSIBILITY
-    if (nsAccessibilityService* accService =
-            PresShell::GetAccessibilityService()) {
+    if (nsAccessibilityService* accService = GetAccService()) {
       accService->ContentRangeInserted(mPresShell, aStartChild, aEndChild);
     }
 #endif
@@ -7233,8 +7342,7 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
 #endif
 
 #ifdef ACCESSIBILITY
-  if (nsAccessibilityService* accService =
-          PresShell::GetAccessibilityService()) {
+  if (nsAccessibilityService* accService = GetAccService()) {
     accService->ContentRangeInserted(mPresShell, aStartChild, aEndChild);
   }
 #endif
@@ -7419,8 +7527,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
 
 #ifdef ACCESSIBILITY
     if (aFlags != REMOVE_FOR_RECONSTRUCTION) {
-      if (nsAccessibilityService* accService =
-              PresShell::GetAccessibilityService()) {
+      if (nsAccessibilityService* accService = GetAccService()) {
         accService->ContentRemoved(mPresShell, aChild);
       }
     }
@@ -7990,6 +8097,23 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
   // aFrame cannot be a dynamic reflow root because it has a continuation now.
   aFrame->RemoveStateBits(NS_FRAME_DYNAMIC_REFLOW_ROOT);
 
+  // XXXalaskanemily: This avoids linear-time FirstContinuation lookups during
+  // paginated reflow, but there are a lot of smarter ways to manage this. We
+  // might also want to share the struct (refcount or some guarantee the struct
+  // will remain valid during reflow).
+  if (nsIFrame::PageValues* pageValues =
+          aFrame->GetProperty(nsIFrame::PageValuesProperty())) {
+    // It is possible that both values of a PageValues struct can be
+    // overwritten with null. If that's the case, then as a minor optimization
+    // we don't need to create a copy of the struct since this property being
+    // missing is equivalent to having null start/end values.
+    if (pageValues->mStartPageValue || pageValues->mEndPageValue) {
+      nsIFrame::PageValues* const newPageValues =
+          new nsIFrame::PageValues(*pageValues);
+      newFrame->SetProperty(nsIFrame::PageValuesProperty(), newPageValues);
+    }
+  }
+
   MOZ_ASSERT(!newFrame->GetNextSibling(), "unexpected sibling");
   return newFrame;
 }
@@ -8373,6 +8497,37 @@ static nsIContent* GetTopmostMathMLElement(nsIContent* aMathMLContent) {
   return root;
 }
 
+// We don't know how to re-insert an anonymous subtree root, so recreate the
+// closest non-generated ancestor instead, except for a few special cases...
+static bool ShouldRecreateContainerForNativeAnonymousContentRoot(
+    nsIContent* aContent) {
+  if (!aContent->IsRootOfNativeAnonymousSubtree()) {
+    return false;
+  }
+  if (ManualNACPtr::IsManualNAC(aContent)) {
+    // Editor NAC, would enter an infinite loop, and we sorta get away with it
+    // because it's all abspos.
+    return false;
+  }
+  if (auto* el = Element::FromNode(aContent)) {
+    if (auto* classes = el->GetClasses()) {
+      if (classes->Contains(nsGkAtoms::mozCustomContentContainer,
+                            eCaseMatters)) {
+        // Canvas anonymous content (like the custom content container) is also
+        // fine, because its only sibling is a tooltip which is also abspos, so
+        // relative insertion order doesn't really matter.
+        //
+        // This is important because the inspector uses it, and we don't want
+        // inspecting the page to change behavior heavily (and reframing
+        // unfortunately has side-effects sometimes, even though they're bugs).
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 void nsCSSFrameConstructor::RecreateFramesForContent(
     nsIContent* aContent, InsertionKind aInsertionKind) {
   MOZ_ASSERT(aContent);
@@ -8386,20 +8541,19 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
     return;
   }
 
-  // We don't know how to re-insert an anonymous subtree root, so recreate the
-  // closest non-generated ancestor instead... Except for editor NAC, which
-  // would enter an infinite loop, and we sorta get away with it because it's
-  // all abspos.
-  //
   // TODO(emilio): We technically can find the right insertion point nowadays
   // using StyleChildrenIterator rather than FlattenedTreeIterator. But we'd
   // need to tweak the setup to insert into replaced elements to filter which
   // anonymous roots can be allowed, and which can't.
-  if (aContent->IsRootOfNativeAnonymousSubtree() &&
-      !ManualNACPtr::IsManualNAC(aContent)) {
+  //
+  // TODO(emilio, 2022): Is this true? If we have a replaced element we wouldn't
+  // have generated e.g., a ::before/::after pseudo-element to begin with (which
+  // is what this code is about, so maybe we can just remove this piece of code
+  // altogether).
+  if (ShouldRecreateContainerForNativeAnonymousContentRoot(aContent)) {
     do {
       aContent = aContent->GetParent();
-    } while (aContent->IsRootOfNativeAnonymousSubtree());
+    } while (ShouldRecreateContainerForNativeAnonymousContentRoot(aContent));
     return RecreateFramesForContent(aContent, InsertionKind::Async);
   }
 
@@ -9713,8 +9867,7 @@ void nsCSSFrameConstructor::ProcessChildren(
           MOZ_ASSERT(listItem->HasAnyStateBits(
                          NS_BLOCK_FRAME_HAS_OUTSIDE_MARKER) == isOutsideMarker);
 #ifdef ACCESSIBILITY
-          if (nsAccessibilityService* accService =
-                  PresShell::GetAccessibilityService()) {
+          if (nsAccessibilityService* accService = GetAccService()) {
             auto* marker = markerFrame->GetContent();
             accService->ContentRangeInserted(mPresShell, marker, nullptr);
           }
@@ -10612,6 +10765,7 @@ nsBlockFrame* nsCSSFrameConstructor::BeginBuildingColumns(
     columnSetWrapper->AddStateBits(NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR);
   }
 
+  AutoFrameConstructionPageName pageNameTracker(aState, columnSetWrapper);
   RefPtr<ComputedStyle> columnSetStyle =
       mPresShell->StyleSet()->ResolveInheritingAnonymousBoxStyle(
           PseudoStyleType::columnSet, aComputedStyle);

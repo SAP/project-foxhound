@@ -5,6 +5,8 @@
 "use strict";
 
 module.exports = {
+  extends: ["plugin:mozilla/valid-jsdoc"],
+
   rules: {
     "mozilla/balanced-listeners": "error",
     "mozilla/var-only-at-top-level": "error",
@@ -17,7 +19,7 @@ module.exports = {
       },
     ],
     "max-nested-callbacks": ["error", 4],
-    "no-console": "error",
+    "no-console": ["error", { allow: ["error"] }],
     "no-fallthrough": "error",
     "no-multi-str": "error",
     "no-proto": "error",
@@ -36,23 +38,6 @@ module.exports = {
       },
     ],
     radix: "error",
-    "valid-jsdoc": [
-      "error",
-      {
-        prefer: {
-          return: "returns",
-        },
-        preferType: {
-          Boolean: "boolean",
-          Number: "number",
-          String: "string",
-          bool: "boolean",
-        },
-        requireParamDescription: false,
-        requireReturn: false,
-        requireReturnDescription: false,
-      },
-    ],
     yoda: "error",
   },
 };

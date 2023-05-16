@@ -1,6 +1,11 @@
 ..
     This file was automatically generated using `mots export`.
 
+..
+    See https://mots.readthedocs.io/en/latest/#quick-start for quick start
+    documentation and how to modify this file.
+
+
 ==========
 Governance
 ==========
@@ -19,21 +24,6 @@ The system is overseen by the owner and peers of the Module Ownership module. Fo
 -------
 Modules
 -------
-
-Mots config
-~~~~~~~~~~~
-
-
-.. list-table::
-    :stub-columns: 1
-    :widths: 30 70
-
-    * - Owner(s)
-      -
-        | `Zeid Zabaneh (zeid) <https://people.mozilla.org/s?query=zeid>`__
-    * - Includes
-      -
-        | `mots.yaml <https://searchfox.org/mozilla-central/search?q=&path=mots.yaml>`__
 
 mozilla-toplevel
 ~~~~~~~~~~~~~~~~
@@ -148,7 +138,7 @@ Tracking detection and content-blocking.
     * - Peer(s)
       -
         | `Andrea Marchesini (baku) <https://people.mozilla.org/s?query=baku>`__
-        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
+        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
         | `Paul Zühlcke (pbz) <https://people.mozilla.org/s?query=pbz>`__
         | `Johann Hofmann (johannh) <https://people.mozilla.org/s?query=johannh>`__
     * - Peer(s) Emeritus
@@ -254,12 +244,11 @@ The build system for Gecko and several mozilla.org hosted Gecko-based applicatio
         | `Mike Hommey (glandium) <https://people.mozilla.org/s?query=glandium>`__
     * - Peer(s)
       -
-        | `Mitchell Hentges (mhentges) <https://people.mozilla.org/s?query=mhentges>`__
         | `Andi (andi) <https://people.mozilla.org/s?query=andi>`__
     * - Owner(s) Emeritus
       - Chris Manchester, Gregory Szorc, Ted Mielczarek, Benjamin Smedberg
     * - Peer(s) Emeritus
-      - Ted Mielczarek, Ralph Giles, Gregory Szorc, Chris Manchester, Mike Shal, Nathan Froyd, Ricky Stewart, David Major
+      - Ted Mielczarek, Ralph Giles, Gregory Szorc, Chris Manchester, Mike Shal, Nathan Froyd, Ricky Stewart, David Major, Mitchell Hentges
     * - Includes
       -
         | `build/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=build/\*\*/\*>`__
@@ -287,7 +276,6 @@ Submodule of the build config covering Fennec's build system in mobile/android.
         | `Nick Alexander (nalexander) <https://people.mozilla.org/s?query=nalexander>`__
     * - Peer(s)
       -
-        | `Mitchell Hentges (mhentges) <https://people.mozilla.org/s?query=mhentges>`__
         | `Andi (andi) <https://people.mozilla.org/s?query=andi>`__
     * - Includes
       -
@@ -312,24 +300,20 @@ Support for task-graph generation in decision, action, and cron tasks, including
 
     * - Owner(s)
       -
-        | `Tom Prince (tomprince) <https://people.mozilla.org/s?query=tomprince>`__
+        | `Andrew Halberstadt (ahal) <https://people.mozilla.org/s?query=ahal>`__
     * - Peer(s)
       -
-        | `Andrew Halberstadt (ahal) <https://people.mozilla.org/s?query=ahal>`__
-        | `Aki Sasaki (aki) <https://people.mozilla.org/s?query=aki>`__
-        | `Brian Stack (bstack) <https://people.mozilla.org/s?query=bstack>`__
         | `Mike Hommey (glandium) <https://people.mozilla.org/s?query=glandium>`__
-        | `Gregory Szorc (gps) <https://people.mozilla.org/s?query=gps>`__
+        | `Julien Cristau (jcristau) <https://people.mozilla.org/s?query=jcristau>`__
+        | `Johan Lorenzo (jlorenzo) <https://people.mozilla.org/s?query=jlorenzo>`__
         | `Joel Maher (jmaher) <https://people.mozilla.org/s?query=jmaher>`__
-        | `Justin Wood (Callek) <https://people.mozilla.org/s?query=Callek>`__
+    * - Owner(s) Emeritus
+      - Tom Prince
     * - Peer(s) Emeritus
-      - Dustin Mitchell
+      - Dustin Mitchell, Aki Sasaki, Brian Stack, Gregory Szorc, Justin Wood
     * - Includes
       -
-        | `build/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=build/\*\*/\*>`__
-        | `config/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=config/\*\*/\*>`__
-        | `python/mozbuild/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=python/mozbuild/\*\*/\*>`__
-        | `browser/config/mozconfigs/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/config/mozconfigs/\*\*/\*>`__
+        | `taskcluster <https://searchfox.org/mozilla-central/search?q=&path=taskcluster>`__
     * - Bugzilla Components
       - Firefox Build System::Task Configuration
 
@@ -400,7 +384,7 @@ Core: Cookies
     * - Owner(s) Emeritus
       - Monica Chew
     * - Peer(s) Emeritus
-      - Josh Matthews, Mike Connor, Dan Witte, Christian Biesinger, Shawn Wilsher (ping on irc), Ehsan Akhgari
+      - Josh Matthews, Mike Connor, Dan Witte, Christian Biesinger, Shawn Wilsher, Ehsan Akhgari
     * - Includes
       -
         | `netwerk/cookie/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=netwerk/cookie/\*\*/\*>`__
@@ -538,7 +522,7 @@ Core: docshell
     * - Includes
       -
         | `docshell/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=docshell/\*\*/\*>`__
-        | `uriloader/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=uriloader/\*\*/\*>`__
+        | `uriloader/base/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=uriloader/base/\*\*/\*>`__
     * - Group
       - dev-platform
     * - Bugzilla Components
@@ -567,6 +551,7 @@ Core: Document Object Model
         | `Emilio Cobos Álvarez (emilio) <https://people.mozilla.org/s?query=emilio>`__
         | `Andrew Sutherland (asuth) <https://people.mozilla.org/s?query=asuth>`__
         | `Edgar Chen (edgar) <https://people.mozilla.org/s?query=edgar>`__
+        | `Kagami (saschanaz) <https://people.mozilla.org/s?query=saschanaz>`__
     * - Owner(s) Emeritus
       - Johnny Stenback
     * - Peer(s) Emeritus
@@ -726,23 +711,21 @@ Gecko's built-in profiler
         | `Markus Stange (mstange) <https://people.mozilla.org/s?query=mstange>`__
     * - Peer(s)
       -
-        | `Gerald Squelart (mozbugz) <https://people.mozilla.org/s?query=mozbugz>`__
-        | `Greg Tatum (gregtatum) <https://people.mozilla.org/s?query=gregtatum>`__
         | `Nazım Can Altınova (canova) <https://people.mozilla.org/s?query=canova>`__
+        | `Florian Quèze (bmo) <https://people.mozilla.org/s?query=bmo>`__
         | `Julian Seward (jseward) <https://people.mozilla.org/s?query=jseward>`__
-        | `Kannan Vijayan (djvj) <https://people.mozilla.org/s?query=djvj>`__
-        | `Barret Rennie (barret) <https://people.mozilla.org/s?query=barret>`__
     * - Owner(s) Emeritus
       - Benoit Girard
     * - Peer(s) Emeritus
-      - Shu-yu Guo (JS integration), Thinker Lee (TaskTracer), Cervantes Yu (TaskTracer), Nicholas Nethercote
+      - Shu-yu Guo (JS integration), Thinker Lee (TaskTracer), Cervantes Yu (TaskTracer), Nicholas Nethercote, Gerald Squelart, Kannan Vijayan, Barret Rennie, Greg Tatum
     * - Includes
       -
         | `tools/profiler/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/profiler/\*\*/\*>`__
+        | `mozglue/baseprofiler/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=mozglue/baseprofiler/\*\*/\*>`__
     * - Group
       - dev-platform
     * - URL
-      - https://profiler.firefox.com/docs/
+      - https://firefox-source-docs.mozilla.org/tools/profiler/
     * - Bugzilla Components
       - Core::Gecko Profiler
 
@@ -1225,20 +1208,20 @@ Core: Media Playback
 ~~~~~~~~~~~~~~~~~~~~
 HTML Media APIs, including Media Source Extensions and non-MSE video/audio element playback, and Encrypted Media Extensions. (WebRTC and WebAudio not included).
 
+.. warning::
+    This module does not have any owners specified.
 
 .. list-table::
     :stub-columns: 1
     :widths: 30 70
 
-    * - Owner(s)
-      -
-        | `Jean-Yves Avenard (jya) <https://people.mozilla.org/s?query=jya>`__
     * - Peer(s)
       -
         | `Matthew Gregan (kinetik) <https://people.mozilla.org/s?query=kinetik>`__
-        | `Bryce Seager van Dyk (bryce) <https://people.mozilla.org/s?query=bryce>`__
         | `John Lin (jhlin) <https://people.mozilla.org/s?query=jhlin>`__
         | `Alastor Wu (alwu) <https://people.mozilla.org/s?query=alwu>`__
+        | `Paul Adenot (padenot) <https://people.mozilla.org/s?query=padenot>`__
+        | `C (chunmin) <https://people.mozilla.org/s?query=chunmin>`__
     * - Owner(s) Emeritus
       - Robert O'Callahan, Chris Pearce, Jean-Yves Avenard
     * - Includes
@@ -1444,6 +1427,8 @@ The Mozilla Networking Library
         | `dom/xhr/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=dom/xhr/\*\*/\*>`__
         | `dom/network/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=dom/network/\*\*/\*>`__
         | `dom/websocket/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=dom/websocket/\*\*/\*>`__
+        | `uriloader/prefetch/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=uriloader/prefetch/\*\*/\*>`__
+        | `uriloader/preload/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=uriloader/preload/\*\*/\*>`__
     * - Group
       - dev-tech-network
     * - URL
@@ -1555,7 +1540,7 @@ Core: Permissions
     * - Owner(s) Emeritus
       - Monica Chew, Ehsan Akhgari
     * - Peer(s) Emeritus
-      - Josh Matthews, Mike Connor, Dan Witte, Christian Biesinger, Shawn Wilsher (ping on irc), Honza Bambas
+      - Josh Matthews, Mike Connor, Dan Witte, Christian Biesinger, Shawn Wilsher, Honza Bambas
     * - Includes
       -
         | `extensions/permissions/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=extensions/permissions/\*\*/\*>`__
@@ -2795,6 +2780,7 @@ The downloads UI and service.
       -
         | `browser/components/downloads/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/downloads/\*\*/\*>`__
         | `toolkit/mozapps/downloads/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/mozapps/downloads/\*\*/\*>`__
+        | `uriloader/exthandler/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=uriloader/exthandler/\*\*/\*>`__
 
 
 Enterprise Policies
@@ -2863,7 +2849,7 @@ Form detection and autocomplete.
     * - Peer(s)
       -
         | `Tim Giles (tgiles) <https://people.mozilla.org/s?query=tgiles>`__
-        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
+        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
     * - Owner(s) Emeritus
       - Matthew Noorenberghe
     * - Includes
@@ -3004,7 +2990,7 @@ Managing, saving and filling logins.
       -
         | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Tim Giles (tgiles) <https://people.mozilla.org/s?query=tgiles>`__
-        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
+        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
         | `Sam Foster (sfoster) <https://people.mozilla.org/s?query=sfoster>`__
     * - Owner(s) Emeritus
       - Matthew Noorenberghe
@@ -3278,6 +3264,21 @@ Marionette is a remote protocol that lets out-of-process programs communicate wi
     * - Bugzilla Components
       - Testing :: Marionette
 
+mots config
+~~~~~~~~~~~
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Zeid Zabaneh (zeid) <https://people.mozilla.org/s?query=zeid>`__
+    * - Includes
+      -
+        | `mots.yaml <https://searchfox.org/mozilla-central/search?q=&path=mots.yaml>`__
+
 mozharness
 ~~~~~~~~~~
 Configuration-driven script harness.
@@ -3299,6 +3300,29 @@ Configuration-driven script harness.
         | `testing/mozharness/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/mozharness/\*\*/\*>`__
     * - Bugzilla Components
       - Release Engineering :: Applications: MozharnessCore
+
+Python usage, tools, and style
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Aspects of Python use such as tooling, formatting and naming style
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Andrew Halberstadt (ahal) <https://people.mozilla.org/s?query=ahal>`__
+    * - Peer(s)
+      -
+        | `Mike Hommey (glandium) <https://people.mozilla.org/s?query=glandium>`__
+        | `Marco Castelluccio (marco) <https://people.mozilla.org/s?query=marco>`__
+        | `Sylvestre Ledru (Sylvestre) <https://people.mozilla.org/s?query=Sylvestre>`__
+    * - Includes
+      -
+        | `tools/lint/python/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/lint/python/\*\*/\*>`__
+    * - Bugzilla Components
+      - Developer Infrastructure :: Lint and Formatting
 
 firefox-ui
 ~~~~~~~~~~
@@ -3401,6 +3425,9 @@ Base modules used for implementing test components.
         | `Bob Clary (bc) <https://people.mozilla.org/s?query=bc>`__
         | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
         | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Includes
+      -
+        | `testing/mozbase <https://searchfox.org/mozilla-central/search?q=&path=testing/mozbase>`__
     * - Bugzilla Components
       - Testing :: Mozbase, Testing :: Mozbase Rust
 
@@ -3469,7 +3496,7 @@ Frontend for selecting jobs on the try server.
       -
         | `tools/tryselect/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/tryselect/\*\*/\*>`__
     * - Bugzilla Components
-      - Firefox Build System :: Try
+      - Developer Infrastructure :: Try
 
 web-platform-tests infrastructure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3566,7 +3593,7 @@ The profile system and startup process before the front-end launches.
 
 Telemetry
 =========
-The core infrastructure in the Firefox client to send back Telemetry and FHR data. Includes the common mechanism to record, view and submit data like histograms, the Telemetry environment and custom pings. This module does ''not'' include responsibility for every piece of submitted Telemetry data. Each team/module is responsible for their own measurements (histograms, scalars, other ping submissions, etc.).
+The core infrastructure in the Firefox client to send back telemetry data. Includes the common mechanisms to record, view and submit data: Legacy Telemetry and Glean (via Firefox on Glean (FOG)). This module does ''not'' include responsibility for every piece of submitted Telemetry data. Each team/module is responsible for their own measurements (histograms, scalars, other ping submissions, etc.).
 
 
 .. list-table::
@@ -3580,10 +3607,13 @@ The core infrastructure in the Firefox client to send back Telemetry and FHR dat
       -
         | `aplacitelli <https://people.mozilla.org/s?query=aplacitelli>`__
         | `Jan-Erik Rediger (janerik) <https://people.mozilla.org/s?query=janerik>`__
+        | `Perry McManis (perry.mcmanis) <https://people.mozilla.org/s?query=perry.mcmanis>`__
+        | `Travis Long (travis_) <https://people.mozilla.org/s?query=travis_>`__
     * - Owner(s) Emeritus
       - Georg Fritzsche
     * - Includes
       -
+        | `toolkit/components/glean/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/glean/\*\*/\*>`__
         | `toolkit/components/telemetry/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/telemetry/\*\*/\*>`__
         | `toolkit/content/aboutTelemetry.\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/content/aboutTelemetry.\*>`__
     * - Group

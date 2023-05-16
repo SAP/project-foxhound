@@ -64,7 +64,8 @@ async function loadTipExtension(options = {}) {
 
 /**
  * Updates the Top Sites feed.
- * @param {function} condition
+ *
+ * @param {Function} condition
  *   A callback that returns true after Top Sites are successfully updated.
  * @param {boolean} searchShortcuts
  *   True if Top Sites search shortcuts should be enabled.
@@ -123,7 +124,7 @@ add_task(async function tip_onResultPicked_mainButton_noURL_mouse() {
     waitForFocus,
     value: "test",
   });
-  let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+  let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
   Assert.ok(mainButton);
   EventUtils.synthesizeMouseAtCenter(mainButton, {});
   await ext.awaitMessage("onResultPicked received");
@@ -162,7 +163,7 @@ add_task(async function tip_onResultPicked_mainButton_url_mouse() {
       waitForFocus,
       value: "test",
     });
-    let mainButton = gURLBar.querySelector(".urlbarView-tip-button");
+    let mainButton = gURLBar.querySelector(".urlbarView-button-tip");
     Assert.ok(mainButton);
     let loadedPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser

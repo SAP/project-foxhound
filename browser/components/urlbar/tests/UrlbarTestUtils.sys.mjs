@@ -13,7 +13,11 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserTestUtils: "resource://testing-common/BrowserTestUtils.sys.mjs",
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
@@ -22,11 +26,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
-  BrowserTestUtils: "resource://testing-common/BrowserTestUtils.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
 });
 
 export var UrlbarTestUtils = {
@@ -260,6 +261,8 @@ export var UrlbarTestUtils = {
       };
     } else if (details.type == UrlbarUtils.RESULT_TYPE.KEYWORD) {
       details.keyword = result.payload.keyword;
+    } else if (details.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) {
+      details.dynamicType = result.payload.dynamicType;
     }
     return details;
   },
@@ -838,6 +841,9 @@ export var UrlbarTestUtils = {
             onFirstResult() {
               return false;
             },
+            getSearchSource() {
+              return "dummy-search-source";
+            },
             window: {
               location: {
                 href: AppConstants.BROWSER_CHROME_URL,
@@ -988,6 +994,8 @@ class TestProvider extends UrlbarProvider {
    * @param {Function} [options.onSelection]
    *   If given, a function that will be called when
    *   {@link UrlbarView.#selectElement} method is called.
+   * @param {Function} [options.onEngagement]
+   *   If given, a function that will be called when engagement.
    */
   constructor({
     results,
@@ -997,6 +1005,7 @@ class TestProvider extends UrlbarProvider {
     addTimeout = 0,
     onCancel = null,
     onSelection = null,
+    onEngagement = null,
   } = {}) {
     super();
     this._results = results;
@@ -1006,6 +1015,7 @@ class TestProvider extends UrlbarProvider {
     this._addTimeout = addTimeout;
     this._onCancel = onCancel;
     this._onSelection = onSelection;
+    this._onEngagement = onEngagement;
   }
   get name() {
     return this._name;
@@ -1042,6 +1052,12 @@ class TestProvider extends UrlbarProvider {
   onSelection(result, element) {
     if (this._onSelection) {
       this._onSelection(result, element);
+    }
+  }
+
+  onEngagement(isPrivate, state, queryContext, details) {
+    if (this._onEngagement) {
+      this._onEngagement(isPrivate, state, queryContext, details);
     }
   }
 }

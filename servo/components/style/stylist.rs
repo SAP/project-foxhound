@@ -2375,7 +2375,8 @@ impl CascadeData {
                 None => return true,
                 Some(ref c) => c,
             };
-            if !condition.matches(stylist.device(), element, &mut context.extra_data.cascade_input_flags) {
+            let matches = condition.matches(stylist.device(), element, &mut context.extra_data.cascade_input_flags).to_bool(/* unknown = */ false);
+            if !matches {
                 return false;
             }
             id = condition_ref.parent;

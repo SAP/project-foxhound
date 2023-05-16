@@ -161,7 +161,7 @@ def generate_platform_sources():
 
 
 def generate_separated_sources(platform_sources):
-  blacklist = [
+  ignorelist = [
     'skia/src/android/',
     'skia/src/atlastext/',
     'skia/src/c/',
@@ -195,10 +195,11 @@ def generate_separated_sources(platform_sources):
     'SkXPS',
     'SkCreateCGImageRef',
     'skia/src/ports/SkGlobalInitialization',
+    'skia/src/sksl/SkSLJIT',
   ]
 
-  def isblacklisted(value):
-    for item in blacklist:
+  def isignorelisted(value):
+    for item in ignorelist:
       if value.find(item) >= 0:
         return True
 
@@ -237,7 +238,7 @@ def generate_separated_sources(platform_sources):
 
   for plat in platform_sources.keys():
     for value in platform_sources[plat]:
-      if isblacklisted(value):
+      if isignorelisted(value):
         continue
 
       if value in separated['common']:
@@ -266,7 +267,7 @@ def write_cflags(f, values, subsearch, cflag, indent):
   if isinstance(subsearch, str):
     subsearch = [ subsearch ]
 
-  def iswhitelisted(value):
+  def isallowlisted(value):
     for item in subsearch:
       if value.find(item) >= 0:
         return True
@@ -279,11 +280,11 @@ def write_cflags(f, values, subsearch, cflag, indent):
     return
 
   for val in val_list:
-    if iswhitelisted(val):
+    if isallowlisted(val):
       write_indent(indent)
       f.write("SOURCES[\'" + val + "\'].flags += " + cflag + "\n")
 
-opt_whitelist = [
+opt_allowlist = [
   'SkOpts',
   'SkBitmapProcState',
   'SkBitmapScaler',
@@ -296,7 +297,7 @@ opt_whitelist = [
 
 # Unfortunately for now the gpu and pathops directories are
 # non-unifiable. Keep track of this and fix it.
-unified_blacklist = [
+unified_ignorelist = [
   'FontHost',
   'SkBitmapProcState_matrixProcs.cpp',
   'SkBlitter_A8.cpp',
@@ -322,11 +323,11 @@ unified_blacklist = [
   'SkVertices.cpp',
   'SkSLHCodeGenerator.cpp',
   'SkSLLexer.cpp',
-] + opt_whitelist
+] + opt_allowlist
 
 def write_sources(f, values, indent):
-  def isblacklisted(value):
-    for item in unified_blacklist:
+  def isignorelisted(value):
+    for item in unified_ignorelist:
       if value.find(item) >= 0:
         return True
 
@@ -337,14 +338,14 @@ def write_sources(f, values, indent):
   sources['unified'] = set()
 
   for item in values:
-    if isblacklisted(item):
+    if isignorelisted(item):
       sources['nonunified'].add(item)
     else:
       sources['unified'].add(item)
 
   write_list(f, "UNIFIED_SOURCES", sources['unified'], indent)
   write_list(f, "SOURCES", sources['nonunified'], indent)
-  
+
 def write_list(f, name, values, indent):
   def write_indent(indent):
     for _ in range(indent):
@@ -371,7 +372,7 @@ def write_mozbuild(sources):
   f.write(header)
 
   write_sources(f, sources['common'], 0)
-  write_cflags(f, sources['common'], opt_whitelist, 'skia_opt_flags', 0)
+  write_cflags(f, sources['common'], opt_allowlist, 'skia_opt_flags', 0)
 
   f.write("if CONFIG['MOZ_ENABLE_SKIA_PDF']:\n")
   write_sources(f, sources['pdf'], 4)
@@ -390,17 +391,17 @@ def write_mozbuild(sources):
 
   f.write("if CONFIG['INTEL_ARCHITECTURE']:\n")
   write_sources(f, sources['intel'], 4)
-  write_cflags(f, sources['intel'], opt_whitelist, 'skia_opt_flags', 4)
+  write_cflags(f, sources['intel'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['arm']:
     f.write("elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):\n")
     write_sources(f, sources['arm'], 4)
-    write_cflags(f, sources['arm'], opt_whitelist, 'skia_opt_flags', 4)
+    write_cflags(f, sources['arm'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['arm64']:
     f.write("elif CONFIG['CPU_ARCH'] == 'aarch64':\n")
     write_sources(f, sources['arm64'], 4)
-    write_cflags(f, sources['arm64'], opt_whitelist, 'skia_opt_flags', 4)
+    write_cflags(f, sources['arm64'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['none']:
     f.write("else:\n")

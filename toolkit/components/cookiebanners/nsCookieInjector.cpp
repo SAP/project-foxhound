@@ -78,19 +78,30 @@ already_AddRefed<nsCookieInjector> nsCookieInjector::GetSingleton() {
 }
 
 // static
+bool nsCookieInjector::IsEnabledForCurrentPrefState() {
+  if (!StaticPrefs::cookiebanners_cookieInjector_enabled()) {
+    return false;
+  }
+
+  auto shouldInitForMode = [](uint32_t mode) {
+    return mode != nsICookieBannerService::MODE_DISABLED &&
+           mode != nsICookieBannerService::MODE_DETECT_ONLY;
+  };
+
+  // The cookie injector is initialized if enabled by pref and the main service
+  // is enabled (either in private browsing or normal browsing). For
+  // MODE_DETECT_ONLY the component should be disabled because it does not have
+  // banner detection capabilities.
+  return shouldInitForMode(StaticPrefs::cookiebanners_service_mode()) ||
+         shouldInitForMode(
+             StaticPrefs::cookiebanners_service_mode_privateBrowsing());
+}
+
+// static
 void nsCookieInjector::OnPrefChange(const char* aPref, void* aData) {
   RefPtr<nsCookieInjector> injector = nsCookieInjector::GetSingleton();
 
-  // The cookie injector is initialized if enabled by pref and the main service
-  // is enabled (either in private browsing or normal browsing).
-  bool shouldInit =
-      (StaticPrefs::cookiebanners_service_mode() !=
-           nsICookieBannerService::MODE_DISABLED ||
-       StaticPrefs::cookiebanners_service_mode_privateBrowsing() !=
-           nsICookieBannerService::MODE_DISABLED) &&
-      StaticPrefs::cookiebanners_cookieInjector_enabled();
-
-  if (shouldInit) {
+  if (IsEnabledForCurrentPrefState()) {
     MOZ_LOG(gCookieInjectorLog, LogLevel::Info,
             ("Initializing cookie injector after pref change. %s", aPref));
 
@@ -250,12 +261,12 @@ nsresult nsCookieInjector::InjectCookiesFromRules(
 
     // Convert to underlying implementer class to get fast non-xpcom property
     // access.
-    net::Cookie* c = static_cast<net::Cookie*>(cookie.get());
+    const net::Cookie& c = cookie->AsCookie();
 
     // Check if the cookie is already set to avoid overwriting any custom
     // settings.
     nsCOMPtr<nsICookie> existingCookie;
-    rv = cookieManager->GetCookieNative(c->Host(), c->Path(), c->Name(),
+    rv = cookieManager->GetCookieNative(c.Host(), c.Path(), c.Name(),
                                         &aOriginAttributes,
                                         getter_AddRefs(existingCookie));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -273,8 +284,7 @@ nsresult nsCookieInjector::InjectCookiesFromRules(
         MOZ_LOG(
             gCookieInjectorLog, LogLevel::Info,
             ("Skip setting already existing cookie. Cookie: %s, %s, %s, %s\n",
-             c->Host().get(), c->Name().get(), c->Path().get(),
-             c->Value().get()));
+             c.Host().get(), c.Name().get(), c.Path().get(), c.Value().get()));
         continue;
       }
 
@@ -288,8 +298,8 @@ nsresult nsCookieInjector::InjectCookiesFromRules(
         MOZ_LOG(gCookieInjectorLog, LogLevel::Info,
                 ("Skip setting already existing cookie. Cookie: %s, %s, %s, "
                  "%s. Rule unset value: %s",
-                 c->Host().get(), c->Name().get(), c->Path().get(),
-                 c->Value().get(), unsetValue.get()));
+                 c.Host().get(), c.Name().get(), c.Path().get(),
+                 c.Value().get(), unsetValue.get()));
         continue;
       }
 
@@ -299,12 +309,12 @@ nsresult nsCookieInjector::InjectCookiesFromRules(
     }
 
     MOZ_LOG(gCookieInjectorLog, LogLevel::Info,
-            ("Setting cookie: %s, %s, %s, %s\n", c->Host().get(),
-             c->Name().get(), c->Path().get(), c->Value().get()));
+            ("Setting cookie: %s, %s, %s, %s\n", c.Host().get(), c.Name().get(),
+             c.Path().get(), c.Value().get()));
     rv = cookieManager->AddNative(
-        c->Host(), c->Path(), c->Name(), c->Value(), c->IsSecure(),
-        c->IsHttpOnly(), c->IsSession(), c->Expiry(), &aOriginAttributes,
-        c->SameSite(), static_cast<nsICookie::schemeType>(c->SchemeMap()));
+        c.Host(), c.Path(), c.Name(), c.Value(), c.IsSecure(), c.IsHttpOnly(),
+        c.IsSession(), c.Expiry(), &aOriginAttributes, c.SameSite(),
+        static_cast<nsICookie::schemeType>(c.SchemeMap()));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

@@ -22,11 +22,9 @@ const { Log } = ChromeUtils.importESModule(
   "resource://gre/modules/Log.sys.mjs"
 );
 const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "FormHistory",
-  "resource://gre/modules/FormHistory.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+});
 
 const FORMS_TTL = 3 * 365 * 24 * 60 * 60; // Three years in seconds.
 
@@ -55,7 +53,7 @@ var FormWrapper = {
     if (!lazy.FormHistory.enabled) {
       return; // update isn't going to do anything.
     }
-    await lazy.FormHistory.update(changes).catch(Cu.reportError);
+    await lazy.FormHistory.update(changes).catch(console.error);
   },
 
   async getEntry(guid) {

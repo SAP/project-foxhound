@@ -1191,7 +1191,10 @@ let cookieBannerSection = new (class {
 
     // Only show the section if the feature is enabled for the normal or PBM
     // window.
-    return mode != Ci.nsICookieBannerService.MODE_DISABLED;
+    return (
+      mode != Ci.nsICookieBannerService.MODE_DISABLED &&
+      mode != Ci.nsICookieBannerService.MODE_DETECT_ONLY
+    );
   }
 
   /**
@@ -2490,7 +2493,10 @@ var gProtectionsHandler = {
           this._protectionsPopupSiteNotWorkingReportError.hidden = false;
         } else {
           this._protectionsPopup.hidePopup();
-          ConfirmationHint.show(this.iconBox, "breakageReport");
+          ConfirmationHint.show(
+            this.iconBox,
+            "confirmation-hint-breakage-report-sent"
+          );
         }
       })
       .catch(Cu.reportError);

@@ -9,6 +9,7 @@ add_task(async function() {
     "devtools.debugger.features.event-listeners-breakpoints",
     true
   );
+  await pushPref("apz.scrollend-event.content.enabled", true);
 
   const dbg = await initDebugger(
     "doc-event-breakpoints.html",
@@ -76,6 +77,8 @@ add_task(async function() {
   await toggleEventBreakpoint(dbg, "Control", "event.control.focusin");
   await toggleEventBreakpoint(dbg, "Control", "event.control.focusout");
 
+  // TODO: Enable this block when you fix bug 1466596 or bug 1690827
+  /*
   await toggleEventBreakpoint(
     dbg,
     "Keyboard",
@@ -132,6 +135,18 @@ add_task(async function() {
   await waitForPaused(dbg);
   assertPausedAtSourceAndLine(dbg, eventBreakpointsSource.id, 63);
   await resume(dbg);
+  */
+
+  info(`Check that breakpoint can be set on "scrollend"`);
+  await toggleEventBreakpoint(dbg, "Control", "event.control.scrollend");
+
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.scrollTo({ top: 20, behavior: "smooth" });
+  });
+
+  await waitForPaused(dbg);
+  assertPausedAtSourceAndLine(dbg, eventBreakpointsSource.id, 68);
+  await resume(dbg);
 
   info("Check that the click event breakpoint is still enabled");
   invokeInTab("clickHandler");
@@ -146,7 +161,7 @@ add_task(async function() {
   await wait(100);
   assertNotPaused(dbg);
 
-  info("Check that we can re-eanble event breakpoints");
+  info("Check that we can re-enable event breakpoints");
   await toggleEventBreakpoint(dbg, "Mouse", "event.mouse.click");
   invokeInTab("clickHandler");
   await waitForPaused(dbg);
@@ -179,11 +194,48 @@ add_task(async function() {
   await waitForDispatch(dbg.store, "BLACKBOX");
 });
 
+add_task(async function checkUnavailableEvents() {
+  await pushPref("apz.scrollend-event.content.enabled", false);
+
+  const dbg = await initDebugger(
+    "doc-event-breakpoints.html",
+    "event-breakpoints.js"
+  );
+  await selectSource(dbg, "event-breakpoints.js");
+  await waitForSelectedSource(dbg, "event-breakpoints.js");
+
+  is(
+    await getEventBreakpointCheckbox(dbg, "Control", "event.control.scrollend"),
+    null,
+    `"scrollend" item is not displayed when "apz.scrollend-event.content.enabled" is false`
+  );
+});
+
 function getEventListenersPanel(dbg) {
   return findElementWithSelector(dbg, ".event-listeners-pane .event-listeners");
 }
 
 async function toggleEventBreakpoint(
+  dbg,
+  eventBreakpointGroup,
+  eventBreakpointName
+) {
+  const eventCheckbox = await getEventBreakpointCheckbox(
+    dbg,
+    eventBreakpointGroup,
+    eventBreakpointName
+  );
+  eventCheckbox.scrollIntoView();
+  info(`Toggle ${eventBreakpointName} breakpoint`);
+  const onEventListenersUpdate = waitForDispatch(
+    dbg.store,
+    "UPDATE_EVENT_LISTENERS"
+  );
+  eventCheckbox.click();
+  await onEventListenersUpdate;
+}
+
+async function getEventBreakpointCheckbox(
   dbg,
   eventBreakpointGroup,
   eventBreakpointName
@@ -211,18 +263,7 @@ async function toggleEventBreakpoint(
     groupEventsUl = await waitFor(() => groupEl.querySelector("ul"));
   }
 
-  const eventCheckbox = findElementWithSelector(
-    dbg,
-    `input[value="${eventBreakpointName}"]`
-  );
-  eventCheckbox.scrollIntoView();
-  info(`Toggle ${eventBreakpointName} breakpoint`);
-  const onEventListenersUpdate = waitForDispatch(
-    dbg.store,
-    "UPDATE_EVENT_LISTENERS"
-  );
-  eventCheckbox.click();
-  await onEventListenersUpdate;
+  return findElementWithSelector(dbg, `input[value="${eventBreakpointName}"]`);
 }
 
 async function invokeOnElement(selector, action) {
@@ -236,6 +277,8 @@ async function invokeOnElement(selector, action) {
   );
 }
 
+// TODO: Enable this function when you fix bug 1466596 or bug 1690827
+/*
 function invokeComposition() {
   const string = "ex";
   EventUtils.synthesizeCompositionChange({
@@ -252,3 +295,4 @@ function invokeComposition() {
     key: { key: string[string.length - 1] },
   });
 }
+*/

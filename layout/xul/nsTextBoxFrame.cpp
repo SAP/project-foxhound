@@ -78,8 +78,8 @@ nsresult nsTextBoxFrame::AttributeChanged(int32_t aNameSpaceID,
   UpdateAttributes(aAttribute, aResize, aRedraw);
 
   if (aResize) {
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
   } else if (aRedraw) {
     nsBoxLayoutState state(PresContext());
     XULRedraw(state);
@@ -162,8 +162,8 @@ bool nsTextBoxFrame::UpdateAccesskey(WeakFrame& aWeakThis) {
     RecomputeTitle();
     mAccessKey = accesskey;
     UpdateAccessTitle();
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
-                                  NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(
+        this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
     return true;
   }
   return false;
@@ -727,8 +727,7 @@ void nsTextBoxFrame::UpdateAccessTitle() {
    * toolkit/components/prompts/src/CommonDialog.jsm (setLabelForNode)
    * toolkit/content/widgets/text.js (formatAccessKey)
    */
-  int32_t menuAccessKey;
-  nsMenuBarListener::GetMenuAccessKey(&menuAccessKey);
+  int32_t menuAccessKey = nsMenuBarListener::GetMenuAccessKey();
   if (!menuAccessKey || mAccessKey.IsEmpty()) return;
 
   if (!AlwaysAppendAccessKey() &&
@@ -775,8 +774,7 @@ void nsTextBoxFrame::UpdateAccessTitle() {
 }
 
 void nsTextBoxFrame::UpdateAccessIndex() {
-  int32_t menuAccessKey;
-  nsMenuBarListener::GetMenuAccessKey(&menuAccessKey);
+  int32_t menuAccessKey = nsMenuBarListener::GetMenuAccessKey();
   if (menuAccessKey) {
     if (mAccessKey.IsEmpty()) {
       if (mAccessKeyInfo) {

@@ -152,9 +152,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     case ColorID::IMESelectedConvertedTextUnderline:
       aColor = NS_TRANSPARENT;
       break;
-    case ColorID::SpellCheckerUnderline:
-      aColor = NS_RGB(0xff, 0x00, 0x00);
-      break;
 
       // css2  http://www.w3.org/TR/REC-CSS2/ui.html#system-colors
     case ColorID::Activeborder:     // active window border
@@ -208,6 +205,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     case ColorID::MozButtondisabledface:
     case ColorID::Threedface:
     case ColorID::Threedlightshadow:
+    case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
       aColor = NS_RGB(0xec, 0xe7, 0xe2);
       break;
@@ -260,6 +258,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
       break;
     case ColorID::MozNativehyperlinktext:
       aColor = NS_RGB(0, 0, 0xee);
+      break;
+    case ColorID::Marktext:
+    case ColorID::Mark:
+    case ColorID::SpellCheckerUnderline:
+      aColor = GetStandinForNativeColor(aID, aColorScheme);
       break;
     default:
       /* default color is BLACK */

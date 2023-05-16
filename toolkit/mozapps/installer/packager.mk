@@ -90,6 +90,14 @@ ifdef ENABLE_MOZSEARCH_PLUGIN
           rustlib/$(RUST_TARGET)/analysis/ rustlib/src/
 	@echo 'Generating mozsearch distinclude map...'
 	cd $(topobjdir)/ && cp _build_manifests/install/dist_include '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map'
+	@echo 'Generating mozsearch scip index...'
+	$(RM) $(MOZSEARCH_SCIP_INDEX_BASENAME).zip
+	cd $(topsrcdir)/ && \
+          CARGO=$(MOZ_FETCHES_DIR)/rustc/bin/cargo \
+          RUSTC=$(MOZ_FETCHES_DIR)/rustc/bin/rustc \
+          $(MOZ_FETCHES_DIR)/rustc/bin/rust-analyzer scip . && \
+          zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_SCIP_INDEX_BASENAME).zip' \
+          index.scip
 endif
 ifeq (Darwin, $(OS_ARCH))
 	@echo 'Generating macOS codesigning bundle ($(MACOS_CODESIGN_ARCHIVE_BASENAME).zip)'
@@ -100,6 +108,13 @@ ifneq (,$(MOZ_ASAN)$(LIBFUZZER)$(MOZ_UBSAN))
 	$(PYTHON3) $(MOZILLA_DIR)/build/unix/rewrite_sanitizer_dylib.py '$(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)'
 endif # MOZ_ASAN || LIBFUZZER || MOZ_UBSAN
 endif # Darwin
+ifndef MOZ_ARTIFACT_BUILDS
+	@echo 'Generating XPT artifacts archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip,-C $(topobjdir)/config/makefiles/xpidl '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+else
+	@echo 'Packaging existing XPT artifacts from artifact build into archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip,-C $(ABS_DIST)/xpt_artifacts '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+endif # MOZ_ARTIFACT_BUILDS
 
 prepare-package: stage-package
 

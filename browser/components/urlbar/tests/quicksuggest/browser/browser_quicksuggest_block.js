@@ -10,9 +10,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.jsm",
+    "resource:///modules/PartnerLinkAttribution.sys.mjs",
 });
 
 const { TELEMETRY_SCALARS } = UrlbarProviderQuickSuggest;
@@ -24,21 +24,21 @@ const { TIMESTAMP_TEMPLATE } = QuickSuggest;
 const SUGGESTIONS = [
   {
     id: 1,
-    url: `http://example.com/sponsored?t=${TIMESTAMP_TEMPLATE}`,
+    url: `https://example.com/sponsored?t=${TIMESTAMP_TEMPLATE}`,
     title: "Sponsored suggestion",
     keywords: ["sponsored"],
-    click_url: "http://example.com/click",
-    impression_url: "http://example.com/impression",
+    click_url: "https://example.com/click",
+    impression_url: "https://example.com/impression",
     advertiser: "TestAdvertiser",
     iab_category: "22 - Shopping",
   },
   {
     id: 2,
-    url: `http://example.com/nonsponsored?t=${TIMESTAMP_TEMPLATE}`,
+    url: `https://example.com/nonsponsored?t=${TIMESTAMP_TEMPLATE}`,
     title: "Non-sponsored suggestion",
     keywords: ["nonsponsored"],
-    click_url: "http://example.com/click",
-    impression_url: "http://example.com/impression",
+    click_url: "https://example.com/click",
+    impression_url: "https://example.com/impression",
     advertiser: "TestAdvertiser",
     iab_category: "5 - Education",
   },
@@ -181,12 +181,12 @@ async function doBasicBlockTest({ suggestion, isBestMatch, block }) {
 
   // Check telemetry scalars.
   let index = 2;
-  let scalars = {
-    [TELEMETRY_SCALARS.IMPRESSION]: index,
-  };
+  let scalars = {};
   if (isSponsored) {
+    scalars[TELEMETRY_SCALARS.IMPRESSION_SPONSORED] = index;
     scalars[TELEMETRY_SCALARS.BLOCK_SPONSORED] = index;
   } else {
+    scalars[TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED] = index;
     scalars[TELEMETRY_SCALARS.BLOCK_NONSPONSORED] = index;
   }
   if (isBestMatch) {

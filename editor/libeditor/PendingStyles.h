@@ -53,6 +53,9 @@ class PendingStyle final {
   }
   SpecifiedStyle GetSpecifiedStyle() const { return mSpecifiedStyle; }
 
+  EditorInlineStyle ToInlineStyle() const;
+  EditorInlineStyleAndValue ToInlineStyleAndValue() const;
+
  private:
   MOZ_KNOWN_LIVE nsStaticAtom* const mTag = nullptr;
   // TODO: Once we stop using `HTMLEditor::SetInlinePropertiesAsSubAction` to
@@ -70,15 +73,28 @@ class PendingStyle final {
 class PendingStyleCache final {
  public:
   PendingStyleCache() = delete;
-  PendingStyleCache(nsStaticAtom& aTag, nsStaticAtom* aAttribute,
+  PendingStyleCache(const nsStaticAtom& aTag, const nsStaticAtom* aAttribute,
                     const nsAString& aValue)
-      : mTag(aTag), mAttribute(aAttribute), mAttributeValueOrCSSValue(aValue) {}
+      // Needs const_cast hack here because the this class users may want
+      // non-const nsStaticAtom reference/pointer due to bug 1794954
+      : mTag(const_cast<nsStaticAtom&>(aTag)),
+        mAttribute(const_cast<nsStaticAtom*>(aAttribute)),
+        mAttributeValueOrCSSValue(aValue) {}
+  PendingStyleCache(const nsStaticAtom& aTag, const nsStaticAtom* aAttribute,
+                    nsAString&& aValue)
+      // Needs const_cast hack here because the this class users may want
+      // non-const nsStaticAtom reference/pointer due to bug 1794954
+      : mTag(const_cast<nsStaticAtom&>(aTag)),
+        mAttribute(const_cast<nsStaticAtom*>(aAttribute)),
+        mAttributeValueOrCSSValue(std::move(aValue)) {}
 
   MOZ_KNOWN_LIVE nsStaticAtom& TagRef() const { return mTag; }
   MOZ_KNOWN_LIVE nsStaticAtom* GetAttribute() const { return mAttribute; }
   const nsString& AttributeValueOrCSSValueRef() const {
     return mAttributeValueOrCSSValue;
   }
+
+  EditorInlineStyle ToInlineStyle() const;
 
  private:
   MOZ_KNOWN_LIVE nsStaticAtom& mTag;

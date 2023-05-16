@@ -19,10 +19,11 @@ from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import logging
 import os
-import redo
-import requests
 import shutil
 import sys
+
+import redo
+import requests
 
 log = logging.getLogger("upload-symbols")
 log.setLevel(logging.INFO)
@@ -81,12 +82,13 @@ def main():
     zip_path = args.archive
 
     if args.archive.endswith(".tar.zst"):
-        from mozpack.files import File
-        from mozpack.mozjar import JarWriter
         import gzip
         import tarfile
         import tempfile
+
         import zstandard
+        from mozpack.files import File
+        from mozpack.mozjar import JarWriter
 
         def prepare_zip_from(archive, tmpdir):
             if archive.startswith("http"):
@@ -230,9 +232,9 @@ def main():
                 timeout=(300, 300),
                 **zip_arg
             )
-            # 429 or any 5XX is likely to be a transient failure.
+            # 408, 429 or any 5XX is likely to be a transient failure.
             # Break out for success or other error codes.
-            if r.ok or (r.status_code < 500 and r.status_code != 429):
+            if r.ok or (r.status_code < 500 and (r.status_code not in (408, 429))):
                 break
             print_error(r)
         except requests.exceptions.RequestException as e:

@@ -1385,3 +1385,60 @@ const clickOnSidebarTab = (doc, name) => {
   );
   AccessibilityUtils.resetEnv();
 };
+
+/**
+ * Add a new blocked request URL pattern. The request blocking sidepanel should
+ * already be opened.
+ *
+ * @param {string} pattern
+ *     The URL pattern to add to block requests.
+ * @param {Object} monitor
+ *     The netmonitor instance.
+ */
+async function addBlockedRequest(pattern, monitor) {
+  info("Add a blocked request for the URL pattern " + pattern);
+  const doc = monitor.panelWin.document;
+
+  const addRequestForm = await waitFor(() =>
+    doc.querySelector(
+      "#network-action-bar-blocked-panel .request-blocking-add-form"
+    )
+  );
+  ok(!!addRequestForm, "The request blocking side panel is not available");
+
+  info("Wait for the add input to get focus");
+  await waitFor(() =>
+    addRequestForm.querySelector("input.devtools-searchinput:focus")
+  );
+
+  typeInNetmonitor(pattern, monitor);
+  EventUtils.synthesizeKey("KEY_Enter");
+}
+
+/**
+ * Check if the provided .request-list-item element corresponds to a blocked
+ * request.
+ *
+ * @param {Element}
+ *     The request's DOM element.
+ * @returns {boolean}
+ *     True if the request is displayed as blocked, false otherwise.
+ */
+function checkRequestListItemBlocked(item) {
+  return item.className.includes("blocked");
+}
+
+/**
+ * Type the provided string the netmonitor window. The correct input should be
+ * focused prior to using this helper.
+ *
+ * @param {string} string
+ *     The string to type.
+ * @param {Object} monitor
+ *     The netmonitor instance used to type the string.
+ */
+function typeInNetmonitor(string, monitor) {
+  for (const ch of string) {
+    EventUtils.synthesizeKey(ch, {}, monitor.panelWin);
+  }
+}

@@ -126,7 +126,7 @@ class DiscoveryStreamFeed {
       // istanbul ignore next
       this._prefCache.config = {};
       // istanbul ignore next
-      Cu.reportError(
+      console.error(
         `Could not parse preference. Try resetting ${PREF_CONFIG} in about:config. ${e}`
       );
     }
@@ -241,13 +241,21 @@ class DiscoveryStreamFeed {
   }
 
   setupPrefs(isStartup = false) {
-    const pocketNewtabExperiment = lazy.ExperimentAPI.getExperiment({
+    const pocketNewtabExperiment = lazy.ExperimentAPI.getExperimentMetaData({
       featureId: "pocketNewtab",
     });
 
+    const pocketNewtabRollout = lazy.ExperimentAPI.getRolloutMetaData({
+      featureId: "pocketNewtab",
+    });
+
+    // We want to know if the user is in an experiment or rollout,
+    // but we prioritize experiments over rollouts.
+    const experimentMetaData = pocketNewtabExperiment || pocketNewtabRollout;
+
     let utmSource = "pocket-newtab";
-    let utmCampaign = pocketNewtabExperiment?.slug;
-    let utmContent = pocketNewtabExperiment?.branch?.slug;
+    let utmCampaign = experimentMetaData?.slug;
+    let utmContent = experimentMetaData?.branch?.slug;
 
     this.store.dispatch(
       ac.BroadcastToContent({
@@ -370,7 +378,7 @@ class DiscoveryStreamFeed {
 
   async fetchFromEndpoint(rawEndpoint, options = {}) {
     if (!rawEndpoint) {
-      Cu.reportError("Tried to fetch endpoint but none was configured.");
+      console.error("Tried to fetch endpoint but none was configured.");
       return null;
     }
 
@@ -414,7 +422,7 @@ class DiscoveryStreamFeed {
       clearTimeout(timeoutId);
       return response.json();
     } catch (error) {
-      Cu.reportError(`Failed to fetch ${endpoint}: ${error.message}`);
+      console.error(`Failed to fetch ${endpoint}: ${error.message}`);
     }
     return null;
   }
@@ -529,7 +537,7 @@ class DiscoveryStreamFeed {
 
         await this.cache.set("layout", layout);
       } else {
-        Cu.reportError("No response for response.layout prop");
+        console.error("No response for response.layout prop");
       }
     }
     return layout;
@@ -799,7 +807,7 @@ class DiscoveryStreamFeed {
           })
           .catch(
             /* istanbul ignore next */ error => {
-              Cu.reportError(
+              console.error(
                 `Error trying to load component feed ${url}: ${error}`
               );
             }
@@ -1099,7 +1107,7 @@ class DiscoveryStreamFeed {
             spocs: spocsState.spocs,
           });
         } else {
-          Cu.reportError("No response for spocs_endpoint prop");
+          console.error("No response for spocs_endpoint prop");
         }
       }
     }
@@ -1441,7 +1449,7 @@ class DiscoveryStreamFeed {
           },
         };
       } else {
-        Cu.reportError("No response for feed");
+        console.error("No response for feed");
       }
     }
 
@@ -1621,7 +1629,7 @@ class DiscoveryStreamFeed {
       // We only make one fetch, and control which to request when we fetch.
       // So for now we only care if we need to make this request at all.
       const spocsPromise = this.loadSpocs(dispatch, isStartup).catch(error =>
-        Cu.reportError(`Error trying to load spocs feeds: ${error}`)
+        console.error(`Error trying to load spocs feeds: ${error}`)
       );
       promises.push(spocsPromise);
       if (this.showStories) {
@@ -1629,7 +1637,7 @@ class DiscoveryStreamFeed {
           dispatch,
           isStartup
         ).catch(error =>
-          Cu.reportError(`Error trying to load component feeds: ${error}`)
+          console.error(`Error trying to load component feeds: ${error}`)
         );
         promises.push(storiesPromise);
       }

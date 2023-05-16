@@ -25,7 +25,9 @@ class ScrollTimeline;
 
 class AnimationTimeline : public nsISupports, public nsWrapperCache {
  public:
-  explicit AnimationTimeline(nsIGlobalObject* aWindow) : mWindow(aWindow) {
+  explicit AnimationTimeline(nsIGlobalObject* aWindow,
+                             RTPCallerType aRTPCallerType)
+      : mWindow(aWindow), mRTPCallerType(aRTPCallerType) {
     MOZ_ASSERT(mWindow);
   }
 
@@ -48,7 +50,8 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   // Wrapper functions for AnimationTimeline DOM methods when called from
   // script.
   Nullable<double> GetCurrentTimeAsDouble() const {
-    return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration());
+    return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration(),
+                                                mRTPCallerType);
   }
 
   TimeStamp GetCurrentTimeAsTimeStamp() const {
@@ -105,6 +108,8 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
 
   virtual bool IsMonotonicallyIncreasing() const = 0;
 
+  RTPCallerType GetRTPCallerType() const { return mRTPCallerType; }
+
   virtual bool IsScrollTimeline() const { return false; }
   virtual const ScrollTimeline* AsScrollTimeline() const { return nullptr; }
 
@@ -129,6 +134,9 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   typedef nsTHashSet<nsRefPtrHashKey<dom::Animation>> AnimationSet;
   AnimationSet mAnimations;
   LinkedList<dom::Animation> mAnimationOrder;
+
+  // Whether the Timeline is System, ResistFingerprinting, or neither
+  enum RTPCallerType mRTPCallerType;
 };
 
 }  // namespace mozilla::dom

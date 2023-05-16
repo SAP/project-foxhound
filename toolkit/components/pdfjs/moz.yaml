@@ -20,8 +20,8 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 7e5008f0ff013cc2b8f2af10db7f007e7cafe0de (2022-11-05T14:26:57Z).
-  revision: 7e5008f0ff013cc2b8f2af10db7f007e7cafe0de
+  release: feb6f5951c7cbcc9d2f42379b326e6cdb4cbc549 (2022-12-06T18:11:33Z).
+  revision: feb6f5951c7cbcc9d2f42379b326e6cdb4cbc549
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -48,7 +48,7 @@ vendoring:
       args: ['{revision}']
 
 updatebot:
-    maintainer-phab: "pdfjs-reviewers"
+    maintainer-phab: "#pdfjs-reviewers"
     maintainer-bz: cdenizet@mozilla.com
     fuzzy-query: "'debug | 'opt !san !android"
     fuzzy-paths:

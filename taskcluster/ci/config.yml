@@ -36,6 +36,7 @@ treeherder:
         'Btime-live-fenix': 'Browsertime performance tests on Firefox'
         'Btime-live-ChR': 'Browsertime performance tests on Firefox'
         'Btime-live-Cr': 'Browsertime performance tests on Google Chromium'
+        'Btime-live-Saf': 'Browsertime performance tests on Safari'
         'Btime-ChR': 'Browsertime performance tests on Google Chrome Release'
         'Btime-nofis-ChR': 'Browsertime performance tests on Google Chrome Release without fission enabled'
         'Btime-Cr': 'Browsertime performance tests on Google Chromium'
@@ -44,6 +45,7 @@ treeherder:
         'Btime-P-refbrow': 'Browsertime power tests on reference browser'
         'Btime-fenix': 'Browsertime performance tests on Fenix'
         'Btime-refbrow': 'Browsertime performance tests on the reference browser'
+        'Btime-Saf': 'Browsertime performance tests on Safari'
         'Fetch': 'Fetch and store content'
         'Fxfn': 'Firefox functional tests'
         'Fxfn-nofis': 'Firefox functional tests without fission enabled'
@@ -60,6 +62,8 @@ treeherder:
         'M-1proc': 'Mochitests without e10s or fission'
         'M-a11y-checks': 'Mochitests with accessibility checks enabled'
         'M-a11y-checks-nofis': 'Mochitests with accessibility checks enabled and without fission enabled'
+        'M-a11y-no-cache': 'Mochitests with accessibility cache disabled'
+        'M-a11y-no-cache-1proc': 'Mochitests with accessibility cache, e10s, and fission disabled'
         'M-xorig': 'Mochitests with cross-origin and fission enabled'
         'M-gli': 'Mochitests with WebGL over IPC'
         'M-gli-nofis': 'Mochitests with WebGL over IPC without fission enabled'
@@ -80,6 +84,7 @@ treeherder:
         'M-wmfme': 'Mochitests with Windows Media Foundation media engine enabled'
         'M-f': 'Mochitest failures'
         'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT without fission enabled'
+        'M-msix': 'Mochitests from MSIX builds'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
         'MSIX': 'Repack into MSIX package'
@@ -619,7 +624,7 @@ workers:
                     default: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: 't-linux-xlarge'
+            worker-type: 't-linux-xlarge-gcp'
         b-osx-1015:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -689,14 +694,17 @@ expiration-policy:
     by-project:
         try:
             default: 1 month
+            short: 14 days
             medium: 1 month
             long: 1 month
         autoland:
             default: 1 year
+            short: 3 months
             medium: 1 year
             # To avoid keeping shippable builds for over a year
             long: 1 year
         default:
             default: 3 months
+            short: 1 month
             medium: 1 year
             long: 1 year

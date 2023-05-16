@@ -1,9 +1,10 @@
 from __future__ import absolute_import, print_function
+
 import os
 import time
 
-from marionette_harness import MarionetteTestCase
 from marionette_driver.errors import NoAlertPresentException
+from marionette_harness import MarionetteTestCase
 
 
 # Holds info about things we need to cleanup after the tests are done.
@@ -178,8 +179,8 @@ class TestFirefoxRefresh(MarionetteTestCase):
           let resolve = arguments[arguments.length - 1];
           const COMPLETE_STATE = Ci.nsIWebProgressListener.STATE_STOP +
                                  Ci.nsIWebProgressListener.STATE_IS_NETWORK;
-          let { TabStateFlusher } = ChromeUtils.import(
-            "resource:///modules/sessionstore/TabStateFlusher.jsm"
+          let { TabStateFlusher } = ChromeUtils.importESModule(
+            "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
           );
           let expectedURLs = Array.from(arguments[0])
           gBrowser.addTabsProgressListener({
@@ -598,18 +599,18 @@ class TestFirefoxRefresh(MarionetteTestCase):
           global.profSvc.flush()
 
           // Now add the reset parameters:
-          let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
           let prefsToKeep = Array.from(Services.prefs.getChildList("marionette."));
           // Add all the modified preferences set from geckoinstance.py to avoid
           // non-local connections.
-          prefsToKeep = prefsToKeep.concat(JSON.parse(env.get("MOZ_MARIONETTE_REQUIRED_PREFS")));
+          prefsToKeep = prefsToKeep.concat(JSON.parse(
+              Services.env.get("MOZ_MARIONETTE_REQUIRED_PREFS")));
           let prefObj = {};
           for (let pref of prefsToKeep) {
             prefObj[pref] = global.Preferences.get(pref);
           }
-          env.set("MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS", JSON.stringify(prefObj));
-          env.set("MOZ_RESET_PROFILE_RESTART", "1");
-          env.set("XRE_PROFILE_PATH", arguments[0]);
+          Services.env.set("MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS", JSON.stringify(prefObj));
+          Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
+          Services.env.set("XRE_PROFILE_PATH", arguments[0]);
         """,
             script_args=(
                 self.marionette.instance.profile.profile,

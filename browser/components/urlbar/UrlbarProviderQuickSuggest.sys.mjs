@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import {
   UrlbarProvider,
   UrlbarUtils,
@@ -12,41 +10,39 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  CONTEXTUAL_SERVICES_PING_TYPES:
+    "resource:///modules/PartnerLinkAttribution.sys.mjs",
   MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
+  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.jsm",
-  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
-});
+const TELEMETRY_PREFIX = "contextual.services.quicksuggest";
 
 const TELEMETRY_SCALARS = {
-  BLOCK_SPONSORED: "contextual.services.quicksuggest.block_sponsored",
-  BLOCK_SPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.block_sponsored_bestmatch",
-  BLOCK_NONSPONSORED: "contextual.services.quicksuggest.block_nonsponsored",
-  BLOCK_NONSPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.block_nonsponsored_bestmatch",
-  CLICK: "contextual.services.quicksuggest.click",
-  CLICK_NONSPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.click_nonsponsored_bestmatch",
-  CLICK_SPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.click_sponsored_bestmatch",
-  HELP: "contextual.services.quicksuggest.help",
-  HELP_NONSPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.help_nonsponsored_bestmatch",
-  HELP_SPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.help_sponsored_bestmatch",
-  IMPRESSION: "contextual.services.quicksuggest.impression",
-  IMPRESSION_NONSPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.impression_nonsponsored_bestmatch",
-  IMPRESSION_SPONSORED_BEST_MATCH:
-    "contextual.services.quicksuggest.impression_sponsored_bestmatch",
+  BLOCK_SPONSORED: `${TELEMETRY_PREFIX}.block_sponsored`,
+  BLOCK_SPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.block_sponsored_bestmatch`,
+  BLOCK_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.block_dynamic_wikipedia`,
+  BLOCK_NONSPONSORED: `${TELEMETRY_PREFIX}.block_nonsponsored`,
+  BLOCK_NONSPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.block_nonsponsored_bestmatch`,
+  CLICK_SPONSORED: `${TELEMETRY_PREFIX}.click_sponsored`,
+  CLICK_NONSPONSORED: `${TELEMETRY_PREFIX}.click_nonsponsored`,
+  CLICK_NONSPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.click_nonsponsored_bestmatch`,
+  CLICK_SPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.click_sponsored_bestmatch`,
+  CLICK_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.click_dynamic_wikipedia`,
+  HELP_SPONSORED: `${TELEMETRY_PREFIX}.help_sponsored`,
+  HELP_NONSPONSORED: `${TELEMETRY_PREFIX}.help_nonsponsored`,
+  HELP_NONSPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.help_nonsponsored_bestmatch`,
+  HELP_SPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.help_sponsored_bestmatch`,
+  HELP_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.help_dynamic_wikipedia`,
+  IMPRESSION_SPONSORED: `${TELEMETRY_PREFIX}.impression_sponsored`,
+  IMPRESSION_NONSPONSORED: `${TELEMETRY_PREFIX}.impression_nonsponsored`,
+  IMPRESSION_NONSPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.impression_nonsponsored_bestmatch`,
+  IMPRESSION_SPONSORED_BEST_MATCH: `${TELEMETRY_PREFIX}.impression_sponsored_bestmatch`,
+  IMPRESSION_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.impression_dynamic_wikipedia`,
 };
 
 /**
@@ -207,7 +203,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
       sponsoredIabCategory: suggestion.iab_category,
       isSponsored: suggestion.is_sponsored,
       helpUrl: lazy.QuickSuggest.HELP_URL,
-      helpL10nId: "firefox-suggest-urlbar-learn-more",
+      helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
       source: suggestion.source,
       requestId: suggestion.request_id,
     };
@@ -234,10 +230,14 @@ class ProviderQuickSuggest extends UrlbarProvider {
       // Show the result as a best match. Best match titles don't include the
       // `full_keyword`, and the user's search string is highlighted.
       payload.title = [suggestion.title, UrlbarUtils.HIGHLIGHT.TYPED];
+      payload.isBlockable = lazy.UrlbarPrefs.get("bestMatchBlockingEnabled");
+      payload.blockL10n = { id: "firefox-suggest-urlbar-block" };
     } else {
       // Show the result as a usual quick suggest. Include the `full_keyword`
       // and highlight the parts that aren't in the search string.
       payload.title = suggestion.title;
+      payload.isBlockable = lazy.UrlbarPrefs.get("quickSuggestBlockingEnabled");
+      payload.blockL10n = { id: "firefox-suggest-urlbar-block" };
       payload.qsSuggestion = [
         suggestion.full_keyword,
         UrlbarUtils.HIGHLIGHT.SUGGESTED,
@@ -316,6 +316,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   Whether the result was blocked.
    */
   blockResult(queryContext, result) {
+    if (result.payload.merinoProvider == "accuweather") {
+      this.logger.info("Blocking weather result");
+      lazy.UrlbarPrefs.set("suggest.weather", false);
+      return true;
+    }
+
     if (
       (!result.isBestMatch &&
         !lazy.UrlbarPrefs.get("quickSuggestBlockingEnabled")) ||
@@ -433,13 +439,26 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Indexes recorded in quick suggest telemetry are 1-based, so add 1 to the
     // 0-based `result.rowIndex`.
     let telemetryResultIndex = result.rowIndex + 1;
+    let isDynamicWikipedia =
+      result.payload.sponsoredAdvertiser == "dynamic-wikipedia";
 
     // impression scalars
     Services.telemetry.keyedScalarAdd(
-      TELEMETRY_SCALARS.IMPRESSION,
+      result.payload.isSponsored
+        ? TELEMETRY_SCALARS.IMPRESSION_SPONSORED
+        : TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED,
       telemetryResultIndex,
       1
     );
+
+    if (isDynamicWikipedia) {
+      Services.telemetry.keyedScalarAdd(
+        TELEMETRY_SCALARS.IMPRESSION_DYNAMIC_WIKIPEDIA,
+        telemetryResultIndex,
+        1
+      );
+    }
+
     if (result.isBestMatch) {
       Services.telemetry.keyedScalarAdd(
         result.payload.isSponsored
@@ -454,7 +473,14 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let clickScalars = [];
     switch (selType) {
       case "quicksuggest":
-        clickScalars.push(TELEMETRY_SCALARS.CLICK);
+        clickScalars.push(
+          result.payload.isSponsored
+            ? TELEMETRY_SCALARS.CLICK_SPONSORED
+            : TELEMETRY_SCALARS.CLICK_NONSPONSORED
+        );
+        if (isDynamicWikipedia) {
+          clickScalars.push(TELEMETRY_SCALARS.CLICK_DYNAMIC_WIKIPEDIA);
+        }
         if (result.isBestMatch) {
           clickScalars.push(
             result.payload.isSponsored
@@ -464,7 +490,14 @@ class ProviderQuickSuggest extends UrlbarProvider {
         }
         break;
       case "help":
-        clickScalars.push(TELEMETRY_SCALARS.HELP);
+        clickScalars.push(
+          result.payload.isSponsored
+            ? TELEMETRY_SCALARS.HELP_SPONSORED
+            : TELEMETRY_SCALARS.HELP_NONSPONSORED
+        );
+        if (isDynamicWikipedia) {
+          clickScalars.push(TELEMETRY_SCALARS.HELP_DYNAMIC_WIKIPEDIA);
+        }
         if (result.isBestMatch) {
           clickScalars.push(
             result.payload.isSponsored
@@ -479,6 +512,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
             ? TELEMETRY_SCALARS.BLOCK_SPONSORED
             : TELEMETRY_SCALARS.BLOCK_NONSPONSORED
         );
+        if (isDynamicWikipedia) {
+          clickScalars.push(TELEMETRY_SCALARS.BLOCK_DYNAMIC_WIKIPEDIA);
+        }
         if (result.isBestMatch) {
           clickScalars.push(
             result.payload.isSponsored
@@ -501,6 +537,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     // engagement event
     let match_type = result.isBestMatch ? "best-match" : "firefox-suggest";
+    let suggestion_type = result.payload.isSponsored
+      ? "sponsored"
+      : "nonsponsored";
+    if (isDynamicWikipedia) {
+      suggestion_type = "dynamic-wikipedia";
+    }
     Services.telemetry.recordEvent(
       lazy.QuickSuggest.TELEMETRY_EVENT_CATEGORY,
       "engagement",
@@ -509,9 +551,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
       {
         match_type,
         position: String(telemetryResultIndex),
-        suggestion_type: result.payload.isSponsored
-          ? "sponsored"
-          : "nonsponsored",
+        suggestion_type,
+        source: result.payload.source,
       }
     );
 
@@ -531,6 +572,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
         ),
         position: telemetryResultIndex,
         request_id: result.payload.requestId,
+        source: result.payload.source,
       };
 
       // impression
@@ -651,9 +693,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
         url: suggestion.url,
         icon: "chrome://global/skin/icons/highlights.svg",
         helpUrl: lazy.QuickSuggest.HELP_URL,
-        helpL10nId: "firefox-suggest-urlbar-learn-more",
+        helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+        isBlockable: true,
+        blockL10n: { id: "firefox-suggest-urlbar-block" },
         requestId: suggestion.request_id,
         source: suggestion.source,
+        merinoProvider: suggestion.provider,
       }
     );
 

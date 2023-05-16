@@ -28,8 +28,6 @@
 #include "apz/src/HitTestingTreeNode.h"
 #include "base/task.h"
 #include "gfxPlatform.h"
-#include "Layers.h"
-#include "TestLayers.h"
 #include "TestWRScrollData.h"
 #include "UnitTransforms.h"
 
@@ -247,6 +245,25 @@ class TestAPZCTreeManager : public APZCTreeManager {
    **/
   void CancelAnimation() { EXPECT_TRUE(false); }
 
+  APZEventResult ReceiveInputEvent(
+      InputData& aEvent,
+      InputBlockCallback&& aCallback = InputBlockCallback()) override {
+    APZEventResult result =
+        APZCTreeManager::ReceiveInputEvent(aEvent, std::move(aCallback));
+    if (aEvent.mInputType == PANGESTURE_INPUT &&
+        // In the APZCTreeManager::ReceiveInputEvent some type of pan gesture
+        // events are marked as `mHandledByAPZ = false` (e.g. with Ctrl key
+        // modifier which causes reflow zoom), in such cases the events will
+        // never be processed by InputQueue so we shouldn't try to invoke
+        // AllowsSwipe() here.
+        aEvent.AsPanGestureInput().mHandledByAPZ &&
+        aEvent.AsPanGestureInput().AllowsSwipe()) {
+      SetBrowserGestureResponse(result.mInputBlockId,
+                                BrowserGestureResponse::NotConsumed);
+    }
+    return result;
+  }
+
  protected:
   AsyncPanZoomController* NewAPZCInstance(
       LayersId aLayersId, GeckoContentController* aController) override;
@@ -275,9 +292,16 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     // on APZCTreeManager. This allows us to templates for functions like
     // TouchDown, TouchUp, etc so that we can reuse the code for dispatching
     // events into both APZC and APZCTM.
-    return GetInputQueue()->ReceiveInputEvent(
+    APZEventResult result = GetInputQueue()->ReceiveInputEvent(
         this, TargetConfirmationFlags{!mWaitForMainThread}, aEvent,
         aTouchBehaviors);
+
+    if (aEvent.mInputType == PANGESTURE_INPUT &&
+        aEvent.AsPanGestureInput().AllowsSwipe()) {
+      GetInputQueue()->SetBrowserGestureResponse(
+          result.mInputBlockId, BrowserGestureResponse::NotConsumed);
+    }
+    return result;
   }
 
   void ContentReceivedInputBlock(uint64_t aInputBlockId, bool aPreventDefault) {
@@ -530,7 +554,8 @@ class APZCTesterBase : public ::testing::Test {
       nsTArray<uint32_t>* aAllowedTouchBehaviors = nullptr,
       nsEventStatus (*aOutEventStatuses)[4] = nullptr,
       uint64_t* aOutInputBlockId = nullptr,
-      PinchOptions aOptions = PinchOptions::LiftBothFingers);
+      PinchOptions aOptions = PinchOptions::LiftBothFingers,
+      bool aVertical = false);
 
   // Pinch with one focus point. Zooms in place with no panning
   template <class InputReceiver>
@@ -540,7 +565,8 @@ class APZCTesterBase : public ::testing::Test {
       nsTArray<uint32_t>* aAllowedTouchBehaviors = nullptr,
       nsEventStatus (*aOutEventStatuses)[4] = nullptr,
       uint64_t* aOutInputBlockId = nullptr,
-      PinchOptions aOptions = PinchOptions::LiftBothFingers);
+      PinchOptions aOptions = PinchOptions::LiftBothFingers,
+      bool aVertical = false);
 
   template <class InputReceiver>
   void PinchWithTouchInputAndCheckStatus(
@@ -812,11 +838,11 @@ void APZCTesterBase::PinchWithTouchInput(
     const RefPtr<InputReceiver>& aTarget, const ScreenIntPoint& aFocus,
     float aScale, int& inputId, nsTArray<uint32_t>* aAllowedTouchBehaviors,
     nsEventStatus (*aOutEventStatuses)[4], uint64_t* aOutInputBlockId,
-    PinchOptions aOptions) {
+    PinchOptions aOptions, bool aVertical) {
   // Perform a pinch gesture with the same start & end focus point
   PinchWithTouchInput(aTarget, aFocus, aFocus, aScale, inputId,
                       aAllowedTouchBehaviors, aOutEventStatuses,
-                      aOutInputBlockId, aOptions);
+                      aOutInputBlockId, aOptions, aVertical);
 }
 
 template <class InputReceiver>
@@ -825,12 +851,17 @@ void APZCTesterBase::PinchWithTouchInput(
     const ScreenIntPoint& aSecondFocus, float aScale, int& inputId,
     nsTArray<uint32_t>* aAllowedTouchBehaviors,
     nsEventStatus (*aOutEventStatuses)[4], uint64_t* aOutInputBlockId,
-    PinchOptions aOptions) {
+    PinchOptions aOptions, bool aVertical) {
   // Having pinch coordinates in float type may cause problems with
   // high-precision scale values since SingleTouchData accepts integer value.
   // But for trivial tests it should be ok.
-  float pinchLength = 100.0;
-  float pinchLengthScaled = pinchLength * aScale;
+  const float pinchLength = 100.0;
+  const float pinchLengthScaled = pinchLength * aScale;
+
+  const float pinchLengthX = aVertical ? 0 : pinchLength;
+  const float pinchLengthScaledX = aVertical ? 0 : pinchLengthScaled;
+  const float pinchLengthY = aVertical ? pinchLength : 0;
+  const float pinchLengthScaledY = aVertical ? pinchLengthScaled : 0;
 
   // Even if the caller doesn't care about the block id, we need it to set the
   // allowed touch behaviour below, so make sure aOutInputBlockId is non-null.
@@ -865,8 +896,10 @@ void APZCTesterBase::PinchWithTouchInput(
     SetDefaultAllowedTouchBehavior(aTarget, *aOutInputBlockId, 2);
   }
 
-  ScreenIntPoint pinchStartPoint1(aFocus.x - int32_t(pinchLength), aFocus.y);
-  ScreenIntPoint pinchStartPoint2(aFocus.x + int32_t(pinchLength), aFocus.y);
+  ScreenIntPoint pinchStartPoint1(aFocus.x - int32_t(pinchLengthX),
+                                  aFocus.y - int32_t(pinchLengthY));
+  ScreenIntPoint pinchStartPoint2(aFocus.x + int32_t(pinchLengthX),
+                                  aFocus.y + int32_t(pinchLengthY));
 
   MultiTouchInput mtiMove1 =
       MultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, 0, mcc->Time(), 0);
@@ -886,10 +919,10 @@ void APZCTesterBase::PinchWithTouchInput(
   auto stepVector = (aSecondFocus - aFocus) / numSteps;
   for (int k = 1; k < numSteps; k++) {
     ScreenIntPoint stepFocus = aFocus + stepVector * k;
-    ScreenIntPoint stepPoint1(stepFocus.x - int32_t(pinchLengthScaled),
-                              stepFocus.y);
-    ScreenIntPoint stepPoint2(stepFocus.x + int32_t(pinchLengthScaled),
-                              stepFocus.y);
+    ScreenIntPoint stepPoint1(stepFocus.x - int32_t(pinchLengthScaledX),
+                              stepFocus.y - int32_t(pinchLengthScaledY));
+    ScreenIntPoint stepPoint2(stepFocus.x + int32_t(pinchLengthScaledX),
+                              stepFocus.y + int32_t(pinchLengthScaledY));
     MultiTouchInput mtiMoveStep =
         MultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, 0, mcc->Time(), 0);
     mtiMoveStep.mTouches.AppendElement(
@@ -901,10 +934,10 @@ void APZCTesterBase::PinchWithTouchInput(
     mcc->AdvanceBy(TIME_BETWEEN_TOUCH_EVENT);
   }
 
-  ScreenIntPoint pinchEndPoint1(aSecondFocus.x - int32_t(pinchLengthScaled),
-                                aSecondFocus.y);
-  ScreenIntPoint pinchEndPoint2(aSecondFocus.x + int32_t(pinchLengthScaled),
-                                aSecondFocus.y);
+  ScreenIntPoint pinchEndPoint1(aSecondFocus.x - int32_t(pinchLengthScaledX),
+                                aSecondFocus.y - int32_t(pinchLengthScaledY));
+  ScreenIntPoint pinchEndPoint2(aSecondFocus.x + int32_t(pinchLengthScaledX),
+                                aSecondFocus.y + int32_t(pinchLengthScaledY));
 
   MultiTouchInput mtiMove2 =
       MultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, 0, mcc->Time(), 0);

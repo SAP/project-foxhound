@@ -89,10 +89,7 @@ class FxAccountsDevice {
 
   // Generate a client name if we don't have a useful one yet
   getDefaultLocalName() {
-    let env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    let user = env.get("USER") || env.get("USERNAME");
+    let user = Services.env.get("USER") || Services.env.get("USERNAME");
     // Note that we used to fall back to the "services.sync.username" pref here,
     // but that's no longer suitable in a world where sync might not be
     // configured. However, we almost never *actually* fell back to that, and
@@ -101,8 +98,8 @@ class FxAccountsDevice {
 
     // A little hack for people using the the moz-build environment on Windows
     // which sets USER to the literal "%USERNAME%" (yes, really)
-    if (user == "%USERNAME%" && env.get("USERNAME")) {
-      user = env.get("USERNAME");
+    if (user == "%USERNAME%" && Services.env.get("USERNAME")) {
+      user = Services.env.get("USERNAME");
     }
 
     let brand = Services.strings.createBundle(
@@ -125,7 +122,7 @@ class FxAccountsDevice {
         Ci.nsIDNSService
       ).myHostName;
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
     let system =
       // 'device' is defined on unix systems
@@ -274,9 +271,14 @@ class FxAccountsDevice {
     // both to help tests and as a safety valve - missing might mean
     // "no push available" for self-hosters or similar?)
     const ourDevice = remoteDevices.find(device => device.isCurrentDevice);
+    const subscription = await this._fxai.fxaPushService.getSubscription();
     if (
       ourDevice &&
-      (ourDevice.pushCallback === null || ourDevice.pushEndpointExpired)
+      (ourDevice.pushCallback === null || // fxa server doesn't know our subscription.
+      ourDevice.pushEndpointExpired || // fxa server thinks it has expired.
+      !subscription || // we don't have a local subscription.
+      subscription.isExpired() || // our local subscription is expired.
+        ourDevice.pushCallback != subscription.endpoint) // we don't agree with fxa.
     ) {
       log.warn(`Our push endpoint needs resubscription`);
       await this._fxai.fxaPushService.unsubscribe();
@@ -289,6 +291,8 @@ class FxAccountsDevice {
     ) {
       log.warn(`Our commands need to be updated on the server`);
       await this._registerOrUpdateDevice(currentState, accountData);
+    } else {
+      log.trace(`Our push subscription looks OK`);
     }
   }
 

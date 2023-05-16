@@ -8,6 +8,7 @@ Releases
    :glob:
    :hidden:
 
+   nss_3_86.rst
    nss_3_85.rst
    nss_3_84.rst
    nss_3_83.rst
@@ -44,8 +45,8 @@ Releases
 
 .. note::
 
-   **NSS 3.85** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_85_release_notes`
+   **NSS 3.86** is the latest version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_86_release_notes`
 
    **NSS 3.79.2** is the latest ESR version of NSS.
    Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_79_2_release_notes`
@@ -53,21 +54,20 @@ Releases
 
 .. container::
 
-   Changes in 3.85 included in this release:
+   Changes in 3.86 included in this release:
 
-   - Bug 1792821 - Modification of the primes.c and dhe-params.c in order to have better looking tables.
-   - Bug 1796815 - Update zlib in NSS to 1.2.13.
-   - Bug 1796504 - Skip building modutil and shlibsign when building in Firefox.
-   - Bug 1796504 - Use __STDC_VERSION__ rather than __STDC__ as a guard. 
-   - Bug 1796407 - Fix -Wunused-but-set-variable warning from clang 15.
-   - Bug 1796308 - Fix -Wtautological-constant-out-of-range-compare and -Wtype-limits warnings. 
-   - Bug 1796281 - Followup: add missing stdint.h include.
-   - Bug 1796281 - Fix -Wint-to-void-pointer-cast warnings.
-   - Bug 1796280 - Fix -Wunused-{function,variable,but-set-variable} warnings on Windows.
-   - Bug 1796079 - Fix -Wstring-conversion warnings.
-   - Bug 1796075 - Fix -Wempty-body warnings.
-   - Bug 1795242 - Fix unused-but-set-parameter warning.
-   - Bug 1795241 - Fix unreachable-code warnings.
-   - Bug 1795222 - Mark _nss_version_c unused on clang-cl.
-   - Bug 1795668 - Remove redundant variable definitions in lowhashtest.
-   - No bug - Add note about python executable to build instructions.
+   - Bug 1803190 - conscious language removal in NSS.
+   - Bug 1794506 - Set nssckbi version number to 2.60.
+   - Bug 1803453 - Set CKA_NSS_SERVER_DISTRUST_AFTER and CKA_NSS_EMAIL_DISTRUST_AFTER for 3 TrustCor Root Certificates.
+   - Bug 1799038 - Remove Staat der Nederlanden EV Root CA from NSS.
+   - Bug 1797559 - Remove EC-ACC root cert from NSS.
+   - Bug 1794507 - Remove SwissSign Platinum CA - G2 from NSS.
+   - Bug 1794495 - Remove Network Solutions Certificate Authority.
+   - Bug 1802331 - compress docker image artifact with zstd.
+   - Bug 1799315 - Migrate nss from AWS to GCP.
+   - Bug 1800989 - Enable static builds in the CI.
+   - Bug 1765759 - Removing SAW docker from the NSS build system.
+   - Bug 1783231 - Initialising variables in the rsa blinding code.
+   - Bug 320582 - Implementation of the double-signing of the message for ECDSA.
+   - Bug 1783231 - Adding exponent blinding for RSA.
+

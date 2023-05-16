@@ -60,7 +60,7 @@ impl SourceSizeList {
             let matching_source_size = self
                 .source_sizes
                 .iter()
-                .find(|source_size| source_size.condition.matches(context));
+                .find(|source_size| source_size.condition.matches(context).to_bool(/* unknown = */ false));
 
             match matching_source_size {
                 Some(source_size) => source_size.value.to_computed_value(context),

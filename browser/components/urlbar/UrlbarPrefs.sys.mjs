@@ -73,6 +73,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether the best match feature is enabled.
   ["bestMatch.enabled", true],
 
+  // Whether to show a link for using the search functionality provided by the
+  // active view if the the view utilizes OpenSearch.
+  ["contextualSearch.enabled", false],
+
   // Whether using `ctrl` when hitting return/enter in the URL bar
   // (or clicking 'go') should prefix 'www.' and suffix
   // browser.fixup.alternate.suffix to the URL bar value prior to
@@ -125,6 +129,12 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Applies URL highlighting and other styling to the text in the urlbar input.
   ["formatting.enabled", true],
+
+  // Whether search engagement telemetry should be recorded.
+  ["searchEngagementTelemetry.enabled", false],
+
+  // Interval time until taking pause impression telemetry.
+  ["searchEngagementTelemetry.pauseImpressionIntervalMs", 1000],
 
   // Whether Firefox Suggest group labels are shown in the urlbar view in en-*
   // locales. Labels are not shown in other locales but likely will be in the
@@ -339,6 +349,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether quick suggest results can be shown in position specified in the
   // suggestions.
   ["quicksuggest.allowPositionInSuggestions", true],
+
+  // Enable three-dot options button and menu for eligible results.
+  ["resultMenu", false],
 
   // When using switch to tabs, if set to true this will move the tab into the
   // active window.

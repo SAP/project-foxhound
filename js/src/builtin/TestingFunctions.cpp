@@ -768,7 +768,7 @@ static bool GCParameter(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   uint32_t value = floor(d);
-  bool ok = cx->runtime()->gc.setParameter(param, value);
+  bool ok = cx->runtime()->gc.setParameter(cx, param, value);
   if (!ok) {
     JS_ReportErrorASCII(cx, "Parameter value out of range");
     return false;
@@ -949,21 +949,27 @@ static bool WasmCompileMode(JSContext* cx, unsigned argc, Value* vp) {
 
   JSStringBuilder result(cx);
   if (none && !result.append("none")) {
+    result.failure();
     return false;
   }
   if (baseline && !result.append("baseline")) {
+    result.failure();
     return false;
   }
   if (tiered && !result.append("+")) {
+    result.failure();
     return false;
   }
   if (ion && !result.append("ion")) {
+    result.failure();
     return false;
   }
   if (JSString* str = result.finishString()) {
+    result.ok();
     args.rval().setString(str);
     return true;
   }
+  result.failure();
   return false;
 }
 
@@ -973,17 +979,21 @@ static bool WasmBaselineDisabledByFeatures(JSContext* cx, unsigned argc,
   bool isDisabled = false;
   JSStringBuilder reason(cx);
   if (!wasm::BaselineDisabledByFeatures(cx, &isDisabled, &reason)) {
+    reason.failure();
     return false;
   }
   if (isDisabled) {
     JSString* result = reason.finishString();
     if (!result) {
+      reason.failure();
       return false;
     }
     args.rval().setString(result);
   } else {
+    reason.failure();
     args.rval().setBoolean(false);
   }
+  reason.ok();
   return true;
 }
 
@@ -992,17 +1002,21 @@ static bool WasmIonDisabledByFeatures(JSContext* cx, unsigned argc, Value* vp) {
   bool isDisabled = false;
   JSStringBuilder reason(cx);
   if (!wasm::IonDisabledByFeatures(cx, &isDisabled, &reason)) {
+    reason.failure();
     return false;
   }
   if (isDisabled) {
     JSString* result = reason.finishString();
     if (!result) {
+      reason.failure();
       return false;
     }
     args.rval().setString(result);
   } else {
+    reason.failure();
     args.rval().setBoolean(false);
   }
+  reason.ok();
   return true;
 }
 
@@ -1204,18 +1218,30 @@ static bool WasmGlobalExtractLane(JSContext* cx, unsigned argc, Value* vp) {
 
   wasm::RootedVal val(cx);
   switch (interp) {
-    case LaneInterp::I32x4:
-      val.set(wasm::Val(v128.extractLane<uint32_t>(lane)));
+    case LaneInterp::I32x4: {
+      uint32_t i;
+      v128.extractLane<uint32_t>(lane, &i);
+      val.set(wasm::Val(i));
       break;
-    case LaneInterp::I64x2:
-      val.set(wasm::Val(v128.extractLane<uint64_t>(lane)));
+    }
+    case LaneInterp::I64x2: {
+      uint64_t i;
+      v128.extractLane<uint64_t>(lane, &i);
+      val.set(wasm::Val(i));
       break;
-    case LaneInterp::F32x4:
-      val.set(wasm::Val(v128.extractLane<float>(lane)));
+    }
+    case LaneInterp::F32x4: {
+      float f;
+      v128.extractLane<float>(lane, &f);
+      val.set(wasm::Val(f));
       break;
-    case LaneInterp::F64x2:
-      val.set(wasm::Val(v128.extractLane<double>(lane)));
+    }
+    case LaneInterp::F64x2: {
+      double d;
+      v128.extractLane<double>(lane, &d);
+      val.set(wasm::Val(d));
       break;
+    }
     default:
       MOZ_ASSERT_UNREACHABLE();
   }
@@ -1272,12 +1298,12 @@ static bool WasmGlobalsEqual(JSContext* cx, unsigned argc, Value* vp) {
     }
     case wasm::ValType::F32: {
       result = mozilla::BitwiseCast<uint32_t>(aVal.f32()) ==
-               mozilla::BitwiseCast<uint32_t>(aVal.f32());
+               mozilla::BitwiseCast<uint32_t>(bVal.f32());
       break;
     }
     case wasm::ValType::F64: {
       result = mozilla::BitwiseCast<uint64_t>(aVal.f64()) ==
-               mozilla::BitwiseCast<uint64_t>(aVal.f64());
+               mozilla::BitwiseCast<uint64_t>(bVal.f64());
       break;
     }
     case wasm::ValType::V128: {
@@ -1707,14 +1733,17 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
   jit::Disassemble(jit_begin, jit_end - jit_begin, &captureDisasmText);
 
   if (buf.oom) {
+    buf.builder.failure();
     ReportOutOfMemory(cx);
     return false;
   }
   JSString* sresult = buf.builder.finishString();
   if (!sresult) {
+    buf.builder.failure();
     ReportOutOfMemory(cx);
     return false;
   }
+  buf.builder.ok();
   sprinter.putString(sresult);
 
   if (args.length() > 1 && args[1].isString()) {
@@ -1780,14 +1809,17 @@ static bool DisassembleIt(JSContext* cx, bool asString, MutableHandleValue rval,
     auto onFinish = mozilla::MakeScopeExit([&] { disasmBuf.set(nullptr); });
     disassembleIt(captureDisasmText);
     if (buf.oom) {
+      buf.builder.failure();
       ReportOutOfMemory(cx);
       return false;
     }
     JSString* sresult = buf.builder.finishString();
     if (!sresult) {
+      buf.builder.failure();
       ReportOutOfMemory(cx);
       return false;
     }
+    buf.builder.ok();
     rval.setString(sresult);
     return true;
   }
@@ -5879,22 +5911,6 @@ static bool ShortestPaths(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Rooted<ArrayObject*> objs(cx, &args[0].toObject().as<ArrayObject>());
-  size_t length = objs->getDenseInitializedLength();
-  if (length == 0) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, args[0],
-                     nullptr,
-                     "not a dense array object with one or more elements");
-    return false;
-  }
-
-  for (size_t i = 0; i < length; i++) {
-    RootedValue el(cx, objs->getDenseElement(i));
-    if (!el.isObject() && !el.isString() && !el.isSymbol()) {
-      JS_ReportErrorASCII(cx,
-                          "Each target must be an object, string, or symbol");
-      return false;
-    }
-  }
 
   RootedValue start(cx, NullValue());
   int32_t maxNumPaths = 3;
@@ -5939,6 +5955,23 @@ static bool ShortestPaths(JSContext* cx, unsigned argc, Value* vp) {
     if (maxNumPaths <= 0) {
       ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, v,
                        nullptr, "not greater than 0");
+      return false;
+    }
+  }
+
+  // Ensure we have at least one target.
+  size_t length = objs->getDenseInitializedLength();
+  if (length == 0) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, args[0],
+                     nullptr,
+                     "not a dense array object with one or more elements");
+    return false;
+  }
+
+  for (size_t i = 0; i < length; i++) {
+    RootedValue el(cx, objs->getDenseElement(i));
+    if (!el.isGCThing()) {
+      JS_ReportErrorASCII(cx, "Each target must be a GC thing");
       return false;
     }
   }
@@ -6101,15 +6134,6 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  AutoStableStringChars strChars(cx);
-  if (!strChars.initTwoByte(cx, str)) {
-    return false;
-  }
-
-  mozilla::Range<const char16_t> chars = strChars.twoByteRange();
-  size_t srclen = chars.length();
-  const char16_t* src = chars.begin().get();
-
   JS::AutoFilename filename;
   unsigned lineno;
 
@@ -6120,8 +6144,12 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
   options.setNoScriptRval(true);
   options.setNonSyntacticScope(true);
 
+  AutoStableStringChars linearChars(cx);
+  if (!linearChars.initTwoByte(cx, str)) {
+    return false;
+  }
   JS::SourceText<char16_t> srcBuf;
-  if (!srcBuf.init(cx, src, srclen, SourceOwnership::Borrowed)) {
+  if (!srcBuf.initMaybeBorrowed(cx, linearChars)) {
     return false;
   }
 
@@ -6332,8 +6360,7 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
   JS::SourceText<char16_t> srcBuf;
-  if (!srcBuf.init(cx, linearChars.twoByteChars(), src->length(),
-                   JS::SourceOwnership::Borrowed)) {
+  if (!srcBuf.initMaybeBorrowed(cx, linearChars)) {
     return false;
   }
 
@@ -6478,8 +6505,7 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
   JS::SourceText<char16_t> srcBuf;
-  if (!srcBuf.init(cx, linearChars.twoByteChars(), src->length(),
-                   JS::SourceOwnership::Borrowed)) {
+  if (!srcBuf.initMaybeBorrowed(cx, linearChars)) {
     return false;
   }
 
@@ -7664,20 +7690,13 @@ JSScript* js::TestingFunctionArgumentToScript(
     JSContext* cx, HandleValue v, JSFunction** funp /* = nullptr */) {
   if (v.isString()) {
     // To convert a string to a script, compile it. Parse it as an ES6 Program.
-    Rooted<JSLinearString*> linearStr(
-        cx, JS::StringToLinearString(cx, v.toString()));
-    if (!linearStr) {
-      return nullptr;
-    }
-    size_t len = JS::GetLinearStringLength(linearStr);
+    Rooted<JSString*> str(cx, v.toString());
     AutoStableStringChars linearChars(cx);
-    if (!linearChars.initTwoByte(cx, linearStr)) {
+    if (!linearChars.initTwoByte(cx, str)) {
       return nullptr;
     }
-    const char16_t* chars = linearChars.twoByteRange().begin().get();
-
     SourceText<char16_t> source;
-    if (!source.init(cx, chars, len, SourceOwnership::Borrowed)) {
+    if (!source.initMaybeBorrowed(cx, linearChars)) {
       return nullptr;
     }
 

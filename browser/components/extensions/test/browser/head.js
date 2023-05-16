@@ -29,6 +29,7 @@
  *          navigateTab historyPushState promiseWindowRestored
  *          getIncognitoWindow startIncognitoMonitorExtension
  *          loadTestSubscript awaitBrowserLoaded backgroundColorSetOnRoot
+ *          getScreenAt roundCssPixcel getCssAvailRect isRectContained
  */
 
 // There are shutdown issues for which multiple rejections are left uncaught.
@@ -334,8 +335,10 @@ var awaitExtensionPanel = function(extension, win = window, awaitLoad = true) {
   return AppUiTestDelegate.awaitExtensionPanel(win, extension.id, awaitLoad);
 };
 
-function getCustomizableUIPanelID() {
-  return CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
+function getCustomizableUIPanelID(win = window) {
+  return win.gUnifiedExtensions.isEnabled
+    ? CustomizableUI.AREA_ADDONS
+    : CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
 }
 
 function getBrowserActionWidget(extension) {
@@ -348,7 +351,9 @@ function getBrowserActionPopup(extension, win = window) {
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     return win.document.getElementById("customizationui-widget-panel");
   }
-  return win.PanelUI.overflowPanel;
+  return win.gUnifiedExtensions.isEnabled
+    ? win.gUnifiedExtensions.panel
+    : win.PanelUI.overflowPanel;
 }
 
 var showBrowserAction = function(extension, win = window) {
@@ -375,7 +380,9 @@ async function triggerBrowserActionWithKeyboard(
     await focusButtonAndPressKey(key, node, modifiers);
   } else if (group.areaType == CustomizableUI.TYPE_PANEL) {
     // Use key navigation so that the PanelMultiView doesn't ignore key events
-    let panel = win.document.getElementById("widget-overflow");
+    let panel = win.gUnifiedExtensions.isEnabled
+      ? win.gUnifiedExtensions.panel
+      : win.document.getElementById("widget-overflow");
     while (win.document.activeElement != node) {
       EventUtils.synthesizeKey("KEY_ArrowDown");
       ok(
@@ -1002,11 +1009,61 @@ async function getIncognitoWindow(url = "about:privatebrowsing") {
  *
  * @returns {boolean} True if the window's background-color is set on :root
  *   rather than #navigator-toolbox.
- **/
+ */
 function backgroundColorSetOnRoot() {
   const os = ClientEnvironmentBase.os;
   if (!os.isWindows) {
     return false;
   }
   return os.windowsVersion < 10;
+}
+
+function getScreenAt(left, top, width, height) {
+  const screenManager = Cc["@mozilla.org/gfx/screenmanager;1"].getService(
+    Ci.nsIScreenManager
+  );
+  return screenManager.screenForRect(left, top, width, height);
+}
+
+function roundCssPixcel(pixel, screen) {
+  return Math.floor(
+    Math.floor(pixel * screen.defaultCSSScaleFactor) /
+      screen.defaultCSSScaleFactor
+  );
+}
+
+function getCssAvailRect(screen) {
+  const availDeviceLeft = {};
+  const availDeviceTop = {};
+  const availDeviceWidth = {};
+  const availDeviceHeight = {};
+  screen.GetAvailRect(
+    availDeviceLeft,
+    availDeviceTop,
+    availDeviceWidth,
+    availDeviceHeight
+  );
+  const factor = screen.defaultCSSScaleFactor;
+  const left = Math.floor(availDeviceLeft.value / factor);
+  const top = Math.floor(availDeviceTop.value / factor);
+  const width = Math.floor(availDeviceWidth.value / factor);
+  const height = Math.floor(availDeviceHeight.value / factor);
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+  };
+}
+
+function isRectContained(actualRect, maxRect) {
+  is(
+    `top=${actualRect.top >= maxRect.top},bottom=${actualRect.bottom <=
+      maxRect.bottom},left=${actualRect.left >=
+      maxRect.left},right=${actualRect.right <= maxRect.right}`,
+    "top=true,bottom=true,left=true,right=true",
+    `Dimension must be inside, top:${actualRect.top}>=${maxRect.top}, bottom:${actualRect.bottom}<=${maxRect.bottom}, left:${actualRect.left}>=${maxRect.left}, right:${actualRect.right}<=${maxRect.right}`
+  );
 }

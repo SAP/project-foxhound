@@ -23,6 +23,10 @@ interface nsICookieBannerService : nsISupports {
    * MODE_REJECT - Only handle banners where selecting "reject all" is possible.
    * MODE_REJECT_OR_ACCEPT - Prefer selecting "reject all", if not possible
    * fall back to "accept all".
+   * MODE_DETECT_ONLY - Detect cookie banners but do not handle them. In this
+   * mode telemetry will still be reported and cookie banner events will be
+   * dispatched if a cookie banner is showing. Use MODE_DISABLED to completely
+   * disable the component.
    * MODE_UNSET - This represents the service mode is unset, the setting should
    * fall back to default setting. This is used for the per-domain preferences.
    */
@@ -30,8 +34,14 @@ interface nsICookieBannerService : nsISupports {
     MODE_DISABLED,
     MODE_REJECT,
     MODE_REJECT_OR_ACCEPT,
+    MODE_DETECT_ONLY,
     MODE_UNSET,
   };
+
+  /**
+   * Whether the feature / service is enabled.
+   */
+  readonly attribute boolean isEnabled;
 
   /**
    * Getter for a list of all cookie banner rules. This includes both opt-in and opt-out rules.
@@ -57,7 +67,8 @@ interface nsICookieBannerService : nsISupports {
   /**
    * Look up the click rules for a given domain.
    */
-  Array<nsIClickRule> getClickRulesForDomain(in ACString aDomain);
+  Array<nsIClickRule> getClickRulesForDomain(in ACString aDomain,
+                                             in bool aIsTopLevel);
 
   /**
    * Insert a cookie banner rule for a domain. If there was previously a rule
@@ -94,4 +105,11 @@ interface nsICookieBannerService : nsISupports {
    * Remove all domain preferences.
    */
   void removeAllDomainPrefs(in boolean aIsPrivate);
+
+  /**
+   * Clears the in-memory set that we use to maintain the domains that we have
+   * reported telemetry. This function will clear the entry for the given
+   * domain. If the domain was not given, it will clear all set.
+   */
+  void resetDomainTelemetryRecord([optional] in ACString aDomain);
 };

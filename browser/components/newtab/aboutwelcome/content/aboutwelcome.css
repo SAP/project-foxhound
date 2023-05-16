@@ -87,7 +87,9 @@
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .dismiss-button {
   font-size: 1em;
-  margin-block: 25px -45px;
+  position: absolute;
+  margin-block: 15px 0;
+  margin-inline: 0 15px;
   z-index: 1;
   background-color: #FFF;
 }
@@ -311,6 +313,8 @@ html {
     --translate: 30px;
     --rotate: 20deg;
     --scale: 0.4;
+    --wipe-scale: 0 1;
+    --wipe-opacity: 1;
   }
   .onboardingContainer:dir(rtl) {
     --scale: -0.4 0.4;
@@ -321,6 +325,8 @@ html {
     --translate: 0;
     --rotate: 0deg;
     --scale: 1;
+    --wipe-scale: 1;
+    --wipe-opacity: 0;
   }
   .onboardingContainer:dir(rtl) {
     --scale: -1 1;
@@ -641,11 +647,30 @@ html {
 .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar {
   width: 400px;
   margin-inline: -35px;
+  background-color: color-mix(in srgb, var(--in-content-button-text-color) 25%, transparent);
+  transition: none;
+  opacity: 1;
+  scale: 1;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator {
-  border-radius: 0;
   width: -moz-available;
-  margin-inline: 0;
+  height: 100%;
+  margin-inline: -1px;
+  scale: 1;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  opacity: 1;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.current, .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.complete {
+  background-color: var(--checkbox-checked-bgcolor);
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.current {
+  transition: var(--transition);
+  transform-origin: left;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.current:dir(rtl) {
+  transform-origin: right;
 }
 @media (prefers-contrast) {
   .onboardingContainer .screen[pos=split] .section-main .main-content {
@@ -655,11 +680,10 @@ html {
     border-top: 1px solid var(--in-content-page-color);
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator {
-    opacity: 1;
-    border-color: var(--in-content-page-background);
+    background-color: var(--in-content-page-background);
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.current, .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar .indicator.complete {
-    border-color: var(--in-content-accent-color);
+    background-color: var(--in-content-accent-color);
   }
 }
 .onboardingContainer .screen[pos=split] .section-secondary {
@@ -873,8 +897,13 @@ html {
   margin-bottom: 10px;
   margin-top: 24px;
 }
-.onboardingContainer .hide-rtamo-icon {
-  display: none;
+.onboardingContainer .rtamo-icon {
+  text-align: start;
+}
+@media only screen and (max-width: 800px) {
+  .onboardingContainer .rtamo-icon {
+    text-align: center;
+  }
 }
 .onboardingContainer .welcome-text {
   display: flex;
@@ -986,9 +1015,6 @@ html {
   align-items: center;
   margin: 10px auto;
 }
-.onboardingContainer .tiles-theme-container.colorway {
-  flex-direction: column-reverse;
-}
 .onboardingContainer .sr-only {
   opacity: 0;
   overflow: hidden;
@@ -997,176 +1023,6 @@ html {
 .onboardingContainer .sr-only.input {
   height: 1px;
   width: 1px;
-}
-.onboardingContainer .colorway-variations {
-  align-items: center;
-  color: #000;
-  display: flex;
-  flex-direction: column;
-  height: 190px;
-  margin-bottom: 10px;
-  padding-top: 34px;
-  position: relative;
-  transition: var(--transition);
-  width: 190px;
-  /* Show a custom background image that transitions for each theme. */
-  /* Stack a disc background above the custom background image and below other
-   * content so that we can transform the parent variations element. Use a
-   * similar ::after disc to cover up content while transitioning. */
-}
-.onboardingContainer .colorway-variations::before {
-  background-size: 100%;
-  content: "";
-  height: 197px;
-  left: -48px;
-  margin: auto;
-  pointer-events: none;
-  position: absolute;
-  top: -7px;
-  transition: 0.5s opacity, 0.5s rotate, 0.5s scale;
-  width: 286px;
-  z-index: -1;
-}
-.onboardingContainer .colorway-variations.in::before {
-  rotate: calc(-4.5 * var(--rotate));
-  transition: none;
-}
-.onboardingContainer .colorway-variations:where(.in, .out)::before {
-  opacity: 0;
-  rotate: calc(4.5 * var(--rotate));
-  scale: var(--scale);
-}
-.onboardingContainer .colorway-variations .variations-disc, .onboardingContainer .colorway-variations::after {
-  background: center/cover;
-  border-radius: 100%;
-  height: 190px;
-  left: 0;
-  pointer-events: none;
-  position: absolute;
-  top: 0;
-  width: 190px;
-}
-.onboardingContainer .colorway-variations .variations-disc {
-  z-index: -1;
-}
-.onboardingContainer .colorway-variations::after {
-  content: "";
-  opacity: 0;
-  transition: 0.4s opacity;
-}
-.onboardingContainer .colorway-variations.out::after {
-  opacity: 1;
-}
-.onboardingContainer .colorway-variations.default .variations-disc, .onboardingContainer .colorway-variations[next=default]::after {
-  /* Gradients aren't used for high contrast, so show a solid color instead. */
-  background-color: var(--in-content-page-background);
-  background-image: linear-gradient(#F0F0F4, #9F9FAD);
-  outline: 2px solid var(--in-content-button-border-color);
-  outline-offset: -2px;
-}
-.onboardingContainer .colorway-variations.default::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/default.png");
-}
-.onboardingContainer .colorway-variations.abstract .variations-disc, .onboardingContainer .colorway-variations[next=abstract]::after {
-  background-image: url("resource://builtin-themes/colorways/2021abstract/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.abstract::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/abstract.png");
-}
-.onboardingContainer .colorway-variations.cheers .variations-disc, .onboardingContainer .colorway-variations[next=cheers]::after {
-  background-image: url("resource://builtin-themes/colorways/2021cheers/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.cheers::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/cheers.png");
-}
-.onboardingContainer .colorway-variations.elemental .variations-disc, .onboardingContainer .colorway-variations[next=elemental]::after {
-  background-image: url("resource://builtin-themes/colorways/2021elemental/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.elemental::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/elemental.png");
-}
-.onboardingContainer .colorway-variations.foto .variations-disc, .onboardingContainer .colorway-variations[next=foto]::after {
-  background-image: url("resource://builtin-themes/colorways/2021foto/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.foto::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/foto.png");
-}
-.onboardingContainer .colorway-variations.graffiti .variations-disc, .onboardingContainer .colorway-variations[next=graffiti]::after {
-  background-image: url("resource://builtin-themes/colorways/2021graffiti/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.graffiti::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/graffiti.png");
-}
-.onboardingContainer .colorway-variations.lush .variations-disc, .onboardingContainer .colorway-variations[next=lush]::after {
-  background-image: url("resource://builtin-themes/colorways/2021lush/balanced/icon.svg");
-}
-.onboardingContainer .colorway-variations.lush::before {
-  background-image: url("chrome://browser/skin/upgradeDialog/lush.png");
-}
-.onboardingContainer .colorway-variations .colorway:focus-within {
-  border-radius: 4px;
-  outline: 2px solid rgba(0, 0, 0, 0.64);
-  outline-offset: -1px;
-}
-.onboardingContainer .colorway-variations .colorway-text {
-  font-size: 16px;
-  font-weight: bold;
-  line-height: 24px;
-  margin-bottom: 15px;
-}
-.onboardingContainer .colorway-variations .variation-button {
-  font-size: 12px;
-  line-height: 12px;
-  padding: 6px 12px;
-  width: auto;
-  height: 24px;
-  margin: 3px;
-  min-height: 24px;
-}
-.onboardingContainer .colorway-variations .variation-button:hover {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 2px;
-}
-.onboardingContainer .colorway-variations .variation-button.selected, .onboardingContainer .colorway-variations .variation-button:active {
-  background: rgba(0, 0, 0, 0.64);
-  border-radius: 2px;
-  color: #FFF;
-}
-@media (prefers-contrast) {
-  .onboardingContainer .colorway-variations .variation-button {
-    outline: 2px solid var(--in-content-button-border-color);
-    border-radius: 2px;
-  }
-  .onboardingContainer .colorway-variations .variation-button.selected, .onboardingContainer .colorway-variations .variation-button:active {
-    background: var(--in-content-box-background);
-    color: var(--in-content-text-color);
-  }
-  .onboardingContainer .colorway-variations .variation-button:hover {
-    background: var(--in-content-primary-button-background);
-    color: var(--in-content-primary-button-text-color);
-  }
-}
-.onboardingContainer .colorway-variations .colorway-text,
-.onboardingContainer .colorway-variations .variation-button {
-  transition: 0.4s opacity, 0.4s translate;
-}
-.onboardingContainer .colorway-variations.in :is(.colorway-text, .variation-button) {
-  opacity: 0;
-  transition: none;
-  translate: 0 calc(var(--translate) / -3);
-}
-.onboardingContainer .colorway-variations.out :is(.colorway-text, .variation-button) {
-  opacity: 0;
-  translate: 0 calc(var(--translate) / 3);
-}
-.onboardingContainer .colorway-variations .colorway:nth-of-type(1) .variation-button {
-  transition-delay: 0.1s;
-}
-.onboardingContainer .colorway-variations .colorway:nth-of-type(2) .variation-button {
-  transition-delay: 0.2s;
-}
-.onboardingContainer .colorway-variations .colorway:nth-of-type(3) .variation-button {
-  transition-delay: 0.3s;
 }
 .onboardingContainer .tiles-theme-section {
   border: 0;
@@ -1238,24 +1094,6 @@ html {
 }
 .onboardingContainer .tiles-theme-section .theme .icon.default.colorway, .onboardingContainer .tiles-theme-section .theme .icon.automatic.colorway {
   background-image: url("chrome://activity-stream/content/data/content/assets/default.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.abstract {
-  background-image: url("resource://builtin-themes/colorways/2021abstract/balanced/icon.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.cheers {
-  background-image: url("resource://builtin-themes/colorways/2021cheers/balanced/icon.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.elemental {
-  background-image: url("resource://builtin-themes/colorways/2021elemental/balanced/icon.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.foto {
-  background-image: url("resource://builtin-themes/colorways/2021foto/balanced/icon.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.graffiti {
-  background-image: url("resource://builtin-themes/colorways/2021graffiti/balanced/icon.svg");
-}
-.onboardingContainer .tiles-theme-section .theme .icon.lush {
-  background-image: url("resource://builtin-themes/colorways/2021lush/balanced/icon.svg");
 }
 .onboardingContainer .tiles-theme-section .theme .icon.playmaker {
   background-image: url("resource://builtin-themes/colorways/2022playmaker/balanced/icon.svg");
@@ -1660,7 +1498,6 @@ html {
 .onboardingContainer .dialog-initial .multi-select-container {
   transition-delay: 0.8s;
 }
-.onboardingContainer .dialog-initial .colorway-variations,
 .onboardingContainer .dialog-initial .tiles-theme-section {
   transition-delay: 0.9s;
 }
@@ -1670,7 +1507,6 @@ html {
 .onboardingContainer .dialog-initial .steps {
   transition-delay: 1s;
 }
-.onboardingContainer .screen:not(.dialog-initial):not([pos=corner]) .colorway-variations,
 .onboardingContainer .screen:not(.dialog-initial):not([pos=corner]) .tiles-theme-section,
 .onboardingContainer .screen:not(.dialog-initial):not([pos=corner]) .colorway-text {
   transition-delay: 0.2s;
@@ -1741,9 +1577,11 @@ html {
 .onboardingContainer.transition-in .screen:not(.dialog-initial):not([pos=corner]) .steps {
   opacity: 0.2;
 }
+.onboardingContainer.transition-in .screen[pos=split] .steps.progress-bar .indicator.current {
+  scale: var(--wipe-scale);
+  opacity: var(--wipe-opacity);
+}
 .onboardingContainer.transition-in .screen:not([pos=corner]) .welcome-text,
-.onboardingContainer.transition-in .screen:not([pos=corner]) .multi-select-container,
-.onboardingContainer.transition-in .screen:not([pos=corner]) .colorway-variations,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .tiles-theme-section,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .colorway-text,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .primary,
@@ -1785,7 +1623,6 @@ html {
   translate: 0 var(--translate);
   transition-delay: 0.1s;
 }
-.onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .colorway-variations,
 .onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .tiles-theme-section,
 .onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .colorway-text {
   opacity: 0;

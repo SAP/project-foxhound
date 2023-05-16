@@ -8,7 +8,6 @@
 #include <bitset>
 
 #include "ClientWebGLExtensions.h"
-#include "Layers.h"
 #include "gfxCrashReporterUtils.h"
 #include "HostWebGLContext.h"
 #include "js/PropertyAndElement.h"  // JS_DefineElement
@@ -473,8 +472,10 @@ Maybe<layers::SurfaceDescriptor> ClientWebGLContext::GetFrontBuffer(
   // If valid remote texture data was set for async present, then use it.
   const auto& ownerId = fb ? fb->mRemoteTextureOwnerId : mRemoteTextureOwnerId;
   const auto& textureId = fb ? fb->mLastRemoteTextureId : mLastRemoteTextureId;
+  auto& needsSync = fb ? fb->mNeedsRemoteTextureSync : mNeedsRemoteTextureSync;
   if (ownerId && textureId) {
-    if (StaticPrefs::webgl_out_of_process_async_present_force_sync()) {
+    if (gfx::gfxVars::WebglOopAsyncPresentForceSync() || needsSync) {
+      needsSync = false;
       // Request the front buffer from IPDL to cause a sync, even though we
       // will continue to use the remote texture descriptor after.
       (void)child->SendGetFrontBuffer(fb ? fb->mId : 0, vr, &ret);
@@ -526,6 +527,7 @@ bool ClientWebGLContext::UpdateWebRenderCanvasData(
 
   MOZ_ASSERT(renderer);
   mResetLayer = false;
+  mNeedsRemoteTextureSync = true;
 
   return true;
 }
@@ -704,11 +706,6 @@ static bool IsWebglOutOfProcessEnabled() {
     return StaticPrefs::webgl_out_of_process_worker();
   }
   return StaticPrefs::webgl_out_of_process();
-}
-
-static inline bool StartsWith(const std::string& haystack,
-                              const std::string& needle) {
-  return haystack.find(needle) == 0;
 }
 
 bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
@@ -2564,15 +2561,16 @@ void ClientWebGLContext::GetUniform(JSContext* const cx,
   if (!prog.ValidateUsable(*this, "prog")) return;
   if (!loc.ValidateUsable(*this, "loc")) return;
 
-  const auto& activeLinkResult = GetActiveLinkResult();
-  if (!activeLinkResult) {
-    EnqueueError(LOCAL_GL_INVALID_OPERATION, "No active linked Program.");
+  const auto& progLinkResult = GetLinkResult(prog);
+  if (!progLinkResult.success) {
+    EnqueueError(LOCAL_GL_INVALID_OPERATION, "Program is not linked.");
     return;
   }
-  const auto& reqLinkInfo = loc.mParent.lock();
-  if (reqLinkInfo.get() != activeLinkResult) {
-    EnqueueError(LOCAL_GL_INVALID_OPERATION,
-                 "UniformLocation is not from the current active Program.");
+  const auto& uniformLinkResult = loc.mParent.lock();
+  if (uniformLinkResult.get() != &progLinkResult) {
+    EnqueueError(
+        LOCAL_GL_INVALID_OPERATION,
+        "UniformLocation is not from the most recent linking of Program.");
     return;
   }
 

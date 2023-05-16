@@ -58,13 +58,15 @@ linux64-cctools-port:
 
 linux64-hfsplus:
     description: "hfsplus toolchain build"
+    attributes:
+        local-toolchain: true
     treeherder:
         symbol: TL(hfs+)
     run:
         script: build-hfsplus-linux.sh
         resources:
             - 'build/unix/build-hfsplus/build-hfsplus.sh'
-        toolchain-artifact: public/build/hfsplus-tools.tar.zst
+        toolchain-artifact: public/build/hfsplus.tar.zst
     fetches:
         fetch:
             - hfsplus-tools
@@ -73,14 +75,49 @@ linux64-hfsplus:
 
 linux64-libdmg:
     description: "libdmg-hfsplus toolchain build"
+    attributes:
+        local-toolchain: true
     treeherder:
         symbol: TL(libdmg-hfs+)
     run:
-        script: build-libdmg-hfsplus.sh
+        script: build-dmg-hfsplus.sh
         toolchain-artifact: public/build/dmg.tar.zst
+        toolchain-alias: linux64-dmg
     fetches:
         fetch:
             - libdmg-hfsplus
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-toolchain-sysroot
+
+linux64-mkbom:
+    description: "mkbom toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TL(mkbom)
+    run:
+        script: build-mkbom-linux.sh
+        toolchain-artifact: public/build/mkbom.tar.zst
+    fetches:
+        fetch:
+            - bomutils
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-toolchain-sysroot
+
+linux64-xar:
+    description: "xar toolchain build"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TL(xar)
+    run:
+        script: build-xar-linux.sh
+        toolchain-artifact: public/build/xar.tar.zst
+    fetches:
+        fetch:
+            - xar
         toolchain:
             - linux64-clang-toolchain
             - linux64-toolchain-sysroot
@@ -345,3 +382,4 @@ linux64-afl-instrumentation-2.5:
             - afl-2.5
         toolchain:
             - linux64-clang
+            - linux64-toolchain-sysroot

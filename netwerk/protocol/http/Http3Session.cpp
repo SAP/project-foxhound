@@ -4,29 +4,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "HttpLog.h"
+#include "ASpdySession.h"  // because of SoftStreamError()
 #include "Http3Session.h"
 #include "Http3Stream.h"
 #include "Http3StreamBase.h"
 #include "Http3WebTransportSession.h"
 #include "Http3WebTransportStream.h"
-#include "mozilla/net/DNS.h"
-#include "nsHttpHandler.h"
+#include "HttpConnectionUDP.h"
+#include "HttpLog.h"
+#include "QuicSocketControl.h"
+#include "SSLServerCertVerification.h"
+#include "SSLTokensCache.h"
+#include "ScopedNSSTypes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Telemetry.h"
-#include "ASpdySession.h"  // because of SoftStreamError()
+#include "mozilla/net/DNS.h"
+#include "nsHttpHandler.h"
 #include "nsIHttpActivityObserver.h"
 #include "nsIOService.h"
-#include "nsISSLSocketControl.h"
-#include "ScopedNSSTypes.h"
+#include "nsITLSSocketControl.h"
 #include "nsNetAddr.h"
 #include "nsQueryObject.h"
 #include "nsSocketTransportService2.h"
 #include "nsThreadUtils.h"
-#include "QuicSocketControl.h"
-#include "SSLServerCertVerification.h"
-#include "SSLTokensCache.h"
-#include "HttpConnectionUDP.h"
 #include "sslerr.h"
 
 namespace mozilla::net {
@@ -96,14 +96,10 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
       aConnInfo->ProxyInfo() ? aConnInfo->ProxyInfo()->IsHTTPS() : false;
 
   // Create security control and info object for quic.
-  mSocketControl = new QuicSocketControl(controlFlags, this);
-  mSocketControl->SetHostName(httpsProxy ? aConnInfo->ProxyInfo()->Host().get()
-                                         : aConnInfo->GetOrigin().get());
-  mSocketControl->SetPort(httpsProxy ? aConnInfo->ProxyInfo()->Port()
-                                     : aConnInfo->OriginPort());
-
-  // don't call into PSM while holding mLock!!
-  mSocketControl->SetNotificationCallbacks(callbacks);
+  mSocketControl = new QuicSocketControl(
+      httpsProxy ? aConnInfo->ProxyInfo()->Host() : aConnInfo->GetOrigin(),
+      httpsProxy ? aConnInfo->ProxyInfo()->Port() : aConnInfo->OriginPort(),
+      controlFlags, this);
 
   NetAddr selfAddr;
   MOZ_ALWAYS_SUCCEEDS(aSelfAddr->GetNetAddr(&selfAddr));
@@ -697,13 +693,42 @@ nsresult Http3Session::ProcessEvents() {
             nsCString reason = ""_ns;
             wt->OnSessionClosed(0, reason);
           } break;
-          case WebTransportEventExternal::Tag::NewStream:
+          case WebTransportEventExternal::Tag::NewStream: {
             LOG(
                 ("Http3Session::ProcessEvents - WebTransport NewStream "
                  "streamId=0x%" PRIx64 " sessionId=0x%" PRIx64,
                  event.web_transport._0.new_stream.stream_id,
                  event.web_transport._0.new_stream.session_id));
-            break;
+            uint64_t sessionId = event.web_transport._0.new_stream.session_id;
+            RefPtr<Http3StreamBase> stream = mStreamIdHash.Get(sessionId);
+            if (!stream) {
+              LOG(
+                  ("Http3Session::ProcessEvents - WebTransport NewStream - "
+                   "session not found "
+                   "sessionId=0x%" PRIx64 " [this=%p].",
+                   sessionId, this));
+              break;
+            }
+
+            RefPtr<Http3WebTransportSession> wt =
+                stream->GetHttp3WebTransportSession();
+            if (!wt) {
+              break;
+            }
+
+            RefPtr<Http3WebTransportStream> wtStream =
+                wt->OnIncomingWebTransportStream(
+                    event.web_transport._0.new_stream.stream_type,
+                    event.web_transport._0.new_stream.stream_id);
+            if (!wtStream) {
+              break;
+            }
+
+            // WebTransportStream is managed by Http3Session now.
+            mWebTransportStreams.AppendElement(wtStream);
+            mStreamIdHash.InsertOrUpdate(wtStream->StreamId(),
+                                         std::move(wtStream));
+          } break;
         }
       } break;
       default:
@@ -1656,6 +1681,14 @@ void Http3Session::ResetWebTransportStream(Http3WebTransportStream* aStream,
   CloseStreamInternal(aStream, NS_ERROR_ABORT);
 }
 
+void Http3Session::StreamStopSending(Http3WebTransportStream* aStream,
+                                     uint8_t aErrorCode) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("Http3Session::StreamStopSending %p %p 0x%" PRIx32, this, aStream,
+       static_cast<uint32_t>(aErrorCode)));
+  mHttp3Connection->StreamStopSending(aStream->StreamId(), aErrorCode);
+}
+
 nsresult Http3Session::TakeTransport(nsISocketTransport**,
                                      nsIAsyncInputStream**,
                                      nsIAsyncOutputStream**) {
@@ -1837,7 +1870,7 @@ bool Http3Session::RealJoinConnection(const nsACString& hostname, int32_t port,
   nsresult rv;
   bool isJoined = false;
 
-  nsCOMPtr<nsISSLSocketControl> sslSocketControl;
+  nsCOMPtr<nsITLSSocketControl> sslSocketControl;
   mConnection->GetTLSSocketControl(getter_AddRefs(sslSocketControl));
   if (!sslSocketControl) {
     return false;
@@ -1904,7 +1937,7 @@ void Http3Session::CallCertVerification(Maybe<nsCString> aEchPublicName) {
   const nsACString& hostname =
       verifyToEchPublicName ? *aEchPublicName : mSocketControl->GetHostName();
 
-  SECStatus rv = AuthCertificateHookWithInfo(
+  SECStatus rv = psm::AuthCertificateHookWithInfo(
       mSocketControl, hostname, static_cast<const void*>(this),
       std::move(certInfo.certs), stapledOCSPResponse, sctsFromTLSExtension,
       providerFlags);
@@ -2180,7 +2213,7 @@ void Http3Session::ZeroRttTelemetry(ZeroRttOutcome aOutcome) {
 }
 
 nsresult Http3Session::GetTransactionTLSSocketControl(
-    nsISSLSocketControl** tlsSocketControl) {
+    nsITLSSocketControl** tlsSocketControl) {
   NS_IF_ADDREF(*tlsSocketControl = mSocketControl);
   return NS_OK;
 }

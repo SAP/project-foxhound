@@ -15,8 +15,8 @@ const { AddonTestUtils } = ChromeUtils.import(
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -108,13 +108,13 @@ add_setup(async function() {
   Services.prefs.setBoolPref("browser.ping-centre.telemetry", false);
 
   // We need a default search engine set up for rendering the search input.
-  await SearchTestUtils.installSearchExtension({
-    name: "Test engine",
-    keyword: "@testengine",
-    search_url_get_params: "s={searchTerms}",
-  });
-  Services.search.defaultEngine = Services.search.getEngineByName(
-    "Test engine"
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "Test engine",
+      keyword: "@testengine",
+      search_url_get_params: "s={searchTerms}",
+    },
+    { setAsDefault: true }
   );
 
   // Initialize Activity Stream, and pretend that a new window has been loaded

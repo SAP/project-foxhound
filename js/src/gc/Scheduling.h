@@ -360,7 +360,7 @@ static const size_t GCMinNurseryBytes = 256 * 1024;
  *
  * This must be greater than 1.3 to maintain performance on splay-latency.
  */
-static const double SmallHeapIncrementalLimit = 1.40;
+static const double SmallHeapIncrementalLimit = 1.50;
 
 /* JSGC_LARGE_HEAP_INCREMENTAL_LIMIT */
 static const double LargeHeapIncrementalLimit = 1.10;
@@ -406,6 +406,9 @@ static const bool PerZoneGCEnabled = false;
 
 /* JSGC_COMPACTING_ENABLED */
 static const bool CompactingEnabled = true;
+
+/* JSGC_PARALLEL_MARKING_ENABLED */
+static const bool ParallelMarkingEnabled = false;
 
 /* JSGC_BALANCED_HEAP_LIMITS_ENABLED */
 static const bool BalancedHeapLimitsEnabled = false;

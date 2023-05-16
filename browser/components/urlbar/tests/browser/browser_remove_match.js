@@ -1,27 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
 });
 
 add_setup(async function() {
-  await SearchTestUtils.installSearchExtension();
+  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
   let engine = Services.search.getEngineByName("Example");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
   await Services.search.moveEngine(engine, 0);
-
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(
-      originalEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-    );
-  });
 });
 
 add_task(async function test_remove_history() {
@@ -228,4 +216,79 @@ add_task(async function test_searchMode_removeRestyledHistory() {
   });
   await PlacesUtils.history.clear();
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function blockButton() {
+  let url = "https://example.com/has-block-button";
+  let provider = new UrlbarTestUtils.TestProvider({
+    priority: Infinity,
+    results: [
+      new UrlbarResult(
+        UrlbarUtils.RESULT_TYPE.URL,
+        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        {
+          url,
+          isBlockable: true,
+          blockL10n: { id: "firefox-suggest-urlbar-block" },
+        }
+      ),
+    ],
+  });
+
+  // Implement the provider's `blockResult()`. Return true from it so the view
+  // removes the row after it's called.
+  let blockResultCallCount = 0;
+  provider.blockResult = () => {
+    blockResultCallCount++;
+    return true;
+  };
+
+  UrlbarProvidersManager.registerProvider(provider);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test",
+  });
+
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(window),
+    1,
+    "There should be one result"
+  );
+
+  let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
+  Assert.equal(
+    row.result.payload.url,
+    url,
+    "The result should be in the first row"
+  );
+
+  let button = row.querySelector(".urlbarView-button-block");
+  Assert.ok(button, "The row should have a block button");
+
+  info("Arrowing down to block button");
+  EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: 2 });
+
+  Assert.equal(
+    UrlbarTestUtils.getSelectedElement(window),
+    button,
+    "The block button should be selected after arrowing down"
+  );
+
+  info("Pressing Enter on block button");
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  Assert.equal(
+    blockResultCallCount,
+    1,
+    "blockResult() should have been called once"
+  );
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(window),
+    0,
+    "There should be no results after blocking"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  UrlbarProvidersManager.unregisterProvider(provider);
 });

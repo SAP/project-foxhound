@@ -8,9 +8,11 @@
 
 #include <CoreVideo/CVPixelBufferIOSurface.h>
 #include <IOSurface/IOSurface.h>
+#include <limits>
 
 #include "AppleDecoderModule.h"
 #include "AppleUtils.h"
+#include "CallbackThreadRegistry.h"
 #include "H264.h"
 #include "MP4Decoder.h"
 #include "MacIOSurfaceImage.h"
@@ -36,7 +38,8 @@ using namespace layers;
 AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
                                layers::ImageContainer* aImageContainer,
                                CreateDecoderParams::OptionSet aOptions,
-                               layers::KnowsCompositor* aKnowsCompositor)
+                               layers::KnowsCompositor* aKnowsCompositor,
+                               Maybe<TrackingId> aTrackingId)
     : mExtraData(aConfig.mExtraData),
       mPictureWidth(aConfig.mImage.width),
       mPictureHeight(aConfig.mImage.height),
@@ -75,7 +78,9 @@ AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
                              layers::WebRenderCompositor::SOFTWARE)
 #endif
       ,
+      mTrackingId(aTrackingId),
       mIsFlushing(false),
+      mCallbackThreadId(),
       mMonitor("AppleVTDecoder"),
       mPromise(&mMonitor),  // To ensure our PromiseHolder is only ever accessed
                             // with the monitor held.
@@ -160,6 +165,26 @@ void AppleVTDecoder::ProcessDecode(MediaRawData* aSample) {
     mPromise.Reject(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
     return;
   }
+
+  mTrackingId.apply([&](const auto& aId) {
+    MediaInfoFlag flag = MediaInfoFlag::None;
+    flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                : MediaInfoFlag::NonKeyFrame);
+    flag |= (mIsHardwareAccelerated ? MediaInfoFlag::HardwareDecoding
+                                    : MediaInfoFlag::SoftwareDecoding);
+    switch (mStreamType) {
+      case StreamType::H264:
+        flag |= MediaInfoFlag::VIDEO_H264;
+        break;
+      case StreamType::VP9:
+        flag |= MediaInfoFlag::VIDEO_VP9;
+        break;
+      default:
+        break;
+    }
+    mPerformanceRecorder.Start(aSample->mTimecode.ToMicroseconds(),
+                               "AppleVTDecoder"_ns, aId, flag);
+  });
 
   AutoCFRelease<CMBlockBufferRef> block = nullptr;
   AutoCFRelease<CMSampleBufferRef> sample = nullptr;
@@ -251,6 +276,7 @@ RefPtr<MediaDataDecoder::FlushPromise> AppleVTDecoder::ProcessFlush() {
   while (!mReorderQueue.IsEmpty()) {
     mReorderQueue.Pop();
   }
+  mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
   mSeekTargetThreshold.reset();
   mIsFlushing = false;
   return FlushPromise::CreateAndResolve(true, __func__);
@@ -336,9 +362,21 @@ void AppleVTDecoder::MaybeResolveBufferedFrames() {
   mPromise.Resolve(std::move(results), __func__);
 }
 
+void AppleVTDecoder::MaybeRegisterCallbackThread() {
+  ProfilerThreadId id = profiler_current_thread_id();
+  if (MOZ_LIKELY(id == mCallbackThreadId)) {
+    return;
+  }
+  mCallbackThreadId = id;
+  CallbackThreadRegistry::Get()->Register(mCallbackThreadId,
+                                          "AppleVTDecoderCallback");
+}
+
 // Copy and return a decoded frame.
 void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
                                  AppleVTDecoder::AppleFrameRef aFrameRef) {
+  MaybeRegisterCallbackThread();
+
   if (mIsFlushing) {
     // We are in the process of flushing or shutting down; ignore frame.
     return;
@@ -495,6 +533,30 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     mPromise.Reject(MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
     return;
   }
+
+  mPerformanceRecorder.Record(
+      aFrameRef.decode_timestamp.ToMicroseconds(), [&](DecodeStage& aStage) {
+        aStage.SetResolution(static_cast<int>(CVPixelBufferGetWidth(aImage)),
+                             static_cast<int>(CVPixelBufferGetHeight(aImage)));
+        auto format = [&]() -> Maybe<DecodeStage::ImageFormat> {
+          switch (CVPixelBufferGetPixelFormatType(aImage)) {
+            case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+            case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+              return Some(DecodeStage::NV12);
+            case kCVPixelFormatType_422YpCbCr8_yuvs:
+            case kCVPixelFormatType_422YpCbCr8FullRange:
+              return Some(DecodeStage::YUV422P);
+            case kCVPixelFormatType_32BGRA:
+              return Some(DecodeStage::RGBA32);
+            default:
+              return Nothing();
+          }
+        }();
+        format.apply([&](auto aFormat) { aStage.SetImageFormat(aFormat); });
+        aStage.SetColorDepth(mColorDepth);
+        aStage.SetYUVColorSpace(mColorSpace);
+        aStage.SetColorRange(mColorRange);
+      });
 
   // Frames come out in DTS order but we need to output them
   // in composition order.

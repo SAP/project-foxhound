@@ -665,6 +665,7 @@ var gXPInstallObserver = {
         }
         // displayURI becomes it's own label, so we unset it for this panel. It will become part of the
         // messageString above.
+        let displayURI = options.displayURI;
         options.displayURI = undefined;
 
         options.eventCallback = topic => {
@@ -739,6 +740,23 @@ var gXPInstallObserver = {
             }
           },
         };
+
+        let neverAllowCallback = () => {
+          SitePermissions.setForPrincipal(
+            browser.contentPrincipal,
+            "install",
+            SitePermissions.BLOCK
+          );
+          for (let install of installInfo.installs) {
+            if (install.state != AddonManager.STATE_CANCELLED) {
+              install.cancel();
+            }
+          }
+          if (installInfo.cancel) {
+            installInfo.cancel();
+          }
+        };
+
         let neverAllowAction = {
           label: gNavigatorBundle.getString(
             "xpinstallPromptMessage.neverAllow"
@@ -746,33 +764,44 @@ var gXPInstallObserver = {
           accessKey: gNavigatorBundle.getString(
             "xpinstallPromptMessage.neverAllow.accesskey"
           ),
+          callback: neverAllowCallback,
+        };
+
+        let neverAllowAndReportAction = {
+          label: gNavigatorBundle.getString(
+            "xpinstallPromptMessage.neverAllowAndReport"
+          ),
+          accessKey: gNavigatorBundle.getString(
+            "xpinstallPromptMessage.neverAllowAndReport.accesskey"
+          ),
           callback: () => {
-            SitePermissions.setForPrincipal(
-              browser.contentPrincipal,
-              "install",
-              SitePermissions.BLOCK
-            );
-            for (let install of installInfo.installs) {
-              if (install.state != AddonManager.STATE_CANCELLED) {
-                install.cancel();
-              }
-            }
-            if (installInfo.cancel) {
-              installInfo.cancel();
-            }
+            AMTelemetry.recordEvent({
+              method: "reportSuspiciousSite",
+              object: "suspiciousSite",
+              value: displayURI?.displayHost ?? "(unknown)",
+              extra: {},
+            });
+            neverAllowCallback();
           },
         };
 
         secHistogram.add(
           Ci.nsISecurityUITelemetry.WARNING_ADDON_ASKING_PREVENTED
         );
+
+        let declineActions = [dontAllowAction, neverAllowAction];
+        if (isSitePermissionAddon) {
+          // Restrict this to site permission add-ons for now pending a decision
+          // from product about how to approach this for extensions.
+          declineActions.push(neverAllowAndReportAction);
+        }
         let popup = PopupNotifications.show(
           browser,
           notificationID,
           messageString,
           gUnifiedExtensions.getPopupAnchorID(browser, window),
           action,
-          [dontAllowAction, neverAllowAction],
+          declineActions,
           options
         );
         removeNotificationOnEnd(popup, installInfo.installs);
@@ -1200,204 +1229,20 @@ var BrowserAddonUI = {
   },
 };
 
-/**
- * The `unified-extensions-item` custom element is used to manage an extension
- * in the list of extensions, which is displayed when users click the unified
- * extensions (toolbar) button.
- *
- * This custom element must be initialized with `setAddon()`:
- *
- * ```
- * let item = document.createElement("unified-extensions-item");
- * item.setAddon(addon);
- * document.body.appendChild(item);
- * ```
- */
-customElements.define(
-  "unified-extensions-item",
-  class extends HTMLElement {
-    /**
-     * Set the add-on for this item. The item will be populated based on the
-     * add-on when it is rendered into the DOM.
-     *
-     * @param {AddonWrapper} addon The add-on to use.
-     */
-    setAddon(addon) {
-      this.addon = addon;
-    }
-
-    connectedCallback() {
-      if (this._openMenuButton) {
-        return;
-      }
-
-      const template = document.getElementById(
-        "unified-extensions-item-template"
-      );
-      this.appendChild(template.content.cloneNode(true));
-
-      this._actionButton = this.querySelector(
-        ".unified-extensions-item-action"
-      );
-      this._openMenuButton = this.querySelector(
-        ".unified-extensions-item-open-menu"
-      );
-
-      this._openMenuButton.addEventListener("blur", this);
-      this._openMenuButton.addEventListener("focus", this);
-
-      this.addEventListener("command", this);
-      this.addEventListener("mouseout", this);
-      this.addEventListener("mouseover", this);
-
-      this.render();
-    }
-
-    handleEvent(event) {
-      const { target } = event;
-
-      switch (event.type) {
-        case "command":
-          if (target === this._openMenuButton) {
-            const popup = target.ownerDocument.getElementById(
-              "unified-extensions-context-menu"
-            );
-            popup.openPopup(
-              target,
-              "after_end",
-              0,
-              0,
-              true /* isContextMenu */,
-              false /* attributesOverride */,
-              event
-            );
-          } else if (target === this._actionButton) {
-            const extension = WebExtensionPolicy.getByID(this.addon.id)
-              ?.extension;
-            if (!extension) {
-              return;
-            }
-
-            const win = event.target.ownerGlobal;
-            const tab = win.gBrowser.selectedTab;
-
-            extension.tabManager.addActiveTabPermission(tab);
-            extension.tabManager.activateScripts(tab);
-          }
-          break;
-
-        case "blur":
-        case "mouseout":
-          if (target === this._openMenuButton) {
-            this.removeAttribute("secondary-button-hovered");
-          } else if (target === this._actionButton) {
-            this._updateStateMessage();
-          }
-          break;
-
-        case "focus":
-        case "mouseover":
-          if (target === this._openMenuButton) {
-            this.setAttribute("secondary-button-hovered", true);
-          } else if (target === this._actionButton) {
-            this._updateStateMessage({ hover: true });
-          }
-          break;
-      }
-    }
-
-    async _updateStateMessage({ hover = false } = {}) {
-      const policy = WebExtensionPolicy.getByID(this.addon.id);
-
-      const messages = lazy.OriginControls.getStateMessageIDs(
-        policy,
-        this.ownerGlobal.gBrowser.currentURI
-      );
-      if (!messages) {
-        return;
-      }
-
-      const messageElement = this.querySelector(
-        ".unified-extensions-item-message-default"
-      );
-
-      // We only want to adjust the height of an item in the panel when we
-      // first draw it, and not on hover (even if the hover message is longer,
-      // which shouldn't happen in practice but even if it was, we don't want
-      // to change the height on hover).
-      let adjustMinHeight = false;
-      if (hover && messages.onHover) {
-        this.ownerDocument.l10n.setAttributes(messageElement, messages.onHover);
-      } else if (messages.default) {
-        this.ownerDocument.l10n.setAttributes(messageElement, messages.default);
-        adjustMinHeight = true;
-      }
-
-      await document.l10n.translateElements([messageElement]);
-
-      if (adjustMinHeight) {
-        const contentsElement = this.querySelector(
-          ".unified-extensions-item-contents"
-        );
-        const { height } = getComputedStyle(contentsElement);
-        contentsElement.style.minHeight = height;
-      }
-    }
-
-    _hasAction() {
-      const policy = WebExtensionPolicy.getByID(this.addon.id);
-      const state = lazy.OriginControls.getState(
-        policy,
-        this.ownerGlobal.gBrowser.currentURI
-      );
-
-      return state && state.whenClicked && !state.hasAccess;
-    }
-
-    render() {
-      if (!this.addon) {
-        throw new Error(
-          "unified-extensions-item requires an add-on, forgot to call setAddon()?"
-        );
-      }
-
-      this.setAttribute("extension-id", this.addon.id);
-
-      let policy = WebExtensionPolicy.getByID(this.addon.id);
-      this.toggleAttribute(
-        "attention",
-        lazy.OriginControls.getAttention(policy, this.ownerGlobal)
-      );
-
-      this.querySelector(
-        ".unified-extensions-item-name"
-      ).textContent = this.addon.name;
-
-      const iconURL = AddonManager.getPreferredIconURL(this.addon, 32, window);
-      if (iconURL) {
-        this.querySelector(".unified-extensions-item-icon").setAttribute(
-          "src",
-          iconURL
-        );
-      }
-
-      this._actionButton.disabled = !this._hasAction();
-
-      this._openMenuButton.dataset.extensionId = this.addon.id;
-      this._openMenuButton.setAttribute(
-        "data-l10n-args",
-        JSON.stringify({ extensionName: this.addon.name })
-      );
-
-      this._updateStateMessage();
-    }
-  }
-);
-
 // We must declare `gUnifiedExtensions` using `var` below to avoid a
 // "redeclaration" syntax error.
 var gUnifiedExtensions = {
   _initialized: false,
+
+  // We use a `<deck>` in the extension items to show/hide messages below each
+  // extension name. We have a default message for origin controls, and
+  // optionally a second message shown on hover, which describes the action
+  // (when clicking on the action button). We have another message shown when
+  // the menu button is hovered/focused. The constants below define the indexes
+  // of each message in the `<deck>`.
+  MESSAGE_DECK_INDEX_DEFAULT: 0,
+  MESSAGE_DECK_INDEX_HOVER: 1,
+  MESSAGE_DECK_INDEX_MENU_HOVER: 2,
 
   init() {
     if (this._initialized) {
@@ -1418,6 +1263,8 @@ var gUnifiedExtensions = {
 
       this.permListener = () => this.updateAttention();
       lazy.ExtensionPermissions.addListener(this.permListener);
+
+      gNavToolbox.addEventListener("customizationstarting", this);
     }
 
     this._initialized = true;
@@ -1428,6 +1275,7 @@ var gUnifiedExtensions = {
       lazy.ExtensionPermissions.removeListener(this.permListener);
       this.permListener = null;
     }
+    gNavToolbox.removeEventListener("customizationstarting", this);
   },
 
   get isEnabled() {
@@ -1450,6 +1298,7 @@ var gUnifiedExtensions = {
 
   // Update the attention indicator for the whole unified extensions button.
   async updateAttention() {
+    let attention = false;
     for (let addon of await this.getActiveExtensions()) {
       let policy = WebExtensionPolicy.getByID(addon.id);
       let widget = this.browserActionFor(policy)?.widget;
@@ -1457,12 +1306,18 @@ var gUnifiedExtensions = {
       // Only show for extensions which are not already visible in the toolbar.
       if (!widget || widget.areaType !== CustomizableUI.TYPE_TOOLBAR) {
         if (lazy.OriginControls.getAttention(policy, window)) {
-          this.button.toggleAttribute("attention", true);
-          return;
+          attention = true;
+          break;
         }
       }
     }
-    this.button.toggleAttribute("attention", false);
+    this.button.toggleAttribute("attention", attention);
+    this.button.ownerDocument.l10n.setAttributes(
+      this.button,
+      attention
+        ? "unified-extensions-button-permissions-needed"
+        : "unified-extensions-button"
+    );
   },
 
   getPopupAnchorID(aBrowser, aWindow) {
@@ -1493,38 +1348,88 @@ var gUnifiedExtensions = {
 
   /**
    * Gets a list of active AddonWrapper instances of type "extension", sorted
-   * alphabetically based on add-on's names.
+   * alphabetically based on add-on's names. Optionally, filter out extensions
+   * with browser action.
    *
-   * @return {Array<AddonWrapper>} An array of active extensions.
+   * @param {bool} all When set to true (the default), return the list of all
+   *                   active extensions, including the ones that have a
+   *                   browser action. Otherwise, extensions with browser
+   *                   action are filtered out.
+   * @returns {Array<AddonWrapper>} An array of active extensions.
    */
-  async getActiveExtensions() {
+  async getActiveExtensions(all = true) {
     // TODO: Bug 1778682 - Use a new method on `AddonManager` so that we get
     // the same list of extensions as the one in `about:addons`.
 
-    // We only want to display active and visible extensions, and we want to
-    // list them alphabetically.
+    // We only want to display active and visible extensions that do not have a
+    // browser action, and we want to list them alphabetically.
     let addons = await AddonManager.getAddonsByTypes(["extension"]);
-    addons = addons.filter(addon => !addon.hidden && addon.isActive);
+    addons = addons.filter(addon => {
+      if (addon.hidden || !addon.isActive) {
+        return false;
+      }
+
+      const policy = WebExtensionPolicy.getByID(addon.id);
+      // Ignore extensions that cannot access the current window (e.g.
+      // extensions not allowed in PB mode when we are in a private window)
+      // since users cannot do anything with those extensions anyway.
+      if (!policy?.canAccessWindow(window)) {
+        return false;
+      }
+
+      return all || !policy.extension.hasBrowserActionUI;
+    });
     addons.sort((a1, a2) => a1.name.localeCompare(a2.name));
 
     return addons;
   },
 
+  /**
+   * Returns true when there are active extensions listed/shown in the unified
+   * extensions panel, and false otherwise (e.g. when extensions are pinned in
+   * the toolbar OR there are 0 active extensions).
+   *
+   * @returns {boolean} Whether there are extensions listed in the panel.
+   */
+  async hasExtensionsInPanel() {
+    const extensions = await this.getActiveExtensions();
+
+    return !!extensions
+      .map(extension => {
+        const policy = WebExtensionPolicy.getByID(extension.id);
+        return this.browserActionFor(policy)?.widget;
+      })
+      .filter(widget => {
+        return (
+          !widget ||
+          widget?.areaType !== CustomizableUI.TYPE_TOOLBAR ||
+          widget?.forWindow(window).overflowed
+        );
+      }).length;
+  },
+
   handleEvent(event) {
     switch (event.type) {
-      case "ViewShowing": {
+      case "ViewShowing":
         this.onPanelViewShowing(event.target);
         break;
-      }
-      case "ViewHiding": {
+
+      case "ViewHiding":
         this.onPanelViewHiding(event.target);
-      }
+        break;
+
+      case "customizationstarting":
+        this.panel.hidePopup();
+        break;
     }
   },
 
   async onPanelViewShowing(panelview) {
     const list = panelview.querySelector(".unified-extensions-list");
-    const extensions = await this.getActiveExtensions();
+    // Only add extensions that do not have a browser action in this list since
+    // the extensions with browser action have CUI widgets and will appear in
+    // the panel (or toolbar) via the CUI mechanism.
+    const extensions = await this.getActiveExtensions(/* all */ false);
 
     for (const extension of extensions) {
       const item = document.createElement("unified-extensions-item");
@@ -1542,7 +1447,8 @@ var gUnifiedExtensions = {
 
   _panel: null,
   get panel() {
-    // Lazy load the unified-extensions-panel panel the first time we need to display it.
+    // Lazy load the unified-extensions-panel panel the first time we need to
+    // display it.
     if (!this._panel) {
       let template = document.getElementById(
         "unified-extensions-panel-template"
@@ -1557,23 +1463,46 @@ var gUnifiedExtensions = {
         CustomizableUI.AREA_ADDONS
       );
       CustomizableUI.addPanelCloseListeners(this._panel);
+
+      // Lazy-load the l10n strings. Those strings are used for the CUI and
+      // non-CUI extensions in the unified extensions panel.
+      document
+        .getElementById("unified-extensions-context-menu")
+        .querySelectorAll("[data-lazy-l10n-id]")
+        .forEach(el => {
+          el.setAttribute("data-l10n-id", el.getAttribute("data-lazy-l10n-id"));
+          el.removeAttribute("data-lazy-l10n-id");
+        });
     }
     return this._panel;
   },
 
   async togglePanel(aEvent) {
     if (!CustomizationHandler.isCustomizing()) {
-      if (aEvent && aEvent.button !== 0) {
-        return;
+      if (aEvent) {
+        if (
+          // On MacOS, ctrl-click will send a context menu event from the
+          // widget, so we don't want to bring up the panel when ctrl key is
+          // pressed.
+          (aEvent.type == "mousedown" &&
+            (aEvent.button !== 0 ||
+              (AppConstants.platform === "macosx" && aEvent.ctrlKey))) ||
+          (aEvent.type === "keypress" &&
+            aEvent.charCode !== KeyEvent.DOM_VK_SPACE &&
+            aEvent.keyCode !== KeyEvent.DOM_VK_RETURN)
+        ) {
+          return;
+        }
+
+        // The button should directly open `about:addons` when the user does not
+        // have any active extensions listed in the unified extensions panel.
+        if (!(await this.hasExtensionsInPanel())) {
+          await BrowserOpenAddonsMgr("addons://discover/");
+          return;
+        }
       }
 
       let panel = this.panel;
-      // The button should directly open `about:addons` when there is no active
-      // extension to show in the panel.
-      if ((await this.getActiveExtensions()).length === 0) {
-        await BrowserOpenAddonsMgr("addons://discover/");
-        return;
-      }
 
       if (!this._listView) {
         this._listView = PanelMultiView.getViewNode(
@@ -1582,18 +1511,6 @@ var gUnifiedExtensions = {
         );
         this._listView.addEventListener("ViewShowing", this);
         this._listView.addEventListener("ViewHiding", this);
-
-        // Lazy-load the l10n strings.
-        document
-          .getElementById("unified-extensions-context-menu")
-          .querySelectorAll("[data-lazy-l10n-id]")
-          .forEach(el => {
-            el.setAttribute(
-              "data-l10n-id",
-              el.getAttribute("data-lazy-l10n-id")
-            );
-            el.removeAttribute("data-lazy-l10n-id");
-          });
       }
 
       if (this._button.open) {
@@ -1621,13 +1538,30 @@ var gUnifiedExtensions = {
 
     const id = this._getExtensionId(menu);
     const addon = await AddonManager.getAddonByID(id);
+    const widgetId = this._getWidgetId(menu);
+    const forBrowserAction = !!widgetId;
 
+    const pinButton = menu.querySelector(
+      ".unified-extensions-context-menu-pin-to-toolbar"
+    );
     const removeButton = menu.querySelector(
       ".unified-extensions-context-menu-remove-extension"
     );
     const reportButton = menu.querySelector(
       ".unified-extensions-context-menu-report-extension"
     );
+    const menuSeparator = menu.querySelector(
+      ".unified-extensions-context-menu-management-separator"
+    );
+
+    menuSeparator.hidden = !forBrowserAction;
+    pinButton.hidden = !forBrowserAction;
+
+    if (forBrowserAction) {
+      let area = CustomizableUI.getPlacementOfWidget(widgetId).area;
+      let inToolbar = area != CustomizableUI.AREA_ADDONS;
+      pinButton.setAttribute("checked", inToolbar);
+    }
 
     reportButton.hidden = !gAddonAbuseReportEnabled;
     removeButton.disabled = !(
@@ -1642,6 +1576,11 @@ var gUnifiedExtensions = {
     }
   },
 
+  // This is registered on the top-level unified extensions context menu.
+  onContextMenuCommand(menu, event) {
+    this.togglePanel();
+  },
+
   browserActionFor(policy) {
     // Ideally, we wouldn't do that because `browserActionFor()` will only be
     // defined in `global` when at least one extension has required loading the
@@ -1653,26 +1592,57 @@ var gUnifiedExtensions = {
   async manageExtension(menu) {
     const id = this._getExtensionId(menu);
 
-    await this.togglePanel();
     await BrowserAddonUI.manageAddon(id, "unifiedExtensions");
   },
 
   async removeExtension(menu) {
     const id = this._getExtensionId(menu);
 
-    await this.togglePanel();
     await BrowserAddonUI.removeAddon(id, "unifiedExtensions");
   },
 
   async reportExtension(menu) {
     const id = this._getExtensionId(menu);
 
-    await this.togglePanel();
     await BrowserAddonUI.reportAddon(id, "unified_context_menu");
   },
 
   _getExtensionId(menu) {
     const { triggerNode } = menu;
-    return triggerNode.dataset.extensionId;
+    return triggerNode.dataset.extensionid;
+  },
+
+  _getWidgetId(menu) {
+    const { triggerNode } = menu;
+    return triggerNode.closest(".unified-extensions-item")?.id;
+  },
+
+  async onPinToToolbarChange(menu, event) {
+    let shouldPinToToolbar = event.target.getAttribute("checked") == "true";
+    // Revert the checkbox back to its original state. This is because the
+    // addon context menu handlers are asynchronous, and there seems to be
+    // a race where the checkbox state won't get set in time to show the
+    // right state. So we err on the side of caution, and presume that future
+    // attempts to open this context menu on an extension button will show
+    // the same checked state that we started in.
+    event.target.setAttribute("checked", !shouldPinToToolbar);
+
+    let widgetId = this._getWidgetId(menu);
+    if (!widgetId) {
+      return;
+    }
+
+    this.pinToToolbar(widgetId, shouldPinToToolbar);
+  },
+
+  pinToToolbar(widgetId, shouldPinToToolbar) {
+    let newArea = shouldPinToToolbar
+      ? CustomizableUI.AREA_NAVBAR
+      : CustomizableUI.AREA_ADDONS;
+    let newPosition = shouldPinToToolbar ? undefined : 0;
+
+    CustomizableUI.addWidgetToArea(widgetId, newArea, newPosition);
+
+    this.updateAttention();
   },
 };

@@ -41,12 +41,6 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
-  "gEnvironment",
-  "@mozilla.org/process/environment;1",
-  "nsIEnvironment"
-);
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
   "gMIMEService",
   "@mozilla.org/mime;1",
   "nsIMIMEService"
@@ -186,7 +180,7 @@ export var DownloadIntegration = {
     try {
       await this.loadPublicDownloadListFromStore(list);
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     if (AppConstants.MOZ_PLACES) {
@@ -225,7 +219,7 @@ export var DownloadIntegration = {
     try {
       await this._store.load();
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     // Add the view used for detecting changes to downloads to be persisted.
@@ -282,7 +276,7 @@ export var DownloadIntegration = {
     if (AppConstants.platform == "android") {
       // Android doesn't have a $HOME directory, and by default we only have
       // write access to /data/data/org.mozilla.{$APP} and /sdcard
-      this._downloadsDirectory = lazy.gEnvironment.get("DOWNLOADS_DIRECTORY");
+      this._downloadsDirectory = Services.env.get("DOWNLOADS_DIRECTORY");
       if (!this._downloadsDirectory) {
         throw new Components.Exception(
           "DOWNLOADS_DIRECTORY is not set.",
@@ -329,7 +323,7 @@ export var DownloadIntegration = {
             createAncestors: false,
           });
         } catch (ex) {
-          Cu.reportError(ex);
+          console.error(ex);
           // Either the preference isn't set or the directory cannot be created.
           directoryPath = await this.getSystemDownloadsDirectory();
         }
@@ -560,7 +554,7 @@ export var DownloadIntegration = {
         } catch (ex) {
           // If writing to the file fails, we ignore the error and continue.
           if (!DOMException.isInstance(ex)) {
-            Cu.reportError(ex);
+            console.error(ex);
           }
         }
       }
@@ -600,7 +594,7 @@ export var DownloadIntegration = {
       // or marking the file as read-only on Unix and Mac, but this should not
       // prevent the download from completing.
       if (!DOMException.isInstance(ex)) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
 
@@ -1125,7 +1119,7 @@ var DownloadObserver = {
             promise
           );
         } else {
-          promise.catch(ex => Cu.reportError(ex));
+          promise.catch(ex => console.error(ex));
         }
         break;
       case "sleep_notification":

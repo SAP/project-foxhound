@@ -92,7 +92,9 @@ const EXPECTED_SPONSORED_RESULT = {
     sponsoredIabCategory: "22 - Shopping",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://test.com/q=frabbits",
     source: "remote-settings",
   },
@@ -115,7 +117,9 @@ const EXPECTED_NONSPONSORED_RESULT = {
     sponsoredIabCategory: "5 - Education",
     isSponsored: false,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://test.com/?q=nonsponsored",
     source: "remote-settings",
   },
@@ -138,7 +142,9 @@ const EXPECTED_HTTP_RESULT = {
     sponsoredIabCategory: "22 - Shopping",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: "http://" + PREFIX_SUGGESTIONS_STRIPPED_URL,
     source: "remote-settings",
   },
@@ -161,7 +167,9 @@ const EXPECTED_HTTPS_RESULT = {
     sponsoredIabCategory: "22 - Shopping",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10nId: "firefox-suggest-urlbar-learn-more",
+    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    isBlockable: false,
+    blockL10n: { id: "firefox-suggest-urlbar-block" },
     displayUrl: PREFIX_SUGGESTIONS_STRIPPED_URL,
     source: "remote-settings",
   },
@@ -825,6 +833,9 @@ add_task(async function timestamps() {
       onFirstResult() {
         return false;
       },
+      getSearchSource() {
+        return "dummy-search-source";
+      },
       window: {
         location: {
           href: AppConstants.BROWSER_CHROME_URL,
@@ -937,7 +948,9 @@ add_task(async function dedupeAgainstURL_timestamps() {
       sponsoredIabCategory: "22 - Shopping",
       isSponsored: true,
       helpUrl: QuickSuggest.HELP_URL,
-      helpL10nId: "firefox-suggest-urlbar-learn-more",
+      helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+      isBlockable: false,
+      blockL10n: { id: "firefox-suggest-urlbar-block" },
       source: "remote-settings",
     },
   };
@@ -953,6 +966,9 @@ add_task(async function dedupeAgainstURL_timestamps() {
       isPrivate: false,
       onFirstResult() {
         return false;
+      },
+      getSearchSource() {
+        return "dummy-search-source";
       },
       window: {
         location: {

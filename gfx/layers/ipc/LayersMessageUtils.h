@@ -26,11 +26,11 @@
 #include "mozilla/layers/FocusTarget.h"
 #include "mozilla/layers/GeckoContentControllerTypes.h"
 #include "mozilla/layers/KeyboardMap.h"
-#include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/layers/OverlayInfo.h"
 #include "mozilla/layers/RepaintRequest.h"
+#include "mozilla/layers/ScrollbarData.h"
 #include "nsSize.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
 
@@ -929,6 +929,13 @@ struct ParamTraits<mozilla::layers::AsyncDragMetrics> {
             ReadParam(aReader, &aResult->mDirection));
   }
 };
+
+template <>
+struct ParamTraits<mozilla::layers::BrowserGestureResponse>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::layers::BrowserGestureResponse,
+          mozilla::layers::BrowserGestureResponse::NotConsumed,
+          mozilla::layers::BrowserGestureResponse::Consumed> {};
 
 template <>
 struct ParamTraits<mozilla::layers::CompositorOptions> {

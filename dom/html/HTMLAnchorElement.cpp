@@ -161,7 +161,7 @@ void HTMLAnchorElement::GetLinkTarget(nsAString& aTarget) {
   }
 }
 
-void HTMLAnchorElement::GetTarget(nsAString& aValue) {
+void HTMLAnchorElement::GetTarget(nsAString& aValue) const {
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::target, aValue)) {
     GetBaseTarget(aValue);
   }
@@ -174,7 +174,8 @@ nsDOMTokenList* HTMLAnchorElement::RelList() {
   return mRelList;
 }
 
-void HTMLAnchorElement::GetText(nsAString& aText, mozilla::ErrorResult& aRv) {
+void HTMLAnchorElement::GetText(nsAString& aText,
+                                mozilla::ErrorResult& aRv) const {
   if (NS_WARN_IF(
           !nsContentUtils::GetNodeTextContent(this, true, aText, fallible))) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -183,10 +184,6 @@ void HTMLAnchorElement::GetText(nsAString& aText, mozilla::ErrorResult& aRv) {
 
 void HTMLAnchorElement::SetText(const nsAString& aText, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aText, false);
-}
-
-void HTMLAnchorElement::ToString(nsAString& aSource) {
-  return GetHref(aSource);
 }
 
 already_AddRefed<nsIURI> HTMLAnchorElement::GetHrefURI() const {

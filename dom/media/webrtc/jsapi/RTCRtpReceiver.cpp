@@ -66,7 +66,7 @@ static PrincipalHandle GetPrincipalHandle(nsPIDOMWindowInner* aWindow,
 
 static already_AddRefed<dom::MediaStreamTrack> CreateTrack(
     nsPIDOMWindowInner* aWindow, bool aAudio,
-    const nsCOMPtr<nsIPrincipal>& aPrincipal) {
+    const nsCOMPtr<nsIPrincipal>& aPrincipal, const TrackingId& aTrackingId) {
   MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
       aAudio ? MediaTrackGraph::AUDIO_THREAD_DRIVER
              : MediaTrackGraph::SYSTEM_THREAD_DRIVER,
@@ -78,12 +78,14 @@ static already_AddRefed<dom::MediaStreamTrack> CreateTrack(
   if (aAudio) {
     RefPtr<SourceMediaTrack> source =
         graph->CreateSourceTrack(MediaSegment::AUDIO);
-    trackSource = new RemoteTrackSource(source, aPrincipal, u"remote audio"_ns);
+    trackSource = new RemoteTrackSource(source, aPrincipal, u"remote audio"_ns,
+                                        aTrackingId);
     track = new AudioStreamTrack(aWindow, source, trackSource);
   } else {
     RefPtr<SourceMediaTrack> source =
         graph->CreateSourceTrack(MediaSegment::VIDEO);
-    trackSource = new RemoteTrackSource(source, aPrincipal, u"remote video"_ns);
+    trackSource = new RemoteTrackSource(source, aPrincipal, u"remote video"_ns,
+                                        aTrackingId);
     track = new VideoStreamTrack(aWindow, source, trackSource);
   }
 
@@ -97,13 +99,11 @@ static already_AddRefed<dom::MediaStreamTrack> CreateTrack(
   name(AbstractThread::MainThread(), val, \
        "RTCRtpReceiver::" #name " (Canonical)")
 
-RTCRtpReceiver::RTCRtpReceiver(nsPIDOMWindowInner* aWindow, bool aPrivacyNeeded,
-                               PeerConnectionImpl* aPc,
-                               MediaTransportHandler* aTransportHandler,
-                               AbstractThread* aCallThread,
-                               nsISerialEventTarget* aStsThread,
-                               MediaSessionConduit* aConduit,
-                               RTCRtpTransceiver* aTransceiver)
+RTCRtpReceiver::RTCRtpReceiver(
+    nsPIDOMWindowInner* aWindow, bool aPrivacyNeeded, PeerConnectionImpl* aPc,
+    MediaTransportHandler* aTransportHandler, AbstractThread* aCallThread,
+    nsISerialEventTarget* aStsThread, MediaSessionConduit* aConduit,
+    RTCRtpTransceiver* aTransceiver, const TrackingId& aTrackingId)
     : mWindow(aWindow),
       mPc(aPc),
       mCallThread(aCallThread),
@@ -119,7 +119,7 @@ RTCRtpReceiver::RTCRtpReceiver(nsPIDOMWindowInner* aWindow, bool aPrivacyNeeded,
       INIT_CANONICAL(mReceiving, false) {
   PrincipalHandle principalHandle = GetPrincipalHandle(aWindow, aPrivacyNeeded);
   mTrack = CreateTrack(aWindow, aConduit->type() == MediaSessionConduit::AUDIO,
-                       principalHandle.get());
+                       principalHandle.get(), aTrackingId);
   // Until Bug 1232234 is fixed, we'll get extra RTCP BYES during renegotiation,
   // so we'll disable muting on RTCP BYE and timeout for now.
   if (Preferences::GetBool("media.peerconnection.mute_on_bye_or_timeout",
@@ -281,7 +281,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                 };
 
             asAudio.apply([&](auto& aConduit) {
-              Maybe<webrtc::AudioReceiveStream::Stats> audioStats =
+              Maybe<webrtc::AudioReceiveStreamInterface::Stats> audioStats =
                   aConduit->GetReceiverStats();
               if (audioStats.isNothing()) {
                 return;
@@ -376,7 +376,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
             });
 
             asVideo.apply([&](auto& aConduit) {
-              Maybe<webrtc::VideoReceiveStream::Stats> videoStats =
+              Maybe<webrtc::VideoReceiveStreamInterface::Stats> videoStats =
                   aConduit->GetReceiverStats();
               if (videoStats.isNothing()) {
                 return;
@@ -454,7 +454,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                 local.mQpSum.Construct(videoStats->qp_sum.value());
               }
               local.mTotalDecodeTime.Construct(
-                  double(videoStats->total_decode_time_ms) / 1000);
+                  double(videoStats->total_decode_time.ms()) / 1000);
               local.mTotalInterFrameDelay.Construct(
                   videoStats->total_inter_frame_delay);
               local.mTotalSquaredInterFrameDelay.Construct(

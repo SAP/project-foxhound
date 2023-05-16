@@ -50,6 +50,11 @@ let win;
 add_setup(async function() {
   win = await promiseEnableUnifiedExtensions();
 
+  // Make sure extension buttons added to the navbar will not overflow in the
+  // panel, which could happen when a previous test file resizes the current
+  // window.
+  await ensureMaximizedWindow(win);
+
   registerCleanupFunction(async () => {
     await BrowserTestUtils.closeWindow(win);
   });
@@ -82,6 +87,7 @@ add_task(async function test_button_disabled_by_pref() {
   );
 
   await BrowserTestUtils.closeWindow(anotherWindow);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_open_panel_on_button_click() {
@@ -112,7 +118,7 @@ add_task(async function test_open_panel_on_button_click() {
   );
   Assert.deepEqual(
     win.document.l10n.getAttributes(
-      item.querySelector(".unified-extensions-item-open-menu")
+      item.querySelector(".unified-extensions-item-menu-button")
     ),
     {
       id: "unified-extensions-item-open-menu",
@@ -135,7 +141,7 @@ add_task(async function test_open_panel_on_button_click() {
   );
   Assert.deepEqual(
     win.document.l10n.getAttributes(
-      item.querySelector(".unified-extensions-item-open-menu")
+      item.querySelector(".unified-extensions-item-menu-button")
     ),
     {
       id: "unified-extensions-item-open-menu",
@@ -158,7 +164,7 @@ add_task(async function test_open_panel_on_button_click() {
   );
   Assert.deepEqual(
     win.document.l10n.getAttributes(
-      item.querySelector(".unified-extensions-item-open-menu")
+      item.querySelector(".unified-extensions-item-menu-button")
     ),
     {
       id: "unified-extensions-item-open-menu",
@@ -205,6 +211,22 @@ add_task(async function test_clicks_on_unified_extension_button() {
   await popupShownPromise;
   ok(!panel.hasAttribute("panelopen"), "expected panel to remain hidden");
   await closeChromeContextMenu(contextMenu.id, null, win);
+
+  // On MacOS, ctrl-click shouldn't open the panel because this normally opens
+  // the context menu. We can't test anything on MacOS...
+  if (AppConstants.platform !== "macosx") {
+    info("open panel with ctrl-click");
+    const listView = getListView(win);
+    const viewShown = BrowserTestUtils.waitForEvent(listView, "ViewShown");
+    EventUtils.synthesizeMouseAtCenter(button, { ctrlKey: true }, win);
+    await viewShown;
+    ok(
+      panel.getAttribute("panelopen") === "true",
+      "expected panel to be visible"
+    );
+    await closeExtensionsPanel(win);
+    ok(!panel.hasAttribute("panelopen"), "expected panel to be hidden");
+  }
 
   await Promise.all(extensions.map(extension => extension.unload()));
 });
@@ -294,23 +316,72 @@ add_task(async function test_panel_has_a_manage_extensions_button() {
 });
 
 add_task(async function test_list_active_extensions_only() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.manifestV3.enabled", true]],
+  });
+
   const arrayOfManifestData = [
     { name: "hidden addon", hidden: true },
     { name: "regular addon", hidden: false },
     { name: "disabled addon", hidden: false },
+    {
+      name: "regular addon with browser action",
+      hidden: false,
+      browser_action: {
+        default_area: "navbar",
+      },
+    },
+    {
+      manifest_version: 3,
+      name: "regular mv3 addon with browser action",
+      hidden: false,
+      action: {
+        default_area: "navbar",
+      },
+    },
+    {
+      name: "regular addon with page action",
+      hidden: false,
+      page_action: {},
+    },
   ];
   const extensions = createExtensions(arrayOfManifestData, {
     // We have to use the mock provider below so we don't need to use the
     // `addonManager` here.
     useAddonManager: false,
+    // Allow all extensions in PB mode by default.
+    incognitoOverride: "spanning",
   });
+  // This extension is loaded with a different `incognitoOverride` value to
+  // make sure it won't show up in a private window.
+  extensions.push(
+    ExtensionTestUtils.loadExtension({
+      manifest: {
+        name: "regular addon with private browsing disabled",
+      },
+      useAddonManager: false,
+      incognitoOverride: "not_allowed",
+    })
+  );
 
   await Promise.all(extensions.map(extension => extension.startup()));
+
+  const extensionWithoutPolicyID = "ext-without-policy@";
 
   // We use MockProvider because the "hidden" property cannot be set when
   // "useAddonManager" is passed to loadExtension.
   const mockProvider = new MockProvider();
   mockProvider.createAddons([
+    // We register an add-on here BUT without loading the extension above. That
+    // allows us to simulate the presence of an active add-on but without a
+    // WebExtensionPolicy.
+    {
+      id: extensionWithoutPolicyID,
+      name: "regular addon without policy",
+      type: "extension",
+      version: "1",
+      hidden: false,
+    },
     {
       id: extensions[0].id,
       name: arrayOfManifestData[0].name,
@@ -334,49 +405,131 @@ add_task(async function test_list_active_extensions_only() {
       // Mark this add-on as disabled.
       userDisabled: true,
     },
+    {
+      id: extensions[3].id,
+      name: arrayOfManifestData[3].name,
+      type: "extension",
+      version: "1",
+      hidden: arrayOfManifestData[3].hidden,
+    },
+    {
+      id: extensions[4].id,
+      name: arrayOfManifestData[4].name,
+      type: "extension",
+      version: "1",
+      hidden: arrayOfManifestData[4].hidden,
+    },
+    {
+      id: extensions[5].id,
+      name: arrayOfManifestData[5].name,
+      type: "extension",
+      version: "1",
+      hidden: arrayOfManifestData[5].hidden,
+    },
+    {
+      id: extensions[6].id,
+      name: "regular addon with private browsing disabled",
+      type: "extension",
+      version: "1",
+      hidden: false,
+    },
   ]);
 
-  await openExtensionsPanel(win);
-
-  const hiddenAddonItem = getUnifiedExtensionsItem(win, extensions[0].id);
-  is(hiddenAddonItem, null, `didn't expect an item for ${extensions[0].id}`);
-
-  const regularAddonItem = getUnifiedExtensionsItem(win, extensions[1].id);
   is(
-    regularAddonItem.querySelector(".unified-extensions-item-name").textContent,
-    "regular addon",
-    "expected an item for a regular add-on"
+    WebExtensionPolicy.getByID(extensionWithoutPolicyID),
+    null,
+    "expected add-on without a policy"
   );
 
-  const disabledAddonItem = getUnifiedExtensionsItem(win, extensions[2].id);
-  is(disabledAddonItem, null, `didn't expect an item for ${extensions[2].id}`);
+  for (const isPrivate of [false, true]) {
+    info(
+      `verifying extensions listed in the panel with private browsing ${
+        isPrivate ? "enabled" : "disabled"
+      }`
+    );
+    const aWin = await promiseEnableUnifiedExtensions({ private: isPrivate });
+    // Make sure extension buttons added to the navbar will not overflow in the
+    // panel, which could happen when a previous test file resizes the current
+    // window.
+    await ensureMaximizedWindow(aWin);
 
-  await closeExtensionsPanel(win);
+    await openExtensionsPanel(aWin);
+
+    const addonWithoutPolicyItem = getUnifiedExtensionsItem(
+      aWin,
+      extensionWithoutPolicyID
+    );
+    is(
+      addonWithoutPolicyItem,
+      null,
+      "didn't expect an item for an add-on without policy"
+    );
+
+    const hiddenAddonItem = getUnifiedExtensionsItem(aWin, extensions[0].id);
+    is(hiddenAddonItem, null, "didn't expect an item for a hidden add-on");
+
+    const regularAddonItem = getUnifiedExtensionsItem(aWin, extensions[1].id);
+    is(
+      regularAddonItem.querySelector(".unified-extensions-item-name")
+        .textContent,
+      "regular addon",
+      "expected an item for a regular add-on"
+    );
+
+    const disabledAddonItem = getUnifiedExtensionsItem(aWin, extensions[2].id);
+    is(disabledAddonItem, null, "didn't expect an item for a disabled add-on");
+
+    const browserActionItem = getUnifiedExtensionsItem(aWin, extensions[3].id);
+    is(
+      browserActionItem,
+      null,
+      "didn't expect an item for an add-on with browser action placed in the navbar"
+    );
+
+    const mv3BrowserActionItem = getUnifiedExtensionsItem(
+      aWin,
+      extensions[4].id
+    );
+    is(
+      mv3BrowserActionItem,
+      null,
+      "didn't expect an item for a MV3 add-on with browser action placed in the navbar"
+    );
+
+    const pageActionItem = getUnifiedExtensionsItem(aWin, extensions[5].id);
+    is(
+      pageActionItem.querySelector(".unified-extensions-item-name").textContent,
+      "regular addon with page action",
+      "expected an item for a regular add-on with page action"
+    );
+
+    const privateBrowsingDisabledItem = getUnifiedExtensionsItem(
+      aWin,
+      extensions[6].id
+    );
+    if (isPrivate) {
+      is(
+        privateBrowsingDisabledItem,
+        null,
+        "didn't expect an item for a regular add-on with private browsing enabled"
+      );
+    } else {
+      is(
+        privateBrowsingDisabledItem.querySelector(
+          ".unified-extensions-item-name"
+        ).textContent,
+        "regular addon with private browsing disabled",
+        "expected an item for a regular add-on with private browsing disabled"
+      );
+    }
+
+    await closeExtensionsPanel(aWin);
+
+    await BrowserTestUtils.closeWindow(aWin);
+  }
 
   await Promise.all(extensions.map(extension => extension.unload()));
   mockProvider.unregister();
-});
-
-add_task(async function test_no_addons_themes_widget_when_pref_is_enabled() {
-  if (
-    !Services.prefs.getBoolPref("extensions.unifiedExtensions.enabled", false)
-  ) {
-    ok(true, "Skip task because unifiedExtensions pref is disabled");
-    return;
-  }
-
-  const addonsAndThemesWidgetId = "add-ons-button";
-
-  // Add the button to the navbar, which should not do anything because the
-  // add-ons and themes button should not exist when the unified extensions
-  // pref is enabled.
-  CustomizableUI.addWidgetToArea(
-    addonsAndThemesWidgetId,
-    CustomizableUI.AREA_NAVBAR
-  );
-
-  let addonsButton = win.document.getElementById(addonsAndThemesWidgetId);
-  is(addonsButton, null, "expected no add-ons and themes button");
 });
 
 add_task(async function test_button_opens_discopane_when_no_extension() {
@@ -427,6 +580,7 @@ add_task(async function test_button_opens_discopane_when_no_extension() {
     win
   );
   await popupShownPromise;
+  await closeChromeContextMenu(contextMenu.id, null, win);
 
   win.gUnifiedExtensions.getActiveExtensions = origGetActionExtensions;
 });
@@ -467,6 +621,14 @@ add_task(async function test_messages_origin_controls() {
   const WHEN_CLICKED = { id: "origin-controls-state-when-clicked", args: null };
   const HOVER_RUN_VISIT_ONLY = {
     id: "origin-controls-state-hover-run-visit-only",
+    args: null,
+  };
+  const HOVER_RUNNABLE_RUN_EXT = {
+    id: "origin-controls-state-runnable-hover-run",
+    args: null,
+  };
+  const HOVER_RUNNABLE_OPEN_EXT = {
+    id: "origin-controls-state-runnable-hover-open",
     args: null,
   };
 
@@ -536,13 +698,93 @@ add_task(async function test_messages_origin_controls() {
       expectedActionButtonDisabled: true,
     },
     {
-      title: "MV2 - when clicked",
+      title: "MV2 - activeTab without browser action",
       manifest: {
         manifest_version: 2,
         permissions: ["activeTab"],
       },
+      expectedDefaultMessage: NO_ACCESS,
+      expectedHoverMessage: NO_ACCESS,
+      expectedActionButtonDisabled: true,
+    },
+    {
+      title: "MV2 - when clicked: activeTab with browser action",
+      manifest: {
+        manifest_version: 2,
+        permissions: ["activeTab"],
+        browser_action: {},
+      },
       expectedDefaultMessage: WHEN_CLICKED,
       expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "MV3 - when clicked: activeTab with action",
+      manifest: {
+        manifest_version: 3,
+        permissions: ["activeTab"],
+        action: {},
+      },
+      expectedDefaultMessage: WHEN_CLICKED,
+      expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "MV2 - browser action - click event - always on",
+      manifest: {
+        manifest_version: 2,
+        browser_action: {},
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_RUN_EXT,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "MV2 - browser action - popup - always on",
+      manifest: {
+        manifest_version: 2,
+        browser_action: {
+          default_popup: "popup.html",
+        },
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_OPEN_EXT,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "MV2 - browser action - click event - content script",
+      manifest: {
+        manifest_version: 2,
+        browser_action: {},
+        content_scripts: [
+          {
+            js: ["script.js"],
+            matches: ["*://example.com/*"],
+          },
+        ],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_RUN_EXT,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "MV2 - browser action - popup - content script",
+      manifest: {
+        manifest_version: 2,
+        browser_action: {
+          default_popup: "popup.html",
+        },
+        content_scripts: [
+          {
+            js: ["script.js"],
+            matches: ["*://example.com/*"],
+          },
+        ],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_OPEN_EXT,
       expectedActionButtonDisabled: false,
     },
     {
@@ -585,11 +827,131 @@ add_task(async function test_messages_origin_controls() {
       expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
       expectedActionButtonDisabled: false,
     },
+    {
+      title: "page action - no access",
+      manifest: {
+        manifest_version: 3,
+        page_action: {},
+      },
+      expectedDefaultMessage: NO_ACCESS,
+      expectedHoverMessage: NO_ACCESS,
+      expectedActionButtonDisabled: true,
+    },
+    {
+      title: "page action - when clicked with host permissions",
+      manifest: {
+        manifest_version: 3,
+        host_permissions: ["*://example.com/*"],
+        page_action: {},
+      },
+      expectedDefaultMessage: WHEN_CLICKED,
+      expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "page action - when clicked with host permissions already granted",
+      manifest: {
+        manifest_version: 3,
+        host_permissions: ["*://example.com/*"],
+        page_action: {},
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: ALWAYS_ON,
+      expectedActionButtonDisabled: true,
+      grantHostPermissions: true,
+    },
+    {
+      title: "page action - when clicked",
+      manifest: {
+        manifest_version: 3,
+        permissions: ["activeTab"],
+        page_action: {},
+      },
+      expectedDefaultMessage: WHEN_CLICKED,
+      expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "browser action - click event - no access",
+      manifest: {
+        manifest_version: 3,
+        action: {},
+      },
+      expectedDefaultMessage: NO_ACCESS,
+      expectedHoverMessage: HOVER_RUNNABLE_RUN_EXT,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "browser action - popup - no access",
+      manifest: {
+        manifest_version: 3,
+        action: {
+          default_popup: "popup.html",
+        },
+      },
+      expectedDefaultMessage: NO_ACCESS,
+      expectedHoverMessage: HOVER_RUNNABLE_OPEN_EXT,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "browser action - click event - when clicked",
+      manifest: {
+        manifest_version: 3,
+        action: {},
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: WHEN_CLICKED,
+      expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title: "browser action - popup - when clicked",
+      manifest: {
+        manifest_version: 3,
+        action: {
+          default_popup: "popup.html",
+        },
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: WHEN_CLICKED,
+      expectedHoverMessage: HOVER_RUN_VISIT_ONLY,
+      expectedActionButtonDisabled: false,
+    },
+    {
+      title:
+        "browser action - click event - when clicked with host permissions already granted",
+      manifest: {
+        manifest_version: 3,
+        action: {},
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_RUN_EXT,
+      expectedActionButtonDisabled: false,
+      grantHostPermissions: true,
+    },
+    {
+      title:
+        "browser action - popup - when clicked with host permissions already granted",
+      manifest: {
+        manifest_version: 3,
+        action: {
+          default_popup: "popup.html",
+        },
+        host_permissions: ["*://example.com/*"],
+      },
+      expectedDefaultMessage: ALWAYS_ON,
+      expectedHoverMessage: HOVER_RUNNABLE_OPEN_EXT,
+      expectedActionButtonDisabled: false,
+      grantHostPermissions: true,
+    },
   ];
 
   await BrowserTestUtils.withNewTab(
     { gBrowser: win.gBrowser, url: "https://example.com/" },
     async () => {
+      let count = 0;
+
       for (const {
         title,
         manifest,
@@ -600,7 +962,7 @@ add_task(async function test_messages_origin_controls() {
       } of TEST_CASES) {
         info(`case: ${title}`);
 
-        const id = "some@id";
+        const id = `test-origin-controls-${count++}@ext`;
         const extension = ExtensionTestUtils.loadExtension({
           manifest: {
             name: title,
@@ -609,6 +971,7 @@ add_task(async function test_messages_origin_controls() {
           },
           files: {
             "script.js": "",
+            "popup.html": "",
           },
           useAddonManager: "temporary",
         });
@@ -629,28 +992,32 @@ add_task(async function test_messages_origin_controls() {
         const item = getUnifiedExtensionsItem(win, extension.id);
         ok(item, `expected item for ${extension.id}`);
 
+        const messageDeck = item.querySelector(
+          ".unified-extensions-item-message-deck"
+        );
+        ok(messageDeck, "expected a message deck element");
+
         // 1. Verify the default message displayed below the extension's name.
-        const message = item.querySelector(
+        const defaultMessage = item.querySelector(
           ".unified-extensions-item-message-default"
         );
-        ok(message, "expected a default message element");
+        ok(defaultMessage, "expected a default message element");
 
         Assert.deepEqual(
-          win.document.l10n.getAttributes(message),
+          win.document.l10n.getAttributes(defaultMessage),
           expectedDefaultMessage,
           "expected l10n attributes for the default message"
         );
 
-        // 2. Verify that a min-height has been set on the message's parent
-        // element.
-        const minHeight = item.querySelector(
-          ".unified-extensions-item-contents"
-        )?.style?.minHeight;
-        ok(!!minHeight, "expected min-height to be set");
+        is(
+          messageDeck.selectedIndex,
+          win.gUnifiedExtensions.MESSAGE_DECK_INDEX_DEFAULT,
+          "expected selected message in the deck to be the default message"
+        );
 
-        // 3. Verify the action button state.
+        // 2. Verify the action button state.
         const actionButton = item.querySelector(
-          ".unified-extensions-item-action"
+          ".unified-extensions-item-action-button"
         );
         ok(actionButton, "expected an action button");
         is(
@@ -661,7 +1028,7 @@ add_task(async function test_messages_origin_controls() {
           }`
         );
 
-        // 4. Verify the message displayed on hover but only when the action
+        // 3. Verify the message displayed on hover but only when the action
         // button isn't disabled to avoid some test failures.
         if (!expectedActionButtonDisabled) {
           const hovered = BrowserTestUtils.waitForEvent(
@@ -675,20 +1042,23 @@ add_task(async function test_messages_origin_controls() {
           );
           await hovered;
 
+          const hoverMessage = item.querySelector(
+            ".unified-extensions-item-message-hover"
+          );
+          ok(hoverMessage, "expected a hover message element");
+
           Assert.deepEqual(
-            win.document.l10n.getAttributes(message),
+            win.document.l10n.getAttributes(hoverMessage),
             expectedHoverMessage,
             "expected l10n attributes for the message on hover"
           );
-        }
 
-        // 5. Min-height shouldn't change
-        is(
-          item.querySelector(".unified-extensions-item-contents")?.style
-            ?.minHeight,
-          minHeight,
-          "expected same min-height as earlier"
-        );
+          is(
+            messageDeck.selectedIndex,
+            win.gUnifiedExtensions.MESSAGE_DECK_INDEX_HOVER,
+            "expected selected message in the deck to be the hover message"
+          );
+        }
 
         await closeExtensionsPanel(win);
 
@@ -701,4 +1071,100 @@ add_task(async function test_messages_origin_controls() {
   );
 
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_hover_message_when_button_updates_itself() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.manifestV3.enabled", true]],
+  });
+
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      name: "an extension that refreshes its title",
+      action: {},
+    },
+    background() {
+      browser.test.onMessage.addListener(async msg => {
+        browser.test.assertEq(
+          "update-button",
+          msg,
+          "expected 'update-button' message"
+        );
+
+        browser.action.setTitle({ title: "a title" });
+
+        browser.test.sendMessage(`${msg}-done`);
+      });
+
+      browser.test.sendMessage("background-ready");
+    },
+    useAddonManager: "temporary",
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("background-ready");
+
+  await openExtensionsPanel(win);
+
+  const item = getUnifiedExtensionsItem(win, extension.id);
+  ok(item, "expected item in the panel");
+
+  const actionButton = item.querySelector(
+    ".unified-extensions-item-action-button"
+  );
+  ok(actionButton, "expected an action button");
+
+  const menuButton = item.querySelector(".unified-extensions-item-menu-button");
+  ok(menuButton, "expected a menu button");
+
+  const hovered = BrowserTestUtils.waitForEvent(actionButton, "mouseover");
+  EventUtils.synthesizeMouseAtCenter(actionButton, { type: "mouseover" }, win);
+  await hovered;
+
+  const messageDeck = item.querySelector(
+    ".unified-extensions-item-message-deck"
+  );
+  ok(messageDeck, "expected a message deck element");
+
+  const hoverMessage = item.querySelector(
+    ".unified-extensions-item-message-hover"
+  );
+  ok(hoverMessage, "expected a hover message element");
+
+  const expectedL10nAttributes = {
+    id: "origin-controls-state-runnable-hover-run",
+    args: null,
+  };
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(hoverMessage),
+    expectedL10nAttributes,
+    "expected l10n attributes for the hover message"
+  );
+
+  is(
+    messageDeck.selectedIndex,
+    win.gUnifiedExtensions.MESSAGE_DECK_INDEX_HOVER,
+    "expected selected message in the deck to be the hover message"
+  );
+
+  extension.sendMessage("update-button");
+  await extension.awaitMessage("update-button-done");
+
+  is(
+    messageDeck.selectedIndex,
+    win.gUnifiedExtensions.MESSAGE_DECK_INDEX_HOVER,
+    "expected selected message in the deck to remain the same"
+  );
+
+  const menuButtonHovered = BrowserTestUtils.waitForEvent(
+    menuButton,
+    "mouseover"
+  );
+  EventUtils.synthesizeMouseAtCenter(menuButton, { type: "mouseover" }, win);
+  await menuButtonHovered;
+
+  await closeExtensionsPanel(win);
+
+  await extension.unload();
 });

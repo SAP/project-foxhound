@@ -305,7 +305,7 @@ int32_t HTMLSelectEventListener::ItemsPerPage() const {
 void HTMLSelectEventListener::OptionValueMightHaveChanged(
     nsIContent* aMutatingNode) {
 #ifdef ACCESSIBILITY
-  if (nsAccessibilityService* acc = PresShell::GetAccessibilityService()) {
+  if (nsAccessibilityService* acc = GetAccService()) {
     acc->ComboboxOptionMaybeChanged(mElement->OwnerDoc()->GetPresShell(),
                                     aMutatingNode);
   }
@@ -360,9 +360,10 @@ void HTMLSelectEventListener::ComboboxMightHaveChanged() {
     PresShell* ps = f->PresShell();
     // nsComoboxControlFrame::Reflow updates the selected text. AddOption /
     // RemoveOption / etc takes care of keeping the displayed index up to date.
-    ps->FrameNeedsReflow(f, IntrinsicDirty::StyleChange, NS_FRAME_IS_DIRTY);
+    ps->FrameNeedsReflow(f, IntrinsicDirty::FrameAncestorsAndDescendants,
+                         NS_FRAME_IS_DIRTY);
 #ifdef ACCESSIBILITY
-    if (nsAccessibilityService* acc = PresShell::GetAccessibilityService()) {
+    if (nsAccessibilityService* acc = GetAccService()) {
       acc->ScheduleAccessibilitySubtreeUpdate(ps, mElement);
     }
 #endif

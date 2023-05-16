@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import errno
 import json
 import os
@@ -11,15 +9,16 @@ import stat
 import subprocess
 import sys
 import time
-import requests
-from typing import Optional, Union
 from pathlib import Path
-from tqdm import tqdm
+from typing import Optional, Union
+
+import requests
 
 # We need the NDK version in multiple different places, and it's inconvenient
 # to pass down the NDK version to all relevant places, so we have this global
 # variable.
 from mozboot.bootstrap import MOZCONFIG_SUGGESTION_TEMPLATE
+from tqdm import tqdm
 
 NDK_VERSION = "r21d"
 CMDLINE_TOOLS_VERSION_STRING = "7.0"
@@ -74,7 +73,7 @@ output as packages are downloaded and installed.
 
 MOBILE_ANDROID_MOZCONFIG_TEMPLATE = """
 # Build GeckoView/Firefox for Android:
-ac_add_options --enable-application=mobile/android
+ac_add_options --enable-project=mobile/android
 
 # Targeting the following architecture.
 # For regular phones, no --target is needed.
@@ -90,8 +89,7 @@ ac_add_options --enable-application=mobile/android
 
 MOBILE_ANDROID_ARTIFACT_MODE_MOZCONFIG_TEMPLATE = """
 # Build GeckoView/Firefox for Android Artifact Mode:
-ac_add_options --enable-application=mobile/android
-ac_add_options --target=arm-linux-androideabi
+ac_add_options --enable-project=mobile/android
 ac_add_options --enable-artifact-builds
 
 {extra_lines}
@@ -162,18 +160,19 @@ def download(
     download_file_path: Path,
 ):
     with requests.Session() as session:
-        request = session.head(url)
+        request = session.head(url, allow_redirects=True)
+        request.raise_for_status()
         remote_file_size = int(request.headers["content-length"])
 
         if download_file_path.is_file():
             local_file_size = download_file_path.stat().st_size
 
             if local_file_size == remote_file_size:
-                print(f"{download_file_path} already downloaded. Skipping download...")
-            else:
                 print(
-                    f"Partial download detected. Resuming download of {download_file_path}..."
+                    f"{download_file_path.name} already downloaded. Skipping download..."
                 )
+            else:
+                print(f"Partial download detected. Resuming download of {url}...")
                 download_internal(
                     download_file_path,
                     session,
@@ -182,7 +181,7 @@ def download(
                     local_file_size,
                 )
         else:
-            print(f"Downloading {download_file_path}...")
+            print(f"Downloading {url}...")
             download_internal(download_file_path, session, url, remote_file_size)
 
 

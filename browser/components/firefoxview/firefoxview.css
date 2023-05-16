@@ -25,8 +25,8 @@
     "colorways-header"
     "colorways-description"
     "colorways-button";
-  --colorways-grid-template-columns: auto auto;
-  --colorways-grid-template-rows: auto auto auto;
+  --colorways-grid-template-columns: auto;
+  --colorways-grid-template-rows: auto auto auto 1fr;
   --colorways-figure-display: flex;
   --colorways-header-flex-direction: column;
 
@@ -116,11 +116,6 @@ body > main > details {
   grid-column: var(--details-grid-column);
 }
 
-#colorway-landmark {
-  grid-column: var(--colorways-grid-column);
-  grid-row: var(--colorways-grid-row);
-}
-
 @media (max-width: 76rem) {
   :host,
   :root {
@@ -193,18 +188,17 @@ body > main > details {
   font-weight: 600;
 }
 
-#colorways {
-  position: relative;
+#colorways:not([hidden]) {
   display: grid;
+  grid-column: var(--colorways-grid-column);
+  grid-row: var(--colorways-grid-row);
   grid-template-areas: var(--colorways-grid-template-areas);
   grid-template-columns: var(--colorways-grid-template-columns);
   grid-template-rows: var(--colorways-grid-template-rows);
   justify-items: start;
   align-items: start;
-}
-
-#colorways.no-collection {
-  visibility: collapse;
+  padding-inline: calc(2 * var(--content-area-padding-inline));
+  padding-block: calc(2 * var(--content-area-padding-block));
 }
 
 #colorways > header {
@@ -313,7 +307,8 @@ button.close {
 
 .error-state {
   text-align: center;
-  padding: 0 0 20px;
+  padding-block: 0 1.3em;
+  padding-inline: 1em;
   border: 1px solid var(--fxview-contrast-border);
   border-radius: 4px;
 }
@@ -371,15 +366,13 @@ button.close {
       "twisty head"
       "none desc";
   list-style-type: none;
-  padding-inline-start: 8px;
   position: relative;
   z-index: 1;
 }
 
 @media (prefers-contrast) {
   .page-section-header {
-    color: ButtonText;
-    background-color: ButtonFace;
+    color: WindowText;
   }
   .page-section-header:focus-visible {
     box-shadow: none;
@@ -607,7 +600,7 @@ details[open] > .page-section-header > .twisty {
   padding-inline-start: 0;
   margin-block-start: 0;
   display: grid;
-  grid-template-columns: min-content repeat(5, 1fr) min-content;
+  grid-template-columns: min-content repeat(5, 1fr) repeat(2, min-content);
   column-gap: 8px;
   row-gap: 8px;
 }
@@ -615,32 +608,47 @@ details[open] > .page-section-header > .twisty {
 .closed-tab-li {
   display: grid;
   grid-template-columns: subgrid;
+  grid-column: span 8;
+  margin-block-end: 0.5em;
+  border-radius: 4px;
+  align-items: center;
+}
+
+.closed-tab-li-main {
+  display: grid;
+  grid-template-columns: subgrid;
   grid-column: span 7;
-  padding: 8px;
+  padding: 0.5em;
   cursor: pointer;
   align-items: center;
   user-select: none;
+  border-radius: 4px;
 }
 
 @media (prefers-contrast) {
-  .closed-tab-li {
+  span.closed-tab-li-main,
+  button.closed-tab-li-dismiss {
     color: ButtonText;
     border-radius: 4px;
     border: 1px solid ButtonText;
   }
 }
 
-.closed-tab-li:hover {
+.closed-tab-li-main:hover {
   background-color: var(--fxview-element-background-hover);
   color: var(--fxview-text-color-hover);
 }
 
-.closed-tab-li:active {
+.closed-tab-li-main:hover .closed-tab-li-title {
+  text-decoration-line: underline;
+}
+
+.closed-tab-li-main:active {
   background-color: var(--fxview-element-background-active);
   color: var(--fxview-text-color-hover);
 }
 
-.closed-tab-li:focus-visible {
+.closed-tab-li-main:focus-visible {
   box-shadow: none;
   outline: var(--in-content-focus-outline);
   outline-offset: var(--in-content-focus-outline-offset);
@@ -648,20 +656,40 @@ details[open] > .page-section-header > .twisty {
 }
 
 .closed-tab-li-title {
-  grid-column: span 3;
   padding-inline-start: 10px;
   font-weight: 500;
+  grid-column: span 3;
 }
 
 .closed-tab-li-url {
-  grid-column: span 2;
   padding-inline-start: 8px;
   text-decoration-line: underline;
+  grid-column: span 2;
 }
 
 .closed-tab-li-time {
   white-space: nowrap;
   text-align: end;
+}
+
+.closed-tab-li-dismiss {
+  background-image: url("chrome://global/skin/icons/close.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-color: transparent;
+  color: var(--fxview-text-secondary-color);
+  -moz-context-properties: fill;
+  fill: var(--fxview-text-secondary-color);
+  min-width: 33px;
+  padding: 0.5em;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.closed-tab-li-dismiss:hover {
+  background-color: var(--in-content-button-background-hover);
+  fill: var(--in-content-button-text-color-hover);
 }
 
 .synced-tab-a,
@@ -756,10 +784,13 @@ details[open] > .page-section-header > .twisty {
 .synced-tab-li-placeholder {
   box-sizing: border-box;
   border-radius: 4px;
-  padding: 10px;
+  padding: 7px;
   display: grid;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
   grid-template-columns: min-content repeat(2, 1fr) minmax(min-content, auto);
-  grid-template-rows: auto;
+  grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "favicon title title title"
     "favicon domain domain domain"
@@ -780,7 +811,7 @@ details[open] > .page-section-header > .twisty {
     grid-template-areas:
       "favicon title title title"
       "favicon domain domain domain"
-      "favicon device device device"
+      "favicon device device device";
   }
   .synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-time {
     display: none;
@@ -788,26 +819,31 @@ details[open] > .page-section-header > .twisty {
 }
 
 .synced-tab-li-placeholder {
-  padding-top: 15px;
+  row-gap: 1em;
+  grid-template-areas:
+    "favicon title title title"
+    "favicon domain domain domain";
+  grid-template-rows: auto auto;
 }
 
 .li-placeholder-favicon {
   grid-area: favicon;
+  align-self: start;
   width: 16px;
   height: 16px;
-  margin-inline-end: 10px;
 }
 
 .li-placeholder-title {
   grid-area: title;
-  height: 12px;
+  height: .8em;
+  margin-block: .1em; /* simulate line-height */
   width: 100%;
-  margin-bottom: 12px;
 }
 
 .li-placeholder-domain {
   grid-area: domain;
-  height: 8px;
+  height: .6em;
+  margin-block: .1em; /* simulate line-height */
   width: 100%;
 }
 
@@ -824,14 +860,15 @@ details[open] > .page-section-header > .twisty {
 }
 
 .synced-tab-li:first-child > .synced-tab-a {
-  padding-top: 20px;
+  padding: 15px;
   grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: auto;
+  grid-template-rows: auto auto 1fr auto;
   grid-template-areas:
     "favicon badge badge badge"
     "title title title title"
     "domain domain domain domain"
     "device device device time";
+  row-gap: 4px;
 }
 
 .synced-tab-li:nth-child(2) {
@@ -855,11 +892,7 @@ details[open] > .page-section-header > .twisty {
 .synced-tab-li-url {
   text-decoration-line: underline;
   grid-area: domain;
-  align-self: end;
-}
-
-.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-url {
-  margin-top: 4px;
+  align-self: start;
 }
 
 .synced-tab-li-title {
@@ -869,7 +902,6 @@ details[open] > .page-section-header > .twisty {
 
 .synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-title {
   color: inherit;
-  padding-top: 5px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -879,7 +911,6 @@ details[open] > .page-section-header > .twisty {
 
 .synced-tab-li-device {
   grid-area: device;
-  margin-top: 5px;
 }
 
 .synced-tab-li-time {
@@ -895,7 +926,7 @@ details[open] > .page-section-header > .twisty {
 
 .synced-tab-li .favicon {
   grid-area: favicon;
-  margin-inline-end: 10px;
+  align-self: start;
 }
 
 @media (prefers-contrast) {
@@ -1007,6 +1038,7 @@ details[open] > .page-section-header > .twisty {
 @media (prefers-contrast) {
   .last-active-badge {
     border: 1px solid CanvasText;
+    background-color: Canvas;
   }
   .dot {
     background-color: FieldText;

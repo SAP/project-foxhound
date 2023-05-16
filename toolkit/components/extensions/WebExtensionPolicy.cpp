@@ -55,9 +55,6 @@ static const char kBackgroundPageHTMLEnd[] =
   "extensions.webextensions.base-content-security-policy.v3"
 #define DEFAULT_BASE_CSP_V3 "script-src 'self' 'wasm-unsafe-eval';"
 
-static const char kRestrictedDomainPref[] =
-    "extensions.webextensions.restrictedDomains";
-
 static inline ExtensionPolicyService& EPS() {
   return ExtensionPolicyService::GetSingleton();
 }
@@ -187,7 +184,8 @@ WebExtensionPolicyCore::WebExtensionPolicyCore(GlobalObject& aGlobal,
       mExtensionPageCSP(aInit.mExtensionPageCSP),
       mIsPrivileged(aInit.mIsPrivileged),
       mTemporarilyInstalled(aInit.mTemporarilyInstalled),
-      mBackgroundWorkerScript(aInit.mBackgroundWorkerScript) {
+      mBackgroundWorkerScript(aInit.mBackgroundWorkerScript),
+      mPermissions(new AtomSet(aInit.mPermissions)) {
   // In practice this is not necessary, but in tests where the uuid
   // passed in is not lowercased various tests can fail.
   ToLowerCase(aInit.mMozExtensionHostname, mHostname);
@@ -254,6 +252,20 @@ bool WebExtensionPolicyCore::SourceMayAccessPath(
   return false;
 }
 
+bool WebExtensionPolicyCore::CanAccessURI(const URLInfo& aURI, bool aExplicit,
+                                          bool aCheckRestricted,
+                                          bool aAllowFilePermission) const {
+  if (aCheckRestricted && WebExtensionPolicy::IsRestrictedURI(aURI)) {
+    return false;
+  }
+  if (!aAllowFilePermission && aURI.Scheme() == nsGkAtoms::file) {
+    return false;
+  }
+
+  AutoReadLock lock(mLock);
+  return mHostPermissions && mHostPermissions->Matches(aURI, aExplicit);
+}
+
 /*****************************************************************************
  * WebExtensionPolicy
  *****************************************************************************/
@@ -262,8 +274,7 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
                                        const WebExtensionInit& aInit,
                                        ErrorResult& aRv)
     : mCore(new WebExtensionPolicyCore(aGlobal, this, aInit, aRv)),
-      mLocalizeCallback(aInit.mLocalizeCallback),
-      mPermissions(new AtomSet(aInit.mPermissions)) {
+      mLocalizeCallback(aInit.mLocalizeCallback) {
   if (aRv.Failed()) {
     return;
   }
@@ -271,11 +282,15 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
   MatchPatternOptions options;
   options.mRestrictSchemes = !HasPermission(nsGkAtoms::mozillaAddons);
 
-  mHostPermissions = ParseMatches(aGlobal, aInit.mAllowedOrigins, options,
-                                  ErrorBehavior::CreateEmptyPattern, aRv);
+  // Set host permissions with SetAllowedOrigins to make sure the copy in core
+  // and WebExtensionPolicy stay in sync.
+  RefPtr<MatchPatternSet> hostPermissions =
+      ParseMatches(aGlobal, aInit.mAllowedOrigins, options,
+                   ErrorBehavior::CreateEmptyPattern, aRv);
   if (aRv.Failed()) {
     return;
   }
+  SetAllowedOrigins(*hostPermissions);
 
   if (!aInit.mBackgroundScripts.IsNull()) {
     mBackgroundScripts.SetValue().AppendElements(
@@ -441,12 +456,13 @@ void WebExtensionPolicy::UnregisterContentScript(
   WebExtensionPolicy_Binding::ClearCachedContentScriptsValue(this);
 }
 
-bool WebExtensionPolicy::CanAccessURI(const URLInfo& aURI, bool aExplicit,
-                                      bool aCheckRestricted,
-                                      bool aAllowFilePermission) const {
-  return (!aCheckRestricted || !IsRestrictedURI(aURI)) && mHostPermissions &&
-         mHostPermissions->Matches(aURI, aExplicit) &&
-         (aURI.Scheme() != nsGkAtoms::file || aAllowFilePermission);
+void WebExtensionPolicy::SetAllowedOrigins(MatchPatternSet& aAllowedOrigins) {
+  // Make sure to keep the version in `WebExtensionPolicy` (which can be exposed
+  // back to script using AllowedOrigins()), and the version in
+  // `WebExtensionPolicyCore` (which is threadsafe) in sync.
+  AutoWriteLock lock(mCore->mLock);
+  mHostPermissions = &aAllowedOrigins;
+  mCore->mHostPermissions = aAllowedOrigins.Core();
 }
 
 void WebExtensionPolicy::InjectContentScripts(ErrorResult& aRv) {
@@ -471,62 +487,6 @@ bool WebExtensionPolicy::BackgroundServiceWorkerEnabled(GlobalObject& aGlobal) {
   return StaticPrefs::extensions_backgroundServiceWorker_enabled_AtStartup();
 }
 
-namespace {
-/**
- * Maintains a dynamically updated AtomSet based on the comma-separated
- * values in the given string pref.
- */
-class AtomSetPref : public nsIObserver, public nsSupportsWeakReference {
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIOBSERVER
-
-  static already_AddRefed<AtomSetPref> Create(const nsCString& aPref) {
-    RefPtr<AtomSetPref> self = new AtomSetPref(aPref.get());
-    Preferences::AddWeakObserver(self, aPref);
-    return self.forget();
-  }
-
-  const AtomSet& Get() const;
-
-  bool Contains(const nsAtom* aAtom) const { return Get().Contains(aAtom); }
-
- protected:
-  virtual ~AtomSetPref() = default;
-
-  explicit AtomSetPref(const char* aPref) : mPref(aPref) {}
-
- private:
-  mutable RefPtr<AtomSet> mAtomSet;
-  const char* mPref;
-};
-
-const AtomSet& AtomSetPref::Get() const {
-  if (!mAtomSet) {
-    nsAutoCString eltsString;
-    Unused << Preferences::GetCString(mPref, eltsString);
-
-    AutoTArray<nsString, 32> elts;
-    for (const nsACString& elt : eltsString.Split(',')) {
-      elts.AppendElement(NS_ConvertUTF8toUTF16(elt));
-      elts.LastElement().StripWhitespace();
-    }
-    mAtomSet = new AtomSet(elts);
-  }
-
-  return *mAtomSet;
-}
-
-NS_IMETHODIMP
-AtomSetPref::Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) {
-  mAtomSet = nullptr;
-  return NS_OK;
-}
-
-NS_IMPL_ISUPPORTS(AtomSetPref, nsIObserver, nsISupportsWeakReference)
-};  // namespace
-
 /* static */
 bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
   // With the exception of top-level about:blank documents with null
@@ -541,13 +501,10 @@ bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
 
 /* static */
 bool WebExtensionPolicy::IsRestrictedURI(const URLInfo& aURI) {
-  static RefPtr<AtomSetPref> domains;
-  if (!domains) {
-    domains = AtomSetPref::Create(nsLiteralCString(kRestrictedDomainPref));
-    ClearOnShutdown(&domains);
-  }
+  RefPtr<AtomSet> restrictedDomains =
+      ExtensionPolicyService::RestrictedDomains();
 
-  if (domains->Contains(aURI.HostAtom())) {
+  if (restrictedDomains && restrictedDomains->Contains(aURI.HostAtom())) {
     return true;
   }
 

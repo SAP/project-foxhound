@@ -8,6 +8,7 @@
 #define mozilla_PresShellForwards_h
 
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/Maybe.h"
 
 struct CapturingContentInfo;
 
@@ -41,10 +42,13 @@ enum class ResizeReflowOptions : uint32_t {
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ResizeReflowOptions)
 
 enum class IntrinsicDirty {
-  // XXXldb eResize should be renamed
-  Resize,       // don't mark any intrinsic widths dirty
-  TreeChange,   // mark intrinsic widths dirty on aFrame and its ancestors
-  StyleChange,  // Do eTreeChange, plus all of aFrame's descendants
+  // Don't mark any intrinsic inline sizes dirty.
+  None,
+  // Mark intrinsic inline sizes dirty on aFrame and its ancestors.
+  FrameAndAncestors,
+  // Mark intrinsic inline sizes dirty on aFrame, its ancestors, and its
+  // descendants.
+  FrameAncestorsAndDescendants,
 };
 
 enum class ReflowRootHandling {
@@ -52,20 +56,31 @@ enum class ReflowRootHandling {
   NoPositionOrSizeChange,  // ... NOT changing ...
   InferFromBitToAdd,       // is changing iff (aBitToAdd == NS_FRAME_IS_DIRTY)
 
-  // Note:  With eStyleChange, these can also apply to out-of-flows
-  // in addition to aFrame.
+  // Note:  With IntrinsicDirty::FrameAncestorsAndDescendants, these can also
+  // apply to out-of-flows in addition to aFrame.
 };
 
-// WhereToScroll should be 0 ~ 100 or -1.  When it's in 0 ~ 100, it means
-// percentage of scrollTop/scrollLeft in scrollHeight/scrollWidth.
-// See the comment for constructor of ScrollAxis for the detail.
-typedef int16_t WhereToScroll;
-static const WhereToScroll kScrollToTop = 0;
-static const WhereToScroll kScrollToLeft = 0;
-static const WhereToScroll kScrollToCenter = 50;
-static const WhereToScroll kScrollToBottom = 100;
-static const WhereToScroll kScrollToRight = 100;
-static const WhereToScroll kScrollMinimum = -1;
+// Indicates where to scroll on a given axis.
+struct WhereToScroll {
+  // The percentage of the scroll axis that we're scrolling to.
+  // Nothing() represents "scroll to nearest".
+  Maybe<int16_t> mPercentage;
+
+  // Default is nearest.
+  constexpr WhereToScroll() = default;
+
+  explicit constexpr WhereToScroll(int16_t aPercentage)
+      : mPercentage(Some(aPercentage)) {}
+
+  enum { Nearest };
+  MOZ_IMPLICIT constexpr WhereToScroll(decltype(Nearest)) : WhereToScroll() {}
+  enum { Start };
+  MOZ_IMPLICIT constexpr WhereToScroll(decltype(Start)) : WhereToScroll(0) {}
+  enum { Center };
+  MOZ_IMPLICIT constexpr WhereToScroll(decltype(Center)) : WhereToScroll(50) {}
+  enum { End };
+  MOZ_IMPLICIT constexpr WhereToScroll(decltype(End)) : WhereToScroll(100) {}
+};
 
 // See the comment for constructor of ScrollAxis for the detail.
 enum class WhenToScroll : uint8_t {
@@ -110,7 +125,7 @@ struct ScrollAxis final {
    *   scrollbar showing and less than one device pixel of scrollable
    *   distance), don't scroll. Defaults to false.
    */
-  explicit ScrollAxis(WhereToScroll aWhere = kScrollMinimum,
+  explicit ScrollAxis(WhereToScroll aWhere = WhereToScroll::Nearest,
                       WhenToScroll aWhen = WhenToScroll::IfNotFullyVisible,
                       bool aOnlyIfPerceivedScrollableDirection = false)
       : mWhereToScroll(aWhere),

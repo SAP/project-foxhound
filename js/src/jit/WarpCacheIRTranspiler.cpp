@@ -160,6 +160,9 @@ class MOZ_RAII WarpCacheIRTranspiler : public WarpBuilderShared {
   const wasm::FuncExport* wasmFuncExportField(uint32_t offset) {
     return reinterpret_cast<const wasm::FuncExport*>(readStubWord(offset));
   }
+  NativeIteratorListHead* nativeIteratorListHeadStubField(uint32_t offset) {
+    return reinterpret_cast<NativeIteratorListHead*>(readStubWord(offset));
+  }
   gc::InitialHeap allocSiteInitialHeapField(uint32_t offset) {
     uintptr_t word = readStubWord(offset);
     MOZ_ASSERT(word == uintptr_t(gc::DefaultHeap) ||
@@ -415,6 +418,18 @@ bool WarpCacheIRTranspiler::emitGuardShape(ObjOperandId objId,
   Shape* shape = shapeStubField(shapeOffset);
 
   auto* ins = MGuardShape::New(alloc(), def, shape);
+  add(ins);
+
+  setOperand(objId, ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitGuardMultipleShapes(ObjOperandId objId,
+                                                    uint32_t shapesOffset) {
+  MDefinition* def = getOperand(objId);
+  MInstruction* shapeList = objectStubField(shapesOffset);
+
+  auto* ins = MGuardMultipleShapes::New(alloc(), def, shapeList);
   add(ins);
 
   setOperand(objId, ins);
@@ -715,6 +730,25 @@ bool WarpCacheIRTranspiler::emitMegamorphicSetElement(ObjOperandId objId,
   return resumeAfter(ins);
 }
 
+bool WarpCacheIRTranspiler::emitObjectToIteratorResult(
+    ObjOperandId objId, uint32_t enumeratorsAddrOffset) {
+  MDefinition* obj = getOperand(objId);
+  NativeIteratorListHead* enumeratorsAddr =
+      nativeIteratorListHeadStubField(enumeratorsAddrOffset);
+
+  auto* ins = MObjectToIterator::New(alloc(), obj, enumeratorsAddr);
+  addEffectful(ins);
+  pushResult(ins);
+  if (!resumeAfter(ins)) {
+    return false;
+  }
+
+  auto* barrier = MPostWriteBarrier::New(alloc(), ins, obj);
+  add(barrier);
+
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitValueToIteratorResult(ValOperandId valId) {
   MDefinition* val = getOperand(valId);
 
@@ -872,6 +906,17 @@ bool WarpCacheIRTranspiler::emitGuardSpecificSymbol(SymbolOperandId symId,
   add(ins);
 
   setOperand(symId, ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitGuardSpecificInt32(Int32OperandId numId,
+                                                   int32_t expected) {
+  MDefinition* num = getOperand(numId);
+
+  auto* ins = MGuardSpecificInt32::New(alloc(), num, expected);
+  add(ins);
+
+  setOperand(numId, ins);
   return true;
 }
 
@@ -1320,6 +1365,21 @@ bool WarpCacheIRTranspiler::emitCallNumberToString(NumberOperandId inputId,
   return emitToString(inputId, resultId);
 }
 
+bool WarpCacheIRTranspiler::emitInt32ToStringWithBaseResult(
+    Int32OperandId inputId, Int32OperandId baseId) {
+  MDefinition* input = getOperand(inputId);
+  MDefinition* base = getOperand(baseId);
+
+  auto* guardedBase = MGuardInt32Range::New(alloc(), base, 2, 36);
+  add(guardedBase);
+
+  auto* ins = MInt32ToStringWithBase::New(alloc(), input, guardedBase);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitBooleanToString(BooleanOperandId inputId,
                                                 StringOperandId resultId) {
   return emitToString(inputId, resultId);
@@ -1450,6 +1510,19 @@ bool WarpCacheIRTranspiler::emitLoadObject(ObjOperandId resultId,
                                            uint32_t objOffset) {
   MInstruction* ins = objectStubField(objOffset);
 
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitLoadProtoObject(ObjOperandId resultId,
+                                                uint32_t objOffset,
+                                                ObjOperandId receiverObjId) {
+  MInstruction* ins = objectStubField(objOffset);
+  if (ins->isConstant()) {
+    MDefinition* receiverObj = getOperand(receiverObjId);
+
+    ins = MConstantProto::New(alloc(), ins, receiverObj);
+    add(ins);
+  }
   return defineOperand(resultId, ins);
 }
 
@@ -1981,10 +2054,30 @@ bool WarpCacheIRTranspiler::emitLoadTypedArrayElementResult(
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitLoadStringCharResult(StringOperandId strId,
-                                                     Int32OperandId indexId) {
+bool WarpCacheIRTranspiler::emitLinearizeForCharAccess(
+    StringOperandId strId, Int32OperandId indexId, StringOperandId resultId) {
   MDefinition* str = getOperand(strId);
   MDefinition* index = getOperand(indexId);
+
+  auto* ins = MLinearizeForCharAccess::New(alloc(), str, index);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitLoadStringCharResult(StringOperandId strId,
+                                                     Int32OperandId indexId,
+                                                     bool handleOOB) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* index = getOperand(indexId);
+
+  if (handleOOB) {
+    auto* ins = MCharAtMaybeOutOfBounds::New(alloc(), str, index);
+    add(ins);
+
+    pushResult(ins);
+    return true;
+  }
 
   auto* length = MStringLength::New(alloc(), str);
   add(length);
@@ -2001,10 +2094,19 @@ bool WarpCacheIRTranspiler::emitLoadStringCharResult(StringOperandId strId,
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitLoadStringCharCodeResult(
-    StringOperandId strId, Int32OperandId indexId) {
+bool WarpCacheIRTranspiler::emitLoadStringCharCodeResult(StringOperandId strId,
+                                                         Int32OperandId indexId,
+                                                         bool handleOOB) {
   MDefinition* str = getOperand(strId);
   MDefinition* index = getOperand(indexId);
+
+  if (handleOOB) {
+    auto* ins = MCharCodeAtMaybeOutOfBounds::New(alloc(), str, index);
+    add(ins);
+
+    pushResult(ins);
+    return true;
+  }
 
   auto* length = MStringLength::New(alloc(), str);
   add(length);
@@ -3193,6 +3295,28 @@ bool WarpCacheIRTranspiler::emitMathTruncNumberResult(NumberOperandId inputId) {
   } else {
     ins = MMathFunction::New(alloc(), input, UnaryMathFunction::Trunc);
   }
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitNumberParseIntResult(StringOperandId strId,
+                                                     Int32OperandId radixId) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* radix = getOperand(radixId);
+
+  auto* ins = MNumberParseInt::New(alloc(), str, radix);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitDoubleParseIntResult(NumberOperandId numId) {
+  MDefinition* num = getOperand(numId);
+
+  auto* ins = MDoubleParseInt::New(alloc(), num);
   add(ins);
 
   pushResult(ins);
@@ -5205,7 +5329,7 @@ bool WarpCacheIRTranspiler::emitCallNativeSetter(ObjOperandId receiverId,
 
 bool WarpCacheIRTranspiler::emitMetaScriptedThisShape(
     uint32_t thisShapeOffset) {
-  Shape* shape = shapeStubField(thisShapeOffset);
+  SharedShape* shape = &shapeStubField(thisShapeOffset)->asShared();
   MOZ_ASSERT(shape->getObjectClass() == &PlainObject::class_);
 
   MConstant* shapeConst = MConstant::NewShape(alloc(), shape);

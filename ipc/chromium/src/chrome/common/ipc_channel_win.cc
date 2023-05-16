@@ -48,7 +48,8 @@ Channel::ChannelImpl::State::~State() {
 
 Channel::ChannelImpl::ChannelImpl(const ChannelId& channel_id, Mode mode,
                                   Listener* listener)
-    : io_thread_(MessageLoopForIO::current()->SerialEventTarget()),
+    : chan_cap_("ChannelImpl::SendMutex",
+                MessageLoopForIO::current()->SerialEventTarget()),
       ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)) {
   Init(mode, listener);
@@ -63,7 +64,8 @@ Channel::ChannelImpl::ChannelImpl(const ChannelId& channel_id, Mode mode,
 
 Channel::ChannelImpl::ChannelImpl(ChannelHandle pipe, Mode mode,
                                   Listener* listener)
-    : io_thread_(MessageLoopForIO::current()->SerialEventTarget()),
+    : chan_cap_("ChannelImpl::SendMutex",
+                MessageLoopForIO::current()->SerialEventTarget()),
       ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)) {
   Init(mode, listener);
@@ -82,6 +84,8 @@ void Channel::ChannelImpl::Init(Mode mode, Listener* listener) {
   // Verify that we fit in a "quantum-spaced" jemalloc bucket.
   static_assert(sizeof(*this) <= 512, "Exceeded expected size class");
 
+  chan_cap_.NoteExclusiveAccess();
+
   mode_ = mode;
   pipe_ = INVALID_HANDLE_VALUE;
   listener_ = listener;
@@ -95,6 +99,8 @@ void Channel::ChannelImpl::Init(Mode mode, Listener* listener) {
 }
 
 void Channel::ChannelImpl::OutputQueuePush(mozilla::UniquePtr<Message> msg) {
+  chan_cap_.NoteSendMutex();
+
   mozilla::LogIPCMessage::LogDispatchWithPid(msg.get(), other_pid_);
 
   output_queue_.Push(std::move(msg));
@@ -105,12 +111,14 @@ void Channel::ChannelImpl::OutputQueuePop() {
 }
 
 void Channel::ChannelImpl::Close() {
-  io_thread_.AssertOnCurrentThread();
-  mozilla::MutexAutoLock lock(mutex_);
+  IOThread().AssertOnCurrentThread();
+  mozilla::MutexAutoLock lock(SendMutex());
   CloseLocked();
 }
 
 void Channel::ChannelImpl::CloseLocked() {
+  chan_cap_.NoteExclusiveAccess();
+
   // If we still have pending I/O, cancel it. The references inside
   // `input_state_` and `output_state_` will keep the buffers alive until they
   // complete.
@@ -138,7 +146,7 @@ void Channel::ChannelImpl::CloseLocked() {
   // It's OK to unlock here, as calls to `Send` from other threads will be
   // rejected, due to `pipe_` having been cleared.
   while (input_state_.is_pending || output_state_.is_pending) {
-    mozilla::MutexAutoUnlock unlock(mutex_);
+    mozilla::MutexAutoUnlock unlock(SendMutex());
     MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
 
@@ -148,7 +156,8 @@ void Channel::ChannelImpl::CloseLocked() {
 }
 
 bool Channel::ChannelImpl::Send(mozilla::UniquePtr<Message> message) {
-  mozilla::MutexAutoLock lock(mutex_);
+  mozilla::MutexAutoLock lock(SendMutex());
+  chan_cap_.NoteSendMutex();
 
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
   DLOG(INFO) << "sending message @" << message.get() << " on channel @" << this
@@ -204,6 +213,8 @@ const Channel::ChannelId Channel::ChannelImpl::PipeName(
 }
 
 bool Channel::ChannelImpl::CreatePipe(const ChannelId& channel_id, Mode mode) {
+  chan_cap_.NoteExclusiveAccess();
+
   DCHECK(pipe_ == INVALID_HANDLE_VALUE);
   const ChannelId pipe_name = PipeName(channel_id, &shared_secret_);
   if (mode == MODE_SERVER) {
@@ -236,6 +247,8 @@ bool Channel::ChannelImpl::CreatePipe(const ChannelId& channel_id, Mode mode) {
 }
 
 bool Channel::ChannelImpl::EnqueueHelloMessage() {
+  chan_cap_.NoteExclusiveAccess();
+
   auto m = mozilla::MakeUnique<Message>(MSG_ROUTING_NONE, HELLO_MESSAGE_TYPE);
 
   // If we're waiting for our shared secret from the other end's hello message
@@ -255,8 +268,9 @@ bool Channel::ChannelImpl::EnqueueHelloMessage() {
 }
 
 bool Channel::ChannelImpl::Connect() {
-  io_thread_.AssertOnCurrentThread();
-  mozilla::MutexAutoLock lock(mutex_);
+  IOThread().AssertOnCurrentThread();
+  mozilla::MutexAutoLock lock(SendMutex());
+  chan_cap_.NoteExclusiveAccess();
 
   if (pipe_ == INVALID_HANDLE_VALUE) return false;
 
@@ -277,7 +291,7 @@ bool Channel::ChannelImpl::Connect() {
     // to `this`, we indicate to OnIOCompleted that this is the special
     // initialization signal, while keeping a reference through the
     // `RunnableMethod`.
-    io_thread_.Dispatch(
+    IOThread().Dispatch(
         mozilla::NewRunnableMethod<MessageLoopForIO::IOContext*, DWORD, DWORD>(
             "ContinueConnect", this, &ChannelImpl::OnIOCompleted,
             &input_state_.context, 0, 0));
@@ -291,6 +305,8 @@ bool Channel::ChannelImpl::Connect() {
 }
 
 bool Channel::ChannelImpl::ProcessConnection() {
+  chan_cap_.NoteExclusiveAccess();
+
   DCHECK(!input_state_.is_pending);
 
   // Do we have a client connected to our pipe?
@@ -324,8 +340,27 @@ bool Channel::ChannelImpl::ProcessConnection() {
   return true;
 }
 
+void Channel::ChannelImpl::SetOtherPid(int other_pid) {
+  mozilla::MutexAutoLock lock(SendMutex());
+  chan_cap_.NoteExclusiveAccess();
+  other_pid_ = other_pid;
+
+  // Now that we know the remote pid, open a privileged handle to the
+  // child process if needed to transfer handles to/from it.
+  if (privileged_ && other_process_ == INVALID_HANDLE_VALUE) {
+    other_process_ = OpenProcess(PROCESS_DUP_HANDLE, false, other_pid_);
+    if (!other_process_) {
+      other_process_ = INVALID_HANDLE_VALUE;
+      CHROMIUM_LOG(ERROR) << "Failed to acquire privileged handle to "
+                          << other_pid_ << ", cannot accept handles";
+    }
+  }
+}
+
 bool Channel::ChannelImpl::ProcessIncomingMessages(
     MessageLoopForIO::IOContext* context, DWORD bytes_read, bool was_pending) {
+  chan_cap_.NoteOnIOThread();
+
   DCHECK(!input_state_.is_pending);
 
   if (was_pending) {
@@ -444,7 +479,8 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
         // The Hello message contains the process id and must include the
         // shared secret, if we are waiting for it.
         MessageIterator it = MessageIterator(m);
-        other_pid_ = it.NextInt();
+        int32_t other_pid = it.NextInt();
+        SetOtherPid(other_pid);
         if (waiting_for_shared_secret_ && (it.NextInt() != shared_secret_)) {
           NOTREACHED();
           // Something went wrong. Abort connection.
@@ -453,26 +489,12 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
         }
         waiting_for_shared_secret_ = false;
 
-        // Now that we know the remote pid, open a privileged handle to the
-        // child process if needed to transfer handles to/from it.
-        if (privileged_ && other_process_ == INVALID_HANDLE_VALUE) {
-          other_process_ = OpenProcess(PROCESS_DUP_HANDLE, false, other_pid_);
-          if (!other_process_) {
-            other_process_ = INVALID_HANDLE_VALUE;
-            CHROMIUM_LOG(ERROR) << "Failed to acquire privileged handle to "
-                                << other_pid_ << ", cannot accept handles";
-          }
-        }
-
-        int32_t other_pid = other_pid_;
-        mozilla::MutexAutoUnlock unlock(mutex_);
         listener_->OnChannelConnected(other_pid);
       } else {
         mozilla::LogIPCMessage::Run run(&m);
         if (!AcceptHandles(m)) {
           return false;
         }
-        mozilla::MutexAutoUnlock unlock(mutex_);
         listener_->OnMessageReceived(std::move(incoming_message_));
       }
 
@@ -486,6 +508,8 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
 bool Channel::ChannelImpl::ProcessOutgoingMessages(
     MessageLoopForIO::IOContext* context, DWORD bytes_written,
     bool was_pending) {
+  chan_cap_.NoteSendMutex();
+
   DCHECK(!output_state_.is_pending);
   DCHECK(!waiting_connect_);  // Why are we trying to send messages if there's
                               // no connection?
@@ -576,13 +600,15 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
   // outside of the lock.
   RefPtr<ChannelImpl> was_pending;
 
-  io_thread_.AssertOnCurrentThread();
-  mozilla::ReleasableMutexAutoLock lock(mutex_);
+  IOThread().AssertOnCurrentThread();
+  chan_cap_.NoteOnIOThread();
+
   bool ok;
   if (context == &input_state_.context) {
     was_pending = input_state_.is_pending.forget();
     bool was_waiting_connect = waiting_connect_;
     if (was_waiting_connect) {
+      mozilla::MutexAutoLock lock(SendMutex());
       if (!ProcessConnection()) {
         return;
       }
@@ -602,21 +628,22 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
                                  was_pending && !was_waiting_connect);
     processing_incoming_ = false;
   } else {
+    mozilla::MutexAutoLock lock(SendMutex());
     DCHECK(context == &output_state_.context);
     was_pending = output_state_.is_pending.forget();
     ok = ProcessOutgoingMessages(context, bytes_transfered, was_pending);
   }
   if (!ok && INVALID_HANDLE_VALUE != pipe_) {
     // We don't want to re-enter Close().
-    CloseLocked();
-    lock.Unlock();
+    Close();
     listener_->OnChannelError();
   }
 }
 
 void Channel::ChannelImpl::StartAcceptingHandles(Mode mode) {
-  io_thread_.AssertOnCurrentThread();
-  mozilla::MutexAutoLock lock(mutex_);
+  IOThread().AssertOnCurrentThread();
+  mozilla::MutexAutoLock lock(SendMutex());
+  chan_cap_.NoteExclusiveAccess();
 
   if (accept_handles_) {
     MOZ_ASSERT(privileged_ == (mode == MODE_SERVER));
@@ -650,6 +677,8 @@ static HANDLE Uint32ToHandle(uint32_t h) {
 }
 
 bool Channel::ChannelImpl::AcceptHandles(Message& msg) {
+  chan_cap_.NoteOnIOThread();
+
   MOZ_ASSERT(msg.num_handles() == 0);
 
   uint32_t num_handles = msg.header()->num_handles;
@@ -708,6 +737,8 @@ bool Channel::ChannelImpl::AcceptHandles(Message& msg) {
 }
 
 bool Channel::ChannelImpl::TransferHandles(Message& msg) {
+  chan_cap_.NoteSendMutex();
+
   MOZ_ASSERT(msg.header()->num_handles == 0);
 
   uint32_t num_handles = msg.num_handles();

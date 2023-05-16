@@ -66,25 +66,9 @@ bool DateTimeInputTypeBase::IsRangeUnderflow() const {
   return value < minimum;
 }
 
-bool DateTimeInputTypeBase::HasStepMismatch(bool aUseZeroIfValueNaN) const {
+bool DateTimeInputTypeBase::HasStepMismatch() const {
   Decimal value = mInputElement->GetValueAsDecimal();
-  if (value.isNaN()) {
-    if (aUseZeroIfValueNaN) {
-      value = Decimal(0);
-    } else {
-      // The element can't suffer from step mismatch if it's value isn't a
-      // number.
-      return false;
-    }
-  }
-
-  Decimal step = mInputElement->GetStep();
-  if (step == kStepAny) {
-    return false;
-  }
-
-  // Value has to be an integral multiple of step.
-  return NS_floorModulo(value - GetStepBase(), step) != Decimal(0);
+  return mInputElement->ValueIsStepMismatch(value);
 }
 
 bool DateTimeInputTypeBase::HasBadInput() const {

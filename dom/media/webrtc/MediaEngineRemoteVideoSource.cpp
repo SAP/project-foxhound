@@ -6,13 +6,13 @@
 #include "MediaEngineRemoteVideoSource.h"
 
 #include "CamerasChild.h"
-#include "Layers.h"
 #include "MediaManager.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/MediaTrackSettingsBinding.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/RefPtr.h"
+#include "PerformanceRecorder.h"
 #include "Tracing.h"
 #include "VideoFrameUtils.h"
 #include "VideoUtils.h"
@@ -90,6 +90,7 @@ static Maybe<VideoFacingModeEnum> GetFacingMode(const nsString& aDeviceName) {
 MediaEngineRemoteVideoSource::MediaEngineRemoteVideoSource(
     const MediaDevice* aMediaDevice)
     : mCapEngine(CaptureEngine(aMediaDevice->mMediaSource)),
+      mTrackingId(CaptureEngineToTrackingSourceStr(mCapEngine), 0),
       mMutex("MediaEngineRemoteVideoSource::mMutex"),
       mRescalingBufferPool(/* zero_initialize */ false,
                            /* max_number_of_buffers */ 1),
@@ -148,6 +149,8 @@ nsresult MediaEngineRemoteVideoSource::Allocate(
     MutexAutoLock lock(mMutex);
     mState = kAllocated;
     mCapability = newCapability;
+    mTrackingId =
+        TrackingId(CaptureEngineToTrackingSourceStr(mCapEngine), mCaptureId);
   }
 
   LOG("Video device %d allocated", mCaptureId);
@@ -383,6 +386,12 @@ webrtc::CaptureCapability& MediaEngineRemoteVideoSource::GetCapability(
   return *mCapabilities[aIndex];
 }
 
+const TrackingId& MediaEngineRemoteVideoSource::GetTrackingId() const {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState != kReleased);
+  return mTrackingId;
+}
+
 int MediaEngineRemoteVideoSource::DeliverFrame(
     uint8_t* aBuffer, const camera::VideoFrameProperties& aProps) {
   // Cameras IPC thread - take great care with accessing members!
@@ -404,6 +413,9 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     req_max_height = max_height ? Some(max_height) : Nothing();
     req_ideal_width = ideal_width ? Some(ideal_width) : Nothing();
     req_ideal_height = ideal_height ? Some(ideal_height) : Nothing();
+    if (!mFrameDeliveringTrackingId) {
+      mFrameDeliveringTrackingId = Some(mTrackingId);
+    }
   }
 
   // This is only used in the case of screen sharing, see bug 1453269.
@@ -481,6 +493,9 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
 
   if ((dst_width != aProps.width() || dst_height != aProps.height()) &&
       dst_width <= aProps.width() && dst_height <= aProps.height()) {
+    PerformanceRecorder<CopyVideoStage> rec("MERVS::CropAndScale"_ns,
+                                            *mFrameDeliveringTrackingId,
+                                            dst_width, dst_height);
     // Destination resolution is smaller than source buffer. We'll rescale.
     rtc::scoped_refptr<webrtc::I420Buffer> scaledBuffer =
         mRescalingBufferPool.CreateI420Buffer(dst_width, dst_height);
@@ -492,6 +507,7 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     }
     scaledBuffer->CropAndScaleFrom(*buffer);
     buffer = scaledBuffer;
+    rec.Record();
   }
 
   layers::PlanarYCbCrData data;
@@ -505,13 +521,18 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
   data.mYUVColorSpace = gfx::YUVColorSpace::BT601;
   data.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
 
-  RefPtr<layers::PlanarYCbCrImage> image =
-      mImageContainer->CreatePlanarYCbCrImage();
-  if (!image->CopyData(data)) {
-    MOZ_ASSERT_UNREACHABLE(
-        "We might fail to allocate a buffer, but with this "
-        "being a recycling container that shouldn't happen");
-    return 0;
+  RefPtr<layers::PlanarYCbCrImage> image;
+  {
+    PerformanceRecorder<CopyVideoStage> rec(
+        "MERVS::Copy"_ns, *mFrameDeliveringTrackingId, dst_width, dst_height);
+    image = mImageContainer->CreatePlanarYCbCrImage();
+    if (!image->CopyData(data)) {
+      MOZ_ASSERT_UNREACHABLE(
+          "We might fail to allocate a buffer, but with this "
+          "being a recycling container that shouldn't happen");
+      return 0;
+    }
+    rec.Record();
   }
 
 #ifdef DEBUG

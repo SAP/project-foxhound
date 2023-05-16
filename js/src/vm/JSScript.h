@@ -38,6 +38,7 @@
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/MutexIDs.h"  // mutexid
 #include "vm/NativeObject.h"
 #include "vm/SharedImmutableStringsCache.h"
 #include "vm/SharedStencil.h"  // js::GCThingIndex, js::SourceExtent, js::SharedImmutableScriptData, MemberInitializers
@@ -656,10 +657,8 @@ class ScriptSource {
    */
   static constexpr size_t MinimumCompressibleLength = 256;
 
-  SharedImmutableString getOrCreateStringZ(JSContext* cx, ErrorContext* ec,
-                                           UniqueChars&& str);
-  SharedImmutableTwoByteString getOrCreateStringZ(JSContext* cx,
-                                                  ErrorContext* ec,
+  SharedImmutableString getOrCreateStringZ(ErrorContext* ec, UniqueChars&& str);
+  SharedImmutableTwoByteString getOrCreateStringZ(ErrorContext* ec,
                                                   UniqueTwoByteChars&& str);
 
  private:
@@ -674,7 +673,7 @@ class ScriptSource {
 
   // Assign source data from |srcBuf| to this recently-created |ScriptSource|.
   template <typename Unit>
-  [[nodiscard]] bool assignSource(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool assignSource(ErrorContext* ec,
                                   const JS::ReadOnlyCompileOptions& options,
                                   JS::SourceText<Unit>& srcBuf);
 
@@ -1003,15 +1002,14 @@ class ScriptSource {
   }
   [[nodiscard]] bool setFilename(JSContext* cx, ErrorContext* ec,
                                  const char* filename);
-  [[nodiscard]] bool setFilename(JSContext* cx, ErrorContext* ec,
-                                 UniqueChars&& filename);
+  [[nodiscard]] bool setFilename(ErrorContext* ec, UniqueChars&& filename);
 
   const char* introducerFilename() const {
     return introducerFilename_ ? introducerFilename_.chars() : filename();
   }
   [[nodiscard]] bool setIntroducerFilename(JSContext* cx, ErrorContext* ec,
                                            const char* filename);
-  [[nodiscard]] bool setIntroducerFilename(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool setIntroducerFilename(ErrorContext* ec,
                                            UniqueChars&& filename);
 
   bool hasIntroductionType() const { return introductionType_; }
@@ -1033,7 +1031,7 @@ class ScriptSource {
   // Source maps
   [[nodiscard]] bool setSourceMapURL(JSContext* cx, ErrorContext* ec,
                                      const char16_t* url);
-  [[nodiscard]] bool setSourceMapURL(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool setSourceMapURL(ErrorContext* ec,
                                      UniqueTwoByteChars&& url);
   bool hasSourceMapURL() const { return bool(sourceMapURL_); }
   const char16_t* sourceMapURL() { return sourceMapURL_.chars(); }
@@ -1068,6 +1066,9 @@ class ScriptSource {
   // |xdrEncodeTopLevel|, and free the XDR encoder.  In case of errors, the
   // |buffer| is considered undefined.
   bool xdrFinalizeEncoder(JSContext* cx, JS::TranscodeBuffer& buffer);
+
+  // Discard the incremental encoding data and free the XDR encoder.
+  void xdrAbortEncoder();
 };
 
 // [SMDOC] ScriptSourceObject
@@ -2023,11 +2024,11 @@ class JSScript : public js::BaseScript {
     return getObject(GET_GCTHING_INDEX(pc));
   }
 
-  js::Shape* getShape(js::GCThingIndex index) const {
-    return &gcthings()[index].as<js::Shape>();
+  js::SharedShape* getShape(js::GCThingIndex index) const {
+    return &gcthings()[index].as<js::Shape>().asShared();
   }
 
-  js::Shape* getShape(const jsbytecode* pc) const {
+  js::SharedShape* getShape(const jsbytecode* pc) const {
     MOZ_ASSERT(containsPC<js::GCThingIndex>(pc));
     return getShape(GET_GCTHING_INDEX(pc));
   }

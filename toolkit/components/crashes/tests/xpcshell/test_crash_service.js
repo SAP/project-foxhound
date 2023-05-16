@@ -8,8 +8,8 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { getCrashManagerNoCreate } = ChromeUtils.import(
   "resource://gre/modules/CrashManager.jsm"
 );
-const { makeFakeAppDir } = ChromeUtils.import(
-  "resource://testing-common/AppData.jsm"
+const { makeFakeAppDir } = ChromeUtils.importESModule(
+  "resource://testing-common/AppData.sys.mjs"
 );
 
 add_task(async function test_instantiation() {
@@ -149,10 +149,7 @@ add_task(async function test_addCrash_shutdownOnCrash() {
   await setup(crashId);
 
   // Set the MOZ_CRASHREPORTER_SHUTDOWN environment variable
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("MOZ_CRASHREPORTER_SHUTDOWN", "1");
+  Services.env.set("MOZ_CRASHREPORTER_SHUTDOWN", "1");
 
   await addCrash(crashId);
 
@@ -164,7 +161,7 @@ add_task(async function test_addCrash_shutdownOnCrash() {
       "analyzer did not start.\n"
   );
 
-  env.set("MOZ_CRASHREPORTER_SHUTDOWN", ""); // Unset the environment variable
+  Services.env.set("MOZ_CRASHREPORTER_SHUTDOWN", ""); // Unset the environment variable
   await teardown();
 });
 

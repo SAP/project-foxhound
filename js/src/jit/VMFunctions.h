@@ -386,6 +386,8 @@ JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep);
 JSLinearString* StringFromCharCode(JSContext* cx, int32_t code);
 JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code);
 JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint);
+JSLinearString* LinearizeForCharAccessPure(JSString* str);
+JSLinearString* LinearizeForCharAccess(JSContext* cx, JSString* str);
 
 [[nodiscard]] bool SetProperty(JSContext* cx, HandleObject obj,
                                Handle<PropertyName*> name, HandleValue value,
@@ -500,9 +502,6 @@ JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
 
 JSString* StringReplace(JSContext* cx, HandleString string,
                         HandleString pattern, HandleString repl);
-
-[[nodiscard]] bool SetDenseElementPure(JSContext* cx, NativeObject* obj,
-                                       int32_t index, Value* value);
 
 void AssertValidBigIntPtr(JSContext* cx, JS::BigInt* bi);
 void AssertValidObjectPtr(JSContext* cx, JSObject* obj);

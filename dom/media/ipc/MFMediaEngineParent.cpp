@@ -87,6 +87,7 @@ MFMediaEngineParent::~MFMediaEngineParent() {
 void MFMediaEngineParent::DestroyEngineIfExists(
     const Maybe<MediaResult>& aError) {
   LOG("DestroyEngineIfExists, hasError=%d", aError.isSome());
+  ENGINE_MARKER("MFMediaEngineParent::DestroyEngineIfExists");
   mMediaEngineNotify = nullptr;
   mMediaEngineExtension = nullptr;
   mMediaSource = nullptr;
@@ -167,6 +168,7 @@ void MFMediaEngineParent::CreateMediaEngine() {
 
   LOG("Created media engine successfully");
   mIsCreatedMediaEngine = true;
+  ENGINE_MARKER("MFMediaEngineParent::CreatedMediaEngine");
   errorExit.release();
 }
 
@@ -221,9 +223,22 @@ void MFMediaEngineParent::InitializeVirtualVideoWindow() {
   LOG("Initialized virtual window");
 }
 
+#ifndef ENSURE_EVENT_DISPATCH_DURING_PLAYING
+#  define ENSURE_EVENT_DISPATCH_DURING_PLAYING(event)        \
+    do {                                                     \
+      if (mMediaEngine->IsPaused()) {                        \
+        LOG("Ignore incorrect '%s' during pausing!", event); \
+        return;                                              \
+      }                                                      \
+    } while (false)
+#endif
+
 void MFMediaEngineParent::HandleMediaEngineEvent(
     MFMediaEngineEventWrapper aEvent) {
   AssertOnManagerThread();
+  ENGINE_MARKER_TEXT(
+      "MFMediaEngineParent::HandleMediaEngineEvent",
+      nsPrintfCString("%s", MediaEngineEventToStr(aEvent.mEvent)));
   switch (aEvent.mEvent) {
     case MF_MEDIA_ENGINE_EVENT_ERROR: {
       MOZ_ASSERT(aEvent.mParam1 && aEvent.mParam2);
@@ -244,10 +259,16 @@ void MFMediaEngineParent::HandleMediaEngineEvent(
     case MF_MEDIA_ENGINE_EVENT_SEEKED:
     case MF_MEDIA_ENGINE_EVENT_BUFFERINGSTARTED:
     case MF_MEDIA_ENGINE_EVENT_BUFFERINGENDED:
+      Unused << SendNotifyEvent(aEvent.mEvent);
+      break;
     case MF_MEDIA_ENGINE_EVENT_PLAYING:
+      ENSURE_EVENT_DISPATCH_DURING_PLAYING(
+          MediaEngineEventToStr(aEvent.mEvent));
       Unused << SendNotifyEvent(aEvent.mEvent);
       break;
     case MF_MEDIA_ENGINE_EVENT_ENDED: {
+      ENSURE_EVENT_DISPATCH_DURING_PLAYING(
+          MediaEngineEventToStr(aEvent.mEvent));
       Unused << SendNotifyEvent(aEvent.mEvent);
       UpdateStatisticsData();
       break;
@@ -273,6 +294,9 @@ void MFMediaEngineParent::NotifyError(MF_MEDIA_ENGINE_ERR aError,
     return;
   }
   LOG("Notify error '%s', hr=%lx", MFMediaEngineErrorToStr(aError), aResult);
+  ENGINE_MARKER_TEXT(
+      "MFMediaEngineParent::NotifyError",
+      nsPrintfCString("%s, hr=%lx", MFMediaEngineErrorToStr(aError), aResult));
   switch (aError) {
     case MF_MEDIA_ENGINE_ERR_ABORTED:
     case MF_MEDIA_ENGINE_ERR_NETWORK:
@@ -364,6 +388,14 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvNotifyMediaInfo(
       IPC_OK());
 
   LOG("Finished setup our custom media source to the media engine");
+  ENGINE_MARKER_TEXT(
+      "MFMediaEngineParent,FinishedSetupMediaSource",
+      nsPrintfCString(
+          "audio=%s, video=%s",
+          aInfo.audioInfo() ? aInfo.audioInfo()->mMimeType.BeginReading()
+                            : "none",
+          aInfo.videoInfo() ? aInfo.videoInfo()->mMimeType.BeginReading()
+                            : "none"));
   mRequestSampleListener = mMediaSource->RequestSampleEvent().Connect(
       mManagerThread, this, &MFMediaEngineParent::HandleRequestSample);
 
@@ -373,27 +405,26 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvNotifyMediaInfo(
 
 mozilla::ipc::IPCResult MFMediaEngineParent::RecvPlay() {
   AssertOnManagerThread();
-  if (mMediaEngine) {
-    LOG("Play, in playback rate %f", mPlaybackRate);
-    NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->Play()), IPC_OK());
-    // The media engine has some undocumented behaviors for setting playback
-    // rate, it will set the rate to 0 when it pauses, and set the rate to 1
-    // when it starts. Therefore. we need to reset the targeted playback rate
-    // everytime when we start playing if the rate is not 1.
-    if (mPlaybackRate != 1.0) {
-      NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->SetPlaybackRate(mPlaybackRate)),
-                     IPC_OK());
-    }
+  if (!mMediaEngine) {
+    LOG("Engine has been shutdowned!");
+    return IPC_OK();
   }
+  LOG("Play, expected playback rate %f, default playback rate=%f",
+      mPlaybackRate, mMediaEngine->GetDefaultPlaybackRate());
+  ENGINE_MARKER("MFMediaEngineParent,Play");
+  NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->Play()), IPC_OK());
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult MFMediaEngineParent::RecvPause() {
   AssertOnManagerThread();
-  if (mMediaEngine) {
-    LOG("Pause");
-    NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->Pause()), IPC_OK());
+  if (!mMediaEngine) {
+    LOG("Engine has been shutdowned!");
+    return IPC_OK();
   }
+  LOG("Pause");
+  ENGINE_MARKER("MFMediaEngineParent,Pause");
+  NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->Pause()), IPC_OK());
   return IPC_OK();
 }
 
@@ -415,6 +446,8 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvSeek(
   }
 
   LOG("Seek to %f", aTargetTimeInSecond);
+  ENGINE_MARKER_TEXT("MFMediaEngineParent,Seek",
+                     nsPrintfCString("%f", aTargetTimeInSecond));
   NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->SetCurrentTime(aTargetTimeInSecond)),
                  IPC_OK());
 
@@ -425,6 +458,8 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvSetVolume(double aVolume) {
   AssertOnManagerThread();
   if (mMediaEngine) {
     LOG("SetVolume=%f", aVolume);
+    ENGINE_MARKER_TEXT("MFMediaEngineParent,SetVolume",
+                       nsPrintfCString("%f", aVolume));
     NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->SetVolume(aVolume)), IPC_OK());
   }
   return IPC_OK();
@@ -438,8 +473,16 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvSetPlaybackRate(
     return IPC_OK();
   }
   LOG("SetPlaybackRate=%f", aPlaybackRate);
+  ENGINE_MARKER_TEXT("MFMediaEngineParent,SetPlaybackRate",
+                     nsPrintfCString("%f", aPlaybackRate));
   mPlaybackRate = aPlaybackRate;
   NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->SetPlaybackRate(mPlaybackRate)),
+                 IPC_OK());
+  // The media Engine uses the default playback rate to determine the playback
+  // rate when calling `play()`. So if we don't change default playback rate
+  // together, the playback rate would fallback to 1 after pausing or
+  // seeking, which would be different from our expected playback rate.
+  NS_ENSURE_TRUE(SUCCEEDED(mMediaEngine->SetDefaultPlaybackRate(mPlaybackRate)),
                  IPC_OK());
   return IPC_OK();
 }
@@ -463,6 +506,7 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvNotifyEndOfStream(
 mozilla::ipc::IPCResult MFMediaEngineParent::RecvShutdown() {
   AssertOnManagerThread();
   LOG("Shutdown");
+  ENGINE_MARKER("MFMediaEngineParent,Shutdown");
   DestroyEngineIfExists();
   return IPC_OK();
 }
@@ -503,12 +547,16 @@ void MFMediaEngineParent::EnsureDcompSurfaceHandle() {
         nullptr /* pSrc */, &rect, nullptr /* pBorderClr */));
     LOG("Updated video size for engine=[%lux%lu]", mDisplayWidth,
         mDisplayHeight);
+    ENGINE_MARKER_TEXT(
+        "MFMediaEngineParent,UpdateVideoSize",
+        nsPrintfCString("%lux%lu", mDisplayWidth, mDisplayHeight));
   }
 
   if (!mIsEnableDcompMode) {
     RETURN_VOID_IF_FAILED(mediaEngineEx->EnableWindowlessSwapchainMode(true));
     LOG("Enabled dcomp swap chain mode");
     mIsEnableDcompMode = true;
+    ENGINE_MARKER("MFMediaEngineParent,EnabledSwapChain");
   }
 
   HANDLE surfaceHandle = INVALID_HANDLE_VALUE;
@@ -582,5 +630,6 @@ void MFMediaEngineParent::UpdateStatisticsData() {
 
 #undef LOG
 #undef RETURN_IF_FAILED
+#undef ENSURE_EVENT_DISPATCH_DURING_PLAYING
 
 }  // namespace mozilla

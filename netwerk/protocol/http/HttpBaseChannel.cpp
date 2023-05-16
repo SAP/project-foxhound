@@ -225,8 +225,6 @@ HttpBaseChannel::HttpBaseChannel()
       mInternalRedirectCount(0),
       mCachedOpaqueResponseBlockingPref(
           StaticPrefs::browser_opaqueResponseBlocking()),
-      mBlockOpaqueResponseAfterSniff(false),
-      mCheckIsOpaqueResponseAllowedAfterSniff(false),
       mChannelBlockedByOpaqueResponse(false),
       mDummyChannelForImageCache(false) {
   StoreApplyConversion(true);
@@ -3011,24 +3009,20 @@ nsresult HttpBaseChannel::ValidateMIMEType() {
   return NS_OK;
 }
 
-OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  if (!mCachedOpaqueResponseBlockingPref) {
-    return OpaqueResponseAllowed::Yes;
-  }
-
+bool HttpBaseChannel::ShouldBlockOpaqueResponse() const {
   if (!mURI || !mResponseHead || !mLoadInfo) {
     // if there is no uri, no response head or no loadInfo, then there is
     // nothing to do
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: no mURI, mResponseHead, or mLoadInfo");
+    return false;
   }
 
   nsCOMPtr<nsIPrincipal> principal = mLoadInfo->GetLoadingPrincipal();
   if (!principal || principal->IsSystemPrincipal()) {
     // If it's a top-level load or a system principal, then there is nothing to
     // do.
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: top-level load or system principal");
+    return false;
   }
 
   // Check if the response is a opaque response, which means requestMode should
@@ -3042,7 +3036,7 @@ OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
       // Skip the RequestMode would be RequestMode::Same_origin
       contentPolicy == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
       contentPolicy == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER) {
-    return OpaqueResponseAllowed::Yes;
+    return false;
   }
 
   uint32_t securityMode = mLoadInfo->GetSecurityMode();
@@ -3050,14 +3044,14 @@ OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
   if (securityMode !=
           nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT &&
       securityMode != nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL) {
-    LOGORB("Allowed: not no_cors requests");
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: not no_cors requests");
+    return false;
   }
 
   // Only continue when ResponseType would be ResponseType::Opaque
   if (mLoadInfo->GetTainting() != mozilla::LoadTainting::Opaque) {
-    LOGORB("Allowed: not opaque response");
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: not opaque response");
+    return false;
   }
 
   auto extContentPolicyType = mLoadInfo->GetExternalContentPolicyType();
@@ -3065,45 +3059,86 @@ OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
       extContentPolicyType == ExtContentPolicy::TYPE_OBJECT_SUBREQUEST ||
       extContentPolicyType == ExtContentPolicy::TYPE_WEBSOCKET ||
       extContentPolicyType == ExtContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
-    LOGORB("Allowed: object || websocket request || save as download");
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: object || websocket request || save as download");
+    return false;
   }
 
   // Ignore the request from object or embed elements
   if (mLoadInfo->GetIsFromObjectOrEmbed()) {
-    LOGORB("Allowed: Request From <object> or <embed>");
-    return OpaqueResponseAllowed::Yes;
+    LOGORB("No block: Request From <object> or <embed>");
+    return false;
   }
 
   // Exclude no_cors System XHR
   if (extContentPolicyType == ExtContentPolicy::TYPE_XMLHTTPREQUEST) {
     if (securityMode ==
         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT) {
-      LOGORB("Allowed: System XHR");
-      return OpaqueResponseAllowed::Yes;
+      LOGORB("No block: System XHR");
+      return false;
     }
   }
 
-  switch (GetOpaqueResponseBlockedReason(*mResponseHead)) {
+  return true;
+}
+
+// The specification for ORB is currently being written:
+// https://whatpr.org/fetch/1442.html#orb-algorithm
+// The `opaque-response-safelist check` is implemented in:
+// * `HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff`
+// * `nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck`
+// * `HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff`
+// * `OpaqueResponseBlocker::ValidateJavaScript`
+OpaqueResponse
+HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mCachedOpaqueResponseBlockingPref) {
+    return OpaqueResponse::Alllow;
+  }
+
+  // https://whatpr.org/fetch/1442.html#http-fetch, step 6.4
+  if (!ShouldBlockOpaqueResponse()) {
+    return OpaqueResponse::Alllow;
+  }
+
+  // https://whatpr.org/fetch/1442.html#orb-algorithm
+  // Step 1
+  nsAutoCString contentType;
+  mResponseHead->ContentType(contentType);
+
+  // Step 2
+  nsAutoCString contentTypeOptionsHeader;
+  bool nosniff =
+      mResponseHead->GetContentTypeOptionsHeader(contentTypeOptionsHeader) &&
+      contentTypeOptionsHeader.EqualsIgnoreCase("nosniff");
+
+  // Step 3
+  switch (GetOpaqueResponseBlockedReason(contentType, mResponseHead->Status(),
+                                         nosniff)) {
     case OpaqueResponseBlockedReason::ALLOWED_SAFE_LISTED:
-      return OpaqueResponseAllowed::Yes;
+      // Step 3.1
+      return OpaqueResponse::Alllow;
     case OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED:
+      // Step 3.2
       LOGORB("Blocked: BLOCKED_BLOCKLISTED_NEVER_SNIFFED");
       LogORBError(mLoadInfo, mURI);
-      return OpaqueResponseAllowed::No;
+      return OpaqueResponse::Block;
     case OpaqueResponseBlockedReason::BLOCKED_206_AND_BLOCKLISTED:
+      // Step 3.3
       LOGORB("Blocked: BLOCKED_206_AND_BLOCKEDLISTED");
       LogORBError(mLoadInfo, mURI);
-      return OpaqueResponseAllowed::No;
+      return OpaqueResponse::Block;
     case OpaqueResponseBlockedReason::
         BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN:
+      // Step 3.4
       LOGORB("Blocked: BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN");
       LogORBError(mLoadInfo, mURI);
-      return OpaqueResponseAllowed::No;
+      return OpaqueResponse::Block;
     default:
       break;
   }
 
+  // Step 4
   // If it's a media subsequent request, we assume that it will only be made
   // after a successful initial request.
   bool isMediaRequest;
@@ -3112,10 +3147,22 @@ OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
     bool isMediaInitialRequest;
     mLoadInfo->GetIsMediaInitialRequest(&isMediaInitialRequest);
     if (!isMediaInitialRequest) {
-      return OpaqueResponseAllowed::Yes;
+      return OpaqueResponse::Alllow;
     }
   }
 
+  // Step 5
+  if (mResponseHead->Status() == 206 &&
+      !IsFirstPartialResponse(*mResponseHead)) {
+    LOGORB("Blocked: Is not a valid partial response given 0");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponse::Block;
+  }
+
+  // Setup for steps 6, 7, 8 and 10.
+  // Steps 6 and 7 are handled by the sniffer framework.
+  // Steps 8 and 10 by are handled by
+  // `nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck`
   if (mLoadFlags & nsIChannel::LOAD_CALL_CONTENT_SNIFFERS) {
     mSnifferCategoryType = SnifferCategoryType::All;
   } else {
@@ -3124,112 +3171,96 @@ OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
 
   mLoadFlags |= (nsIChannel::LOAD_CALL_CONTENT_SNIFFERS |
                  nsIChannel::LOAD_MEDIA_SNIFFER_OVERRIDES_CONTENT_TYPE);
-  mCheckIsOpaqueResponseAllowedAfterSniff = true;
 
-  mORB = new OpaqueResponseBlocker(mListener, this);
+  // Install an input stream listener that performs ORB checks that depend on
+  // inspecting the incoming data. It is crucial that `OnStartRequest` is called
+  // on this listener either after sniffing is completed or that we skip
+  // sniffing, otherwise `OpaqueResponseBlocker` will allow responses that it
+  // shouldn't.
+  mORB = new OpaqueResponseBlocker(mListener, this, contentType, nosniff);
   mListener = mORB;
 
-  return OpaqueResponseAllowed::Yes;
+  nsAutoCString contentEncoding;
+  nsresult rv =
+      mResponseHead->GetHeader(nsHttp::Content_Encoding, contentEncoding);
+
+  if (NS_SUCCEEDED(rv) && !contentEncoding.IsEmpty()) {
+    return OpaqueResponse::SniffCompressed;
+  }
+  mLoadFlags |= (nsIChannel::LOAD_CALL_CONTENT_SNIFFERS |
+                 nsIChannel::LOAD_MEDIA_SNIFFER_OVERRIDES_CONTENT_TYPE);
+  return OpaqueResponse::Sniff;
 }
 
-Result<OpaqueResponseAllowed, nsresult>
-HttpBaseChannel::EnsureOpaqueResponseIsAllowedAfterSniff() {
+// The specification for ORB is currently being written:
+// https://whatpr.org/fetch/1442.html#orb-algorithm
+// The `opaque-response-safelist check` is implemented in:
+// * `HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff`
+// * `nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck`
+// * `HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff`
+// * `OpaqueResponseBlocker::ValidateJavaScript`
+OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
+    const nsACString& aContentType, bool aNoSniff) {
+  // https://whatpr.org/fetch/1442.html#orb-algorithm
   MOZ_ASSERT(XRE_IsParentProcess());
-
-  if (!mCheckIsOpaqueResponseAllowedAfterSniff) {
-    return OpaqueResponseAllowed::Yes;
-  }
-
   MOZ_ASSERT(mCachedOpaqueResponseBlockingPref);
 
-  // Set mCheckIsOpaqueResponseAllowedAfterSniff as false to bypass
-  // nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniff() when content
-  // sniff happens in OnDataAvailable stage.
-  //
-  // XXXechuang: This method can return true when content type is
-  // UNKNOWN_CONTENT_TYPE. But the response might be recognized as a blocked
-  // type when after sniff in OnDataAvailable(). Should have a follow bug for
-  // these cases.
-  mCheckIsOpaqueResponseAllowedAfterSniff = false;
-
-  if (mBlockOpaqueResponseAfterSniff) {
-    LOGORB("Blocked: blocked after sniff");
-    LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
-  }
-
+  // Step 9
   bool isMediaRequest;
   mLoadInfo->GetIsMediaRequest(&isMediaRequest);
   if (isMediaRequest) {
     LOGORB("Blocked: media request");
     LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
+    return OpaqueResponse::Block;
   }
 
-  nsAutoCString contentType;
-  nsresult rv = GetContentType(contentType);
-  if (NS_FAILED(rv)) {
-    return Err(rv);
-  }
-
-  if (!mResponseHead) {
-    return OpaqueResponseAllowed::Yes;
-  }
-
-  nsAutoCString contentTypeOptionsHeader;
-  if (mResponseHead->GetContentTypeOptionsHeader(contentTypeOptionsHeader) &&
-      contentTypeOptionsHeader.EqualsIgnoreCase("nosniff")) {
+  // Step 11
+  if (aNoSniff) {
     LOGORB("Blocked: nosniff");
     LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
+    return OpaqueResponse::Block;
   }
 
-  if (mResponseHead->Status() < 200 || mResponseHead->Status() > 299) {
+  // Step 12
+  if (mResponseHead &&
+      (mResponseHead->Status() < 200 || mResponseHead->Status() > 299)) {
     LOGORB("Blocked: status code (%d) is not allowed ",
            mResponseHead->Status());
     LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
+    return OpaqueResponse::Block;
   }
 
-  if (contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE) ||
-      contentType.EqualsLiteral(APPLICATION_OCTET_STREAM)) {
-    return OpaqueResponseAllowed::Yes;
+  // Step 13
+  if (!mResponseHead || aContentType.IsEmpty()) {
+    LOGORB("Allowed: mimeType is failure");
+    return OpaqueResponse::Alllow;
   }
 
-  if (StringBeginsWith(contentType, "image/"_ns) ||
-      StringBeginsWith(contentType, "video/"_ns) ||
-      StringBeginsWith(contentType, "audio/"_ns)) {
+  // Step 14
+  if (StringBeginsWith(aContentType, "image/"_ns) ||
+      StringBeginsWith(aContentType, "video/"_ns) ||
+      StringBeginsWith(aContentType, "audio/"_ns)) {
     LOGORB("Blocked: ContentType is image/video/audio");
     LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
+    return OpaqueResponse::Block;
   }
 
-  // XXXtt: If response's body parses as JavaScript and does not parse as JSON,
-  // then return true.
+  return OpaqueResponse::Sniff;
+}
 
-  int64_t contentLength;
-  rv = GetContentLength(&contentLength);
-  if (NS_FAILED(rv)) {
-    LOGORB("Blocked: NO Content Length");
-    LogORBError(mLoadInfo, mURI);
-    return OpaqueResponseAllowed::No;
-  }
-
-  return OpaqueResponseAllowed::Yes;
+bool HttpBaseChannel::NeedOpaqueResponseAllowedCheckAfterSniff() const {
+  return mORB ? mORB->IsSniffing() : false;
 }
 
 void HttpBaseChannel::BlockOpaqueResponseAfterSniff() {
-  mBlockOpaqueResponseAfterSniff = true;
-
-  if (mORB) {
-    mORB->BlockResponse(this, NS_ERROR_FAILURE);
-  }
+  MOZ_DIAGNOSTIC_ASSERT(mORB);
+  LogORBError(mLoadInfo, mURI);
+  mORB->BlockResponse(this, NS_ERROR_FAILURE);
 }
 
 void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
-  if (mORB) {
-    mORB->AllowResponse();
-  }
+  MOZ_DIAGNOSTIC_ASSERT(mORB);
+  mORB->AllowResponse();
 }
 
 NS_IMETHODIMP
@@ -4776,7 +4807,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
       realChannel->SetTopWindowURI(mTopWindowURI);
 
       realChannel->StoreTaintedOriginFlag(
-          ShouldTaintReplacementChannelOrigin(newURI));
+          ShouldTaintReplacementChannelOrigin(newChannel, redirectFlags));
     }
 
     // update the DocumentURI indicator since we are being redirected.
@@ -4853,20 +4884,29 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   return NS_OK;
 }
 
-bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(nsIURI* aNewURI) {
+bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(
+    nsIChannel* aNewChannel, uint32_t aRedirectFlags) {
   if (LoadTaintedOriginFlag()) {
     return true;
+  }
+
+  if (NS_IsInternalSameURIRedirect(this, aNewChannel, aRedirectFlags) ||
+      NS_IsHSTSUpgradeRedirect(this, aNewChannel, aRedirectFlags)) {
+    return false;
   }
 
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   if (!ssm) {
     return true;
   }
-  nsresult rv = ssm->CheckSameOriginURI(aNewURI, mURI, false, false);
+
+  nsCOMPtr<nsIURI> newURI;
+  NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
+  nsresult rv = ssm->CheckSameOriginURI(newURI, mURI, false, false);
   if (NS_SUCCEEDED(rv)) {
     return false;
   }
-  // If aNewURI <-> mURI are not same-origin we need to taint unless
+  // If newURI <-> mURI are not same-origin we need to taint unless
   // mURI <-> mOriginalURI/LoadingPrincipal are same origin.
 
   if (mLoadInfo->GetLoadingPrincipal()) {
@@ -5342,6 +5382,15 @@ void HttpBaseChannel::MaybeReportTimingData() {
   // isn't the same as the one in the child which will be reporting resource
   // performance.
   if (XRE_IsE10sParentProcess()) {
+    return;
+  }
+
+  // Devtools can create fetch requests on behalf the content document.
+  // If we don't exclude these requests, they'd also be reported
+  // to the content document.
+  bool isInDevToolsContext;
+  mLoadInfo->GetIsInDevToolsContext(&isInDevToolsContext);
+  if (isInDevToolsContext) {
     return;
   }
 
@@ -5895,9 +5944,41 @@ void HttpBaseChannel::SetDummyChannelForImageCache() {
   mResponseHead = MakeUnique<nsHttpResponseHead>();
 }
 
+void HttpBaseChannel::SetEarlyHints(
+    nsTArray<EarlyHintConnectArgs>&& aEarlyHints) {
+  mEarlyHints = std::move(aEarlyHints);
+}
+
+nsTArray<EarlyHintConnectArgs>&& HttpBaseChannel::TakeEarlyHints() {
+  return std::move(mEarlyHints);
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetEarlyHintPreloaderId(uint64_t aEarlyHintPreloaderId) {
+  mEarlyHintPreloaderId = aEarlyHintPreloaderId;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetEarlyHintPreloaderId(uint64_t* aEarlyHintPreloaderId) {
+  NS_ENSURE_ARG_POINTER(aEarlyHintPreloaderId);
+  *aEarlyHintPreloaderId = mEarlyHintPreloaderId;
+  return NS_OK;
+}
+
 void HttpBaseChannel::SetConnectionInfo(nsHttpConnectionInfo* aCI) {
   mConnectionInfo = aCI ? aCI->Clone() : nullptr;
 }
 
+NS_IMETHODIMP
+HttpBaseChannel::GetIsProxyUsed(bool* aIsProxyUsed) {
+  if (mProxyInfo) {
+    if (!static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect()) {
+      StoreIsProxyUsed(true);
+    }
+  }
+  *aIsProxyUsed = LoadIsProxyUsed();
+  return NS_OK;
+}
 }  // namespace net
 }  // namespace mozilla

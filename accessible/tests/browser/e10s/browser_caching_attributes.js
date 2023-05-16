@@ -486,3 +486,40 @@ addAccessibleTask(
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
+
+/**
+ * Test the id attribute.
+ */
+addAccessibleTask(
+  `
+<p id="withId">withId</p>
+<div id="noIdParent"><p>noId</p></div>
+  `,
+  async function(browser, docAcc) {
+    const withId = findAccessibleChildByID(docAcc, "withId");
+    testAttrs(withId, { id: "withId" }, true);
+    const noId = findAccessibleChildByID(docAcc, "noIdParent").firstChild;
+    testAbsentAttrs(noId, { id: "" });
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test the valuetext attribute.
+ */
+addAccessibleTask(
+  `
+<div id="valuenow" role="slider" aria-valuenow="1"></div>
+<div id="valuetext" role="slider" aria-valuetext="text"></div>
+<div id="noValue" role="button"></div>
+  `,
+  async function(browser, docAcc) {
+    const valuenow = findAccessibleChildByID(docAcc, "valuenow");
+    testAttrs(valuenow, { valuetext: "1" }, true);
+    const valuetext = findAccessibleChildByID(docAcc, "valuetext");
+    testAttrs(valuetext, { valuetext: "text" }, true);
+    const noValue = findAccessibleChildByID(docAcc, "noValue");
+    testAbsentAttrs(noValue, { valuetext: "valuetext" });
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);

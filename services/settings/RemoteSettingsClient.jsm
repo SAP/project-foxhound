@@ -165,8 +165,13 @@ class StorageError extends Error {
 }
 
 class InvalidSignatureError extends Error {
-  constructor(cid) {
-    super(`Invalid content signature (${cid})`);
+  constructor(cid, x5u) {
+    let message = `Invalid content signature (${cid})`;
+    if (x5u) {
+      const chain = x5u.split("/").pop();
+      message += ` using '${chain}'`;
+    }
+    super(message);
     this.name = "InvalidSignatureError";
   }
 }
@@ -495,7 +500,7 @@ class RemoteSettingsClient extends EventEmitter {
           }
           // Report error, but continue because there could have been data
           // loaded from a parallel call.
-          Cu.reportError(e);
+          console.error(e);
         } finally {
           // then delete this promise again, as now we should have local data:
           delete this._importingPromise;
@@ -510,7 +515,7 @@ class RemoteSettingsClient extends EventEmitter {
       if (!dumpFallback) {
         throw e;
       }
-      Cu.reportError(e);
+      console.error(e);
       let { data } = await lazy.SharedUtils.loadJSONDump(
         this.bucketName,
         this.collectionName
@@ -675,7 +680,7 @@ class RemoteSettingsClient extends EventEmitter {
           collectionLastModified = await this.db.getLastModified();
         } catch (e) {
           // Report but go-on.
-          Cu.reportError(e);
+          console.error(e);
         }
       }
       let syncResult;
@@ -974,6 +979,8 @@ class RemoteSettingsClient extends EventEmitter {
       records,
       timestamp
     );
+
+    lazy.console.debug(`${this.identifier} verify signature using ${x5u}`);
     if (
       !(await this._verifier.asyncVerifyContentSignature(
         serialized,
@@ -983,7 +990,7 @@ class RemoteSettingsClient extends EventEmitter {
         lazy.Utils.CERT_CHAIN_ROOT_IDENTIFIER
       ))
     ) {
-      throw new InvalidSignatureError(this.identifier);
+      throw new InvalidSignatureError(this.identifier, x5u);
     }
   }
 

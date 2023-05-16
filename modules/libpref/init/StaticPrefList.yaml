@@ -228,7 +228,7 @@
 #ifdef ANDROID
   value: true
 #else
-  value: false
+  value: @IS_NOT_RELEASE_OR_BETA@
 #endif
   mirror: once
 
@@ -301,7 +301,7 @@
 
 - name: apz.scrollend-event.content.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # After a user has executed a pan gesture, we may receive momentum phase pan
@@ -1668,14 +1668,18 @@
 # JavaScript.
 - name: browser.opaqueResponseBlocking
   type: RelaxedAtomicBool
+#if defined(ANDROID)
   value: false
+#else
+  value: @IS_NIGHTLY_BUILD@
+#endif
   mirror: always
 
 # When this pref is enabled, <object> and <embed> elements will create
 # synthetic documents when the resource type they're loading is an image.
 - name: browser.opaqueResponseBlocking.syntheticBrowsingContext
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: once
 
 # When this pref is enabled, <object> and <embed> elements will filter the
@@ -1684,7 +1688,7 @@
 # is enabled from `Window.frames`, `Window.length` and named targeting.
 - name: browser.opaqueResponseBlocking.syntheticBrowsingContext.filter
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: once
   do_not_use_directly: true
 
@@ -2085,6 +2089,12 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "dom."
 #---------------------------------------------------------------------------
+
+# Whether CanvasRenderingContext2D.mozTextStyle is enabled.
+- name: dom.mozTextStyle.enabled
+  type: bool
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
+  mirror: always
 
 # Allow cut/copy
 - name: dom.allow_cut_copy
@@ -2897,6 +2907,11 @@
   value: true
   mirror: always
 
+- name: dom.forms.always_allow_pointer_events.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 # Is support for HTMLInputElement.showPicker enabled?
 - name: dom.input.showPicker
   type: bool
@@ -3343,10 +3358,18 @@
   value: 200
   mirror: always
 
+# Determines within what distance of a tick mark, in pixels, dragging an input
+# range range will snap the range's value to that tick mark. By default, this is
+# half the default width of the range thumb.
+- name: dom.range_element.magnet_effect_threshold
+  type: float
+  value: 10.0f
+  mirror: always
+
 # Reporting API.
 - name: dom.reporting.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 - name: dom.reporting.testing.enabled
@@ -3703,12 +3726,6 @@
 - name: dom.security.credentialmanagement.identity.enabled
   type: bool
   value: false
-  mirror: always
-
-# pref controls `identity` credentials timeout for testing
-- name: dom.security.credentialmanagement.identity.wait_for_timeout
-  type: bool
-  value: true
   mirror: always
 
 # pref controls `identity` credential UI for testing. When true, UI is not shown and
@@ -4617,7 +4634,7 @@
 
 - name: dom.webidl.crosscontext_hasinstance.enabled
   type: RelaxedAtomicBool
-  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
+  value: false
   mirror: always
 
 # WebShare API - exposes navigator.share()
@@ -4940,6 +4957,20 @@
 # to test the API request handling without tying the unit test to a
 # specific WebExtensions API.
 - name: extensions.webidl-api.expose_mock_interface
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Whether to allow acccess to AddonManager to developer sites for testing
+# NOTE: We'd like this to be a "hidden" pref once StaticPrefs supports it.
+- name: extensions.webapi.testing
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Automation-only pref to allow AddonManager over insecure protocols.
+# NOTE: We'd like this to be a "hidden" pref once StaticPrefs supports it.
+- name: extensions.webapi.testing.http
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -5602,9 +5633,28 @@
   value: 0.66
   mirror: always
 
+# The maximum size of the GPU path cache in MB.
 - name: gfx.canvas.accelerated.gpu-path-size
   type: RelaxedAtomicUint32
   value: 4
+  mirror: always
+
+# The maximum allowed complexity of a GPU path.
+- name: gfx.canvas.accelerated.gpu-path-complexity
+  type: RelaxedAtomicUint32
+  value: 4000
+  mirror: always
+
+# Whether to accelerate stroked paths by converting them to fill paths.
+- name: gfx.canvas.accelerated.stroke-to-fill-path
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Whether to use aa-stroke to accelerate accelerate stroked paths.
+- name: gfx.canvas.accelerated.aa-stroke.enabled
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 # 0x7fff is the maximum supported xlib surface size and is more than enough for canvases.
@@ -5776,6 +5826,11 @@
   type: RelaxedAtomicBool
   value: true
   mirror: always
+
+- name: gfx.direct2d.target-independent-rasterization.disabled
+  type: bool
+  value: false
+  mirror: once
 
 - name: gfx.direct3d11.reuse-decoder-device
   type: bool
@@ -6382,6 +6437,11 @@
     value: false
     mirror: once
 -   name: gfx.webrender.dcomp-video-vp-scaling-win
+    type: bool
+    value: true
+    mirror: once
+  # Whether to use virtual surfaces, as opposed to each tile owning a surface.
+-   name: gfx.webrender.dcomp-use-virtual-surfaces
     type: bool
     value: true
     mirror: once
@@ -7965,7 +8025,7 @@
 # Whether Container Queries are enabled
 - name: layout.css.container-queries.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -7984,6 +8044,13 @@
 
 # Whether the round() function is enabled in calc().
 - name: layout.css.round.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
+# Whether the mod() / rem() functions are enabled in calc().
+- name: layout.css.mod-rem.enabled
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
   mirror: always
@@ -8477,6 +8544,12 @@
   mirror: always
   rust: true
 
+# Enables support for different CSS page sizes on each page when printing.
+- name: layout.css.allow-mixed-page-sizes
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # Dictates whether or not the prefers contrast media query will be
 # usable.
 #   true: prefers-contrast will toggle based on OS and browser settings.
@@ -8620,6 +8693,12 @@
 - name: layout.css.visited_links_enabled
   type: bool
   value: true
+  mirror: always
+
+# The margin used for detecting relevancy for `content-visibility: auto`.
+- name: layout.css.content-visibility-relevant-content-margin
+  type: float
+  value: 50 # 50%
   mirror: always
 
 # Whether to block large cursors intersecting UI.
@@ -9811,6 +9890,11 @@
     value: 8
     mirror: always
 
+-   name: media.wmf.dxva.d3d9.amd-pre-uvd4.disabled
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+
 -   name: media.wmf.use-nv12-format
     type: RelaxedAtomicBool
     value: true
@@ -10172,10 +10256,9 @@
   value: true
   mirror: always
 
-# Should enable this in bug1799205.
 - name: media.seamless-looping-video
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 - name: media.autoplay.block-event.enabled
@@ -10744,6 +10827,14 @@
   value: 120
   mirror: always
 
+# For lax-by-default cookies ignore cross-site redirects when the final
+# redirect is same-site again.
+# https://github.com/httpwg/http-extensions/issues/2104
+- name: network.cookie.sameSite.laxByDefault.allowBoomerangRedirect
+  type: bool
+  value: true
+  mirror: always
+
 - name: network.cookie.sameSite.noneRequiresSecure
   type: bool
   value: @IS_EARLY_BETA_OR_EARLIER@
@@ -11302,7 +11393,7 @@
 # If true, only use the token once
 - name: network.ssl_tokens_cache_use_only_once
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # The maximum allowed length for a URL - 1MB default.
@@ -11894,7 +11985,7 @@
 # delete the cache folder at shutdown in order to avoid shutdown hangs.
 - name: network.cache.shutdown_purge_in_background_task
   type: RelaxedAtomicBool
-#if defined(NIGHTLY_BUILD) && defined(XP_WIN)
+#if defined(XP_WIN)
   value: true
 #else
   value: false
@@ -11977,6 +12068,18 @@
 - name: network.allow_large_stack_size_for_socket_thread
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+# WebTransport
+- name: network.webtransport.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# WebTransport Datagram support
+- name: network.webtransport.datagrams.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -12136,12 +12239,6 @@
 
 # Whether the pages per sheet print setting is enabled.
 - name: print.pages_per_sheet.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
-# Print via the parent process. This is only used when e10s is enabled.
-- name: print.print_via_parent
   type: RelaxedAtomicBool
   value: true
   mirror: always
@@ -12398,6 +12495,14 @@
   value: true
   mirror: always
 
+# This pref can be used to disable mozAddonManager entirely for fingerprinting
+# reasons. Someone like Tor browser will use this pref.
+# NOTE: We'd like this to be a "hidden" pref once StaticPrefs supports it.
+- name: privacy.resistFingerprinting.block_mozAddonManager
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # Whether canvas extraction should result in random data. If false, canvas
 # extraction results in all-white, opaque pixel data.
 - name: privacy.resistFingerprinting.randomDataOnCanvasExtract
@@ -12583,13 +12688,13 @@
 # Always partition web storage APIs except cookies.
 - name: privacy.partition.always_partition_third_party_non_cookie_storage
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
-# Always partition web storage APIs except cookies.
+# Exclude session storage from the above preference.
 - name: privacy.partition.always_partition_third_party_non_cookie_storage.exempt_sessionstorage
   type: RelaxedAtomicBool
-  value: true
+  value: false
   mirror: always
 
 - name: privacy.partition.bloburl_per_agent_cluster
@@ -12801,7 +12906,7 @@
 # security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
 - name: security.sandbox.gpu.level
   type: int32_t
-#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+#if defined(XP_WIN) && defined(EARLY_BETA_OR_EARLIER)
   value: 1
 #else
   value: 0
@@ -12869,6 +12974,22 @@
     value: false
     mirror: always
 
+  # Whether Arbitrary Code Guard is enabled for the RDD process.
+-   name: security.sandbox.rdd.acg.enabled
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+
+#  ifdef MOZ_WMF
+  # Whether Arbitrary Code Guard is enabled for the utility WMF audio decoder
+  # process.
+
+-   name: security.sandbox.utility-wmf.acg.enabled
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+#  endif  // MOZ_WMF
+
   # This controls the depth of stack trace that is logged when Windows sandbox
   # logging is turned on. This is only currently available for the content
   # process because the only other sandbox (for GMP) has too strict a policy to
@@ -12919,7 +13040,7 @@
 # unsafe-hashes source keyword
 - name: security.csp.unsafe-hashes.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # The script-src-attr and script-src-elem directive
@@ -13268,7 +13389,7 @@
 
 - name: security.ssl3.ecdhe_ecdsa_aes_128_sha
   type: RelaxedAtomicBool
-  value: true
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 - name: security.ssl3.ecdhe_rsa_aes_256_sha
@@ -13278,7 +13399,7 @@
 
 - name: security.ssl3.ecdhe_ecdsa_aes_256_sha
   type: RelaxedAtomicBool
-  value: true
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 - name: security.ssl3.dhe_rsa_aes_128_sha
@@ -13429,6 +13550,12 @@
 - name: svg.new-getBBox.enabled
   type: bool
   value: false
+  mirror: always
+
+# Whether SVGGraphicsElement.nearestViewportElement and SVGGraphicsElement.farthestViewportElement are enabled.
+- name: svg.nearestAndFarthestViewportElement.enabled
+  type: bool
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 # Tweak which elements are allowed in <svg:use> subtrees, and in which
@@ -14143,12 +14270,6 @@
   value: 100000 # 100KB
   mirror: always
 
-# WebGL and Canvas2D aren't allowed to be async by spec,
-# unless they have e.g.
-# https://html.spec.whatwg.org/multipage/canvas.html#2dcontext:dom-canvasrenderingcontext2dsettings-desynchronized
-# enabled, which defaults to false.
-# This pref=true with webgl.out-of-process.async-present.force-sync=false
-# enables async present in cases where it is allowed.
 - name: webgl.out-of-process.async-present
   type: RelaxedAtomicBool
 #if !defined(MOZ_WIDGET_ANDROID) && defined(EARLY_BETA_OR_EARLIER)
@@ -14655,6 +14776,13 @@
 - name: widget.windows.fullscreen_marking_workaround
   type: RelaxedAtomicInt32
   value: 0
+  mirror: always
+
+# The number of messages of each type to keep for display in
+# about:windows-messages
+- name: widget.windows.messages_to_log
+  type: RelaxedAtomicUint32
+  value: 6
   mirror: always
 #endif
 

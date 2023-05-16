@@ -7,8 +7,11 @@
 const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
 );
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
+);
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["NarrateTestUtils"];
@@ -87,6 +90,7 @@ var NarrateTestUtils = {
       _EU_Ci: Ci,
       _EU_Cc: Cc,
       window,
+      setTimeout,
       parent: window,
       navigator: window.navigator,
       KeyboardEvent: window.KeyboardEvent,

@@ -5,8 +5,10 @@
 
 #include "HTMLEditHelpers.h"
 
+#include "CSSEditUtils.h"
 #include "EditorDOMPoint.h"
 #include "HTMLEditor.h"
+#include "PendingStyles.h"
 #include "WSRunObject.h"
 
 #include "mozilla/ContentIterator.h"
@@ -83,6 +85,25 @@ DOMSubtreeIterator::DOMSubtreeIterator() : DOMIterator() {
 
 nsresult DOMSubtreeIterator::Init(nsRange& aRange) {
   return mIter->Init(&aRange);
+}
+
+/******************************************************************************
+ * mozilla::EditorElementStyle
+ *****************************************************************************/
+
+bool EditorElementStyle::IsCSSEditable(const Element& aElement) const {
+  return CSSEditUtils::IsCSSEditableStyle(aElement, *this);
+}
+
+/******************************************************************************
+ * mozilla::EditorInlineStyle
+ *****************************************************************************/
+
+PendingStyleCache EditorInlineStyle::ToPendingStyleCache(
+    nsAString&& aValue) const {
+  return PendingStyleCache(*mHTMLProperty,
+                           mAttribute ? mAttribute->AsStatic() : nullptr,
+                           std::move(aValue));
 }
 
 }  // namespace mozilla

@@ -32,7 +32,7 @@ FINAL_TARGET_FILES.content += [
     "redirect.html",
     "server.js",
     "shutdown-leaks-collector.js",
-    "ShutdownLeaksCollector.jsm",
+    "ShutdownLeaksCollector.sys.mjs",
 ]
 
 FINAL_TARGET_FILES.content.dynamic += [
@@ -45,7 +45,7 @@ FINAL_TARGET_FILES.content.static += [
 
 FINAL_TARGET_FILES.content.tests.SimpleTest += [
     "../../docshell/test/chrome/docshell_helpers.js",
-    "../modules/StructuredLog.jsm",
+    "../modules/StructuredLog.sys.mjs",
     "tests/SimpleTest/AccessibilityUtils.js",
     "tests/SimpleTest/EventUtils.js",
     "tests/SimpleTest/ExtensionTestUtils.js",

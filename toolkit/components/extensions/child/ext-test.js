@@ -5,10 +5,7 @@
 "use strict";
 
 XPCOMUtils.defineLazyGetter(this, "isXpcshell", function() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  return env.exists("XPCSHELL_TEST_PROFILE_DIR");
+  return Services.env.exists("XPCSHELL_TEST_PROFILE_DIR");
 });
 
 /**
@@ -16,7 +13,7 @@ XPCOMUtils.defineLazyGetter(this, "isXpcshell", function() {
  *
  * @param {*} error
  *        The error to check.
- * @param {string|RegExp|function|null} expectedError
+ * @param {string | RegExp | Function | null} expectedError
  *        The expectation to check against. If this parameter is:
  *
  *        - a string, the error message must exactly equal the string.

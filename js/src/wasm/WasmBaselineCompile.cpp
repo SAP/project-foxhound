@@ -1611,7 +1611,6 @@ void BaseCompiler::callRef(const Stk& calleeRef, const FunctionCall& call,
   CalleeDesc callee = CalleeDesc::wasmFuncRef();
 
   loadRef(calleeRef, RegRef(WasmCallRefReg));
-  emitGcNullCheck(RegRef(WasmCallRefReg));
   masm.wasmCallRef(desc, callee, fastCallOffset, slowCallOffset);
 }
 #endif
@@ -5661,7 +5660,7 @@ bool BaseCompiler::emitInstanceCall(const SymbolicAddressSignature& builtin) {
         // Instance function args can now be uninterpreted pointers (eg, for
         // the cases PostBarrier and PostBarrierFilter) so we simply treat
         // them like the equivalently sized integer.
-        t = ValType::hostPtr();
+        t = ValType::fromMIRType(TargetWordMIRType());
         break;
       default:
         MOZ_CRASH("Unexpected type");
@@ -6314,11 +6313,21 @@ void BaseCompiler::emitGcCanon(uint32_t typeIndex) {
   pushRef(rp);
 }
 
-void BaseCompiler::emitGcNullCheck(RegRef rp) {
+/* static */
+void BaseCompiler::SignalNullCheck::emitNullCheck(BaseCompiler* bc, RegRef rp) {
   Label ok;
+  MacroAssembler& masm = bc->masm;
   masm.branchTestPtr(Assembler::NonZero, rp, rp, &ok);
-  trap(Trap::NullPointerDereference);
+  bc->trap(Trap::NullPointerDereference);
   masm.bind(&ok);
+}
+
+/* static */
+void BaseCompiler::SignalNullCheck::emitTrapSite(BaseCompiler* bc) {
+  wasm::BytecodeOffset trapOffset(bc->bytecodeOffset());
+  MacroAssembler& masm = bc->masm;
+  masm.append(wasm::Trap::NullPointerDereference,
+              wasm::TrapSite(masm.currentOffset(), trapOffset));
 }
 
 RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
@@ -6329,11 +6338,13 @@ RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
   return rdata;
 }
 
+template <typename NullCheckPolicy>
 RegI32 BaseCompiler::emitGcArrayGetNumElements(RegRef rp) {
   // `rp` points at a WasmArrayObject.  Return a reg holding the value of its
   // `numElements_` field.
   STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
   RegI32 numElements = needI32();
+  NullCheckPolicy::emitTrapSite(this);
   masm.load32(Address(rp, WasmArrayObject::offsetOfNumElements()), numElements);
   return numElements;
 }
@@ -6345,14 +6356,15 @@ void BaseCompiler::emitGcArrayBoundsCheck(RegI32 index, RegI32 numElements) {
   masm.bind(&inBounds);
 }
 
-template <typename T>
-void BaseCompiler::emitGcGet(FieldType type, FieldExtension extension,
+template <typename T, typename NullCheckPolicy>
+void BaseCompiler::emitGcGet(FieldType type, FieldWideningOp wideningOp,
                              const T& src) {
   switch (type.kind()) {
     case FieldType::I8: {
-      MOZ_ASSERT(extension != FieldExtension::None);
+      MOZ_ASSERT(wideningOp != FieldWideningOp::None);
       RegI32 r = needI32();
-      if (extension == FieldExtension::Unsigned) {
+      NullCheckPolicy::emitTrapSite(this);
+      if (wideningOp == FieldWideningOp::Unsigned) {
         masm.load8ZeroExtend(src, r);
       } else {
         masm.load8SignExtend(src, r);
@@ -6361,9 +6373,10 @@ void BaseCompiler::emitGcGet(FieldType type, FieldExtension extension,
       break;
     }
     case FieldType::I16: {
-      MOZ_ASSERT(extension != FieldExtension::None);
+      MOZ_ASSERT(wideningOp != FieldWideningOp::None);
       RegI32 r = needI32();
-      if (extension == FieldExtension::Unsigned) {
+      NullCheckPolicy::emitTrapSite(this);
+      if (wideningOp == FieldWideningOp::Unsigned) {
         masm.load16ZeroExtend(src, r);
       } else {
         masm.load16SignExtend(src, r);
@@ -6372,45 +6385,51 @@ void BaseCompiler::emitGcGet(FieldType type, FieldExtension extension,
       break;
     }
     case FieldType::I32: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegI32 r = needI32();
+      NullCheckPolicy::emitTrapSite(this);
       masm.load32(src, r);
       pushI32(r);
       break;
     }
     case FieldType::I64: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegI64 r = needI64();
+      NullCheckPolicy::emitTrapSite(this);
       masm.load64(src, r);
       pushI64(r);
       break;
     }
     case FieldType::F32: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegF32 r = needF32();
+      NullCheckPolicy::emitTrapSite(this);
       masm.loadFloat32(src, r);
       pushF32(r);
       break;
     }
     case FieldType::F64: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegF64 r = needF64();
+      NullCheckPolicy::emitTrapSite(this);
       masm.loadDouble(src, r);
       pushF64(r);
       break;
     }
 #  ifdef ENABLE_WASM_SIMD
     case FieldType::V128: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegV128 r = needV128();
+      NullCheckPolicy::emitTrapSite(this);
       masm.loadUnalignedSimd128(src, r);
       pushV128(r);
       break;
     }
 #  endif
     case FieldType::Ref: {
-      MOZ_ASSERT(extension == FieldExtension::None);
+      MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegRef r = needRef();
+      NullCheckPolicy::emitTrapSite(this);
       masm.loadPtr(src, r);
       pushRef(r);
       break;
@@ -6421,8 +6440,9 @@ void BaseCompiler::emitGcGet(FieldType type, FieldExtension extension,
   }
 }
 
-template <typename T>
+template <typename T, typename NullCheckPolicy>
 void BaseCompiler::emitGcSetScalar(const T& dst, FieldType type, AnyReg value) {
+  NullCheckPolicy::emitTrapSite(this);
   switch (type.kind()) {
     case FieldType::I8: {
       masm.store8(value.i32(), dst);
@@ -6460,12 +6480,14 @@ void BaseCompiler::emitGcSetScalar(const T& dst, FieldType type, AnyReg value) {
   }
 }
 
+template <typename NullCheckPolicy>
 bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr areaBase,
                                    uint32_t areaOffset, FieldType fieldType,
                                    AnyReg value) {
   // Easy path if the field is a scalar
   if (!fieldType.isRefRepr()) {
-    emitGcSetScalar(Address(areaBase, areaOffset), fieldType, value);
+    emitGcSetScalar<Address, NullCheckPolicy>(Address(areaBase, areaOffset),
+                                              fieldType, value);
     freeAny(value);
     return true;
   }
@@ -6475,6 +6497,8 @@ bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr areaBase,
   RegPtr valueAddr = RegPtr(PreBarrierReg);
   needPtr(valueAddr);
   masm.computeEffectiveAddress(Address(areaBase, areaOffset), valueAddr);
+
+  NullCheckPolicy::emitNullCheck(this, object);
 
   // emitBarrieredStore preserves object and value
   if (!emitBarrieredStore(Some(object), valueAddr, value.ref(),
@@ -6510,8 +6534,8 @@ bool BaseCompiler::emitGcArraySet(RegRef object, RegPtr data, RegI32 index,
 
   // Easy path if the field is a scalar
   if (!arrayType.elementType_.isRefRepr()) {
-    emitGcSetScalar(BaseIndex(data, index, scale, 0), arrayType.elementType_,
-                    value);
+    emitGcSetScalar<BaseIndex, NoNullCheck>(BaseIndex(data, index, scale, 0),
+                                            arrayType.elementType_, value);
     return true;
   }
 
@@ -6617,7 +6641,8 @@ bool BaseCompiler::emitStructNew() {
     }
 
     // Consumes value. rp is unchanged by this call.
-    if (!emitGcStructSet(rp, rbase, areaOffset, fieldType, value)) {
+    if (!emitGcStructSet<NoNullCheck>(rp, rbase, areaOffset, fieldType,
+                                      value)) {
       return false;
     }
   }
@@ -6643,11 +6668,11 @@ bool BaseCompiler::emitStructNewDefault() {
   return emitInstanceCall(SASigStructNew);
 }
 
-bool BaseCompiler::emitStructGet(FieldExtension extension) {
+bool BaseCompiler::emitStructGet(FieldWideningOp wideningOp) {
   uint32_t typeIndex;
   uint32_t fieldIndex;
   Nothing nothing;
-  if (!iter_.readStructGet(&typeIndex, &fieldIndex, extension, &nothing)) {
+  if (!iter_.readStructGet(&typeIndex, &fieldIndex, wideningOp, &nothing)) {
     return false;
   }
 
@@ -6658,9 +6683,6 @@ bool BaseCompiler::emitStructGet(FieldExtension extension) {
   const StructType& structType = (*moduleEnv_.types)[typeIndex].structType();
 
   RegRef rp = popRef();
-
-  // Check for null
-  emitGcNullCheck(rp);
 
   // Decide whether we're accessing inline or outline, and at what offset
   FieldType fieldType = structType.fields_[fieldIndex].type;
@@ -6674,14 +6696,18 @@ bool BaseCompiler::emitStructGet(FieldExtension extension) {
   // Make rbase point at the first byte of the relevant area
   RegPtr rbase = needPtr();
   if (areaIsOutline) {
+    SignalNullCheck::emitTrapSite(this);
     masm.loadPtr(Address(rp, WasmStructObject::offsetOfOutlineData()), rbase);
+    // Load the value
+    emitGcGet<Address, NoNullCheck>(fieldType, wideningOp,
+                                    Address(rbase, areaOffset));
   } else {
     masm.computeEffectiveAddress(
         Address(rp, WasmStructObject::offsetOfInlineData()), rbase);
+    // Load the value
+    emitGcGet<Address, SignalNullCheck>(fieldType, wideningOp,
+                                        Address(rbase, areaOffset));
   }
-
-  // Load the value
-  emitGcGet(fieldType, extension, Address(rbase, areaOffset));
 
   freePtr(rbase);
   freeRef(rp);
@@ -6719,9 +6745,6 @@ bool BaseCompiler::emitStructSet() {
     freePtr(RegPtr(PreBarrierReg));
   }
 
-  // Check for null
-  emitGcNullCheck(rp);
-
   // Decide whether we're accessing inline or outline, and at what offset
   FieldType fieldType = structType.fields_[fieldIndex].type;
   uint32_t fieldOffset = structType.fields_[fieldIndex].offset;
@@ -6733,15 +6756,20 @@ bool BaseCompiler::emitStructSet() {
 
   // Make rbase point at the first byte of the relevant area
   if (areaIsOutline) {
+    SignalNullCheck::emitTrapSite(this);
     masm.loadPtr(Address(rp, WasmStructObject::offsetOfOutlineData()), rbase);
+    if (!emitGcStructSet<NoNullCheck>(rp, rbase, areaOffset, fieldType,
+                                      value)) {
+      return false;
+    }
   } else {
     masm.computeEffectiveAddress(
         Address(rp, WasmStructObject::offsetOfInlineData()), rbase);
-  }
-
-  // Consumes value. rp is unchanged by this call.
-  if (!emitGcStructSet(rp, rbase, areaOffset, fieldType, value)) {
-    return false;
+    // Consumes value. rp is unchanged by this call.
+    if (!emitGcStructSet<SignalNullCheck>(rp, rbase, areaOffset, fieldType,
+                                          value)) {
+      return false;
+    }
   }
 
   freePtr(rbase);
@@ -6783,7 +6811,7 @@ bool BaseCompiler::emitArrayNew() {
   RegPtr rdata = emitGcArrayGetData(rp);
 
   // Acquire the number of elements
-  RegI32 numElements = emitGcArrayGetNumElements(rp);
+  RegI32 numElements = emitGcArrayGetNumElements<NoNullCheck>(rp);
 
   // Free the barrier reg after we've allocated all registers
   if (arrayType.elementType_.isRefRepr()) {
@@ -6820,7 +6848,8 @@ bool BaseCompiler::emitArrayNew() {
 
 bool BaseCompiler::emitArrayNewFixed() {
   uint32_t typeIndex, numElements;
-  if (!iter_.readArrayNewFixed(&typeIndex, &numElements)) {
+  BaseNothingVector nothings{};
+  if (!iter_.readArrayNewFixed(&typeIndex, &numElements, &nothings)) {
     return false;
   }
 
@@ -6858,15 +6887,23 @@ bool BaseCompiler::emitArrayNewFixed() {
     freePtr(RegPtr(PreBarrierReg));
   }
 
+  // These together ensure that the max value of `index` in the loop below
+  // remains comfortably below the 2^31 boundary.  See comments on equivalent
+  // assertions in EmitArrayNewFixed in WasmIonCompile.cpp for explanation.
+  static_assert(16 /* sizeof v128 */ * MaxFunctionBytes <=
+                MaxArrayPayloadBytes);
+  MOZ_RELEASE_ASSERT(numElements <= MaxFunctionBytes);
+
   // Generate straight-line initialization code.  We could do better here if
   // there was a version of ::emitGcArraySet that took `index` as a `uint32_t`
   // rather than a general value-in-a-reg.
-  for (uint32_t i = 0; i < numElements; i++) {
+  for (uint32_t forwardIndex = 0; forwardIndex < numElements; forwardIndex++) {
+    uint32_t reverseIndex = numElements - forwardIndex - 1;
     if (avoidPreBarrierReg) {
       needPtr(RegPtr(PreBarrierReg));
     }
     AnyReg value = popAny();
-    pushI32(i);
+    pushI32(reverseIndex);
     RegI32 index = popI32();
     if (avoidPreBarrierReg) {
       freePtr(RegPtr(PreBarrierReg));
@@ -6941,10 +6978,10 @@ bool BaseCompiler::emitArrayNewElem() {
   return emitInstanceCall(SASigArrayNewElem);
 }
 
-bool BaseCompiler::emitArrayGet(FieldExtension extension) {
+bool BaseCompiler::emitArrayGet(FieldWideningOp wideningOp) {
   uint32_t typeIndex;
   Nothing nothing;
-  if (!iter_.readArrayGet(&typeIndex, extension, &nothing, &nothing)) {
+  if (!iter_.readArrayGet(&typeIndex, wideningOp, &nothing, &nothing)) {
     return false;
   }
 
@@ -6957,11 +6994,8 @@ bool BaseCompiler::emitArrayGet(FieldExtension extension) {
   RegI32 index = popI32();
   RegRef rp = popRef();
 
-  // Check for null
-  emitGcNullCheck(rp);
-
   // Acquire the number of elements
-  RegI32 numElements = emitGcArrayGetNumElements(rp);
+  RegI32 numElements = emitGcArrayGetNumElements<SignalNullCheck>(rp);
 
   // Bounds check the index
   emitGcArrayBoundsCheck(index, numElements);
@@ -6973,12 +7007,13 @@ bool BaseCompiler::emitArrayGet(FieldExtension extension) {
   // Load the value
   uint32_t shift = arrayType.elementType_.indexingShift();
   if (IsShiftInScaleRange(shift)) {
-    emitGcGet(arrayType.elementType_, extension,
-              BaseIndex(rdata, index, ShiftToScale(shift), 0));
+    emitGcGet<BaseIndex, NoNullCheck>(
+        arrayType.elementType_, wideningOp,
+        BaseIndex(rdata, index, ShiftToScale(shift), 0));
   } else {
     masm.lshiftPtr(Imm32(shift), index);
-    emitGcGet(arrayType.elementType_, extension,
-              BaseIndex(rdata, index, TimesOne, 0));
+    emitGcGet<BaseIndex, NoNullCheck>(arrayType.elementType_, wideningOp,
+                                      BaseIndex(rdata, index, TimesOne, 0));
   }
 
   freePtr(rdata);
@@ -7011,11 +7046,8 @@ bool BaseCompiler::emitArraySet() {
   RegI32 index = popI32();
   RegRef rp = popRef();
 
-  // Check for null
-  emitGcNullCheck(rp);
-
   // Acquire the number of elements
-  RegI32 numElements = emitGcArrayGetNumElements(rp);
+  RegI32 numElements = emitGcArrayGetNumElements<SignalNullCheck>(rp);
 
   // Bounds check the index
   emitGcArrayBoundsCheck(index, numElements);
@@ -7044,10 +7076,9 @@ bool BaseCompiler::emitArraySet() {
   return true;
 }
 
-bool BaseCompiler::emitArrayLen() {
-  uint32_t typeIndex;
+bool BaseCompiler::emitArrayLen(bool decodeIgnoredTypeIndex) {
   Nothing nothing;
-  if (!iter_.readArrayLen(&typeIndex, &nothing)) {
+  if (!iter_.readArrayLen(decodeIgnoredTypeIndex, &nothing)) {
     return false;
   }
 
@@ -7057,11 +7088,8 @@ bool BaseCompiler::emitArrayLen() {
 
   RegRef rp = popRef();
 
-  // Check for null
-  emitGcNullCheck(rp);
-
   // Acquire the number of elements
-  RegI32 numElements = emitGcArrayGetNumElements(rp);
+  RegI32 numElements = emitGcArrayGetNumElements<SignalNullCheck>(rp);
   pushI32(numElements);
 
   freeRef(rp);
@@ -7174,9 +7202,9 @@ bool BaseCompiler::emitBrOnCastCommon(bool onSuccess) {
   MOZ_ASSERT(!hasLatentOp());
 
   uint32_t labelRelativeDepth;
-  BaseNothingVector unused_values{};
   uint32_t castTypeIndex;
   ResultType labelType;
+  BaseNothingVector unused_values{};
   if (onSuccess ? !iter_.readBrOnCast(&labelRelativeDepth, &castTypeIndex,
                                       &labelType, &unused_values)
                 : !iter_.readBrOnCastFail(&labelRelativeDepth, &castTypeIndex,
@@ -7223,6 +7251,20 @@ bool BaseCompiler::emitBrOnCastCommon(bool onSuccess) {
   freeI32(condition);
 
   return true;
+}
+
+bool BaseCompiler::emitExternInternalize() {
+  // extern.internalize is a no-op because anyref and extern share the same
+  // representation
+  Nothing nothing;
+  return iter_.readRefConversion(RefType::extern_(), RefType::any(), &nothing);
+}
+
+bool BaseCompiler::emitExternExternalize() {
+  // extern.externalize is a no-op because anyref and extern share the same
+  // representation
+  Nothing nothing;
+  return iter_.readRefConversion(RefType::any(), RefType::extern_(), &nothing);
 }
 
 #endif  // ENABLE_WASM_GC
@@ -9335,11 +9377,11 @@ bool BaseCompiler::emitBody() {
           case uint32_t(GcOp::StructNewDefault):
             CHECK_NEXT(emitStructNewDefault());
           case uint32_t(GcOp::StructGet):
-            CHECK_NEXT(emitStructGet(FieldExtension::None));
+            CHECK_NEXT(emitStructGet(FieldWideningOp::None));
           case uint32_t(GcOp::StructGetS):
-            CHECK_NEXT(emitStructGet(FieldExtension::Signed));
+            CHECK_NEXT(emitStructGet(FieldWideningOp::Signed));
           case uint32_t(GcOp::StructGetU):
-            CHECK_NEXT(emitStructGet(FieldExtension::Unsigned));
+            CHECK_NEXT(emitStructGet(FieldWideningOp::Unsigned));
           case uint32_t(GcOp::StructSet):
             CHECK_NEXT(emitStructSet());
           case uint32_t(GcOp::ArrayNew):
@@ -9353,15 +9395,17 @@ bool BaseCompiler::emitBody() {
           case uint32_t(GcOp::ArrayNewElem):
             CHECK_NEXT(emitArrayNewElem());
           case uint32_t(GcOp::ArrayGet):
-            CHECK_NEXT(emitArrayGet(FieldExtension::None));
+            CHECK_NEXT(emitArrayGet(FieldWideningOp::None));
           case uint32_t(GcOp::ArrayGetS):
-            CHECK_NEXT(emitArrayGet(FieldExtension::Signed));
+            CHECK_NEXT(emitArrayGet(FieldWideningOp::Signed));
           case uint32_t(GcOp::ArrayGetU):
-            CHECK_NEXT(emitArrayGet(FieldExtension::Unsigned));
+            CHECK_NEXT(emitArrayGet(FieldWideningOp::Unsigned));
           case uint32_t(GcOp::ArraySet):
             CHECK_NEXT(emitArraySet());
+          case uint32_t(GcOp::ArrayLenWithTypeIndex):
+            CHECK_NEXT(emitArrayLen(/*decodeIgnoredTypeIndex=*/true));
           case uint32_t(GcOp::ArrayLen):
-            CHECK_NEXT(emitArrayLen());
+            CHECK_NEXT(emitArrayLen(/*decodeIgnoredTypeIndex=*/false));
           case uint32_t(GcOp::ArrayCopy):
             CHECK_NEXT(emitArrayCopy());
           case uint32_t(GcOp::RefTest):
@@ -9372,6 +9416,10 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitBrOnCastCommon(/*onSuccess=*/true));
           case uint32_t(GcOp::BrOnCastFail):
             CHECK_NEXT(emitBrOnCastCommon(/*onSuccess=*/false));
+          case uint16_t(GcOp::ExternInternalize):
+            CHECK_NEXT(emitExternInternalize());
+          case uint16_t(GcOp::ExternExternalize):
+            CHECK_NEXT(emitExternExternalize());
           default:
             break;
         }  // switch (op.b1)

@@ -34,9 +34,9 @@ add_setup(async function() {
     await resetEngines();
   });
 
-  await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
 });
 
 async function testSearchBarChangeEngine(win, testPrivate, isPrivateWindow) {
@@ -77,11 +77,6 @@ async function testSearchBarChangeEngine(win, testPrivate, isPrivateWindow) {
       expectedImage = originalPrivateEngine.iconURI.spec;
     }
 
-    Assert.equal(
-      oneOffButton.id,
-      SEARCHBAR_BASE_ID + expectedName,
-      "Should now have the original engine's id for the button"
-    );
     Assert.equal(
       oneOffButton.getAttribute("tooltiptext"),
       expectedName,
@@ -199,10 +194,9 @@ async function openPopupAndGetEngineButton(
     "One-off should have the tooltip set to the engine name"
   );
 
-  Assert.equal(
-    oneOffButton.id,
-    baseId + engineName,
-    "Should have the correct id"
+  Assert.ok(
+    oneOffButton.id.startsWith(baseId + "engine-"),
+    "Should have an appropriate id"
   );
 
   // Open the context menu on the one-off.

@@ -402,6 +402,8 @@ void nsPageContentFrame::AppendDirectlyOwnedAnonBoxes(
 }
 
 void nsPageContentFrame::EnsurePageName() {
+  MOZ_ASSERT(HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
+             "Should only have been called on first reflow");
   if (mPageName) {
     return;
   }
@@ -419,6 +421,21 @@ void nsPageContentFrame::EnsurePageName() {
   RefPtr<ComputedStyle> pageContentPseudoStyle =
       PresShell()->StyleSet()->ResolvePageContentStyle(mPageName);
   SetComputedStyleWithoutNotification(pageContentPseudoStyle);
+}
+
+nsIFrame* nsPageContentFrame::FirstContinuation() const {
+  const nsContainerFrame* const parent = GetParent();
+  MOZ_ASSERT(parent && parent->IsPageFrame(),
+             "Parent of nsPageContentFrame should be nsPageFrame");
+  // static cast so the compiler has a chance to devirtualize the call.
+  const auto* const pageFrameParent = static_cast<const nsPageFrame*>(parent);
+  nsPageContentFrame* const pageContentFrame =
+      static_cast<const nsPageFrame*>(pageFrameParent->FirstContinuation())
+          ->PageContentFrame();
+  MOZ_ASSERT(pageContentFrame && !pageContentFrame->GetPrevContinuation(),
+             "First descendent of nsPageSequenceFrame should not have a "
+             "previous continuation");
+  return pageContentFrame;
 }
 
 #ifdef DEBUG_FRAME_DUMP

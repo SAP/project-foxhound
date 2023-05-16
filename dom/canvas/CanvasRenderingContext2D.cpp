@@ -56,7 +56,6 @@
 
 #include "nsFrameLoader.h"
 #include "nsBidiPresUtils.h"
-#include "Layers.h"
 #include "LayerUserData.h"
 #include "CanvasUtils.h"
 #include "nsIMemoryReporter.h"
@@ -1349,7 +1348,13 @@ void CanvasRenderingContext2D::RestoreClipsAndTransformToTarget() {
 
 bool CanvasRenderingContext2D::BorrowTarget(const IntRect& aPersistedRect,
                                             bool aNeedsClear) {
-  if (!mBufferProvider || mBufferProvider->RequiresRefresh()) {
+  // We are attempting to request a DrawTarget from the current
+  // PersistentBufferProvider. However, if the provider needs to be refreshed,
+  // or if it is accelerated and the application has requested that we disallow
+  // acceleration, then we skip trying to use this provider so that it will be
+  // recreated by EnsureTarget later.
+  if (!mBufferProvider || mBufferProvider->RequiresRefresh() ||
+      (mBufferProvider->IsAccelerated() && mWillReadFrequently)) {
     return false;
   }
   mTarget = mBufferProvider->BorrowDrawTarget(aPersistedRect);
@@ -1565,7 +1570,9 @@ bool CanvasRenderingContext2D::TryAcceleratedTarget(
     // to be refreshed and we should avoid using acceleration in the future.
     mAllowAcceleration = false;
   }
-  if (!mAllowAcceleration) {
+  // Don't try creating an accelerate DrawTarget if either acceleration failed
+  // previously or if the application expects acceleration to be slow.
+  if (!mAllowAcceleration || mWillReadFrequently) {
     return false;
   }
   aOutDT = DrawTargetWebgl::Create(GetSize(), GetSurfaceFormat());
@@ -1817,6 +1824,8 @@ CanvasRenderingContext2D::SetContextOptions(JSContext* aCx,
     return NS_ERROR_UNEXPECTED;
   }
 
+  mWillReadFrequently = attributes.mWillReadFrequently;
+
   mContextAttributesHasAlpha = attributes.mAlpha;
   UpdateIsOpaque();
 
@@ -1870,7 +1879,8 @@ CanvasRenderingContext2D::GetInputStream(const char* aMimeType,
 }
 
 already_AddRefed<mozilla::gfx::SourceSurface>
-CanvasRenderingContext2D::GetSurfaceSnapshot(gfxAlphaType* aOutAlphaType) {
+CanvasRenderingContext2D::GetOptimizedSnapshot(DrawTarget* aTarget,
+                                               gfxAlphaType* aOutAlphaType) {
   if (aOutAlphaType) {
     *aOutAlphaType = (mOpaque ? gfxAlphaType::Opaque : gfxAlphaType::Premult);
   }
@@ -1888,7 +1898,7 @@ CanvasRenderingContext2D::GetSurfaceSnapshot(gfxAlphaType* aOutAlphaType) {
   // The concept of BorrowSnapshot seems a bit broken here, but the original
   // code in GetSurfaceSnapshot just returned a snapshot from mTarget, which
   // amounts to breaking the concept implicitly.
-  RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot();
+  RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot(aTarget);
   RefPtr<SourceSurface> retSurface = snapshot;
   mBufferProvider->ReturnSnapshot(snapshot.forget());
   return retSurface.forget();
@@ -3824,8 +3834,19 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
     Style style = (mOp == CanvasRenderingContext2D::TextDrawOperation::FILL)
                       ? Style::FILL
                       : Style::STROKE;
+    const ContextState& state = mCtx->CurrentState();
 
-    AdjustedTarget target(mCtx);
+    gfx::Rect bounds;
+    if (mCtx->NeedToCalculateBounds()) {
+      bounds = ToRect(mBoundingBox);
+      bounds.MoveBy(mPt / mAppUnitsPerDevPixel);
+      if (style == Style::STROKE) {
+        bounds.Inflate(state.lineWidth / 2.0);
+      }
+      bounds = mDrawTarget->GetTransform().TransformBounds(bounds);
+    }
+
+    AdjustedTarget target(mCtx, bounds.IsEmpty() ? nullptr : &bounds, false);
     if (!target) {
       return;
     }
@@ -3841,18 +3862,17 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
 
     params.allowGDI = false;
 
-    const ContextState* state = &mCtx->CurrentState();
-    if (state->StyleIsColor(style)) {  // Color
-      nscolor fontColor = state->colorStyles[style];
+    if (state.StyleIsColor(style)) {  // Color
+      nscolor fontColor = state.colorStyles[style];
       if (style == Style::FILL) {
         params.context->SetColor(sRGBColor::FromABGR(fontColor));
       } else {
         params.textStrokeColor = fontColor;
       }
     } else {
-      if (state->gradientStyles[style]) {  // Gradient
+      if (state.gradientStyles[style]) {  // Gradient
         pattern = GetGradientFor(style);
-      } else if (state->patternStyles[style]) {  // Pattern
+      } else if (state.patternStyles[style]) {  // Pattern
         pattern = GetPatternFor(style);
       } else {
         MOZ_ASSERT(false, "Should never reach here.");
@@ -3867,23 +3887,23 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
       }
     }
 
-    drawOpts.mAlpha = state->globalAlpha;
+    drawOpts.mAlpha = state.globalAlpha;
     drawOpts.mCompositionOp = target.UsedOperation();
     if (!mCtx->IsTargetValid()) {
       return;
     }
-    state = &mCtx->CurrentState();
+
     params.drawOpts = &drawOpts;
 
     if (style == Style::STROKE) {
-      strokeOpts.mLineWidth = state->lineWidth;
-      strokeOpts.mLineJoin = state->lineJoin;
-      strokeOpts.mLineCap = state->lineCap;
-      strokeOpts.mMiterLimit = state->miterLimit;
-      strokeOpts.mDashLength = state->dash.Length();
+      strokeOpts.mLineWidth = state.lineWidth;
+      strokeOpts.mLineJoin = state.lineJoin;
+      strokeOpts.mLineCap = state.lineCap;
+      strokeOpts.mMiterLimit = state.miterLimit;
+      strokeOpts.mDashLength = state.dash.Length();
       strokeOpts.mDashPattern =
-          (strokeOpts.mDashLength > 0) ? state->dash.Elements() : 0;
-      strokeOpts.mDashOffset = state->dashOffset;
+          (strokeOpts.mDashLength > 0) ? state.dash.Elements() : 0;
+      strokeOpts.mDashOffset = state.dashOffset;
 
       params.drawMode = DrawMode::GLYPH_STROKE;
       params.strokeOpts = &strokeOpts;
@@ -4558,6 +4578,13 @@ static already_AddRefed<SourceSurface> ExtractSubrect(SourceSurface* aSurface,
   gfx::IntRect roundedOutSourceRectInt;
   if (!roundedOutSourceRect.ToIntRect(&roundedOutSourceRectInt)) {
     RefPtr<SourceSurface> surface(aSurface);
+    return surface.forget();
+  }
+
+  // Try to extract an optimized sub-surface.
+  if (RefPtr<SourceSurface> surface =
+          aSurface->ExtractSubrect(roundedOutSourceRectInt)) {
+    *aSourceRect -= roundedOutSourceRect.TopLeft();
     return surface.forget();
   }
 

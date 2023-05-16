@@ -19,6 +19,7 @@
 #include "WebrtcVideoCodecFactory.h"
 #include "nsTArray.h"
 #include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "PerformanceRecorder.h"
 #include "transport/mediapacket.h"
 
 // libwebrtc includes
@@ -330,7 +331,7 @@ class VideoSessionConduit : public MediaSessionConduit {
   static RefPtr<VideoSessionConduit> Create(
       RefPtr<WebrtcCallWrapper> aCall,
       nsCOMPtr<nsISerialEventTarget> aStsThread, Options aOptions,
-      std::string aPCHandle);
+      std::string aPCHandle, const TrackingId& aRecvTrackingId);
 
   enum FrameRequestType {
     FrameRequestNone,
@@ -395,7 +396,8 @@ class VideoSessionConduit : public MediaSessionConduit {
 
   bool UsingFEC() const { return mUsingFEC; }
 
-  virtual Maybe<webrtc::VideoReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::VideoReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::VideoSendStream::Stats> GetSenderStats() const = 0;
 
   virtual void CollectTelemetryData() = 0;
@@ -483,7 +485,8 @@ class AudioSessionConduit : public MediaSessionConduit {
    */
   virtual bool IsSamplingFreqSupported(int freq) const = 0;
 
-  virtual Maybe<webrtc::AudioReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::AudioReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::AudioSendStream::Stats> GetSenderStats() const = 0;
 };
 }  // namespace mozilla

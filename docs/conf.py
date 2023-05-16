@@ -53,14 +53,16 @@ extensions = [
 # tree-wide (the default) will not work currently.
 js_source_path = [
     "../browser/components/extensions",
+    "../browser/components/migration",
+    "../browser/components/migration/content",
     "../browser/components/uitour",
     "../browser/components/urlbar",
     "../remote/marionette",
     "../testing/mochitest/BrowserTestUtils",
     "../testing/mochitest/tests/SimpleTest/SimpleTest.js",
     "../testing/mochitest/tests/SimpleTest/EventUtils.js",
-    "../testing/modules/Assert.jsm",
-    "../testing/modules/TestUtils.jsm",
+    "../testing/modules/Assert.sys.mjs",
+    "../testing/modules/TestUtils.sys.mjs",
     "../toolkit/actors",
     "../toolkit/components/extensions",
     "../toolkit/components/extensions/parent",

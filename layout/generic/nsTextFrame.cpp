@@ -745,14 +745,14 @@ static void InvalidateFrameDueToGlyphsChanged(nsIFrame* aFrame) {
         f->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       auto svgTextFrame = static_cast<SVGTextFrame*>(
           nsLayoutUtils::GetClosestFrameOfType(f, LayoutFrameType::SVGText));
-      svgTextFrame->ScheduleReflowSVGNonDisplayText(IntrinsicDirty::Resize);
+      svgTextFrame->ScheduleReflowSVGNonDisplayText(IntrinsicDirty::None);
     } else {
       // Theoretically we could just update overflow areas, perhaps using
       // OverflowChangedTracker, but that would do a bunch of work eagerly that
       // we should probably do lazily here since there could be a lot
       // of text frames affected and we'd like to coalesce the work. So that's
       // not easy to do well.
-      presShell->FrameNeedsReflow(f, IntrinsicDirty::Resize, NS_FRAME_IS_DIRTY);
+      presShell->FrameNeedsReflow(f, IntrinsicDirty::None, NS_FRAME_IS_DIRTY);
     }
   }
 }
@@ -2019,9 +2019,9 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
         }
 
         // 3. The boundary is a bidi isolation boundary.
-        const uint8_t unicodeBidi = ctx->StyleTextReset()->mUnicodeBidi;
-        if (unicodeBidi == NS_STYLE_UNICODE_BIDI_ISOLATE ||
-            unicodeBidi == NS_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE) {
+        const auto unicodeBidi = ctx->StyleTextReset()->mUnicodeBidi;
+        if (unicodeBidi == StyleUnicodeBidi::Isolate ||
+            unicodeBidi == StyleUnicodeBidi::IsolateOverride) {
           return true;
         }
 
@@ -5078,8 +5078,9 @@ nsresult nsTextFrame::CharacterDataChanged(
       textFrame->mReflowRequestedForCharDataChange = true;
       if (!areAncestorsAwareOfReflowRequest) {
         // Ask the parent frame to reflow me.
-        presShell->FrameNeedsReflow(textFrame, IntrinsicDirty::StyleChange,
-                                    NS_FRAME_IS_DIRTY);
+        presShell->FrameNeedsReflow(
+            textFrame, IntrinsicDirty::FrameAncestorsAndDescendants,
+            NS_FRAME_IS_DIRTY);
       } else {
         // We already called FrameNeedsReflow on behalf of an earlier sibling,
         // so we can just mark this frame as dirty and don't need to bother
@@ -6871,19 +6872,14 @@ bool nsTextFrame::MeasureCharClippedText(nscoord aVisIStartEdge,
 }
 
 static uint32_t GetClusterLength(const gfxTextRun* aTextRun,
-                                 uint32_t aStartOffset, uint32_t aMaxLength,
-                                 bool aIsRTL) {
-  uint32_t clusterLength = aIsRTL ? 0 : 1;
-  while (clusterLength < aMaxLength) {
+                                 uint32_t aStartOffset, uint32_t aMaxLength) {
+  uint32_t clusterLength = 0;
+  while (++clusterLength < aMaxLength) {
     if (aTextRun->IsClusterStart(aStartOffset + clusterLength)) {
-      if (aIsRTL) {
-        ++clusterLength;
-      }
-      break;
+      return clusterLength;
     }
-    ++clusterLength;
   }
-  return clusterLength;
+  return aMaxLength;
 }
 
 bool nsTextFrame::MeasureCharClippedText(
@@ -6905,8 +6901,7 @@ bool nsTextFrame::MeasureCharClippedText(
   if (startEdge > 0) {
     const gfxFloat maxAdvance = gfxFloat(startEdge);
     while (maxLength > 0) {
-      uint32_t clusterLength =
-          GetClusterLength(mTextRun, offset, maxLength, rtl);
+      uint32_t clusterLength = GetClusterLength(mTextRun, offset, maxLength);
       advanceWidth += mTextRun->GetAdvanceWidth(
           Range(offset, offset + clusterLength), &aProvider);
       maxLength -= clusterLength;
@@ -6924,8 +6919,7 @@ bool nsTextFrame::MeasureCharClippedText(
   if (endEdge > 0) {
     const gfxFloat maxAdvance = gfxFloat(frameISize - endEdge);
     while (maxLength > 0) {
-      uint32_t clusterLength =
-          GetClusterLength(mTextRun, offset, maxLength, rtl);
+      uint32_t clusterLength = GetClusterLength(mTextRun, offset, maxLength);
       gfxFloat nextAdvance =
           advanceWidth + mTextRun->GetAdvanceWidth(
                              Range(offset, offset + clusterLength), &aProvider);
@@ -7792,7 +7786,7 @@ void nsTextFrame::SelectionStateChanged(uint32_t aStart, uint32_t aEnd,
       if (didHaveOverflowingSelection ||
           (aSelected && f->CombineSelectionUnderlineRect(presContext, r))) {
         presContext->PresShell()->FrameNeedsReflow(
-            f, IntrinsicDirty::StyleChange, NS_FRAME_IS_DIRTY);
+            f, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
       }
     }
     // Selection might change anything. Invalidate the overflow area.
@@ -9455,8 +9449,7 @@ class MOZ_STACK_CLASS ReflowTextA11yNotifier {
   ReflowTextA11yNotifier(nsPresContext* aPresContext, nsIContent* aContent)
       : mContent(aContent), mPresContext(aPresContext) {}
   ~ReflowTextA11yNotifier() {
-    if (nsAccessibilityService* accService =
-            PresShell::GetAccessibilityService()) {
+    if (nsAccessibilityService* accService = GetAccService()) {
       accService->UpdateText(mPresContext->PresShell(), mContent);
     }
   }

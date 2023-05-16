@@ -9,6 +9,15 @@
  * chrome.
  */
 
+add_setup(async function setup() {
+  // Make sure the prompt to connect FxA doesn't show
+  // Without resetting the view-count pref it gets surfaced after
+  // the third click on the fx view toolbar button.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.firefox-view.view-count", 0]],
+  });
+});
+
 add_task(async function test_keyboard_focus_after_tab_pickup_opened() {
   // Reset various things touched by other tests in this file so that
   // we have a sufficiently clean environment.
@@ -39,45 +48,40 @@ add_task(async function test_keyboard_focus_after_tab_pickup_opened() {
     syncEnabled: false,
   });
 
-  await BrowserTestUtils.withNewTab(
-    {
-      gBrowser,
-      url: "about:firefoxview",
-    },
-    async browser => {
-      const { document } = browser.contentWindow;
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    let win = browser.ownerGlobal;
 
-      is(
-        document.activeElement.localName,
-        "body",
-        "document body element is initially focused"
-      );
+    is(
+      document.activeElement.localName,
+      "body",
+      "document body element is initially focused"
+    );
 
-      const tab = () => {
-        info("Tab keypress synthesized");
-        EventUtils.synthesizeKey("KEY_Tab");
-      };
+    const tab = () => {
+      info("Tab keypress synthesized");
+      EventUtils.synthesizeKey("KEY_Tab", {}, win);
+    };
 
-      tab();
+    tab();
 
-      let tabPickupContainer = document.querySelector(
-        "#tab-pickup-container summary.page-section-header"
-      );
-      is(
-        document.activeElement,
-        tabPickupContainer,
-        "tab pickup container header has focus"
-      );
+    let tabPickupContainer = document.querySelector(
+      "#tab-pickup-container summary.page-section-header"
+    );
+    is(
+      document.activeElement,
+      tabPickupContainer,
+      "tab pickup container header has focus"
+    );
 
-      tab();
+    tab();
 
-      is(
-        document.activeElement.id,
-        "firefoxview-tabpickup-step-signin-primarybutton",
-        "tab pickup primary button has focus"
-      );
-    }
-  );
+    is(
+      document.activeElement.id,
+      "firefoxview-tabpickup-step-signin-primarybutton",
+      "tab pickup primary button has focus"
+    );
+  });
 
   // cleanup time
   await tearDown(sandbox);

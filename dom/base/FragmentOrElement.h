@@ -14,6 +14,7 @@
 #define FragmentOrElement_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
@@ -33,6 +34,8 @@ class nsIURI;
 
 namespace mozilla {
 class DeclarationBlock;
+enum class ContentRelevancyReason;
+using ContentRelevancy = EnumSet<ContentRelevancyReason, uint8_t>;
 namespace dom {
 struct CustomElementData;
 class Element;
@@ -119,12 +122,6 @@ class FragmentOrElement : public nsIContent {
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS_INHERITED(
       FragmentOrElement, nsIContent)
 
-  /**
-   * Fire a DOMNodeRemoved mutation event for all children of this node
-   * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-   */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
-
   static void ClearContentUnbinder();
   static bool CanSkip(nsINode* aNode, bool aRemovingAllowed);
   static bool CanSkipInCC(nsINode* aNode);
@@ -204,6 +201,18 @@ class FragmentOrElement : public nsIContent {
      */
     Maybe<float> mLastRememberedBSize;
     Maybe<float> mLastRememberedISize;
+
+    /**
+     * Whether the content of this element is relevant for the purposes
+     * of `content-visibility: auto.
+     */
+    Maybe<ContentRelevancy> mContentRelevancy;
+
+    /**
+     * Whether the content of this element is considered visible for
+     * the purposes of `content-visibility: auto.
+     */
+    Maybe<bool> mVisibleForContentVisibility;
   };
 
   class nsDOMSlots : public nsIContent::nsContentSlots {

@@ -5,10 +5,6 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-
 const BASE_URL = "http://example.com/browser/tools/profiler/tests/browser/";
 const BASE_URL_HTTPS =
   "https://example.com/browser/tools/profiler/tests/browser/";
@@ -121,10 +117,7 @@ function findServiceWorkerThreads(profile) {
     allThreads.forEach(logInformationForThread.bind(null, ""));
 
     // Let's write the profile on disk if MOZ_UPLOAD_DIR is present
-    const env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    const path = env.get("MOZ_UPLOAD_DIR");
+    const path = Services.env.get("MOZ_UPLOAD_DIR");
     if (path) {
       const profileName = `profile_${Date.now()}.json`;
       const profilePath = PathUtils.join(path, profileName);

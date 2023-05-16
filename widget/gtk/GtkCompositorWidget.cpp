@@ -21,9 +21,10 @@
 
 #ifdef MOZ_LOGGING
 #  undef LOG
-#  define LOG(...)                                    \
+#  define LOG(str, ...)                               \
     MOZ_LOG(IsPopup() ? gWidgetPopupLog : gWidgetLog, \
-            mozilla::LogLevel::Debug, (__VA_ARGS__))
+            mozilla::LogLevel::Debug,                 \
+            ("[%p]: " str, mWidget.get(), ##__VA_ARGS__))
 #endif /* MOZ_LOGGING */
 
 namespace mozilla {
@@ -69,6 +70,8 @@ GtkCompositorWidget::GtkCompositorWidget(
 GtkCompositorWidget::~GtkCompositorWidget() {
   LOG("GtkCompositorWidget::~GtkCompositorWidget [%p]\n", (void*)mWidget.get());
   DisableRendering();
+  RefPtr<nsIWidget> widget = mWidget.forget();
+  NS_ReleaseOnMainThread("GtkCompositorWidget::mWidget", widget.forget());
 }
 
 already_AddRefed<gfx::DrawTarget> GtkCompositorWidget::StartRemoteDrawing() {
@@ -92,6 +95,9 @@ nsIWidget* GtkCompositorWidget::RealWidget() { return mWidget; }
 
 void GtkCompositorWidget::NotifyClientSizeChanged(
     const LayoutDeviceIntSize& aClientSize) {
+  LOG("GtkCompositorWidget::NotifyClientSizeChanged() to %d x %d",
+      aClientSize.width, aClientSize.height);
+
   auto size = mClientSize.Lock();
   *size = aClientSize;
 }
@@ -107,10 +113,15 @@ void GtkCompositorWidget::RemoteLayoutSizeUpdated(
     return;
   }
 
+  LOG("GtkCompositorWidget::RemoteLayoutSizeUpdated() %d x %d",
+      (int)aSize.width, (int)aSize.height);
+
   // We're waiting for layout to match widget size.
   auto clientSize = mClientSize.Lock();
   if (clientSize->width != (int)aSize.width ||
       clientSize->height != (int)aSize.height) {
+    LOG("quit, client size doesn't match (%d x %d)", clientSize->width,
+        clientSize->height);
     return;
   }
 

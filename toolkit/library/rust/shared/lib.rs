@@ -72,6 +72,7 @@ extern crate wgpu_bindings;
 
 extern crate qcms;
 extern crate wpf_gpu_raster;
+extern crate aa_stroke;
 
 extern crate unic_langid;
 extern crate unic_langid_ffi;
@@ -108,6 +109,8 @@ extern crate dap_ffi;
 
 extern crate data_encoding_ffi;
 
+extern crate oblivious_http;
+
 #[cfg(feature = "uniffi_fixtures")]
 mod uniffi_fixtures {
     extern crate arithmetical;
@@ -143,15 +146,13 @@ pub extern "C" fn GkRust_Shutdown() {}
 
 /// Used to implement `nsIDebug2::RustPanic` for testing purposes.
 #[no_mangle]
-pub extern "C" fn intentional_panic(message: *const c_char) {
-    panic!("{}", unsafe { CStr::from_ptr(message) }.to_string_lossy());
+pub unsafe extern "C" fn intentional_panic(message: *const c_char) {
+    panic!("{}", CStr::from_ptr(message).to_string_lossy());
 }
 
 /// Used to implement `nsIDebug2::rustLog` for testing purposes.
 #[no_mangle]
-pub extern "C" fn debug_log(target: *const c_char, message: *const c_char) {
-    unsafe {
-        // NOTE: The `info!` log macro is used here because we have the `release_max_level_info` feature set.
-        info!(target: CStr::from_ptr(target).to_str().unwrap(), "{}", CStr::from_ptr(message).to_str().unwrap());
-    }
+pub unsafe extern "C" fn debug_log(target: *const c_char, message: *const c_char) {
+    // NOTE: The `info!` log macro is used here because we have the `release_max_level_info` feature set.
+    info!(target: CStr::from_ptr(target).to_str().unwrap(), "{}", CStr::from_ptr(message).to_str().unwrap());
 }

@@ -301,14 +301,17 @@ JSString* js::ObjectToSource(JSContext* cx, HandleObject obj) {
 
   JSStringBuilder buf(cx);
   if (outermost && !buf.append('(')) {
+    buf.failure();
     return nullptr;
   }
   if (!buf.append('{')) {
+    buf.failure();
     return nullptr;
   }
 
   RootedIdVector idv(cx);
   if (!GetPropertyKeys(cx, obj, JSITER_OWNONLY | JSITER_SYMBOLS, &idv)) {
+    buf.failure();
     return nullptr;
   }
 
@@ -486,6 +489,7 @@ JSString* js::ObjectToSource(JSContext* cx, HandleObject obj) {
   for (size_t i = 0; i < idv.length(); ++i) {
     id = idv[i];
     if (!GetOwnPropertyDescriptor(cx, obj, id, &desc)) {
+      buf.failure();
       return nullptr;
     }
 
@@ -497,12 +501,14 @@ JSString* js::ObjectToSource(JSContext* cx, HandleObject obj) {
       if (desc->hasGetter() && desc->getter()) {
         val.setObject(*desc->getter());
         if (!AddProperty(id, val, PropertyKind::Getter)) {
+          buf.failure();
           return nullptr;
         }
       }
       if (desc->hasSetter() && desc->setter()) {
         val.setObject(*desc->setter());
         if (!AddProperty(id, val, PropertyKind::Setter)) {
+          buf.failure();
           return nullptr;
         }
       }
@@ -514,24 +520,34 @@ JSString* js::ObjectToSource(JSContext* cx, HandleObject obj) {
     JSFunction* fun = nullptr;
     if (IsFunctionObject(val, &fun) && fun->isMethod()) {
       if (!AddProperty(id, val, PropertyKind::Method)) {
+        buf.failure();
         return nullptr;
       }
       continue;
     }
 
     if (!AddProperty(id, val, PropertyKind::Normal)) {
+      buf.failure();
       return nullptr;
     }
   }
 
   if (!buf.append('}')) {
+    buf.failure();
     return nullptr;
   }
   if (outermost && !buf.append(')')) {
+    buf.failure();
     return nullptr;
   }
 
-  return buf.finishString();
+  auto* result = buf.finishString();
+  if (!result) {
+    buf.failure();
+    return nullptr;
+  }
+  buf.ok();
+  return result;
 }
 
 static JSString* GetBuiltinTagSlow(JSContext* cx, HandleObject obj) {
@@ -745,7 +761,8 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 17.
-  StringBuffer sb(cx);
+  AutoReportFrontendContext ec(cx);
+  StringBuffer sb(cx, &ec);
   if (!sb.append("[object ") || !sb.append(tag.toString()) || !sb.append(']')) {
     return false;
   }
@@ -936,7 +953,7 @@ static bool CanAddNewPropertyExcludingProtoFast(PlainObject* obj) {
       toPlain->canReuseShapeForNewProperties(fromPlain->shape())) {
     MOZ_ASSERT(!Watchtower::watchesPropertyAdd(toPlain),
                "watched objects require Watchtower calls");
-    Shape* newShape = fromPlain->shape();
+    SharedShape* newShape = fromPlain->sharedShape();
     uint32_t oldSpan = 0;
     uint32_t newSpan = props.length();
     if (!toPlain->setShapeAndAddNewSlots(cx, newShape, oldSpan, newSpan)) {
@@ -2273,7 +2290,7 @@ static bool FinishObjectClassInit(JSContext* cx, JS::HandleObject ctor,
                                   JS::HandleObject proto) {
   Rooted<GlobalObject*> global(cx, cx->global());
 
-  /* ES5 15.1.2.1. */
+  // ES5 15.1.2.1.
   RootedId evalId(cx, NameToId(cx->names().eval));
   JSFunction* evalobj =
       DefineFunction(cx, global, evalId, IndirectEval, 1, JSPROP_RESOLVING);
@@ -2291,21 +2308,10 @@ static bool FinishObjectClassInit(JSContext* cx, JS::HandleObject ctor,
   }
 #endif
 
-  /*
-   * The global object should have |Object.prototype| as its [[Prototype]].
-   * Eventually we'd like to have standard classes be there from the start,
-   * and thus we would know we were always setting what had previously been a
-   * null [[Prototype]], but right now some code assumes it can set the
-   * [[Prototype]] before standard classes have been initialized.  For now,
-   * only set the [[Prototype]] if it hasn't already been set.
-   */
-  if (global->staticPrototype() == nullptr) {
-    MOZ_ASSERT(!global->staticPrototypeIsImmutable());
-    if (!SetPrototype(cx, global, proto)) {
-      return false;
-    }
-  }
-  return true;
+  // The global object should have |Object.prototype| as its [[Prototype]].
+  MOZ_ASSERT(global->staticPrototype() == nullptr);
+  MOZ_ASSERT(!global->staticPrototypeIsImmutable());
+  return SetPrototype(cx, global, proto);
 }
 
 static const ClassSpec PlainObjectClassSpec = {

@@ -14,6 +14,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/PrivateBrowsingChannel.h"
 #include "nsCOMPtr.h"
@@ -79,7 +80,7 @@ enum CacheDisposition : uint8_t {
   kCacheUnknown = 5
 };
 
-enum class OpaqueResponseAllowed { No, Yes };
+enum class OpaqueResponse { Block, Alllow, SniffCompressed, Sniff };
 
 /*
  * This class is a partial implementation of nsIHttpChannel.  It contains code
@@ -238,6 +239,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetTopLevelContentWindowId(uint64_t aContentWindowId) override;
   NS_IMETHOD GetTopBrowsingContextId(uint64_t* aId) override;
   NS_IMETHOD SetTopBrowsingContextId(uint64_t aId) override;
+  NS_IMETHOD GetIsProxyUsed(bool* aIsProxyUsed) override;
 
   using nsIClassifiedChannel::IsThirdPartyTrackingResource;
 
@@ -343,6 +345,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() override;
 
   NS_IMETHOD SetWaitForHTTPSSVCRecord() override;
+
+  NS_IMETHOD SetEarlyHintPreloaderId(uint64_t aEarlyHintPreloaderId) override;
+  NS_IMETHOD GetEarlyHintPreloaderId(uint64_t* aEarlyHintPreloaderId) override;
 
   virtual void SetConnectionInfo(
       mozilla::net::nsHttpConnectionInfo* aCI) override;
@@ -541,6 +546,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   bool CachedOpaqueResponseBlockingPref() const {
     return mCachedOpaqueResponseBlockingPref;
   }
+
  protected:
   nsresult GetTopWindowURI(nsIURI* aURIBeingLoaded, nsIURI** aTopWindowURI);
 
@@ -569,7 +575,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
       nsIURI*, nsIChannel*, bool preserveMethod, uint32_t redirectFlags);
 
   // WHATWG Fetch Standard 4.4. HTTP-redirect fetch, step 10
-  virtual bool ShouldTaintReplacementChannelOrigin(nsIURI* aNewURI);
+  virtual bool ShouldTaintReplacementChannelOrigin(nsIChannel* aNewChannel,
+                                                   uint32_t aRedirectFlags);
 
   // bundle calling OMR observers and marking flag into one function
   inline void CallOnModifyRequestObservers() {
@@ -623,11 +630,14 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   nsresult ValidateMIMEType();
 
-  OpaqueResponseAllowed EnsureOpaqueResponseIsAllowed();
+  bool ShouldBlockOpaqueResponse() const;
 
-  Result<OpaqueResponseAllowed, nsresult>
-  EnsureOpaqueResponseIsAllowedAfterSniff();
+  OpaqueResponse PerformOpaqueResponseSafelistCheckBeforeSniff();
 
+  OpaqueResponse PerformOpaqueResponseSafelistCheckAfterSniff(
+      const nsACString& aContentType, bool aNoSniff);
+
+  bool NeedOpaqueResponseAllowedCheckAfterSniff() const;
   void BlockOpaqueResponseAfterSniff();
   void AllowOpaqueResponseAfterSniff();
   void SetChannelBlockedByOpaqueResponse() {
@@ -779,6 +789,21 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   ClassOfService mClassOfService;
 
+ public:
+  void SetEarlyHints(
+      nsTArray<mozilla::net::EarlyHintConnectArgs>&& aEarlyHints);
+  nsTArray<mozilla::net::EarlyHintConnectArgs>&& TakeEarlyHints();
+
+ protected:
+  // Storing Http 103 Early Hint preloads. The parent process is responsible to
+  // start the early hint preloads, but the http child needs to be able to look
+  // them up. They are sent via IPC and stored in this variable. This is set on
+  // main document channel
+  nsTArray<EarlyHintConnectArgs> mEarlyHints;
+  // EarlyHintRegistrar id to connect back to the preload. Set on preload
+  // channels started from the above list
+  uint64_t mEarlyHintPreloaderId = 0;
+
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields1, 32, (
     (uint32_t, UpgradeToSecure, 1),
@@ -837,7 +862,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
     // If true, we prefer the LOAD_FROM_CACHE flag over LOAD_BYPASS_CACHE or
     // LOAD_BYPASS_LOCAL_CACHE.
-    (uint32_t, PreferCacheLoadOverBypass, 1)
+    (uint32_t, PreferCacheLoadOverBypass, 1),
+
+    (uint32_t, IsProxyUsed, 1)
   ))
 
   // Broken up into two bitfields to avoid alignment requirements of uint64_t.
@@ -915,8 +942,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Used to ensure the same pref value is being used across the
   // lifetime of this http channel.
   const bool mCachedOpaqueResponseBlockingPref;
-  bool mBlockOpaqueResponseAfterSniff;
-  bool mCheckIsOpaqueResponseAllowedAfterSniff;
   bool mChannelBlockedByOpaqueResponse;
 
   bool mDummyChannelForImageCache;

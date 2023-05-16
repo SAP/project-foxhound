@@ -354,8 +354,8 @@ class nsPipe final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsPipe)
 
   // public constructor
-  friend nsresult NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**,
-                              bool, bool, uint32_t, uint32_t, StringTaint**);
+  friend void NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**, bool,
+                          bool, uint32_t, uint32_t, uint32_t, StringTaint**);
 
  private:
   nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount);
@@ -1844,9 +1844,9 @@ nsPipeOutputStream::AsyncWait(nsIOutputStreamCallback* aCallback,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
-                    uint32_t aSegmentSize, uint32_t aMaxSize,
-                    bool aNonBlockingInput, bool aNonBlockingOutput) {
+void NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
+                uint32_t aSegmentSize, uint32_t aMaxSize,
+                bool aNonBlockingInput, bool aNonBlockingOutput) {
   if (aSegmentSize == 0) {
     aSegmentSize = DEFAULT_SEGMENT_SIZE;
   }
@@ -1861,23 +1861,19 @@ nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
 
   nsIAsyncInputStream* in;
   nsIAsyncOutputStream* out;
-  nsresult rv = NS_NewPipe2(&in, &out, aNonBlockingInput, aNonBlockingOutput,
-                            aSegmentSize, segmentCount);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  NS_NewPipe2(&in, &out, aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
+              segmentCount);
 
   *aPipeIn = in;
   *aPipeOut = out;
-  return NS_OK;
 }
 
 // Disable thread safety analysis as this is logically a constructor, and no
 // additional threads can observe these objects yet.
-nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
-                     nsIAsyncOutputStream** aPipeOut, bool aNonBlockingInput,
-                     bool aNonBlockingOutput, uint32_t aSegmentSize,
-                     uint32_t aSegmentCount, StringTaint** aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS {
+void NS_NewPipe2(nsIAsyncInputStream** aPipeIn, nsIAsyncOutputStream** aPipeOut,
+                 bool aNonBlockingInput, bool aNonBlockingOutput,
+                 uint32_t aSegmentSize,
+                 uint32_t aSegmentCount, StringTaint** aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS {
   RefPtr<nsPipe> pipe =
       new nsPipe(aSegmentSize ? aSegmentSize : DEFAULT_SEGMENT_SIZE,
                  aSegmentCount ? aSegmentCount : DEFAULT_SEGMENT_COUNT);
@@ -1895,8 +1891,6 @@ nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
   if (aTaint) {
     // do nothing for the moment
   }
-
-  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1923,9 +1917,10 @@ nsPipeHolder::Init(bool aNonBlockingInput, bool aNonBlockingOutput,
   if (mInput || mOutput) {
     return NS_ERROR_ALREADY_INITIALIZED;
   }
-  return NS_NewPipe2(getter_AddRefs(mInput), getter_AddRefs(mOutput),
-                     aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
-                     aSegmentCount);
+  NS_NewPipe2(getter_AddRefs(mInput), getter_AddRefs(mOutput),
+              aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
+              aSegmentCount);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

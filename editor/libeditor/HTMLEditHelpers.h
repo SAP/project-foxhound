@@ -30,6 +30,7 @@
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsError.h"
+#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsRange.h"
 #include "nsString.h"
@@ -37,6 +38,14 @@
 class nsISimpleEnumerator;
 
 namespace mozilla {
+
+enum class WithTransaction { No, Yes };
+inline std::ostream& operator<<(std::ostream& aStream,
+                                WithTransaction aWithTransaction) {
+  aStream << "WithTransaction::"
+          << (aWithTransaction == WithTransaction::Yes ? "Yes" : "No");
+  return aStream;
+}
 
 /*****************************************************************************
  * MoveNodeResult is a simple class for MoveSomething() methods.
@@ -870,10 +879,72 @@ class MOZ_STACK_CLASS ReplaceRangeDataBase final {
 };
 
 /******************************************************************************
+ * EditorElementStyle represents a generic style of element
+ ******************************************************************************/
+
+class MOZ_STACK_CLASS EditorElementStyle {
+ public:
+#define DEFINE_FACTORY(aName, aAttr)            \
+  constexpr static EditorElementStyle aName() { \
+    return EditorElementStyle(*(aAttr));        \
+  }
+
+  // text-align, caption-side, a pair of margin-left and margin-right
+  DEFINE_FACTORY(Align, nsGkAtoms::align)
+  // background-color
+  DEFINE_FACTORY(BGColor, nsGkAtoms::bgcolor)
+  // background-image
+  DEFINE_FACTORY(Background, nsGkAtoms::background)
+  // border
+  DEFINE_FACTORY(Border, nsGkAtoms::border)
+  // height
+  DEFINE_FACTORY(Height, nsGkAtoms::height)
+  // color
+  DEFINE_FACTORY(Text, nsGkAtoms::text)
+  // list-style-type
+  DEFINE_FACTORY(Type, nsGkAtoms::type)
+  // vertical-align
+  DEFINE_FACTORY(VAlign, nsGkAtoms::valign)
+  // width
+  DEFINE_FACTORY(Width, nsGkAtoms::width)
+
+  static EditorElementStyle Create(const nsAtom& aAttribute) {
+    MOZ_DIAGNOSTIC_ASSERT(IsHTMLStyle(&aAttribute));
+    return EditorElementStyle(*aAttribute.AsStatic());
+  }
+
+  [[nodiscard]] static bool IsHTMLStyle(const nsAtom* aAttribute) {
+    return aAttribute == nsGkAtoms::align || aAttribute == nsGkAtoms::bgcolor ||
+           aAttribute == nsGkAtoms::background ||
+           aAttribute == nsGkAtoms::border || aAttribute == nsGkAtoms::height ||
+           aAttribute == nsGkAtoms::text || aAttribute == nsGkAtoms::type ||
+           aAttribute == nsGkAtoms::valign || aAttribute == nsGkAtoms::width;
+  }
+
+  [[nodiscard]] bool IsCSSEditable(const dom::Element& aElement) const;
+
+  nsStaticAtom* Style() const { return mStyle; }
+
+  [[nodiscard]] bool IsInlineStyle() const { return !mStyle; }
+  inline EditorInlineStyle& AsInlineStyle();
+  inline const EditorInlineStyle& AsInlineStyle() const;
+
+ protected:
+  MOZ_KNOWN_LIVE nsStaticAtom* mStyle = nullptr;
+  EditorElementStyle() = default;
+
+ private:
+  constexpr explicit EditorElementStyle(const nsStaticAtom& aStyle)
+      // Needs const_cast hack here because the this class users may want
+      // non-const nsStaticAtom pointer due to bug 1794954
+      : mStyle(const_cast<nsStaticAtom*>(&aStyle)) {}
+};
+
+/******************************************************************************
  * EditorInlineStyle represents an inline style.
  ******************************************************************************/
 
-struct MOZ_STACK_CLASS EditorInlineStyle {
+struct MOZ_STACK_CLASS EditorInlineStyle : public EditorElementStyle {
   // nullptr if you want to remove all inline styles.
   // Otherwise, one of the presentation tag names which we support in style
   // editor, and there special cases: nsGkAtoms::href means <a href="...">,
@@ -889,7 +960,53 @@ struct MOZ_STACK_CLASS EditorInlineStyle {
   /**
    * Returns true if the style means that all inline styles should be removed.
    */
-  bool IsStyleToClearAllInlineStyles() const { return !mHTMLProperty; }
+  [[nodiscard]] bool IsStyleToClearAllInlineStyles() const {
+    return !mHTMLProperty;
+  }
+
+  /**
+   * Returns true if the style is invertible with CSS.
+   */
+  [[nodiscard]] bool IsInvertibleWithCSS() const {
+    return mHTMLProperty == nsGkAtoms::b;
+  }
+
+  /**
+   * Returns true if the style can be specified with text-decoration.
+   */
+  enum class IgnoreSElement { No, Yes };
+  [[nodiscard]] bool IsStyleOfTextDecoration(
+      IgnoreSElement aIgnoreSElement) const {
+    return mHTMLProperty == nsGkAtoms::u ||
+           mHTMLProperty == nsGkAtoms::strike ||
+           (aIgnoreSElement == IgnoreSElement::No &&
+            mHTMLProperty == nsGkAtoms::s);
+  }
+
+  /**
+   * Returns true if the style is conflict with vertical-align even though
+   * they are not mapped to vertical-align in the CSS mode.
+   */
+  [[nodiscard]] bool IsStyleConflictingWithVerticalAlign() const {
+    return mHTMLProperty == nsGkAtoms::sup || mHTMLProperty == nsGkAtoms::sub;
+  }
+
+  /**
+   * If the style has a similar element  which should be removed when applying
+   * the style, this retuns an element name.  Otherwise, returns nullptr.
+   */
+  [[nodiscard]] nsStaticAtom* GetSimilarElementNameAtom() const {
+    if (mHTMLProperty == nsGkAtoms::b) {
+      return nsGkAtoms::strong;
+    }
+    if (mHTMLProperty == nsGkAtoms::i) {
+      return nsGkAtoms::em;
+    }
+    if (mHTMLProperty == nsGkAtoms::strike) {
+      return nsGkAtoms::s;
+    }
+    return nullptr;
+  }
 
   explicit EditorInlineStyle(nsStaticAtom& aHTMLProperty,
                              nsAtom* aAttribute = nullptr)
@@ -902,6 +1019,8 @@ struct MOZ_STACK_CLASS EditorInlineStyle {
    */
   static EditorInlineStyle RemoveAllStyles() { return EditorInlineStyle(); }
 
+  PendingStyleCache ToPendingStyleCache(nsAString&& aValue) const;
+
   bool operator==(const EditorInlineStyle& aOther) const {
     return mHTMLProperty == aOther.mHTMLProperty &&
            mAttribute == aOther.mAttribute;
@@ -909,7 +1028,19 @@ struct MOZ_STACK_CLASS EditorInlineStyle {
 
  private:
   EditorInlineStyle() = default;
+
+  using EditorElementStyle::AsInlineStyle;
+  using EditorElementStyle::IsInlineStyle;
+  using EditorElementStyle::Style;
 };
+
+inline EditorInlineStyle& EditorElementStyle::AsInlineStyle() {
+  return reinterpret_cast<EditorInlineStyle&>(*this);
+}
+
+inline const EditorInlineStyle& EditorElementStyle::AsInlineStyle() const {
+  return reinterpret_cast<const EditorInlineStyle&>(*this);
+}
 
 /******************************************************************************
  * EditorInlineStyleAndValue represents an inline style and stores its value.
@@ -944,6 +1075,12 @@ struct MOZ_STACK_CLASS EditorInlineStyleAndValue : public EditorInlineStyle {
       : EditorInlineStyle(aHTMLProperty, std::move(aAttribute)),
         mAttributeValue(aValue) {}
 
+  [[nodiscard]] static EditorInlineStyleAndValue ToInvert(
+      const EditorInlineStyle& aStyle) {
+    MOZ_ASSERT(aStyle.IsInvertibleWithCSS());
+    return EditorInlineStyleAndValue(aStyle, u"-moz-editor-invert-value"_ns);
+  }
+
   // mHTMLProperty is never nullptr since all constructors guarantee it.
   // Therefore, hide it and expose its reference instead.
   MOZ_KNOWN_LIVE nsStaticAtom& HTMLPropertyRef() const {
@@ -951,8 +1088,16 @@ struct MOZ_STACK_CLASS EditorInlineStyleAndValue : public EditorInlineStyle {
     return *mHTMLProperty;
   }
 
+  [[nodiscard]] bool IsStyleToInvert() const {
+    return mAttributeValue.EqualsLiteral(u"-moz-editor-invert-value");
+  }
+
  private:
   using EditorInlineStyle::mHTMLProperty;
+
+  EditorInlineStyleAndValue(const EditorInlineStyle& aStyle,
+                            const nsAString& aValue)
+      : EditorInlineStyle(aStyle), mAttributeValue(aValue) {}
 };
 
 }  // namespace mozilla

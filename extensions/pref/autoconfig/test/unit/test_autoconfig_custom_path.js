@@ -1,17 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 function run_test() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
   let testDirName = do_get_cwd().clone();
-  env.set("MOZ_SYSTEM_CONFIG_DIR", testDirName.path);
+  Services.env.set("MOZ_SYSTEM_CONFIG_DIR", testDirName.path);
 
   updateAppInfo();
 

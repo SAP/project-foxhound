@@ -21,20 +21,13 @@ for example - use `all_tests.py` instead.
 import logging
 from importlib import import_module
 
-from mozbuild.schedules import INCLUSIVE_COMPONENTS
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-    Exclusive,
-)
-
 from gecko_taskgraph.optimize.schema import OptimizationSchema
 from gecko_taskgraph.transforms.test.other import get_mobile_project
 from gecko_taskgraph.util.chunking import manifest_loaders
-
+from mozbuild.schedules import INCLUSIVE_COMPONENTS
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from voluptuous import Any, Exclusive, Optional, Required
 
 logger = logging.getLogger(__name__)
 transforms = TransformSequence()
@@ -198,7 +191,7 @@ test_description_schema = Schema(
             # of chunks is 1
             Required("chunked"): optionally_keyed_by("test-platform", bool),
             Required("requires-signed-builds"): optionally_keyed_by(
-                "test-platform", bool
+                "test-platform", "variant", bool
             ),
         },
         # The set of test manifests to run.
@@ -219,7 +212,7 @@ test_description_schema = Schema(
         Required("build-label"): str,
         # the label of the signing task generating the materials to test.
         # Signed builds are used in xpcshell tests on Windows, for instance.
-        Optional("build-signing-label"): str,
+        Optional("build-signing-label"): optionally_keyed_by("variant", str),
         # the build's attributes
         Required("build-attributes"): {str: object},
         # the platform on which the tests will run
@@ -259,6 +252,7 @@ test_description_schema = Schema(
         Optional("target"): optionally_keyed_by(
             "app",
             "test-platform",
+            "variant",
             Any(
                 str,
                 None,
@@ -289,7 +283,6 @@ def handle_keyed_by_mozharness(config, tasks):
         "mozharness.chunked",
         "mozharness.config",
         "mozharness.extra-options",
-        "mozharness.requires-signed-builds",
         "mozharness.script",
     ]
     for task in tasks:

@@ -11,10 +11,9 @@ const { UnsubmittedCrashHandler } = ChromeUtils.import(
 const { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { makeFakeAppDir } = ChromeUtils.import(
-  "resource://testing-common/AppData.jsm"
+const { makeFakeAppDir } = ChromeUtils.importESModule(
+  "resource://testing-common/AppData.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const DAY = 24 * 60 * 60 * 1000; // milliseconds
 const SERVER_URL =
@@ -82,28 +81,26 @@ function createPendingCrashReports(howMany, accessDate) {
    *        extension. This is usually a UUID.
    * @param extension (string)
    *        The file extension for the created file.
-   * @param accessDate (Date)
-   *        The date to set lastAccessed to.
+   * @param accessDate (Date, optional)
+   *        The date to set lastAccessed to, if anything.
    * @param contents (string, optional)
    *        Set this to whatever the file needs to contain, if anything.
    * @returns Promise
    */
-  let createFile = (fileName, extension, lastAccessedDate, contents) => {
+  let createFile = async (fileName, extension, lastAccessedDate, contents) => {
     let file = dir.clone();
     file.append(fileName + "." + extension);
     file.create(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
-    let promises = [OS.File.setDates(file.path, lastAccessedDate)];
 
     if (contents) {
-      let encoder = new TextEncoder();
-      let array = encoder.encode(contents);
-      promises.push(
-        OS.File.writeAtomic(file.path, array, {
-          tmpPath: file.path + ".tmp",
-        })
-      );
+      await IOUtils.writeUTF8(file.path, contents, {
+        tmpPath: file.path + ".tmp",
+      });
     }
-    return Promise.all(promises);
+
+    if (lastAccessedDate) {
+      await IOUtils.setAccessTime(file.path, lastAccessedDate.valueOf());
+    }
   };
 
   let uuidGenerator = Services.uuid;
@@ -197,7 +194,7 @@ add_setup(async function() {
   // Pending crash reports are stored in the UAppData folder,
   // which exists outside of the profile folder. In order to
   // not overwrite / clear pending crash reports for the poor
-  // soul who runs this test, we use AppData.jsm to point to
+  // soul who runs this test, we use AppData.sys.mjs to point to
   // a special made-up directory inside the profile
   // directory.
   await makeFakeAppDir();
@@ -215,11 +212,8 @@ add_setup(async function() {
     notification.close();
   }
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let oldServerURL = env.get("MOZ_CRASHREPORTER_URL");
-  env.set("MOZ_CRASHREPORTER_URL", SERVER_URL);
+  let oldServerURL = Services.env.get("MOZ_CRASHREPORTER_URL");
+  Services.env.set("MOZ_CRASHREPORTER_URL", SERVER_URL);
 
   // nsBrowserGlue starts up UnsubmittedCrashHandler automatically
   // on a timer, so at this point, it can be in one of several states:
@@ -258,7 +252,7 @@ add_setup(async function() {
 
   registerCleanupFunction(function() {
     clearPendingCrashReports();
-    env.set("MOZ_CRASHREPORTER_URL", oldServerURL);
+    Services.env.set("MOZ_CRASHREPORTER_URL", oldServerURL);
   });
 });
 

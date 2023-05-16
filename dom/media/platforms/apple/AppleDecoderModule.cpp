@@ -59,7 +59,8 @@ already_AddRefed<MediaDataDecoder> AppleDecoderModule::CreateVideoDecoder(
   RefPtr<MediaDataDecoder> decoder;
   if (IsVideoSupported(aParams.VideoConfig(), aParams.mOptions)) {
     decoder = new AppleVTDecoder(aParams.VideoConfig(), aParams.mImageContainer,
-                                 aParams.mOptions, aParams.mKnowsCompositor);
+                                 aParams.mOptions, aParams.mKnowsCompositor,
+                                 aParams.mTrackingId);
   }
   return decoder.forget();
 }
@@ -187,7 +188,7 @@ bool AppleDecoderModule::CanCreateHWDecoder(media::MediaCodec aCodec) {
   // Attempt to create decoder
   if (checkSupport) {
     RefPtr<AppleVTDecoder> decoder =
-        new AppleVTDecoder(info, nullptr, {}, nullptr);
+        new AppleVTDecoder(info, nullptr, {}, nullptr, Nothing());
     MediaResult rv = decoder->InitializeSession();
     // Removed decoder->IsHardwareAccelerated check to revert logic to before
     // H264 support was implemented -- see bug 1806391 and

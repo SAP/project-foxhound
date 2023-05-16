@@ -716,6 +716,24 @@ class MediaDecoderStateMachine::DecodingState
     }
   }
 
+  bool ShouldRequestNextKeyFrame() const {
+    if (!mVideoFirstLateTime) {
+      return false;
+    }
+    const double elapsedTimeMs =
+        (TimeStamp::Now() - *mVideoFirstLateTime).ToMilliseconds();
+    const bool rv = elapsedTimeMs >=
+                    StaticPrefs::media_decoder_skip_when_video_too_slow_ms();
+    if (rv) {
+      PROFILER_MARKER_UNTYPED("Skipping to next keyframe", MEDIA_PLAYBACK);
+      SLOG(
+          "video has been late behind media time for %f ms, should skip to "
+          "next key frame",
+          elapsedTimeMs);
+    }
+    return rv;
+  }
+
  private:
   void DispatchDecodeTasksIfNeeded();
   void MaybeStartBuffering();
@@ -785,24 +803,6 @@ class MediaDecoderStateMachine::DecodingState
           SetState<DormantState>();
         },
         [this]() { mDormantTimer.CompleteRequest(); });
-  }
-
-  bool ShouldRequestNextKeyFrame() const {
-    if (!mVideoFirstLateTime) {
-      return false;
-    }
-    const double elapsedTimeMs =
-        (TimeStamp::Now() - *mVideoFirstLateTime).ToMilliseconds();
-    const bool rv = elapsedTimeMs >=
-                    StaticPrefs::media_decoder_skip_when_video_too_slow_ms();
-    if (rv) {
-      PROFILER_MARKER_UNTYPED("Skipping to next keyframe", MEDIA_PLAYBACK);
-      SLOG(
-          "video has been late behind media time for %f ms, should skip to "
-          "next key frame",
-          elapsedTimeMs);
-    }
-    return rv;
   }
 
   // Time at which we started decoding.
@@ -1199,17 +1199,57 @@ class MediaDecoderStateMachine::LoopingDecodingState
 
   void HandleError(const MediaResult& aError, bool aIsAudio);
 
+  bool ShouldRequestData(MediaData::Type aType) const {
+    MOZ_DIAGNOSTIC_ASSERT(aType == MediaData::Type::AUDIO_DATA ||
+                          aType == MediaData::Type::VIDEO_DATA);
+    if (aType == MediaData::Type::AUDIO_DATA &&
+        (mAudioSeekRequest.Exists() || mAudioDataRequest.Exists() ||
+         IsDataWaitingForTimestampAdjustment(MediaData::Type::AUDIO_DATA))) {
+      return false;
+    }
+    if (aType == MediaData::Type::VIDEO_DATA &&
+        (mVideoSeekRequest.Exists() || mVideoDataRequest.Exists() ||
+         IsDataWaitingForTimestampAdjustment(MediaData::Type::VIDEO_DATA))) {
+      return false;
+    }
+    return true;
+  }
+
+  void HandleAudioCanceled() override {
+    if (ShouldRequestData(MediaData::Type::AUDIO_DATA)) {
+      mMaster->RequestAudioData();
+    }
+  }
+
+  void HandleAudioWaited(MediaData::Type aType) override {
+    if (ShouldRequestData(MediaData::Type::AUDIO_DATA)) {
+      mMaster->RequestAudioData();
+    }
+  }
+
+  void HandleVideoCanceled() override {
+    if (ShouldRequestData(MediaData::Type::VIDEO_DATA)) {
+      mMaster->RequestVideoData(mMaster->GetMediaTime(),
+                                ShouldRequestNextKeyFrame());
+    };
+  }
+
+  void HandleVideoWaited(MediaData::Type aType) override {
+    if (ShouldRequestData(MediaData::Type::VIDEO_DATA)) {
+      mMaster->RequestVideoData(mMaster->GetMediaTime(),
+                                ShouldRequestNextKeyFrame());
+    };
+  }
+
   void EnsureAudioDecodeTaskQueued() override {
-    if (mAudioSeekRequest.Exists() || mAudioDataRequest.Exists() ||
-        IsDataWaitingForTimestampAdjustment(MediaData::Type::AUDIO_DATA)) {
+    if (!ShouldRequestData(MediaData::Type::AUDIO_DATA)) {
       return;
     }
     DecodingState::EnsureAudioDecodeTaskQueued();
   }
 
   void EnsureVideoDecodeTaskQueued() override {
-    if (mVideoSeekRequest.Exists() || mVideoDataRequest.Exists() ||
-        IsDataWaitingForTimestampAdjustment(MediaData::Type::VIDEO_DATA)) {
+    if (!ShouldRequestData(MediaData::Type::VIDEO_DATA)) {
       return;
     }
     DecodingState::EnsureVideoDecodeTaskQueued();
@@ -1408,7 +1448,8 @@ class MediaDecoderStateMachine::LoopingDecodingState
     // should mark audio queue as ended because we have got all data we need.
     return mAudioDataRequest.Exists() || mAudioSeekRequest.Exists() ||
            ShouldDiscardLoopedData(MediaData::Type::AUDIO_DATA) ||
-           IsDataWaitingForTimestampAdjustment(MediaData::Type::AUDIO_DATA);
+           IsDataWaitingForTimestampAdjustment(MediaData::Type::AUDIO_DATA) ||
+           mIsReachingAudioEOS;
   }
 
   bool HasDecodedLastVideoFrame() const {
@@ -1416,7 +1457,8 @@ class MediaDecoderStateMachine::LoopingDecodingState
     // should mark video queue as ended because we have got all data we need.
     return mVideoDataRequest.Exists() || mVideoSeekRequest.Exists() ||
            ShouldDiscardLoopedData(MediaData::Type::VIDEO_DATA) ||
-           IsDataWaitingForTimestampAdjustment(MediaData::Type::VIDEO_DATA);
+           IsDataWaitingForTimestampAdjustment(MediaData::Type::VIDEO_DATA) ||
+           mIsReachingVideoEOS;
   }
 
   bool ShouldStopPrerolling() const override {
@@ -3211,14 +3253,8 @@ RefPtr<ShutdownPromise> MediaDecoderStateMachine::ShutdownState::Enter() {
   master->mAudibleListener.DisconnectIfExists();
 
   // Disconnect canonicals and mirrors before shutting down our task queue.
-  master->mBuffered.DisconnectIfConnected();
-  master->mPlayState.DisconnectIfConnected();
-  master->mVolume.DisconnectIfConnected();
-  master->mPreservesPitch.DisconnectIfConnected();
-  master->mLooping.DisconnectIfConnected();
   master->mStreamName.DisconnectIfConnected();
   master->mSinkDevice.DisconnectIfConnected();
-  master->mSecondaryVideoContainer.DisconnectIfConnected();
   master->mOutputCaptureState.DisconnectIfConnected();
   master->mOutputDummyTrack.DisconnectIfConnected();
   master->mOutputTracks.DisconnectIfConnected();
@@ -3257,7 +3293,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
       mSeamlessLoopingAllowed(false),
       INIT_MIRROR(mStreamName, nsAutoString()),
       INIT_MIRROR(mSinkDevice, nullptr),
-      INIT_MIRROR(mSecondaryVideoContainer, nullptr),
       INIT_MIRROR(mOutputCaptureState, MediaDecoder::OutputCaptureState::None),
       INIT_MIRROR(mOutputDummyTrack, nullptr),
       INIT_MIRROR(mOutputTracks, nsTArray<RefPtr<ProcessedMediaTrack>>()),
@@ -3291,8 +3326,6 @@ void MediaDecoderStateMachine::InitializationTask(MediaDecoder* aDecoder) {
 
   // Connect mirrors.
   mSinkDevice.Connect(aDecoder->CanonicalSinkDevice());
-  mSecondaryVideoContainer.Connect(
-      aDecoder->CanonicalSecondaryVideoContainer());
   mOutputCaptureState.Connect(aDecoder->CanonicalOutputCaptureState());
   mOutputDummyTrack.Connect(aDecoder->CanonicalOutputDummyTrack());
   mOutputTracks.Connect(aDecoder->CanonicalOutputTracks());
@@ -3301,8 +3334,6 @@ void MediaDecoderStateMachine::InitializationTask(MediaDecoder* aDecoder) {
   // Initialize watchers.
   mWatchManager.Watch(mStreamName,
                       &MediaDecoderStateMachine::StreamNameChanged);
-  mWatchManager.Watch(mSecondaryVideoContainer,
-                      &MediaDecoderStateMachine::UpdateSecondaryVideoContainer);
   mWatchManager.Watch(mOutputCaptureState,
                       &MediaDecoderStateMachine::UpdateOutputCaptured);
   mWatchManager.Watch(mOutputDummyTrack,
@@ -3755,15 +3786,14 @@ void MediaDecoderStateMachine::RequestAudioData() {
   LOGV("Queueing audio task - queued=%zu, decoder-queued=%zu",
        AudioQueue().GetSize(), mReader->SizeOfAudioQueueInFrames());
 
-  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::RequestData);
-  perfRecorder.Start();
+  PerformanceRecorder<PlaybackStage> perfRecorder(MediaStage::RequestData);
   RefPtr<MediaDecoderStateMachine> self = this;
   mReader->RequestAudioData()
       ->Then(
           OwnerThread(), __func__,
           [this, self, perfRecorder(std::move(perfRecorder))](
               const RefPtr<AudioData>& aAudio) mutable {
-            perfRecorder.End();
+            perfRecorder.Record();
             AUTO_PROFILER_LABEL(
                 "MediaDecoderStateMachine::RequestAudioData:Resolved",
                 MEDIA_PLAYBACK);
@@ -3816,9 +3846,8 @@ void MediaDecoderStateMachine::RequestVideoData(
       VideoQueue().GetSize(), mReader->SizeOfVideoQueueInFrames(),
       aCurrentTime.ToMicroseconds(), mBypassingSkipToNextKeyFrameCheck);
 
-  PerformanceRecorder perfRecorder(PerformanceRecorder::Stage::RequestData,
-                                   Info().mVideo.mImage.height);
-  perfRecorder.Start();
+  PerformanceRecorder<PlaybackStage> perfRecorder(MediaStage::RequestData,
+                                                  Info().mVideo.mImage.height);
   RefPtr<MediaDecoderStateMachine> self = this;
   mReader
       ->RequestVideoData(
@@ -3828,7 +3857,7 @@ void MediaDecoderStateMachine::RequestVideoData(
           OwnerThread(), __func__,
           [this, self, perfRecorder(std::move(perfRecorder))](
               const RefPtr<VideoData>& aVideo) mutable {
-            perfRecorder.End();
+            perfRecorder.Record();
             AUTO_PROFILER_LABEL(
                 "MediaDecoderStateMachine::RequestVideoData:Resolved",
                 MEDIA_PLAYBACK);

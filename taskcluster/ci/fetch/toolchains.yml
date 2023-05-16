@@ -282,6 +282,20 @@ hfsplus-tools:
         sha256: b01b203a97f9a3bf36a027c13ddfc59292730552e62722d690d33bd5c24f5497
         size: 411205
 
+xar:
+    description: xar source code
+    fetch:
+        type: git
+        repo: https://github.com/gabrielesvelto/xar
+        revision: 199ff76a7463f6b6a2548b4db29cd3dd5026df69
+
+bomutils:
+    description: bomutils (mkbom) source code
+    fetch:
+        type: git
+        repo: https://github.com/hogliux/bomutils
+        revision: 3f7dc2dbbc36ca1c957ec629970026f45594a52c
+
 rust-size:
     description: rust-size source code
     fetch:
@@ -308,8 +322,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.3.0 release
-        revision: f6e36e68c6cb1e17127273956df9ebf2127dff1a
+        # 0.3.1 release
+        revision: 41e408d3e22d3c5a03cc622c93e9348ef80df140
 
 fxc2:
     description: fxc2 source code
@@ -354,11 +368,11 @@ clang-14:
         revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
 clang-15:
-    description: clang 15.0.4 source code
+    description: clang 15.0.5 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 5c68a1cb123161b54b72ce90e7975d95a8eaf2a4
+        revision: 154e88af7ec97d9b9f389e55d45bf07108a9a097
 
 clang-trunk:
     description: clang main branch source code
@@ -413,14 +427,14 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: c7df854b953b6ddc875afaa415ef1fb2f7bf01f6
+        revision: 9680eedbdbc830dbb34fef7823109b4ba11711cf
 
 rust-minidump:
-    description: rust-minidump 0.14.0 source code (for minidump-stackwalk)
+    description: rust-minidump 0.15.2 source code (for minidump-stackwalk)
     fetch:
         type: git
         repo: https://github.com/rust-minidump/rust-minidump/
-        revision: a6a486b8992008c6865ee70fc68421c38e45ef42
+        revision: 0d782e53650f4059ede143e10686c6ce9947dbc4
 
 fix-stacks:
     description: fix-stacks source code
@@ -605,11 +619,11 @@ cargo-vet:
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 12e3593437263bd17b5c3d2626ea8346799bf4b1
+        revision: 10edb3b9ab6db1097aacea83118d7fa66391631c
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: 91c63d5407f76073f87191b94c79b5867622c876
+        revision: f61d24345d27760a5c2dc8f9370368bdaa9a4e82

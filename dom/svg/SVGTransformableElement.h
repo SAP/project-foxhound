@@ -28,18 +28,10 @@ class SVGTransformableElement : public SVGElement {
       : SVGElement(std::move(aNodeInfo)) {}
   virtual ~SVGTransformableElement() = default;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedTransformList> Transform();
-  SVGElement* GetNearestViewportElement();
-  SVGElement* GetFarthestViewportElement();
-  MOZ_CAN_RUN_SCRIPT
-  already_AddRefed<SVGRect> GetBBox(const SVGBoundingBoxOptions&);
-  already_AddRefed<SVGMatrix> GetCTM();
-  already_AddRefed<SVGMatrix> GetScreenCTM();
-  already_AddRefed<SVGMatrix> GetTransformToElement(
-      SVGGraphicsElement& aElement, ErrorResult& rv);
 
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
@@ -48,21 +40,21 @@ class SVGTransformableElement : public SVGElement {
                                       int32_t aModType) const override;
 
   // SVGElement overrides
-  virtual bool IsEventAttributeNameInternal(nsAtom* aName) override;
+  bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
-  virtual gfxMatrix PrependLocalTransformsTo(
+  gfxMatrix PrependLocalTransformsTo(
       const gfxMatrix& aMatrix,
       SVGTransformTypes aWhich = eAllTransforms) const override;
-  virtual const gfx::Matrix* GetAnimateMotionTransform() const override;
-  virtual void SetAnimateMotionTransform(const gfx::Matrix* aMatrix) override;
+  const gfx::Matrix* GetAnimateMotionTransform() const override;
+  void SetAnimateMotionTransform(const gfx::Matrix* aMatrix) override;
 
-  virtual SVGAnimatedTransformList* GetAnimatedTransformList(
+  SVGAnimatedTransformList* GetAnimatedTransformList(
       uint32_t aFlags = 0) override;
-  virtual nsStaticAtom* GetTransformListAttrName() const override {
+  nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::transform;
   }
 
-  virtual bool IsTransformable() override { return true; }
+  bool IsTransformable() override { return true; }
 
  protected:
   /**

@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 
-
 # This script extracts commits that touch third party webrtc code so they can
 # be imported into Git. It filters out commits that are not part of upstream
 # code and rewrites the paths to match upstream. Finally, the commits are
@@ -26,7 +25,6 @@ def build_commit_list(revset, env):
         capture_output=True,
         text=True,
         env=env,
-        cwd="../../../../",
     )
     return [line.strip() for line in res.stdout.strip().split("\n")]
 
@@ -114,7 +112,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "revsets", metavar="revset", type=str, nargs="+", help="A revset to process"
     )
+    parser.add_argument(
+        "--target", choices=("libwebrtc", "build", "third_party"), default="libwebrtc"
+    )
     args = parser.parse_args()
+
+    if args.target != "libwebrtc":
+        LIBWEBRTC_DIR = os.path.join(LIBWEBRTC_DIR, args.target)
 
     # must run 'hg' with HGPLAIN=1 to ensure aliases don't interfere with
     # command output.

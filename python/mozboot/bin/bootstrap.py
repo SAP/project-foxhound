@@ -11,8 +11,6 @@
 # Python environment (except that it's run with a sufficiently recent version of
 # Python 3), so we are restricted to stdlib modules.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import sys
 
 major, minor = sys.version_info[:2]
@@ -23,14 +21,13 @@ if (major < 3) or (major == 3 and minor < 6):
     )
     sys.exit(1)
 
+import ctypes
 import os
 import shutil
 import subprocess
 import tempfile
-import ctypes
-
-from pathlib import Path
 from optparse import OptionParser
+from pathlib import Path
 
 CLONE_MERCURIAL_PULL_FAIL = """
 Failed to pull from hg.mozilla.org.
@@ -55,7 +52,7 @@ def which(name):
     search_dirs = os.environ["PATH"].split(os.pathsep)
     potential_names = [name]
     if WINDOWS:
-        potential_names.append(name + ".exe")
+        potential_names.insert(0, name + ".exe")
 
     for path in search_dirs:
         for executable_name in potential_names:
@@ -105,7 +102,7 @@ def input_clone_dest(vcs, no_interactive):
             return None
 
 
-def hg_clone_firefox(hg: Path, dest: Path):
+def hg_clone_firefox(hg: Path, dest: Path, head_repo, head_rev):
     # We create an empty repo then modify the config before adding data.
     # This is necessary to ensure storage settings are optimally
     # configured.
@@ -139,16 +136,28 @@ def hg_clone_firefox(hg: Path, dest: Path):
         fh.write("# This is necessary to keep performance in check\n")
         fh.write("maxchainlen = 10000\n")
 
+    # Pulling a specific revision into an empty repository induces a lot of
+    # load on the Mercurial server, so we always pull from mozilla-unified (which,
+    # when done from an empty repository, is equivalent to a clone), and then pull
+    # the specific revision we want (if we want a specific one, otherwise we just
+    # use the "central" bookmark), at which point it will be an incremental pull,
+    # that the server can process more easily.
+    # This is the same thing that robustcheckout does on automation.
     res = subprocess.call(
         [str(hg), "pull", "https://hg.mozilla.org/mozilla-unified"], cwd=str(dest)
     )
+    if not res and head_repo:
+        res = subprocess.call(
+            [str(hg), "pull", head_repo, "-r", head_rev], cwd=str(dest)
+        )
     print("")
     if res:
         print(CLONE_MERCURIAL_PULL_FAIL % dest)
         return None
 
-    print('updating to "central" - the development head of Gecko and Firefox')
-    res = subprocess.call([str(hg), "update", "-r", "central"], cwd=str(dest))
+    head_rev = head_rev or "central"
+    print(f'updating to "{head_rev}" - the development head of Gecko and Firefox')
+    res = subprocess.call([str(hg), "update", "-r", head_rev], cwd=str(dest))
     if res:
         print(
             f"error updating; you will need to `cd {dest} && hg update -r central` "
@@ -157,7 +166,7 @@ def hg_clone_firefox(hg: Path, dest: Path):
     return dest
 
 
-def git_clone_firefox(git: Path, dest: Path, watchman: Path):
+def git_clone_firefox(git: Path, dest: Path, watchman: Path, head_repo, head_rev):
     tempdir = None
     cinnabar = None
     env = dict(os.environ)
@@ -196,8 +205,7 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
             [
                 str(git),
                 "clone",
-                "-b",
-                "bookmarks/central",
+                "--no-checkout",
                 "hg::https://hg.mozilla.org/mozilla-unified",
                 str(dest),
             ],
@@ -208,6 +216,19 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
         )
         subprocess.check_call(
             [str(git), "config", "pull.ff", "only"], cwd=str(dest), env=env
+        )
+
+        if head_repo:
+            subprocess.check_call(
+                [str(git), "cinnabar", "fetch", f"hg::{head_repo}", head_rev],
+                cwd=str(dest),
+                env=env,
+            )
+
+        subprocess.check_call(
+            [str(git), "checkout", "FETCH_HEAD" if head_rev else "bookmarks/central"],
+            cwd=str(dest),
+            env=env,
         )
 
         watchman_sample = dest / ".git/hooks/fsmonitor-watchman.sample"
@@ -233,12 +254,6 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
             subprocess.check_call(config_args, cwd=str(dest), env=env)
         return dest
     finally:
-        if not cinnabar:
-            print(
-                "Failed to install git-cinnabar. Try performing a manual "
-                "installation: https://github.com/glandium/git-cinnabar/wiki/"
-                "Mozilla:-A-git-workflow-for-Gecko-development"
-            )
         if tempdir:
             shutil.rmtree(str(tempdir))
 
@@ -326,11 +341,15 @@ def clone(options):
     add_microsoft_defender_antivirus_exclusions(dest, no_system_changes)
 
     print(f"Cloning Firefox {VCS_HUMAN_READABLE[vcs]} repository to {dest}")
+
+    head_repo = os.environ.get("GECKO_HEAD_REPOSITORY")
+    head_rev = os.environ.get("GECKO_HEAD_REV")
+
     if vcs == "hg":
-        return hg_clone_firefox(binary, dest)
+        return hg_clone_firefox(binary, dest, head_repo, head_rev)
     else:
         watchman = which("watchman")
-        return git_clone_firefox(binary, dest, watchman)
+        return git_clone_firefox(binary, dest, watchman, head_repo, head_rev)
 
 
 def bootstrap(srcdir: Path, application_choice, no_interactive, no_system_changes):

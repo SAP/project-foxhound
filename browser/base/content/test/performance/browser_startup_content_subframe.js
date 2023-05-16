@@ -69,15 +69,16 @@ const intermittently_loaded_scripts = {
 
     // Cookie banner handling.
     "resource://gre/actors/CookieBannerChild.jsm",
+    "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 
     // Test related
     "chrome://remote/content/marionette/actors/MarionetteEventsChild.sys.mjs",
     "chrome://remote/content/shared/Log.sys.mjs",
-    "resource://testing-common/BrowserTestUtilsChild.jsm",
-    "resource://testing-common/ContentEventListenerChild.jsm",
-    "resource://specialpowers/SpecialPowersChild.jsm",
-    "resource://specialpowers/AppTestDelegateChild.jsm",
-    "resource://specialpowers/WrapPrivileged.jsm",
+    "resource://testing-common/BrowserTestUtilsChild.sys.mjs",
+    "resource://testing-common/ContentEventListenerChild.sys.mjs",
+    "resource://specialpowers/SpecialPowersChild.sys.mjs",
+    "resource://specialpowers/AppTestDelegateChild.sys.mjs",
+    "resource://specialpowers/WrapPrivileged.sys.mjs",
   ]),
   processScripts: new Set([]),
 };

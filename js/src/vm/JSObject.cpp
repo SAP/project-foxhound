@@ -757,7 +757,7 @@ static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
     kind = ForegroundToBackgroundAllocKind(kind);
   }
 
-  Rooted<Shape*> shape(
+  Rooted<SharedShape*> shape(
       cx, SharedShape::getInitialShape(cx, clasp, cx->realm(), proto, nfixed,
                                        ObjectFlags()));
   if (!shape) {
@@ -945,21 +945,21 @@ static bool InitializePropertiesFromCompatibleNativeObject(
   }
 
   // If there are no properties to copy, we're done.
-  if (!src->shape()->sharedPropMap()) {
+  if (!src->sharedShape()->propMap()) {
     return true;
   }
 
-  Rooted<Shape*> shape(cx);
+  Rooted<SharedShape*> shape(cx);
   if (src->staticPrototype() == dst->staticPrototype()) {
-    shape = src->shape();
+    shape = src->sharedShape();
   } else {
     // We need to generate a new shape for dst that has dst's proto but all
     // the property information from src.  Note that we asserted above that
     // dst's object flags are empty.
-    Shape* srcShape = src->shape();
+    SharedShape* srcShape = src->sharedShape();
     ObjectFlags objFlags;
     objFlags = CopyPropMapObjectFlags(objFlags, srcShape->objectFlags());
-    Rooted<SharedPropMap*> map(cx, srcShape->sharedPropMap());
+    Rooted<SharedPropMap*> map(cx, srcShape->propMap());
     uint32_t mapLength = srcShape->propMapLength();
     shape = SharedShape::getPropMapShape(cx, dst->shape()->base(),
                                          dst->numFixedSlots(), map, mapLength,
@@ -969,7 +969,7 @@ static bool InitializePropertiesFromCompatibleNativeObject(
     }
   }
 
-  uint32_t oldSpan = dst->shape()->slotSpan();
+  uint32_t oldSpan = dst->sharedShape()->slotSpan();
   uint32_t newSpan = shape->slotSpan();
   if (!dst->setShapeAndAddNewSlots(cx, shape, oldSpan, newSpan)) {
     return false;
@@ -1445,10 +1445,7 @@ NativeObject* js::InitClass(JSContext* cx, HandleObject obj,
    */
   RootedObject protoProto(cx, protoProto_);
   if (!protoProto) {
-    protoProto = GlobalObject::getOrCreateObjectPrototype(cx, cx->global());
-    if (!protoProto) {
-      return nullptr;
-    }
+    protoProto = &cx->global()->getObjectPrototype();
   }
 
   return DefineConstructorAndPrototype(cx, obj, atom, protoProto, clasp,
@@ -1480,13 +1477,7 @@ bool js::GetObjectFromIncumbentGlobal(JSContext* cx, MutableHandleObject obj) {
     return true;
   }
 
-  {
-    AutoRealm ar(cx, globalObj);
-    obj.set(GlobalObject::getOrCreateObjectPrototype(cx, globalObj));
-    if (!obj) {
-      return false;
-    }
-  }
+  obj.set(&globalObj->getObjectPrototype());
 
   // The object might be from a different compartment, so wrap it.
   if (obj && !cx->compartment()->wrap(cx, obj)) {
@@ -2132,16 +2123,6 @@ bool js::SetImmutablePrototype(JSContext* cx, HandleObject obj,
   if (obj->hasDynamicPrototype()) {
     MOZ_ASSERT(!cx->isHelperThreadContext());
     return Proxy::setImmutablePrototype(cx, obj, succeeded);
-  }
-
-  // If this is a global object, resolve the Object class first to ensure the
-  // global's prototype is set to Object.prototype before we mark the global as
-  // having an immutable prototype.
-  if (obj->is<GlobalObject>()) {
-    Handle<GlobalObject*> global = obj.as<GlobalObject>();
-    if (!GlobalObject::ensureConstructor(cx, global, JSProto_Object)) {
-      return false;
-    }
   }
 
   if (!JSObject::setFlag(cx, obj, ObjectFlag::ImmutablePrototype)) {
@@ -3458,10 +3439,6 @@ void JSObject::traceChildren(JSTracer* trc) {
   // will see updated fields and slots.
   if (clasp->hasTrace()) {
     clasp->doTrace(trc, this);
-  }
-
-  if (trc->isMarkingTracer()) {
-    GCMarker::fromTracer(trc)->markImplicitEdges(this);
   }
 }
 

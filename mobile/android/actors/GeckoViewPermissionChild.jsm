@@ -5,8 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewPermissionChild"];
 
-const { GeckoViewActorChild } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewActorChild.jsm"
+const { GeckoViewActorChild } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewActorChild.sys.mjs"
 );
 
 const lazy = {};
@@ -90,7 +90,7 @@ class GeckoViewPermissionChild extends GeckoViewActorChild {
         }
       }
     } catch (error) {
-      Cu.reportError("Permission error: " + error);
+      console.error("Permission error: " + error);
       allowOrDeny = Services.perms.DENY_ACTION;
     }
 

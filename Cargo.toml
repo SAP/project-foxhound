@@ -126,6 +126,9 @@ goblin = { path = "build/rust/goblin" }
 # Patch hashbrown 0.11 to 0.12
 hashbrown = { path = "build/rust/hashbrown" }
 
+# Patch bindgen 0.59 to 0.63
+bindgen = { path = "build/rust/bindgen" }
+
 # Patch autocfg to hide rustc output. Workaround for https://github.com/cuviper/autocfg/issues/30
 autocfg = { path = "third_party/rust/autocfg" }
 
@@ -158,12 +161,12 @@ midir = { git = "https://github.com/mozilla/midir.git", rev = "e1b4dcb767f9e69af
 minidump_writer_linux = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "75ada456c92a429704691a85e1cb42fef8cafc0d" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
+tabs = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "d7dbd32fa379ad46820476222f4d2aeaed2d7175" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.

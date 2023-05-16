@@ -4,6 +4,9 @@
 
 # ALL CHANGES TO THIS FILE MUST HAVE REVIEW FROM A MARIONETTE PEER!
 #
+# Please refer to INSTRUCTIONS TO ADD A NEW PREFERENCE in
+# remote/shared/RecommendedPreferences.sys.mjs
+#
 # The Marionette Python client is used out-of-tree with various builds of
 # Firefox. Removing a preference from this file will cause regressions,
 # so please be careful and get review from a Testing :: Marionette peer
@@ -18,14 +21,12 @@ import sys
 import tempfile
 import time
 import traceback
-
 from copy import deepcopy
 
 import mozversion
-
-from mozprofile import Profile
-from mozrunner import Runner, FennecEmulatorRunner
 import six
+from mozprofile import Profile
+from mozrunner import FennecEmulatorRunner, Runner
 from six import reraise
 
 from . import errors
@@ -69,6 +70,8 @@ class GeckoInstance(object):
         # No slow script dialogs
         "dom.max_chrome_script_run_time": 0,
         "dom.max_script_run_time": 0,
+        # Disable location change rate limitation
+        "dom.navigation.locationChangeRateLimit.count": 0,
         # DOM Push
         "dom.push.connection.enabled": False,
         # Disable dialog abuse if alerts are triggered too quickly
@@ -149,6 +152,8 @@ class GeckoInstance(object):
         "toolkit.startup.max_resumed_crashes": -1,
         # Disable most telemetry pings
         "toolkit.telemetry.server": "https://%(server)s/telemetry-dummy/",
+        # Disable window occlusion on Windows, see Bug 1802473.
+        "widget.windows.window_occlusion_tracking.enabled": False,
     }
 
     def __init__(

@@ -231,13 +231,11 @@ class SheetLoadData final
   // The quirks mode of the loader at the time the load was triggered.
   const nsCompatibility mCompatMode;
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // Whether SheetComplete was called.
   bool mSheetCompleteCalled = false;
   // Whether we intentionally are not calling SheetComplete because nobody is
   // listening for the load.
   bool mIntentionallyDropped = false;
-#endif
 
   bool ShouldDefer() const { return mWasAlternate || !mMediaMatched; }
 
@@ -260,6 +258,7 @@ class SheetLoadData final
 
   bool BlocksLoadEvent() const { return !RootLoadData().IsLinkRelPreload(); }
 
+  bool IsSyncLoad() const override { return mSyncLoad; }
   bool IsLoading() const override { return mIsLoading; }
   bool IsCancelled() const override { return mIsCancelled; }
 

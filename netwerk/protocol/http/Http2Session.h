@@ -64,7 +64,7 @@ class Http2Session final : public ASpdySession,
                                      enum SpdyVersion version,
                                      bool attemptingEarlyData);
 
-  [[nodiscard]] bool AddStream(nsAHttpTransaction*, int32_t, bool,
+  [[nodiscard]] bool AddStream(nsAHttpTransaction*, int32_t,
                                nsIInterfaceRequestor*) override;
   bool CanReuse() override { return !mShouldGoAway && !mClosed; }
   bool RoomForMoreStreams() override;
@@ -255,7 +255,7 @@ class Http2Session final : public ASpdySession,
   void ConnectSlowConsumer(Http2StreamBase* stream);
 
   [[nodiscard]] nsresult ConfirmTLSProfile();
-  [[nodiscard]] static bool ALPNCallback(nsISSLSocketControl* tlsSocketControl);
+  [[nodiscard]] static bool ALPNCallback(nsITLSSocketControl* tlsSocketControl);
 
   uint64_t Serial() { return mSerial; }
 
@@ -290,7 +290,7 @@ class Http2Session final : public ASpdySession,
   void SendPriorityFrame(uint32_t streamID, uint32_t dependsOn, uint8_t weight);
   void IncrementTrrCounter() { mTrrStreams++; }
 
-  bool CanAcceptWebsocket() override;
+  WebSocketSupport GetWebSocketSupport() override;
 
   already_AddRefed<nsHttpConnection> CreateTunnelStream(
       nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
@@ -301,6 +301,9 @@ class Http2Session final : public ASpdySession,
  private:
   Http2Session(nsISocketTransport*, enum SpdyVersion version,
                bool attemptingEarlyData);
+
+  static Http2StreamTunnel* CreateTunnelStreamFromConnInfo(
+      Http2Session* session, uint64_t bcId, nsHttpConnectionInfo* connInfo);
 
   // These internal states do not correspond to the states of the HTTP/2
   // specification
@@ -334,7 +337,8 @@ class Http2Session final : public ASpdySession,
   void GenerateRstStream(uint32_t, uint32_t);
   void GenerateGoAway(uint32_t);
   void CleanupStream(uint32_t, nsresult, errorType);
-  void CloseStream(Http2StreamBase*, nsresult);
+  void CloseStream(Http2StreamBase* aStream, nsresult aResult,
+                   bool aRemoveFromQueue = true);
   void SendHello();
   void RemoveStreamFromQueues(Http2StreamBase*);
   [[nodiscard]] nsresult ParsePadding(uint8_t&, uint16_t&);
@@ -602,17 +606,11 @@ class Http2Session final : public ASpdySession,
   uint32_t mTrrStreams;
 
   // websockets
-  void CreateWebsocketStream(nsAHttpTransaction*, nsIInterfaceRequestor*);
-  void ProcessWaitingWebsockets();
   bool mEnableWebsockets;      // Whether we allow websockets, based on a pref
   bool mPeerAllowsWebsockets;  // Whether our peer allows websockets, based on
                                // SETTINGS
   bool mProcessedWaitingWebsockets;  // True once we've received at least one
                                      // SETTINGS
-  nsTArray<RefPtr<nsAHttpTransaction>>
-      mWaitingWebsockets;  // Websocket transactions that may be waiting for the
-                           // opening SETTINGS
-  nsCOMArray<nsIInterfaceRequestor> mWaitingWebsocketCallbacks;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Http2Session, NS_HTTP2SESSION_IID);

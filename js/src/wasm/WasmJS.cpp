@@ -251,19 +251,15 @@ bool wasm::BaselineDisabledByFeatures(JSContext* cx, bool* isDisabled,
 
 bool wasm::IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                  JSStringBuilder* reason) {
-  // Ion has no debugging support, no gc support.
+  // Ion has no debugging support.
   bool debug = WasmDebuggerActive(cx);
-  bool gc = WasmGcFlag(cx);
   if (reason) {
     char sep = 0;
     if (debug && !Append(reason, "debug", &sep)) {
       return false;
     }
-    if (gc && !Append(reason, "gc", &sep)) {
-      return false;
-    }
   }
-  *isDisabled = debug || gc;
+  *isDisabled = debug;
   return true;
 }
 
@@ -3167,22 +3163,7 @@ bool WasmTableObject::getImpl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  switch (table.repr()) {
-    case TableRepr::Func: {
-      MOZ_RELEASE_ASSERT(!table.isAsmJS());
-      RootedFunction fun(cx);
-      if (!table.getFuncRef(cx, index, &fun)) {
-        return false;
-      }
-      args.rval().setObjectOrNull(fun);
-      break;
-    }
-    case TableRepr::Ref: {
-      args.rval().set(UnboxAnyRef(table.getAnyRef(index)));
-      break;
-    }
-  }
-  return true;
+  return table.getValue(cx, index, args.rval());
 }
 
 /* static */
@@ -4129,11 +4110,7 @@ WasmTagObject& WasmExceptionObject::tag() const {
 #ifdef ENABLE_WASM_TYPE_REFLECTIONS
 static JSObject* CreateWasmFunctionPrototype(JSContext* cx, JSProtoKey key) {
   // WasmFunction's prototype should inherit from JSFunction's prototype.
-  RootedObject jsProto(
-      cx, GlobalObject::getOrCreatePrototype(cx, JSProto_Function));
-  if (!jsProto) {
-    return nullptr;
-  }
+  RootedObject jsProto(cx, &cx->global()->getFunctionPrototype());
   return GlobalObject::createBlankPrototypeInheriting(cx, &PlainObject::class_,
                                                       jsProto);
 }
@@ -4328,11 +4305,7 @@ bool WasmFunctionConstruct(JSContext* cx, unsigned argc, Value* vp) {
 static constexpr char WasmFunctionName[] = "Function";
 
 static JSObject* CreateWasmFunctionConstructor(JSContext* cx, JSProtoKey key) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateFunctionConstructor(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
+  RootedObject proto(cx, &cx->global()->getFunctionConstructor());
 
   Rooted<JSAtom*> className(
       cx, Atomize(cx, WasmFunctionName, strlen(WasmFunctionName)));
@@ -5364,11 +5337,7 @@ static const JSFunctionSpec WebAssembly_static_methods[] = {
 static JSObject* CreateWebAssemblyObject(JSContext* cx, JSProtoKey key) {
   MOZ_RELEASE_ASSERT(HasSupport(cx));
 
-  Handle<GlobalObject*> global = cx->global();
-  RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  RootedObject proto(cx, &cx->global()->getObjectPrototype());
   return NewTenuredObjectWithGivenProto(cx, &WasmNamespaceObject::class_,
                                         proto);
 }

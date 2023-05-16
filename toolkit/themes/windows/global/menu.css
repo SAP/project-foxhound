@@ -45,17 +45,17 @@ menucaption {
   }
 }
 
-menu[disabled="true"],
-menuitem[disabled="true"],
-menu[_moz-menuactive="true"][disabled="true"],
-menuitem[_moz-menuactive="true"][disabled="true"] {
+menu:where([disabled="true"]),
+menuitem:where([disabled="true"]),
+menu:where([_moz-menuactive="true"][disabled="true"]),
+menuitem:where([_moz-menuactive="true"][disabled="true"]) {
   color: GrayText;
   text-shadow: none;
 }
 
 @media (-moz-windows-non-native-menus) {
-  menu[_moz-menuactive="true"][disabled="true"],
-  menuitem[_moz-menuactive="true"][disabled="true"] {
+  menu:where([_moz-menuactive="true"][disabled="true"]),
+  menuitem:where([_moz-menuactive="true"][disabled="true"]) {
     background-color: -moz-menuhoverdisabled;
   }
 }
@@ -107,7 +107,7 @@ menubar > menu:-moz-window-inactive {
 }
 
 .menu-iconic-left {
-  min-width: 1.45em;
+  width: 1.45em;
 }
 
 .menu-iconic-icon {
@@ -136,7 +136,7 @@ menubar > menu:-moz-window-inactive {
   -moz-default-appearance: menuarrow;
   margin-inline-end: -2px;
   list-style-image: none;
-  min-width: 1.28em;
+  width: 1.28em;
   padding-top: 1px;
 }
 
@@ -144,6 +144,7 @@ menubar > menu:-moz-window-inactive {
 @media (-moz-windows-non-native-menus) {
   .menu-right {
     appearance: none;
+    width: unset;
     list-style-image: url("chrome://global/skin/icons/arrow-right.svg");
     -moz-context-properties: fill, fill-opacity;
     fill: currentColor;
@@ -220,8 +221,8 @@ menupopup > menucaption {
   max-width: 42em;
 }
 
-menu[_moz-menuactive="true"],
-menuitem[_moz-menuactive="true"] {
+menu:where([_moz-menuactive="true"]:not([disabled="true"])),
+menuitem:where([_moz-menuactive="true"]:not([disabled="true"])) {
   background-color: -moz-menuhover;
   color: -moz-menuhovertext;
 }
@@ -329,7 +330,7 @@ menuitem:is([type="checkbox"], [checked="true"], [type="radio"]) > .menu-iconic-
   menuitem[type="checkbox"],
   menuitem[type="radio"] {
     appearance: none !important; /* to override more specific selectors above. */
-    min-width: unset;
+    width: unset;
   }
 
   .menu-iconic > .menu-iconic-left,

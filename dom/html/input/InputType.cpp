@@ -123,8 +123,6 @@ nsresult InputType::SetValueInternal(const nsAString& aValue,
   return inputElement->SetValueInternal(aValue, aOptions);
 }
 
-Decimal InputType::GetStepBase() const { return mInputElement->GetStepBase(); }
-
 nsIFrame* InputType::GetPrimaryFrame() const {
   return mInputElement->GetPrimaryFrame();
 }
@@ -148,7 +146,7 @@ bool InputType::IsRangeOverflow() const { return false; }
 
 bool InputType::IsRangeUnderflow() const { return false; }
 
-bool InputType::HasStepMismatch(bool aUseZeroIfValueNaN) const { return false; }
+bool InputType::HasStepMismatch() const { return false; }
 
 bool InputType::HasBadInput() const { return false; }
 

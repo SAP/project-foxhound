@@ -3,9 +3,11 @@
 
 "use strict";
 
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { Assert } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
+);
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -92,7 +94,14 @@ async function showBrowserAction(window, extensionId) {
       "Expect widget overflow state to match toolbar"
     );
   } else if (group.areaType == lazy.CustomizableUI.TYPE_PANEL) {
-    await navbar.overflowable.show();
+    if (window.gUnifiedExtensions.isEnabled) {
+      let panel = window.gUnifiedExtensions.panel;
+      let shown = BrowserTestUtils.waitForPopupEvent(panel, "shown");
+      window.gUnifiedExtensions.togglePanel();
+      await shown;
+    } else {
+      await navbar.overflowable.show();
+    }
   }
 }
 
@@ -209,6 +218,7 @@ async function removeTab(tab) {
 var AppUiTestInternals = {
   awaitBrowserLoaded,
   getBrowserActionWidget,
+  getBrowserActionWidgetId,
   getPageActionButton,
   getPageActionPopup,
   getPanelForNode,

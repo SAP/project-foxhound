@@ -33,14 +33,48 @@ if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
 // Preferences are set for automation on startup, unless
 // remote.prefs.recommended has been set to false.
 //
-// All prefs listed here have immediate effect, and don't require a restart
-// nor have to be set in the profile before the application starts. If such a
-// latter preference has to be added, it needs to be done for the client like
-// Marionette client (geckoinstance.py), or geckodriver (prefs.rs).
-//
 // Note: Clients do not always use the latest version of the application. As
 // such backward compatibility has to be ensured at least for the last three
 // releases.
+
+// INSTRUCTIONS TO ADD A NEW PREFERENCE
+//
+// Preferences for remote control and automation can be set from several entry
+// points:
+// - remote/shared/RecommendedPreferences.sys.mjs
+// - remote/test/puppeteer/src/node/FirefoxLauncher.ts
+// - testing/geckodriver/src/prefs.rs
+// - testing/marionette/client/marionette_driver/geckoinstance.py
+//
+// The preferences in `FirefoxLauncher.ts`, `prefs.rs` and `geckoinstance.py`
+// will be applied before the Application starts, and should typically be used
+// for preferences which cannot be updated during the lifetime of the Application.
+//
+// The preferences in `RecommendedPreferences.sys.mjs` are applied after
+// the Application has started, which means that the application must apply this
+// change dynamically and behave correctly. Note that you can also define
+// protocol specific preferences (CDP, WebDriver, ...) which are merged with the
+// COMMON_PREFERENCES from `RecommendedPreferences.sys.mjs`.
+//
+// Additionally, users relying on the Marionette Python client (ie. using
+// geckoinstance.py) set `remote.prefs.recommended = false`. This means that
+// preferences from `RecommendedPreferences.sys.mjs` are not applied and have to
+// be added to the list of preferences in that Python file. Note that there are
+// several lists of preferences, either common or specific to a given application
+// (Firefox Desktop, Fennec, Thunderbird).
+//
+// Depending on how users interact with the Remote Agent, they will use different
+// combinations of preferences. So it's important to update the preferences files
+// so that all users have the proper preferences.
+//
+// When adding a new preference, follow this guide to decide where to add it:
+// - Add the preference to `geckoinstance.py`
+// - If the preference has to be set before startup:
+//   - Add the preference to `prefs.rs`
+//   - Add the preference `FirefoxLauncher.ts`
+//   - Create a PR to upstream the change on `FirefoxLauncher.ts` to puppeteer
+// - Otherwise, if the preference can be set after startup:
+//   - Add the preference to `RecommendedPreferences.sys.mjs`
 const COMMON_PREFERENCES = new Map([
   // Make sure Shield doesn't hit the network.
   ["app.normandy.api_url", ""],
@@ -132,6 +166,9 @@ const COMMON_PREFERENCES = new Map([
   // disables the New Tab Page ends up showing the toolbar on about:blank).
   ["browser.toolbars.bookmarks.visibility", "never"],
 
+  // Make sure Topsites doesn't hit the network to retrieve tiles from Contile.
+  ["browser.topsites.contile.enabled", false],
+
   // Disable first run splash page on Windows 10
   ["browser.usedOnWindows10.introURL", ""],
 
@@ -177,6 +214,9 @@ const COMMON_PREFERENCES = new Map([
   // Disable slow script dialogues
   ["dom.max_chrome_script_run_time", 0],
   ["dom.max_script_run_time", 0],
+
+  // Disable location change rate limitation
+  ["dom.navigation.locationChangeRateLimit.count", 0],
 
   // DOM Push
   ["dom.push.connection.enabled", false],
@@ -261,8 +301,9 @@ const COMMON_PREFERENCES = new Map([
   // Prevent starting into safe mode after application crashes
   ["toolkit.startup.max_resumed_crashes", -1],
 
-  // Make sure Topsites doesn't hit the network to retrieve tiles from Contile.
-  ["browser.topsites.contile.enabled", false],
+  // Disable window occlusion on Windows, which can prevent webdriver commands
+  // such as WebDriver:FindElements from working properly (Bug 1802473).
+  ["widget.windows.window_occlusion_tracking.enabled", false],
 ]);
 
 export const RecommendedPreferences = {

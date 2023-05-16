@@ -5153,7 +5153,8 @@ void nsDocShell::SetScrollbarPreference(mozilla::ScrollbarPreference aPref) {
   if (!scrollFrame) {
     return;
   }
-  ps->FrameNeedsReflow(scrollFrame, IntrinsicDirty::StyleChange,
+  ps->FrameNeedsReflow(scrollFrame,
+                       IntrinsicDirty::FrameAncestorsAndDescendants,
                        NS_FRAME_IS_DIRTY);
 }
 
@@ -9852,6 +9853,9 @@ nsIPrincipal* nsDocShell::GetInheritedPrincipal(
     srcdoc = aLoadState->SrcdocData();
   }
 
+  aLoadInfo->SetTriggeringRemoteType(
+      aLoadState->GetEffectiveTriggeringRemoteType());
+
   if (aLoadState->PrincipalToInherit()) {
     aLoadInfo->SetPrincipalToInherit(aLoadState->PrincipalToInherit());
   }
@@ -9869,6 +9873,9 @@ nsIPrincipal* nsDocShell::GetInheritedPrincipal(
         true,  // aInheritForAboutBlank
         isSrcdoc);
   }
+
+  // Strip the target query parameters before creating the channel.
+  aLoadState->MaybeStripTrackerQueryStrings(aBrowsingContext);
 
   OriginAttributes attrs;
 
@@ -10539,19 +10546,6 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
 
   nsLoadFlags loadFlags = aLoadState->CalculateChannelLoadFlags(
       mBrowsingContext, Some(uriModified), Some(isXFOError));
-
-  // Get the unstripped URI from the current document channel. The unstripped
-  // URI will be preserved if it's a reload.
-  nsCOMPtr<nsIURI> currentUnstrippedURI;
-  nsCOMPtr<nsIChannel> docChannel = GetCurrentDocChannel();
-  if (docChannel) {
-    nsCOMPtr<nsILoadInfo> docLoadInfo = docChannel->LoadInfo();
-    docLoadInfo->GetUnstrippedURI(getter_AddRefs(currentUnstrippedURI));
-  }
-
-  // Strip the target query parameters before creating the channel.
-  aLoadState->MaybeStripTrackerQueryStrings(mBrowsingContext,
-                                            currentUnstrippedURI);
 
   nsCOMPtr<nsIChannel> channel;
   if (DocumentChannel::CanUseDocumentChannel(aLoadState->URI()) &&
@@ -11571,6 +11565,9 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
 
     newSHEntry->SetURI(aNewURI);
     newSHEntry->SetOriginalURI(aNewURI);
+    // We replaced the URI of the entry, clear the unstripped URI as it
+    // shouldn't be used for reloads anymore.
+    newSHEntry->SetUnstrippedURI(nullptr);
     // Setting the resultPrincipalURI to nullptr is fine here: it will cause
     // NS_GetFinalChannelURI to use the originalURI as the URI, which is aNewURI
     // in our case.  We could also set it to aNewURI, with the same result.
@@ -11798,6 +11795,7 @@ nsresult nsDocShell::AddToSessionHistory(
   nsCOMPtr<nsIInputStream> inputStream;
   nsCOMPtr<nsIURI> originalURI;
   nsCOMPtr<nsIURI> resultPrincipalURI;
+  nsCOMPtr<nsIURI> unstrippedURI;
   bool loadReplace = false;
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
   uint32_t cacheKey = 0;
@@ -11850,6 +11848,8 @@ nsresult nsDocShell::AddToSessionHistory(
     }
 
     loadInfo->GetResultPrincipalURI(getter_AddRefs(resultPrincipalURI));
+
+    loadInfo->GetUnstrippedURI(getter_AddRefs(unstrippedURI));
 
     userActivation = loadInfo->GetHasValidUserGestureActivation();
 
@@ -11920,8 +11920,9 @@ nsresult nsDocShell::AddToSessionHistory(
                 triggeringPrincipal,  // Channel or provided principal
                 principalToInherit, partitionedPrincipalToInherit, csp,
                 HistoryID(), GetCreatedDynamically(), originalURI,
-                resultPrincipalURI, loadReplace, referrerInfo, srcdoc,
-                srcdocEntry, baseURI, saveLayoutState, expired, userActivation);
+                resultPrincipalURI, unstrippedURI, loadReplace, referrerInfo,
+                srcdoc, srcdocEntry, baseURI, saveLayoutState, expired,
+                userActivation);
 
   if (mBrowsingContext->IsTop() && GetSessionHistory()) {
     bool shouldPersist = ShouldAddToSessionHistory(aURI, aChannel);
@@ -12006,6 +12007,7 @@ void nsDocShell::UpdateActiveEntry(
         aURI, aTriggeringPrincipal, nullptr, nullptr, aCsp, mContentTypeHint);
   }
   mActiveEntry->SetOriginalURI(aOriginalURI);
+  mActiveEntry->SetUnstrippedURI(nullptr);
   mActiveEntry->SetReferrerInfo(aReferrerInfo);
   mActiveEntry->SetTitle(aTitle);
   mActiveEntry->SetStateData(static_cast<nsStructuredCloneContainer*>(aData));

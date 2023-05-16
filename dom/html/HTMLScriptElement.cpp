@@ -150,7 +150,7 @@ void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
   ReportTaintSink(aInnerHTML, "script.innerHTML", id); 
 }
 
-void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) {
+void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
   if (!nsContentUtils::GetNodeTextContent(this, false, aValue, fallible)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
   }
@@ -182,7 +182,7 @@ bool HTMLScriptElement::GetScriptType(nsAString& aType) {
   return true;
 }
 
-void HTMLScriptElement::GetScriptText(nsAString& text) {
+void HTMLScriptElement::GetScriptText(nsAString& text) const {
   GetText(text, IgnoreErrors());
 }
 

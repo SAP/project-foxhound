@@ -62,7 +62,7 @@ BasePrincipal::BasePrincipal(BasePrincipal* aOther,
       mOriginSuffix(aOriginAttributes.CreateSuffixAtom()),
       mOriginAttributes(aOriginAttributes),
       mKind(aOther->mKind),
-      mHasExplicitDomain(aOther->mHasExplicitDomain) {}
+      mHasExplicitDomain(aOther->mHasExplicitDomain.load()) {}
 
 BasePrincipal::~BasePrincipal() = default;
 
@@ -558,6 +558,7 @@ BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
 
 NS_IMETHODIMP
 BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aAllowIfInheritsPrincipal) {
+  AssertIsOnMainThread();
   return CheckMayLoadHelper(aURI, aAllowIfInheritsPrincipal, false, 0);
 }
 
@@ -565,6 +566,7 @@ NS_IMETHODIMP
 BasePrincipal::CheckMayLoadWithReporting(nsIURI* aURI,
                                          bool aAllowIfInheritsPrincipal,
                                          uint64_t aInnerWindowID) {
+  AssertIsOnMainThread();
   return CheckMayLoadHelper(aURI, aAllowIfInheritsPrincipal, true,
                             aInnerWindowID);
 }
@@ -573,6 +575,8 @@ nsresult BasePrincipal::CheckMayLoadHelper(nsIURI* aURI,
                                            bool aAllowIfInheritsPrincipal,
                                            bool aReport,
                                            uint64_t aInnerWindowID) {
+  AssertIsOnMainThread();  // Accesses non-threadsafe URI flags and the
+                           // non-threadsafe ExtensionPolicyService
   NS_ENSURE_ARG_POINTER(aURI);
   MOZ_ASSERT(
       aReport || aInnerWindowID == 0,
@@ -639,7 +643,7 @@ nsresult BasePrincipal::CheckMayLoadHelper(nsIURI* aURI,
 
 NS_IMETHODIMP
 BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
-  if (IsSystemPrincipal() || (AddonPolicy() && AddonAllowsLoad(aURI))) {
+  if (IsSystemPrincipal() || (AddonPolicyCore() && AddonAllowsLoad(aURI))) {
     *aRes = false;
     return NS_OK;
   }
@@ -665,8 +669,10 @@ BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
   }
   return aPrin->IsThirdPartyURI(prinURI, aRes);
 }
+
 NS_IMETHODIMP
 BasePrincipal::IsThirdPartyChannel(nsIChannel* aChan, bool* aRes) {
+  AssertIsOnMainThread();
   if (IsSystemPrincipal()) {
     // Nothing is 3rd party to the system principal.
     *aRes = false;
@@ -689,19 +695,13 @@ BasePrincipal::IsSameOrigin(nsIURI* aURI, bool* aRes) {
     // no URI.
     return NS_OK;
   }
-  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  if (!ssm) {
-    return NS_OK;
-  }
-  bool reportError = false;
-  bool isPrivateWindow = false;  // Only used for error reporting.
-  *aRes = NS_SUCCEEDED(
-      ssm->CheckSameOriginURI(prinURI, aURI, reportError, isPrivateWindow));
+  *aRes = nsScriptSecurityManager::SecurityCompareURIs(prinURI, aURI);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 BasePrincipal::IsL10nAllowed(nsIURI* aURI, bool* aRes) {
+  AssertIsOnMainThread();  // URI_DANGEROUS_TO_LOAD is not threadsafe to query.
   *aRes = false;
 
   if (nsContentUtils::IsErrorPage(aURI)) {
@@ -739,7 +739,7 @@ BasePrincipal::IsL10nAllowed(nsIURI* aURI, bool* aRes) {
     return NS_OK;
   }
 
-  auto policy = AddonPolicy();
+  auto policy = AddonPolicyCore();
   *aRes = (policy && policy->IsPrivileged());
   return NS_OK;
 }
@@ -797,6 +797,7 @@ NS_IMETHODIMP
 BasePrincipal::HasFirstpartyStorageAccess(mozIDOMWindow* aCheckWindow,
                                           uint32_t* aRejectedReason,
                                           bool* aOutAllowed) {
+  AssertIsOnMainThread();
   *aRejectedReason = 0;
   *aOutAllowed = false;
 
@@ -922,7 +923,7 @@ BasePrincipal::GetIsSystemPrincipal(bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
-  *aResult = AddonPolicy() || ContentScriptAddonPolicy();
+  *aResult = AddonPolicyCore() || ContentScriptAddonPolicyCore();
   return NS_OK;
 }
 
@@ -1015,6 +1016,7 @@ BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::IsURIInPrefList(const char* aPref, bool* aResult) {
+  AssertIsOnMainThread();
   *aResult = false;
   nsCOMPtr<nsIURI> prinURI;
   nsresult rv = GetURI(getter_AddRefs(prinURI));
@@ -1041,7 +1043,7 @@ BasePrincipal::IsURIInList(const nsACString& aList, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::GetIsOriginPotentiallyTrustworthy(bool* aResult) {
-  MOZ_ASSERT(NS_IsMainThread());
+  AssertIsOnMainThread();
   *aResult = false;
 
   nsCOMPtr<nsIURI> uri;
@@ -1056,6 +1058,7 @@ BasePrincipal::GetIsOriginPotentiallyTrustworthy(bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::GetIsLoopbackHost(bool* aRes) {
+  AssertIsOnMainThread();
   *aRes = false;
   nsAutoCString host;
   nsresult rv = GetHost(host);
@@ -1068,6 +1071,7 @@ BasePrincipal::GetIsLoopbackHost(bool* aRes) {
 
 NS_IMETHODIMP
 BasePrincipal::GetAboutModuleFlags(uint32_t* flags) {
+  AssertIsOnMainThread();
   *flags = 0;
   nsCOMPtr<nsIURI> prinURI;
   nsresult rv = GetURI(getter_AddRefs(prinURI));
@@ -1123,20 +1127,27 @@ BasePrincipal::GetIsInIsolatedMozBrowserElement(
 
 nsresult BasePrincipal::GetAddonPolicy(
     extensions::WebExtensionPolicy** aResult) {
+  AssertIsOnMainThread();
   RefPtr<extensions::WebExtensionPolicy> policy(AddonPolicy());
   policy.forget(aResult);
   return NS_OK;
 }
 
 extensions::WebExtensionPolicy* BasePrincipal::AddonPolicy() {
+  AssertIsOnMainThread();
+  RefPtr<extensions::WebExtensionPolicyCore> core = AddonPolicyCore();
+  return core ? core->GetMainThreadPolicy() : nullptr;
+}
+
+RefPtr<extensions::WebExtensionPolicyCore> BasePrincipal::AddonPolicyCore() {
   if (Is<ContentPrincipal>()) {
-    return As<ContentPrincipal>()->AddonPolicy();
+    return As<ContentPrincipal>()->AddonPolicyCore();
   }
   return nullptr;
 }
 
 bool BasePrincipal::AddonHasPermission(const nsAtom* aPerm) {
-  if (auto policy = AddonPolicy()) {
+  if (auto policy = AddonPolicyCore()) {
     return policy->HasPermission(aPerm);
   }
   return false;
@@ -1149,8 +1160,23 @@ nsIPrincipal* BasePrincipal::PrincipalToInherit(nsIURI* aRequestedURI) {
   return this;
 }
 
+bool BasePrincipal::OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
+  MOZ_ASSERT(aDocumentPrincipal);
+
+  // Expanded principals override CSP if and only if they subsume the document
+  // principal.
+  if (mKind == eExpandedPrincipal) {
+    return FastSubsumes(aDocumentPrincipal);
+  }
+  // Extension principals always override the CSP of non-extension principals.
+  // This is primarily for the sake of their stylesheets, which are usually
+  // loaded from channels and cannot have expanded principals.
+  return (AddonPolicyCore() &&
+          !BasePrincipal::Cast(aDocumentPrincipal)->AddonPolicyCore());
+}
+
 already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
-    nsIURI* aURI, const OriginAttributes& aAttrs) {
+    nsIURI* aURI, const OriginAttributes& aAttrs, nsIURI* aInitialDomain) {
   MOZ_ASSERT(aURI);
 
   nsAutoCString originNoSuffix;
@@ -1162,12 +1188,12 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     return NullPrincipal::Create(aAttrs);
   }
 
-  return CreateContentPrincipal(aURI, aAttrs, originNoSuffix);
+  return CreateContentPrincipal(aURI, aAttrs, originNoSuffix, aInitialDomain);
 }
 
 already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs,
-    const nsACString& aOriginNoSuffix) {
+    const nsACString& aOriginNoSuffix, nsIURI* aInitialDomain) {
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(!aOriginNoSuffix.IsEmpty());
 
@@ -1193,7 +1219,8 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     }
     MOZ_ASSERT(origin);
     OriginAttributes attrs;
-    RefPtr<BasePrincipal> principal = CreateContentPrincipal(origin, attrs);
+    RefPtr<BasePrincipal> principal =
+        CreateContentPrincipal(origin, attrs, aInitialDomain);
     return principal.forget();
   }
 #endif
@@ -1202,13 +1229,15 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
   if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
           aURI, getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
+    MOZ_ASSERT(!aInitialDomain,
+               "an initial domain for a blob URI makes no sense");
     RefPtr<BasePrincipal> principal = Cast(blobPrincipal);
     return principal.forget();
   }
 
   // Mint a content principal.
   RefPtr<ContentPrincipal> principal =
-      new ContentPrincipal(aURI, aAttrs, aOriginNoSuffix);
+      new ContentPrincipal(aURI, aAttrs, aOriginNoSuffix, aInitialDomain);
   return principal.forget();
 }
 
@@ -1248,19 +1277,29 @@ already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
   nsCOMPtr<nsIURI> uri;
   MOZ_ALWAYS_SUCCEEDS(GetURI(getter_AddRefs(uri)));
 
+  // XXX: This does not copy over the domain. Should it?
   RefPtr<ContentPrincipal> copy =
-      new ContentPrincipal(uri, aOriginAttributes, originNoSuffix);
+      new ContentPrincipal(uri, aOriginAttributes, originNoSuffix, nullptr);
   return copy.forget();
 }
 
 extensions::WebExtensionPolicy* BasePrincipal::ContentScriptAddonPolicy() {
+  AssertIsOnMainThread();
+  RefPtr<extensions::WebExtensionPolicyCore> core =
+      ContentScriptAddonPolicyCore();
+  return core ? core->GetMainThreadPolicy() : nullptr;
+}
+
+RefPtr<extensions::WebExtensionPolicyCore>
+BasePrincipal::ContentScriptAddonPolicyCore() {
   if (!Is<ExpandedPrincipal>()) {
     return nullptr;
   }
 
-  auto expanded = As<ExpandedPrincipal>();
-  for (auto& prin : expanded->AllowList()) {
-    if (auto policy = BasePrincipal::Cast(prin)->AddonPolicy()) {
+  auto* expanded = As<ExpandedPrincipal>();
+  for (const auto& prin : expanded->AllowList()) {
+    if (RefPtr<extensions::WebExtensionPolicyCore> policy =
+            BasePrincipal::Cast(prin)->AddonPolicyCore()) {
       return policy;
     }
   }
@@ -1273,7 +1312,7 @@ bool BasePrincipal::AddonAllowsLoad(nsIURI* aURI,
   if (Is<ExpandedPrincipal>()) {
     return As<ExpandedPrincipal>()->AddonAllowsLoad(aURI, aExplicit);
   }
-  if (auto policy = AddonPolicy()) {
+  if (auto policy = AddonPolicyCore()) {
     return policy->CanAccessURI(aURI, aExplicit);
   }
   return false;
@@ -1425,6 +1464,7 @@ BasePrincipal::GetStorageOriginKey(nsACString& aOriginKey) {
 
 NS_IMETHODIMP
 BasePrincipal::GetIsScriptAllowedByPolicy(bool* aIsScriptAllowedByPolicy) {
+  AssertIsOnMainThread();
   *aIsScriptAllowedByPolicy = false;
   nsCOMPtr<nsIURI> prinURI;
   nsresult rv = GetURI(getter_AddRefs(prinURI));

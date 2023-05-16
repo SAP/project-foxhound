@@ -12,6 +12,7 @@
 #  include "ImageContainer.h"
 #  include "MediaDataDecoderProxy.h"
 #  include "MediaInfo.h"
+#  include "PerformanceRecorder.h"
 #  include "PlatformDecoderModule.h"
 #  include "mozIGeckoMediaPluginService.h"
 
@@ -24,6 +25,7 @@ struct MOZ_STACK_CLASS GMPVideoDecoderParams {
   layers::ImageContainer* mImageContainer;
   GMPCrashHelper* mCrashHelper;
   layers::KnowsCompositor* mKnowsCompositor;
+  const Maybe<TrackingId> mTrackingId;
 };
 
 DDLoggedTypeDeclNameAndBase(GMPVideoDecoder, MediaDataDecoder);
@@ -90,6 +92,8 @@ class GMPVideoDecoder : public MediaDataDecoder,
   int64_t mLastStreamOffset = 0;
   RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
+  const Maybe<TrackingId> mTrackingId;
 
   MozPromiseHolder<DecodePromise> mDecodePromise;
   MozPromiseHolder<DecodePromise> mDrainPromise;

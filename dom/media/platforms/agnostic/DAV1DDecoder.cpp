@@ -11,6 +11,7 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "nsThreadUtils.h"
+#include "PerformanceRecorder.h"
 #include "VideoUtils.h"
 
 #undef LOG
@@ -63,7 +64,8 @@ DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
           GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
           "Dav1dDecoder")),
       mImageContainer(aParams.mImageContainer),
-      mImageAllocator(aParams.mKnowsCompositor) {}
+      mImageAllocator(aParams.mKnowsCompositor),
+      mTrackingId(aParams.mTrackingId) {}
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
   Dav1dSettings settings;
@@ -134,6 +136,16 @@ RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::InvokeDecode(
     MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   MOZ_ASSERT(aSample);
+
+  MediaInfoFlag flag = MediaInfoFlag::None;
+  flag |= (aSample->mKeyframe ? MediaInfoFlag::KeyFrame
+                              : MediaInfoFlag::NonKeyFrame);
+  flag |= MediaInfoFlag::SoftwareDecoding;
+  flag |= MediaInfoFlag::VIDEO_AV1;
+  mTrackingId.apply([&](const auto& aId) {
+    mPerformanceRecorder.Start(aSample->mTimecode.ToMicroseconds(),
+                               "DAV1DDecoder"_ns, aId, flag);
+  });
 
   // Add the buffer to the hashtable in order to increase
   // the ref counter and keep it alive. When dav1d does not
@@ -306,6 +318,26 @@ already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
   int64_t offset = aPicture.m.offset;
   bool keyframe = aPicture.frame_hdr->frame_type == DAV1D_FRAME_TYPE_KEY;
 
+  mPerformanceRecorder.Record(aPicture.m.timestamp, [&](DecodeStage& aStage) {
+    aStage.SetResolution(aPicture.p.w, aPicture.p.h);
+    auto format = [&]() -> Maybe<DecodeStage::ImageFormat> {
+      switch (aPicture.p.layout) {
+        case DAV1D_PIXEL_LAYOUT_I420:
+          return Some(DecodeStage::YUV420P);
+        case DAV1D_PIXEL_LAYOUT_I422:
+          return Some(DecodeStage::YUV422P);
+        case DAV1D_PIXEL_LAYOUT_I444:
+          return Some(DecodeStage::YUV444P);
+        default:
+          return Nothing();
+      }
+    }();
+    format.apply([&](auto& aFmt) { aStage.SetImageFormat(aFmt); });
+    aStage.SetYUVColorSpace(b.mYUVColorSpace);
+    aStage.SetColorRange(b.mColorRange);
+    aStage.SetColorDepth(b.mColorDepth);
+  });
+
   return VideoData::CreateAndCopyData(
       mInfo, mImageContainer, offset, timecode, duration, b, keyframe, timecode,
       mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h), mImageAllocator);
@@ -329,8 +361,9 @@ RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
 
 RefPtr<MediaDataDecoder::FlushPromise> DAV1DDecoder::Flush() {
   RefPtr<DAV1DDecoder> self = this;
-  return InvokeAsync(mTaskQueue, __func__, [self]() {
+  return InvokeAsync(mTaskQueue, __func__, [this, self]() {
     dav1d_flush(self->mContext);
+    mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return FlushPromise::CreateAndResolve(true, __func__);
   });
 }

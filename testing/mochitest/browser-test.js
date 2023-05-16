@@ -136,7 +136,9 @@ function testInit() {
     );
   } else {
     // In non-e10s, only run the ShutdownLeaksCollector in the parent process.
-    ChromeUtils.import("chrome://mochikit/content/ShutdownLeaksCollector.jsm");
+    ChromeUtils.importESModule(
+      "chrome://mochikit/content/ShutdownLeaksCollector.sys.mjs"
+    );
   }
 }
 
@@ -203,20 +205,20 @@ function Tester(aTests, structuredLogger, aCallback) {
   this.SimpleTest.harnessParameters = gConfig;
 
   this.MemoryStats = simpleTestScope.MemoryStats;
-  this.ContentTask = ChromeUtils.import(
-    "resource://testing-common/ContentTask.jsm"
+  this.ContentTask = ChromeUtils.importESModule(
+    "resource://testing-common/ContentTask.sys.mjs"
   ).ContentTask;
-  this.BrowserTestUtils = ChromeUtils.import(
-    "resource://testing-common/BrowserTestUtils.jsm"
+  this.BrowserTestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/BrowserTestUtils.sys.mjs"
   ).BrowserTestUtils;
-  this.TestUtils = ChromeUtils.import(
-    "resource://testing-common/TestUtils.jsm"
+  this.TestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/TestUtils.sys.mjs"
   ).TestUtils;
   this.PromiseTestUtils = ChromeUtils.importESModule(
     "resource://testing-common/PromiseTestUtils.sys.mjs"
   ).PromiseTestUtils;
-  this.Assert = ChromeUtils.import(
-    "resource://testing-common/Assert.jsm"
+  this.Assert = ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
   ).Assert;
   this.PerTestCoverageUtils = ChromeUtils.import(
     "resource://testing-common/PerTestCoverageUtils.jsm"
@@ -260,12 +262,8 @@ function Tester(aTests, structuredLogger, aCallback) {
     ),
   });
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
   // ensure the mouse is reset before each test run
-  if (env.exists("MOZ_AUTOMATION")) {
+  if (Services.env.exists("MOZ_AUTOMATION")) {
     this.EventUtils.synthesizeNativeMouseEvent({
       type: "mousemove",
       screenX: 1000,
@@ -320,8 +318,8 @@ Tester.prototype = {
 
     if (gConfig.jscovDirPrefix) {
       let coveragePath = gConfig.jscovDirPrefix;
-      let { CoverageCollector } = ChromeUtils.import(
-        "resource://testing-common/CoverageUtils.jsm"
+      let { CoverageCollector } = ChromeUtils.importESModule(
+        "resource://testing-common/CoverageUtils.sys.mjs"
       );
       this._coverageCollector = new CoverageCollector(coveragePath);
     }
@@ -576,10 +574,7 @@ Tester.prototype = {
   async ensureVsyncDisabled() {
     // The WebExtension process keeps vsync enabled forever in headless mode.
     // See bug 1782541.
-    let env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    if (env.get("MOZ_HEADLESS")) {
+    if (Services.env.get("MOZ_HEADLESS")) {
       return;
     }
 
@@ -855,18 +850,15 @@ Tester.prototype = {
 
       // See if we should upload a profile of a failing test.
       if (this.currentTest.failCount) {
-        let env = Cc["@mozilla.org/process/environment;1"].getService(
-          Ci.nsIEnvironment
-        );
         // If MOZ_PROFILER_SHUTDOWN is set, the profiler got started from --profiler
         // and a profile will be shown even if there's no test failure.
         if (
-          env.exists("MOZ_UPLOAD_DIR") &&
-          !env.exists("MOZ_PROFILER_SHUTDOWN") &&
+          Services.env.exists("MOZ_UPLOAD_DIR") &&
+          !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
           Services.profiler.IsActive()
         ) {
           let filename = `profile_${name}.json`;
-          let path = env.get("MOZ_UPLOAD_DIR");
+          let path = Services.env.get("MOZ_UPLOAD_DIR");
           let profilePath = PathUtils.join(path, filename);
           try {
             let profileData = await Services.profiler.getProfileDataAsGzippedArrayBuffer();
@@ -1183,7 +1175,7 @@ Tester.prototype = {
 
     this.ContentTask.setTestScope(currentScope);
 
-    // Allow Assert.jsm methods to be tacked to the current scope.
+    // Allow Assert.sys.mjs methods to be tacked to the current scope.
     scope.export_assertions = function() {
       for (let func in this.Assert) {
         this[func] = this.Assert[func].bind(this.Assert);

@@ -112,6 +112,7 @@
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-pageActions.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-sidebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-tabsintitlebar.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/browser-unified-extensions.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser-tab.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser-tabs.js", this);
@@ -165,10 +166,6 @@
   </html:template>
 
 #include fullscreen-and-pointerlock.inc.xhtml
-
-  <vbox id="browser-bottombox" layer="true">
-    <!-- gNotificationBox will be added here lazily. -->
-  </vbox>
 
   <html:div id="a11y-announcement" role="alert"/>
 

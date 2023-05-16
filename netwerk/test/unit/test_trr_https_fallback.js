@@ -5,8 +5,8 @@
 "use strict";
 
 ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 let h2Port;
@@ -24,18 +24,15 @@ const certOverrideService = Cc[
 add_setup(async function setup() {
   trr_test_setup();
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
-  h3Port = env.get("MOZHTTP3_PORT");
+  h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
 
-  h3NoResponsePort = env.get("MOZHTTP3_PORT_NO_RESPONSE");
+  h3NoResponsePort = Services.env.get("MOZHTTP3_PORT_NO_RESPONSE");
   Assert.notEqual(h3NoResponsePort, null);
   Assert.notEqual(h3NoResponsePort, "");
 
@@ -958,8 +955,6 @@ add_task(async function testAllRecordsInHttp3ExcludedList() {
 
   await trrServer.stop();
 });
-
-let WebSocketListener = function() {};
 
 WebSocketListener.prototype = {
   onAcknowledge(aContext, aSize) {},

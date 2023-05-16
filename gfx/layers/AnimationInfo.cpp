@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AnimationInfo.h"
-#include "Layers.h"
 #include "mozilla/LayerAnimationInfo.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/AnimationHelper.h"
@@ -112,8 +111,6 @@ bool AnimationInfo::StartPendingAnimations(const TimeStamp& aReadyTime) {
   }
   return updated;
 }
-
-void AnimationInfo::TransferMutatedFlagToLayer(Layer* aLayer) {}
 
 bool AnimationInfo::ApplyPendingUpdatesForThisTransaction() {
   if (mPendingAnimations) {

@@ -73,6 +73,9 @@ pref("xpinstall.signatures.devInfoURL", "https://wiki.mozilla.org/Addons/Extensi
 // Enable extensionStorage storage actor by default
 pref("devtools.storage.extensionStorage.enabled", true);
 
+// Enable the unified extensions UI by default.
+pref("extensions.unifiedExtensions.enabled", true);
+
 // Dictionary download preference
 pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/language-tools/");
 
@@ -401,7 +404,7 @@ pref("browser.urlbar.suggest.calculator",           false);
   pref("browser.urlbar.suggest.quickactions", true);
   pref("browser.urlbar.shortcuts.quickactions", true);
   pref("browser.urlbar.quickactions.showPrefs", true);
-  pref("browser.urlbar.quickactions.showInZeroPrefix", true);
+  pref("browser.urlbar.quickactions.showInZeroPrefix", false);
 #endif
 
 // Feature gate pref for weather suggestions in the urlbar.
@@ -498,6 +501,9 @@ pref("browser.urlbar.switchTabs.adoptIntoActiveWindow", false);
 // should be opened in new tabs by default.
 pref("browser.urlbar.openintab", false);
 
+// Enable three-dot options button and menu for eligible results.
+pref("browser.urlbar.resultMenu", false);
+
 // If true, we show tail suggestions when available.
 pref("browser.urlbar.richSuggestions.tail", true);
 
@@ -506,7 +512,11 @@ pref("browser.urlbar.sponsoredTopSites", false);
 
 // Global toggle for whether the show search terms feature
 // can be used at all, and enabled/disabled by the user.
+#ifdef NIGHTLY_BUILD
+pref("browser.urlbar.showSearchTerms.featureGate", true);
+#else
 pref("browser.urlbar.showSearchTerms.featureGate", false);
+#endif
 
 // If true, show the search term in the Urlbar while on
 // a default search engine results page.
@@ -525,6 +535,9 @@ pref("browser.urlbar.shortcuts.tabs", true);
 pref("browser.urlbar.shortcuts.history", true);
 
 pref("browser.urlbar.eventTelemetry.enabled", false);
+
+// Whether search engagement telemetry should be recorded.
+pref("browser.urlbar.searchEngagementTelemetry.enabled", false);
 
 // When we send events to Urlbar extensions, we wait this amount of time in
 // milliseconds for them to respond before timing out.
@@ -567,6 +580,9 @@ pref("browser.urlbar.bestMatch.enabled", false);
 // Whether best match results can be blocked. This pref is a fallback for the
 // Nimbus variable `bestMatchBlockingEnabled`.
 pref("browser.urlbar.bestMatch.blockingEnabled", false);
+
+// Enable site specific search result.
+pref("browser.urlbar.contextualSearch.enabled", false);
 
 pref("browser.altClickSave", false);
 
@@ -970,16 +986,7 @@ pref("browser.history_swipe_animation.disabled", false);
   // scrolling to shift+wheel.
   pref("mousewheel.with_shift.action", 1);
   pref("mousewheel.with_alt.action", 2);
-  // On MacOS X, control+wheel is typically handled by system and we don't
-  // receive the event.  So, command key which is the main modifier key for
-  // acceleration is the best modifier for zoom-in/out.  However, we should keep
-  // the control key setting for backward compatibility.
-  pref("mousewheel.with_meta.action", 3); // command key on Mac
-  // Disable control-/meta-modified horizontal wheel events, since those are
-  // used on Mac as part of modified swipe gestures (e.g. Left swipe+Cmd is
-  // "go back" in a new tab).
-  pref("mousewheel.with_control.action.override_x", 0);
-  pref("mousewheel.with_meta.action.override_x", 0);
+  pref("mousewheel.with_control.action", 1);
 #else
   // On the other platforms (non-macOS), user may use legacy mouse which
   // supports only vertical wheel but want to scroll horizontally.  For such
@@ -989,9 +996,8 @@ pref("browser.history_swipe_animation.disabled", false);
   // is better for consistency with macOS users.
   pref("mousewheel.with_shift.action", 4);
   pref("mousewheel.with_alt.action", 2);
-  pref("mousewheel.with_meta.action", 1); // win key on Win, Super/Hyper on Linux
 #endif
-pref("mousewheel.with_control.action",3);
+
 pref("mousewheel.with_win.action", 1);
 
 pref("browser.xul.error_pages.expert_bad_cert", false);
@@ -1546,9 +1552,9 @@ pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "https://accounts
 pref("browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts", true);
 
 // ASRouter provider configuration
-pref("browser.newtabpage.activity-stream.asrouter.providers.cfr", "{\"id\":\"cfr\",\"enabled\":true,\"type\":\"remote-settings\",\"bucket\":\"cfr\",\"updateCycleInMs\":3600000}");
-pref("browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel", "{\"id\":\"whats-new-panel\",\"enabled\":true,\"type\":\"remote-settings\",\"bucket\":\"whats-new-panel\",\"updateCycleInMs\":3600000}");
-pref("browser.newtabpage.activity-stream.asrouter.providers.message-groups", "{\"id\":\"message-groups\",\"enabled\":true,\"type\":\"remote-settings\",\"bucket\":\"message-groups\",\"updateCycleInMs\":3600000}");
+pref("browser.newtabpage.activity-stream.asrouter.providers.cfr", "{\"id\":\"cfr\",\"enabled\":true,\"type\":\"remote-settings\",\"collection\":\"cfr\",\"updateCycleInMs\":3600000}");
+pref("browser.newtabpage.activity-stream.asrouter.providers.whats-new-panel", "{\"id\":\"whats-new-panel\",\"enabled\":true,\"type\":\"remote-settings\",\"collection\":\"whats-new-panel\",\"updateCycleInMs\":3600000}");
+pref("browser.newtabpage.activity-stream.asrouter.providers.message-groups", "{\"id\":\"message-groups\",\"enabled\":true,\"type\":\"remote-settings\",\"collection\":\"message-groups\",\"updateCycleInMs\":3600000}");
 // This url, if changed, MUST continue to point to an https url. Pulling arbitrary content to inject into
 // this page over http opens us up to a man-in-the-middle attack that we'd rather not face. If you are a downstream
 // repackager of this code using an alternate snippet url, please keep your users safe
@@ -1819,6 +1825,8 @@ pref("browser.translation.engine", "Google");
 pref("toolkit.telemetry.archive.enabled", false);
 // Enables sending the shutdown ping when Firefox shuts down.
 pref("toolkit.telemetry.shutdownPingSender.enabled", false);
+// Enables using the `pingsender` background task.
+pref("toolkit.telemetry.shutdownPingSender.backgroundtask.enabled", false);
 // Enables sending the shutdown ping using the pingsender from the first session.
 pref("toolkit.telemetry.shutdownPingSender.enabledFirstSession", false);
 // Enables sending a duplicate of the first shutdown ping from the first session.
@@ -2142,8 +2150,10 @@ pref("browser.migrate.firefox.enabled", true);
 pref("browser.migrate.ie.enabled", true);
 pref("browser.migrate.safari.enabled", true);
 pref("browser.migrate.opera.enabled", false);
+pref("browser.migrate.vivaldi.enabled", false);
+pref("browser.migrate.opera-gx.enabled", false);
 
-pref("browser.migrate.showBookmarksToolbarAfterMigration", true);
+pref("browser.migrate.content-modal.enabled", false);
 
 pref("extensions.pocket.api", "api.getpocket.com");
 pref("extensions.pocket.enabled", true);
@@ -2734,19 +2744,19 @@ pref("svg.context-properties.content.allowed-domains", "profile.accounts.firefox
 // A set of scores for rating the relevancy of snapshots. The suffixes after the
 // last decimal are prefixed by `_score` and reference the functions called in
 // SnapshotScorer.
-pref("browser.snapshots.score.Visit", 1);
-pref("browser.snapshots.score.CurrentSession", 1);
-pref("browser.snapshots.score.IsUserPersisted", 1);
-pref("browser.snapshots.score.IsUserRemoved", -10);
+pref("browser.places.snapshots.score.Visit", 1);
+pref("browser.places.snapshots.score.CurrentSession", 1);
+pref("browser.places.snapshots.score.IsUserPersisted", 1);
+pref("browser.places.snapshots.score.IsUserRemoved", -10);
 
 // A set of weights for the snapshot recommendation sources. The suffixes after
 // the last decimal map to the keys of `Snapshots.recommendationSources`.
-pref("browser.snapshots.source.CommonReferrer", 3);
-pref("browser.snapshots.source.Overlapping", 3);
-pref("browser.snapshots.source.TimeOfDay", 3);
+pref("browser.places.snapshots.source.CommonReferrer", 3);
+pref("browser.places.snapshots.source.Overlapping", 3);
+pref("browser.places.snapshots.source.TimeOfDay", 3);
 
 // Other preferences affecting snapshots scoring.
-pref("browser.snapshots.relevancy.timeOfDayIntervalSeconds", 3600);
+pref("browser.places.snapshots.relevancy.timeOfDayIntervalSeconds", 3600);
 
 // Expiration days for snapshots.
 pref("browser.places.snapshots.expiration.days", 210);
@@ -2761,7 +2771,7 @@ pref("browser.firefox-view.view-count", 0);
 
 // If the user has seen the pdf.js feature tour this value reflects the tour
 // message id, the id of the last screen they saw, and whether they completed the tour
-pref("browser.pdfjs.feature-tour", "{\"screen\":\"FEATURE_CALLOUT_1\",\"complete\":false}");
+pref("browser.pdfjs.feature-tour", "{\"screen\":\"\",\"complete\":false}");
 
 // Enables cookie banner handling in Nightly in Private Browsing Mode. See
 // StaticPrefList.yaml for a description of the prefs.

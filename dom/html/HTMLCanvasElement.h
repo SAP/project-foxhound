@@ -42,6 +42,7 @@ class SharedSurfaceTextureClient;
 class WebRenderCanvasData;
 }  // namespace layers
 namespace gfx {
+class DrawTarget;
 class SourceSurface;
 class VRLayerChild;
 }  // namespace gfx
@@ -113,7 +114,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   enum { DEFAULT_CANVAS_WIDTH = 300, DEFAULT_CANVAS_HEIGHT = 150 };
 
   typedef layers::CanvasRenderer CanvasRenderer;
-  typedef layers::Layer Layer;
   typedef layers::LayerManager LayerManager;
   typedef layers::WebRenderCanvasData WebRenderCanvasData;
 
@@ -214,8 +214,14 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   bool GetIsOpaque();
   virtual bool GetOpaqueAttr() override;
 
+  /**
+   * Retrieve a snapshot of the internal surface, returning the alpha type if
+   * requested. An optional target may be supplied for which the snapshot will
+   * be optimized for, if possible.
+   */
   virtual already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
-      gfxAlphaType* aOutAlphaType = nullptr);
+      gfxAlphaType* aOutAlphaType = nullptr,
+      gfx::DrawTarget* aTarget = nullptr);
 
   /*
    * Register a FrameCaptureListener with this canvas.

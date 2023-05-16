@@ -23,14 +23,10 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PartnerLinkAttribution",
-  "resource:///modules/PartnerLinkAttribution.jsm"
-);
 ChromeUtils.defineModuleGetter(
   lazy,
   "pktApi",
@@ -303,7 +299,7 @@ class PlacesFeed {
         );
       }
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return;
     }
 
@@ -379,7 +375,7 @@ class PlacesFeed {
         );
       }
     } catch (err) {
-      Cu.reportError(err);
+      console.error(err);
     }
   }
 
@@ -393,7 +389,7 @@ class PlacesFeed {
       await lazy.NewTabUtils.activityStreamLinks.deletePocketEntry(itemID);
       this.store.dispatch({ type: at.POCKET_LINK_DELETED_OR_ARCHIVED });
     } catch (err) {
-      Cu.reportError(err);
+      console.error(err);
     }
   }
 
@@ -407,7 +403,7 @@ class PlacesFeed {
       await lazy.NewTabUtils.activityStreamLinks.archivePocketEntry(itemID);
       this.store.dispatch({ type: at.POCKET_LINK_DELETED_OR_ARCHIVED });
     } catch (err) {
-      Cu.reportError(err);
+      console.error(err);
     }
   }
 

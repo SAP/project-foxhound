@@ -2344,14 +2344,15 @@ void nsBlockFrame::MarkLineDirty(LineIterator aLine,
  */
 static inline bool IsAlignedLeft(StyleTextAlign aAlignment,
                                  StyleDirection aDirection,
-                                 uint8_t aUnicodeBidi, nsIFrame* aFrame) {
+                                 StyleUnicodeBidi aUnicodeBidi,
+                                 nsIFrame* aFrame) {
   return SVGUtils::IsInSVGTextSubtree(aFrame) ||
          StyleTextAlign::Left == aAlignment ||
          (((StyleTextAlign::Start == aAlignment &&
             StyleDirection::Ltr == aDirection) ||
            (StyleTextAlign::End == aAlignment &&
             StyleDirection::Rtl == aDirection)) &&
-          !(NS_STYLE_UNICODE_BIDI_PLAINTEXT & aUnicodeBidi));
+          aUnicodeBidi != StyleUnicodeBidi::Plaintext);
 }
 
 void nsBlockFrame::PrepareResizeReflow(BlockReflowState& aState) {
@@ -5745,7 +5746,7 @@ void nsBlockFrame::AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) {
   AddFrames(std::move(aFrameList), lastKid, nullptr);
   if (aListID != FrameChildListID::NoReflowPrincipal) {
     PresShell()->FrameNeedsReflow(
-        this, IntrinsicDirty::TreeChange,
+        this, IntrinsicDirty::FrameAndAncestors,
         NS_FRAME_HAS_DIRTY_CHILDREN);  // XXX sufficient?
   }
 }
@@ -5782,7 +5783,7 @@ void nsBlockFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
   AddFrames(std::move(aFrameList), aPrevFrame, aPrevFrameLine);
   if (aListID != FrameChildListID::NoReflowPrincipal) {
     PresShell()->FrameNeedsReflow(
-        this, IntrinsicDirty::TreeChange,
+        this, IntrinsicDirty::FrameAndAncestors,
         NS_FRAME_HAS_DIRTY_CHILDREN);  // XXX sufficient?
   }
 }
@@ -5823,7 +5824,7 @@ void nsBlockFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   }
 
   PresShell()->FrameNeedsReflow(
-      this, IntrinsicDirty::TreeChange,
+      this, IntrinsicDirty::FrameAndAncestors,
       NS_FRAME_HAS_DIRTY_CHILDREN);  // XXX sufficient?
 }
 

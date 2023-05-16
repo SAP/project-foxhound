@@ -39,7 +39,7 @@ tokio-reactor = { version = "=0.1.3", optional = true }
 # audioipc2-client and audioipc2-server.
 tokio-threadpool = { version = "=0.1.17", optional = true }
 encoding_glue = { path = "../../../../intl/encoding_glue" }
-authenticator = "0.3.1"
+authenticator = { version = "0.4.0-alpha.6", features = ["gecko"] }
 gkrust_utils = { path = "../../../../xpcom/rust/gkrust_utils" }
 gecko_logger = { path = "../../../../xpcom/rust/gecko_logger" }
 rsdparsa_capi = { path = "../../../../dom/media/webrtc/sdp/rsdparsa_capi" }
@@ -82,6 +82,7 @@ uniffi-example-sprites = { git = "https://github.com/mozilla/uniffi-rs.git", rev
 uniffi-example-todolist = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "bb2039f077a29dba0879372a67e764e6ace8e33f", optional = true }
 uniffi-example-custom-types = { path = "../../../components/uniffi-example-custom-types/", optional = true }
 uniffi-fixture-external-types = { path = "../../../components/uniffi-fixture-external-types/", optional = true }
+oblivious_http = { path = "../../../../netwerk/protocol/http/oblivious_http" }
 
 # Note: `modern_sqlite` means rusqlite's bindings file be for a sqlite with
 # version less than or equal to what we link to. This isn't a problem because we
@@ -93,13 +94,14 @@ fluent = { version = "0.16.0", features = ["fluent-pseudo"] }
 fluent-ffi = { path = "../../../../intl/l10n/rust/fluent-ffi" }
 l10nregistry-ffi = { path = "../../../../intl/l10n/rust/l10nregistry-ffi" }
 l10nregistry = { path = "../../../../intl/l10n/rust/l10nregistry-rs" }
-fluent-fallback = "0.6.0"
+fluent-fallback = "0.7.0"
 localization-ffi = { path = "../../../../intl/l10n/rust/localization-ffi" }
 
 processtools = { path = "../../../components/processtools" }
 qcms = { path = "../../../../gfx/qcms", features = ["c_bindings", "neon"], default-features = false }
 
-wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "f0d95ce14af8a8de74f469dbad715c4064fca2e1" }
+wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "e07e3741d1613b1b7ddb85a1120ed4071b3d6a56" }
+aa-stroke = { git = "https://github.com/FirefoxGraphics/aa-stroke", rev = "07d3c25322518f294300e96246e09b95e118555d" }
 
 # Force url to stay at 2.1.0. See bug 1734538.
 url = "=2.1.0"
@@ -156,3 +158,6 @@ bench = false
 doc = false
 plugin = false
 harness = false
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["moz_asserts"]

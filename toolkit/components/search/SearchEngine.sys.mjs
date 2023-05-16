@@ -68,6 +68,7 @@ var OS_UNSUPPORTED_PARAMS = [
 
 /**
  * Truncates big blobs of (data-)URIs to console-friendly sizes
+ *
  * @param {string} str
  *   String to tone down
  * @param {number} len
@@ -86,13 +87,13 @@ function limitURILength(str, len) {
 /**
  * Tries to rescale an icon to a given size.
  *
- * @param {array} byteArray
+ * @param {Array} byteArray
  *   Byte array containing the icon payload.
  * @param {string} contentType
  *   Mime type of the payload.
  * @param {number} [size]
  *   Desired icon size.
- * @returns {array}
+ * @returns {Array}
  *   An array of two elements - an array of integers and a string for the content
  *   type.
  * @throws if the icon cannot be rescaled or the rescaled icon is too big.
@@ -165,15 +166,14 @@ const ParamPreferenceCache = {
 
 /**
  * Represents a name/value pair for a parameter
- * @see nsISearchEngine::addParam
  */
 class QueryParameter {
   /**
-   * @see nsISearchEngine::addParam
    * @param {string} name
+   *   The parameter's name. Must not be null.
    * @param {string} value
-   *  The value of the parameter. May be an empty string, must not be null or
-   *  undefined.
+   *   The value of the parameter. May be an empty string, must not be null or
+   *   undefined.
    * @param {string} purpose
    *   The search purpose for which matches when this parameter should be
    *   applied, e.g. "searchbar", "contextmenu".
@@ -254,6 +254,7 @@ class QueryPreferenceParameter extends QueryParameter {
 
 /**
  * Perform OpenSearch parameter substitution on aParamValue.
+ *
  * @see http://opensearch.a9.com/spec/1.1/querysyntax/#core
  *
  * @param {string} paramValue
@@ -404,6 +405,7 @@ export class EngineURL {
    * as a special type.
    *
    * @param {object} param
+   *   The parameter to add.
    * @param {string} param.name
    *   The name of the parameter to add to the url.
    * @param {string} [param.condition]
@@ -846,14 +848,14 @@ export class SearchEngine {
    *   The url type.
    * @param {object} params
    *   The URL parameters.
-   * @param {string|array} [params.getParams]
+   * @param {string | Array} [params.getParams]
    *   Any parameters for a GET method. This is either a query string, or
    *   an array of objects which have name/value pairs.
    * @param {string} [params.method]
    *   The type of method, defaults to GET.
    * @param {string} [params.mozParams]
    *   Any special Mozilla Parameters.
-   * @param {string|array} [params.postParams]
+   * @param {string | Array} [params.postParams]
    *   Any parameters for a POST method. This is either a query string, or
    *   an array of objects which have name/value pairs.
    * @param {string} params.template
@@ -905,6 +907,7 @@ export class SearchEngine {
    * Initialize this engine object.
    *
    * @param {object} details
+   *   The details of the engine.
    * @param {string} details.name
    *   The name of the engine.
    * @param {string} details.keyword
@@ -960,6 +963,7 @@ export class SearchEngine {
    * overrideWithExtension / removeExtensionOverride functions as well.
    *
    * @param {object} details
+   *   The details of the engine.
    * @param {string} details.search_url
    *   The search url template for the engine.
    * @param {string} [details.search_url_get_params]
@@ -1148,6 +1152,7 @@ export class SearchEngine {
 
   /**
    * Creates a JavaScript object that represents this engine.
+   *
    * @returns {object}
    *   An object suitable for serialization as JSON.
    */
@@ -1219,6 +1224,7 @@ export class SearchEngine {
    * Set the user-defined alias.
    *
    * @param {string} val
+   *   The new alias.
    */
   set alias(val) {
     var value = val ? val.trim() : "";
@@ -1470,6 +1476,92 @@ export class SearchEngine {
     return url.getSubmission(submissionData, this, purpose);
   }
 
+  /**
+   * Returns the search term of a possible search result URI if and only if:
+   * - The URI has the same scheme, host, and path as the engine.
+   * - All query parameters of the URI have a matching name and value in the engine.
+   * - An exception to the equality check is the engine's termsParameterName
+   *   value, which contains a placeholder, i.e. {searchTerms}.
+   * - If an engine has query parameters with "null" values, they will be ignored.
+   *
+   * @param {nsIURI} uri
+   *   A URI that may or may not be from a search result matching the engine.
+   *
+   * @returns {string}
+   *   A string representing the termsParameterName value of the URI,
+   *   or an empty string if the URI isn't matched to the engine.
+   */
+  searchTermFromResult(uri) {
+    let url = this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH);
+    if (!url) {
+      return "";
+    }
+
+    // The engine URL and URI should have the same scheme, host, and path.
+    if (
+      uri.spec.split("?")[0].toLowerCase() !=
+      url.template.split("?")[0].toLowerCase()
+    ) {
+      return "";
+    }
+
+    let engineParams;
+    if (url.params.length) {
+      engineParams = new URLSearchParams();
+      for (let { name, value } of url.params) {
+        // Some values might be null, so avoid adding
+        // them since the input is unlikely to have it too.
+        if (value) {
+          // Use append() rather than set() so multiple
+          // values of the same name can be stored.
+          engineParams.append(name, value);
+        }
+      }
+    } else {
+      // Try checking the template for the presence of query params.
+      engineParams = new URL(url.template).searchParams;
+    }
+
+    let uriParams = new URLSearchParams(uri.query);
+    if (
+      new Set([...uriParams.keys()]).size !=
+      new Set([...engineParams.keys()]).size
+    ) {
+      return "";
+    }
+
+    let termsParameterName = this.getURLParsingInfo().termsParameterName;
+    for (let [name, value] of uriParams.entries()) {
+      // Don't check the name matching the search
+      // query because its value will differ.
+      if (name == termsParameterName) {
+        continue;
+      }
+      // All params of an input must have a matching
+      // key and value in the list of engine parameters.
+      if (!engineParams.getAll(name).includes(value)) {
+        return "";
+      }
+    }
+
+    // An engine can use a non UTF-8 charset, which URLSearchParams
+    // might not parse properly. Convert the terms parameter value
+    // from the original input using the appropriate charset.
+    if (this.queryCharset.toLowerCase() != "utf-8") {
+      let name = `${termsParameterName}=`;
+      let queryString = uri.query
+        .split("&")
+        .filter(str => str.startsWith(name))
+        .pop();
+      return Services.textToSubURI.UnEscapeAndConvert(
+        this.queryCharset,
+        queryString.substring(queryString.indexOf("=") + 1).replace(/\+/g, " ")
+      );
+    }
+
+    return uriParams.get(termsParameterName);
+  }
+
   get searchUrlQueryParamName() {
     if (this._searchUrlQueryParamName != null) {
       return this._searchUrlQueryParamName;
@@ -1481,7 +1573,7 @@ export class SearchEngine {
     );
 
     if (submission.postData) {
-      Cu.reportError("searchUrlQueryParamName can't handle POST urls.");
+      console.error("searchUrlQueryParamName can't handle POST urls.");
       return (this._searchUrlQueryParamName = "");
     }
 
@@ -1551,9 +1643,7 @@ export class SearchEngine {
       return null;
     }
 
-    let templateUrl = Services.io
-      .newURI(url.template)
-      .QueryInterface(Ci.nsIURL);
+    let templateUrl = Services.io.newURI(url.template);
     return {
       mainDomain: templateUrl.host,
       path: templateUrl.filePath.toLowerCase(),
@@ -1627,16 +1717,17 @@ export class SearchEngine {
    * (and suggest URI, if different) to reduce request latency
    *
    * @param {object} options
+   *   The options object
    * @param {DOMWindow} options.window
    *   The content window for the window performing the search.
    * @param {object} options.originAttributes
    *   The originAttributes for performing the search
    * @throws NS_ERROR_INVALID_ARG if options is omitted or lacks required
-   *         elemeents
+   *         elements
    */
   speculativeConnect(options) {
     if (!options || !options.window) {
-      Cu.reportError(
+      console.error(
         "invalid options arg passed to nsISearchEngine.speculativeConnect"
       );
       throw Components.Exception("", Cr.NS_ERROR_INVALID_ARG);
@@ -1665,7 +1756,7 @@ export class SearchEngine {
       connector.speculativeConnect(searchURI, principal, callbacks);
     } catch (e) {
       // Can't setup speculative connection for this url, just ignore it.
-      Cu.reportError(e);
+      console.error(e);
     }
 
     if (this.supportsResponseType(lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)) {
@@ -1678,7 +1769,7 @@ export class SearchEngine {
           connector.speculativeConnect(suggestURI, principal, callbacks);
         } catch (e) {
           // Can't setup speculative connection for this url, just ignore it.
-          Cu.reportError(e);
+          console.error(e);
         }
       }
     }

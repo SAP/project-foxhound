@@ -9,8 +9,6 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   NetworkHelper:
     "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
-  wildcardToRegExp:
-    "resource://devtools/shared/network-observer/WildcardToRegexp.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "tpFlagsMask", () => {
@@ -170,7 +168,6 @@ function createNetworkEvent(
     extraStringData,
     blockedReason,
     blockingExtension = null,
-    blockedURLs = [],
     saveRequestAndResponseBodies = false,
   }
 ) {
@@ -264,23 +261,14 @@ function createNetworkEvent(
   event.discardRequestBody = !saveRequestAndResponseBodies;
   event.discardResponseBody = !saveRequestAndResponseBodies;
 
-  // Check the request URL with ones manually blocked by the user in DevTools.
-  // If it's meant to be blocked, we cancel the request and annotate the event.
-  if (!blockedReason) {
-    if (blockedReason !== undefined) {
-      // We were definitely blocked, but the blocker didn't say why.
-      event.blockedReason = "unknown";
-    } else if (
-      blockedURLs.some(url => lazy.wildcardToRegExp(url).test(event.url))
-    ) {
-      channel.cancel(Cr.NS_BINDING_ABORTED);
-      event.blockedReason = "devtools";
-    }
-  } else {
+  if (blockedReason) {
     event.blockedReason = blockedReason;
     if (blockingExtension) {
       event.blockingExtension = blockingExtension;
     }
+  } else if (blockedReason !== undefined) {
+    // We were definitely blocked, but the blocker didn't say why.
+    event.blockedReason = "unknown";
   }
 
   // isNavigationRequest is true for the one request used to load a new top level document
@@ -299,14 +287,14 @@ function createNetworkEvent(
  * so that the frontend can later fetch it via getRequestHeaders/getRequestCookies.
  *
  * @param {*} channel
- * @param {*} owner - The network event actor
- * @param {Object} extraStringData - The uncached response headers.
+ * @return {Object}
+ *     An object with two properties:
+ *     @property {Array<Object>} cookies
+ *         Array of { name, value } objects.
+ *     @property {Array<Object>} headers
+ *         Array of { name, value } objects.
  */
-function fetchRequestHeadersAndCookies(
-  channel,
-  owner,
-  { extraStringData = "" }
-) {
+function fetchRequestHeadersAndCookies(channel) {
   const headers = [];
   let cookies = [];
   let cookieHeader = null;
@@ -325,8 +313,7 @@ function fetchRequestHeadersAndCookies(
     cookies = lazy.NetworkHelper.parseCookieHeader(cookieHeader);
   }
 
-  owner.addRequestHeaders(headers, extraStringData);
-  owner.addRequestCookies(cookies);
+  return { cookies, headers };
 }
 
 /**

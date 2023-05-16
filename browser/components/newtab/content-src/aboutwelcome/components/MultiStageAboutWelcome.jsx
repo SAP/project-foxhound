@@ -252,35 +252,6 @@ export const SecondaryCTA = props => {
   );
 };
 
-export const OnboardingVideo = props => {
-  const vidUrl = props.content.video_url;
-  const autoplay = props.content.autoPlay;
-
-  const handleVideoAction = event => {
-    props.handleAction({
-      currentTarget: {
-        value: event,
-      },
-    });
-  };
-
-  return (
-    <div>
-      <video // eslint-disable-line jsx-a11y/media-has-caption
-        controls={true}
-        autoPlay={autoplay}
-        src={vidUrl}
-        width="604px"
-        height="340px"
-        onPlay={() => handleVideoAction("video_start")}
-        onEnded={() => handleVideoAction("video_end")}
-      >
-        <source src={vidUrl}></source>
-      </video>
-    </div>
-  );
-};
-
 export const StepsIndicator = props => {
   let steps = [];
   for (let i = 0; i < props.totalNumberOfScreens; i++) {
@@ -340,11 +311,14 @@ export class WelcomeScreen extends React.PureComponent {
       return;
     }
     // Send telemetry before waiting on actions
-    AboutWelcomeUtils.sendActionTelemetry(
-      props.messageId,
-      event.currentTarget.value,
-      event.name
-    );
+    AboutWelcomeUtils.sendActionTelemetry(props.messageId, value, event.name);
+
+    // Send additional telemetry if a messaging surface like feature callout is
+    // dismissed via the dismiss button. Other causes of dismissal will be
+    // handled separately by the messaging surface's own code.
+    if (value === "dismiss_button" && !event.name) {
+      AboutWelcomeUtils.sendDismissTelemetry(props.messageId, value);
+    }
 
     let { action } = targetContent;
 

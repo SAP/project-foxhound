@@ -14,7 +14,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
 });
 
 const S100NS_FROM1601TO1970 = 0x19db1ded53e8000;
@@ -44,7 +43,8 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get all extensions installed in a specific profile.
-   * @param {String} profileId - A Chrome user profile ID. For example, "Profile 1".
+   *
+   * @param {string} profileId - A Chrome user profile ID. For example, "Profile 1".
    * @returns {Array} All installed Chrome extensions information.
    */
   async getExtensionList(profileId) {
@@ -52,29 +52,33 @@ export var ChromeMigrationUtils = {
       profileId = await this.getLastUsedProfileId();
     }
     let path = this.getExtensionPath(profileId);
-    let iterator = new lazy.OS.File.DirectoryIterator(path);
     let extensionList = [];
-    await iterator
-      .forEach(async entry => {
-        if (entry.isDir) {
+    try {
+      for (const child of await IOUtils.getChildren(path)) {
+        const info = await IOUtils.stat(child);
+        if (info.type === "directory") {
+          const name = PathUtils.filename(child);
           let extensionInformation = await this.getExtensionInformation(
-            entry.name,
+            name,
             profileId
           );
           if (extensionInformation) {
             extensionList.push(extensionInformation);
           }
         }
-      })
-      .catch(ex => Cu.reportError(ex));
+      }
+    } catch (ex) {
+      Cu.reportError(ex);
+    }
     return extensionList;
   },
 
   /**
    * Get information of a specific Chrome extension.
-   * @param {String} extensionId - The extension ID.
-   * @param {String} profileId - The user profile's ID.
-   * @retruns {Object} The Chrome extension information.
+   *
+   * @param {string} extensionId - The extension ID.
+   * @param {string} profileId - The user profile's ID.
+   * @returns {object} The Chrome extension information.
    */
   async getExtensionInformation(extensionId, profileId) {
     if (profileId === undefined) {
@@ -83,7 +87,7 @@ export var ChromeMigrationUtils = {
     let extensionInformation = null;
     try {
       let manifestPath = this.getExtensionPath(profileId);
-      manifestPath = lazy.OS.Path.join(manifestPath, extensionId);
+      manifestPath = PathUtils.join(manifestPath, extensionId);
       // If there are multiple sub-directories in the extension directory,
       // read the files in the latest directory.
       let directories = await this._getSortedByVersionSubDirectoryNames(
@@ -93,15 +97,12 @@ export var ChromeMigrationUtils = {
         return null;
       }
 
-      manifestPath = lazy.OS.Path.join(
+      manifestPath = PathUtils.join(
         manifestPath,
         directories[0],
         "manifest.json"
       );
-      let manifest = await lazy.OS.File.read(manifestPath, {
-        encoding: "utf-8",
-      });
-      manifest = JSON.parse(manifest);
+      let manifest = await IOUtils.readJSON(manifestPath);
       // No app attribute means this is a Chrome extension not a Chrome app.
       if (!manifest.app) {
         const DEFAULT_LOCALE = manifest.default_locale;
@@ -135,11 +136,12 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get the manifest's locale string.
-   * @param {String} key - The key of a locale string, for example __MSG_name__.
-   * @param {String} locale - The specific language of locale string.
-   * @param {String} extensionId - The extension ID.
-   * @param {String} profileId - The user profile's ID.
-   * @retruns {String} The locale string.
+   *
+   * @param {string} key - The key of a locale string, for example __MSG_name__.
+   * @param {string} locale - The specific language of locale string.
+   * @param {string} extensionId - The extension ID.
+   * @param {string} profileId - The user profile's ID.
+   * @returns {string} The locale string.
    */
   async _getLocaleString(key, locale, extensionId, profileId) {
     // Return the key string if it is not a locale key.
@@ -163,23 +165,20 @@ export var ChromeMigrationUtils = {
           this._extensionLocaleStrings[profileId] = {};
         }
         let localeFilePath = this.getExtensionPath(profileId);
-        localeFilePath = lazy.OS.Path.join(localeFilePath, extensionId);
+        localeFilePath = PathUtils.join(localeFilePath, extensionId);
         let directories = await this._getSortedByVersionSubDirectoryNames(
           localeFilePath
         );
         // If there are multiple sub-directories in the extension directory,
         // read the files in the latest directory.
-        localeFilePath = lazy.OS.Path.join(
+        localeFilePath = PathUtils.join(
           localeFilePath,
           directories[0],
           "_locales",
           locale,
           "messages.json"
         );
-        localeFile = await lazy.OS.File.read(localeFilePath, {
-          encoding: "utf-8",
-        });
-        localeFile = JSON.parse(localeFile);
+        localeFile = await IOUtils.readJSON(localeFilePath);
         this._extensionLocaleStrings[profileId][extensionId] = localeFile;
       }
       const PREFIX_LENGTH = 6;
@@ -198,24 +197,26 @@ export var ChromeMigrationUtils = {
 
   /**
    * Check that a specific extension is installed or not.
-   * @param {String} extensionId - The extension ID.
-   * @param {String} profileId - The user profile's ID.
-   * @returns {Boolean} Return true if the extension is installed otherwise return false.
+   *
+   * @param {string} extensionId - The extension ID.
+   * @param {string} profileId - The user profile's ID.
+   * @returns {boolean} Return true if the extension is installed otherwise return false.
    */
   async isExtensionInstalled(extensionId, profileId) {
     if (profileId === undefined) {
       profileId = await this.getLastUsedProfileId();
     }
     let extensionPath = this.getExtensionPath(profileId);
-    let isInstalled = await lazy.OS.File.exists(
-      lazy.OS.Path.join(extensionPath, extensionId)
+    let isInstalled = await IOUtils.exists(
+      PathUtils.join(extensionPath, extensionId)
     );
     return isInstalled;
   },
 
   /**
    * Get the last used user profile's ID.
-   * @returns {String} The last used user profile's ID.
+   *
+   * @returns {string} The last used user profile's ID.
    */
   async getLastUsedProfileId() {
     let localState = await this.getLocalState();
@@ -224,8 +225,9 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get the local state file content.
-   * @param {String} dataPath the type of Chrome data we're looking for (Chromium, Canary, etc.)
-   * @returns {Object} The JSON-based content.
+   *
+   * @param {string} dataPath the type of Chrome data we're looking for (Chromium, Canary, etc.)
+   * @returns {object} The JSON-based content.
    */
   async getLocalState(dataPath = "Chrome") {
     let localState = null;
@@ -247,8 +249,9 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get the path of Chrome extension directory.
-   * @param {String} profileId - The user profile's ID.
-   * @returns {String} The path of Chrome extension directory.
+   *
+   * @param {string} profileId - The user profile's ID.
+   * @returns {string} The path of Chrome extension directory.
    */
   getExtensionPath(profileId) {
     return PathUtils.join(this.getDataPath(), profileId, "Extensions");
@@ -256,9 +259,10 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get the path of an application data directory.
-   * @param {String} chromeProjectName - The Chrome project name, e.g. "Chrome", "Canary", etc.
+   *
+   * @param {string} chromeProjectName - The Chrome project name, e.g. "Chrome", "Canary", etc.
    *                                     Defaults to "Chrome".
-   * @returns {String} The path of application data directory.
+   * @returns {string} The path of application data directory.
    */
   getDataPath(chromeProjectName = "Chrome") {
     const SUB_DIRECTORIES = {
@@ -272,6 +276,8 @@ export var ChromeMigrationUtils = {
         "Edge Beta": ["Microsoft", "Edge Beta"],
         "360 SE": ["360se6"],
         Opera: ["Opera Software", "Opera Stable"],
+        "Opera GX": ["Opera Software", "Opera GX Stable"],
+        Vivaldi: ["Vivaldi"],
       },
       macosx: {
         Brave: ["BraveSoftware", "Brave-Browser"],
@@ -280,7 +286,9 @@ export var ChromeMigrationUtils = {
         Canary: ["Google", "Chrome Canary"],
         Edge: ["Microsoft Edge"],
         "Edge Beta": ["Microsoft Edge Beta"],
+        "Opera GX": ["com.operasoftware.OperaGX"],
         Opera: ["com.operasoftware.Opera"],
+        Vivaldi: ["Vivaldi"],
       },
       linux: {
         Brave: ["BraveSoftware", "Brave-Browser"],
@@ -288,9 +296,11 @@ export var ChromeMigrationUtils = {
         "Chrome Beta": ["google-chrome-beta"],
         "Chrome Dev": ["google-chrome-unstable"],
         Chromium: ["chromium"],
+        "Opera GX": ["Opera-GX"],
         // Canary is not available on Linux.
         // Edge is not available on Linux.
         Opera: ["Opera"],
+        Vivaldi: ["Vivaldi"],
       },
     };
     let subfolders = SUB_DIRECTORIES[AppConstants.platform][chromeProjectName];
@@ -300,12 +310,16 @@ export var ChromeMigrationUtils = {
 
     let rootDir;
     if (AppConstants.platform == "win") {
-      if (chromeProjectName === "360 SE" || chromeProjectName === "Opera") {
+      if (
+        chromeProjectName === "360 SE" ||
+        chromeProjectName === "Opera" ||
+        chromeProjectName === "Opera GX"
+      ) {
         rootDir = "AppData";
       } else {
         rootDir = "LocalAppData";
       }
-      if (chromeProjectName != "Opera") {
+      if (chromeProjectName != "Opera" && chromeProjectName != "Opera GX") {
         subfolders = subfolders.concat(["User Data"]);
       }
     } else if (AppConstants.platform == "macosx") {
@@ -330,7 +344,8 @@ export var ChromeMigrationUtils = {
 
   /**
    * Get the directory objects sorted by version number.
-   * @param {String} path - The path to the extension directory.
+   *
+   * @param {string} path - The path to the extension directory.
    * otherwise return all file/directory object.
    * @returns {Array} The file/directory object array.
    */
@@ -339,18 +354,20 @@ export var ChromeMigrationUtils = {
       return this._extensionVersionDirectoryNames[path];
     }
 
-    let iterator = new lazy.OS.File.DirectoryIterator(path);
     let entries = [];
-    await iterator
-      .forEach(async entry => {
-        if (entry.isDir) {
-          entries.push(entry.name);
+    try {
+      for (const child of await IOUtils.getChildren(path)) {
+        const info = await IOUtils.stat(child);
+        if (info.type === "directory") {
+          const name = PathUtils.filename(child);
+          entries.push(name);
         }
-      })
-      .catch(ex => {
-        Cu.reportError(ex);
-        entries = [];
-      });
+      }
+    } catch (ex) {
+      Cu.reportError(ex);
+      entries = [];
+    }
+
     // The directory name is the version number string of the extension.
     // For example, it could be "1.0_0", "1.0_1", "1.0_2", 1.1_0, 1.1_1, or 1.1_2.
     // The "1.0_1" strings mean that the "1.0_0" directory is existed and you install the version 1.0 again.
@@ -362,16 +379,14 @@ export var ChromeMigrationUtils = {
   },
 
   /**
-   * Convert Chrome time format to Date object
+   * Convert Chrome time format to Date object. Google Chrome uses FILETIME / 10 as time.
+   * FILETIME is based on the same structure of Windows.
    *
-   * @param   aTime
-   *          Chrome time
-   * @param   aFallbackValue
-   *          a date or timestamp (valid argument for the Date constructor)
-   *          that will be used if the chrometime value passed is invalid.
-   * @return  converted Date object
-   * @note    Google Chrome uses FILETIME / 10 as time.
-   *          FILETIME is based on same structure of Windows.
+   * @param {number} aTime Chrome time
+   * @param {string|number|Date} aFallbackValue a date or timestamp (valid argument
+   *   for the Date constructor) that will be used if the chrometime value passed is
+   *   invalid.
+   * @returns {Date} converted Date object
    */
   chromeTimeToDate(aTime, aFallbackValue) {
     // The date value may be 0 in some cases. Because of the subtraction below,
@@ -384,12 +399,11 @@ export var ChromeMigrationUtils = {
   },
 
   /**
-   * Convert Date object to Chrome time format
+   * Convert Date object to Chrome time format. For details on Chrome time, see
+   * chromeTimeToDate.
    *
-   * @param   aDate
-   *          Date object or integer equivalent
-   * @return  Chrome time
-   * @note    For details on Chrome time, see chromeTimeToDate.
+   * @param {Date|number} aDate Date object or integer equivalent
+   * @returns {number} Chrome time
    */
   dateToChromeTime(aDate) {
     return (aDate * 10000 + S100NS_FROM1601TO1970) / S100NS_PER_MS;
@@ -420,9 +434,9 @@ export var ChromeMigrationUtils = {
         // Check each profile for logins.
         const dataPath = await migrator.wrappedJSObject._getChromeUserDataPathIfExists();
         for (const profile of await migrator.getSourceProfiles()) {
-          const path = lazy.OS.Path.join(dataPath, profile.id, "Login Data");
+          const path = PathUtils.join(dataPath, profile.id, "Login Data");
           // Skip if login data is missing.
-          if (!(await lazy.OS.File.exists(path))) {
+          if (!(await IOUtils.exists(path))) {
             Cu.reportError(`Missing file at ${path}`);
             continue;
           }

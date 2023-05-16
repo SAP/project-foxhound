@@ -14,6 +14,9 @@
 #include <memory>
 #include <string>
 
+#include "CamerasTypes.h"
+#include "PerformanceRecorder.h"
+
 #include "api/video/i420_buffer.h"
 #include "base/scoped_nsautorelease_pool.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -29,7 +32,10 @@
 #include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/video_capture/video_capture.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_media.h"
+
+#include "PerformanceRecorder.h"
 
 #if defined(_WIN32)
 #  include "platform_uithread.h"
@@ -387,6 +393,20 @@ int32_t DesktopCaptureImpl::LazyInitDesktopCapturer() {
 DesktopCaptureImpl::DesktopCaptureImpl(const int32_t id, const char* uniqueId,
                                        const CaptureDeviceType type)
     : _id(id),
+      _tracking_id(
+          mozilla::TrackingId(CaptureEngineToTrackingSourceStr([&] {
+                                switch (type) {
+                                  case CaptureDeviceType::Screen:
+                                    return CaptureEngine::ScreenEngine;
+                                  case CaptureDeviceType::Window:
+                                    return CaptureEngine::WinEngine;
+                                  case CaptureDeviceType::Browser:
+                                    return CaptureEngine::BrowserEngine;
+                                  default:
+                                    return CaptureEngine::InvalidEngine;
+                                }
+                              }()),
+                              id)),
       _deviceUniqueId(uniqueId),
       _deviceType(type),
       _requestedCapability(),
@@ -483,6 +503,8 @@ int32_t DesktopCaptureImpl::IncomingFrame(
   // In Windows, the image starts bottom left, instead of top left.
   // Setting a negative source height, inverts the image (within LibYuv).
 
+  mozilla::PerformanceRecorder<mozilla::CopyVideoStage> rec(
+      "DesktopCaptureImpl::ConvertToI420"_ns, _tracking_id, width, abs(height));
   // TODO(nisse): Use a pool?
   rtc::scoped_refptr<I420Buffer> buffer =
       I420Buffer::Create(width, abs(height), stride_y, stride_uv, stride_uv);
@@ -499,6 +521,7 @@ int32_t DesktopCaptureImpl::IncomingFrame(
                       << static_cast<int>(frameInfo.videoType) << "to I420.";
     return -1;
   }
+  rec.Record();
 
   VideoFrame captureFrame(buffer, 0, rtc::TimeMillis(), kVideoRotation_0);
 
@@ -668,7 +691,7 @@ void DesktopCaptureImpl::process() {
 }
 
 void DesktopCaptureImpl::ProcessIter() {
-  // We should deliver at least one frame before stopping
+// We should deliver at least one frame before stopping
 #if !defined(_WIN32)
   int64_t startProcessTime = rtc::TimeNanos();
 #endif

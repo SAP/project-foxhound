@@ -3853,6 +3853,13 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
     return;
   }
 
+  mozilla::Maybe<AutoLockGC> lock;
+  GCMarker* marker = GCMarker::fromTracer(tracer);
+  if (marker->isParallelMarking()) {
+    // Synchronise access to generatorFrames.
+    lock.emplace(marker->runtime());
+  }
+
   for (Realm::DebuggerVectorEntry& entry : generator->realm()->getDebuggers()) {
     Debugger* dbg = entry.dbg.unbarrieredGet();
 
@@ -5998,7 +6005,7 @@ bool Debugger::CallData::findAllGlobals() {
         continue;
       }
 
-      if (!r->hasLiveGlobal()) {
+      if (!r->hasInitializedGlobal()) {
         continue;
       }
 
@@ -6127,7 +6134,7 @@ bool Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp) {
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   frontend::NoScopeBindingCache scopeCache;
-  frontend::CompilationState compilationState(cx, allocScope, input.get());
+  frontend::CompilationState compilationState(cx, &ec, allocScope, input.get());
   if (!compilationState.init(cx, &ec, &scopeCache)) {
     return false;
   }

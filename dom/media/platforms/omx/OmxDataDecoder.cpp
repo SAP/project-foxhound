@@ -92,7 +92,8 @@ class MediaDataHelper {
 };
 
 OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
-                               layers::ImageContainer* aImageContainer)
+                               layers::ImageContainer* aImageContainer,
+                               Maybe<TrackingId> aTrackingId)
     : mOmxTaskQueue(
           CreateMediaDecodeTaskQueue("OmxDataDecoder::mOmxTaskQueue")),
       mImageContainer(aImageContainer),
@@ -102,7 +103,8 @@ OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
       mFlushing(false),
       mShuttingDown(false),
       mCheckingInputExhausted(false),
-      mPortSettingsChanged(-1, "OmxDataDecoder::mPortSettingsChanged") {
+      mPortSettingsChanged(-1, "OmxDataDecoder::mPortSettingsChanged"),
+      mTrackingId(std::move(aTrackingId)) {
   LOG("");
   mOmxLayer = new OmxPromiseLayer(mOmxTaskQueue, this, aImageContainer);
 }
@@ -162,6 +164,15 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
   RefPtr<MediaRawData> sample = aSample;
   return InvokeAsync(mOmxTaskQueue, __func__, [self, this, sample]() {
     RefPtr<DecodePromise> p = mDecodePromise.Ensure(__func__);
+
+    mTrackingId.apply([&](const auto& aId) {
+      MediaInfoFlag flag = MediaInfoFlag::None;
+      flag |= (sample->mKeyframe ? MediaInfoFlag::KeyFrame
+                                 : MediaInfoFlag::NonKeyFrame);
+
+      mPerformanceRecorder.Start(sample->mTimecode.ToMicroseconds(),
+                                 "OmxDataDecoder"_ns, aId, flag);
+    });
     mMediaRawDatas.AppendElement(std::move(sample));
 
     // Start to fill/empty buffers.
@@ -348,6 +359,17 @@ void OmxDataDecoder::Output(BufferData* aData) {
         });
   } else {
     aData->mStatus = BufferData::BufferStatus::FREE;
+  }
+
+  if (mTrackInfo->IsVideo()) {
+    mPerformanceRecorder.Record(
+        aData->mRawData->mTimecode.ToMicroseconds(), [&](DecodeStage& aStage) {
+          const auto& image = data->As<VideoData>()->mImage;
+          aStage.SetResolution(image->GetSize().Width(),
+                               image->GetSize().Height());
+          aStage.SetImageFormat(DecodeStage::YUV420P);
+          aStage.SetColorDepth(image->GetColorDepth());
+        });
   }
 
   mDecodedData.AppendElement(std::move(data));
@@ -808,6 +830,7 @@ RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::DoFlush() {
   mDecodedData = DecodedData();
   mDecodePromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
   mDrainPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+  mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
 
   RefPtr<FlushPromise> p = mFlushPromise.Ensure(__func__);
 

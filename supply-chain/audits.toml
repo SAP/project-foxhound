@@ -1,6 +1,12 @@
 
 # cargo-vet audits file
 
+[[audits.aa-stroke]]
+who = "Lee Salzman <lsalzman@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "Written and maintained by Gfx team at Mozilla."
+
 [[audits.android_logger]]
 who = "Jan-Erik Rediger <jrediger@mozilla.com>"
 criteria = "safe-to-deploy"
@@ -90,6 +96,12 @@ criteria = "safe-to-deploy"
 version = "0.1.8"
 notes = "I maintain this crate and have reviewed every line."
 
+[[audits.authenticator]]
+who = "John M. Schanck <jschanck@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.4.0-alpha.6"
+notes = "Maintained by the CryptoEng team at Mozilla."
+
 [[audits.autocfg]]
 who = "Josh Stone <jistone@redhat.com>"
 criteria = "safe-to-deploy"
@@ -101,6 +113,11 @@ who = "Emilio Cobos Álvarez <emilio@crisal.io>"
 criteria = "safe-to-deploy"
 version = "0.59.2"
 notes = "I'm the primary author and maintainer of the crate."
+
+[[audits.bindgen]]
+who = "Emilio Cobos Álvarez <emilio@crisal.io>"
+criteria = "safe-to-deploy"
+delta = "0.59.2 -> 0.63.0"
 
 [[audits.bit-set]]
 who = "Aria Beingessner <a.beingessner@gmail.com>"
@@ -418,6 +435,11 @@ who = "Zibi Braniecki <zibi@unicode.org>"
 criteria = "safe-to-deploy"
 version = "0.6.0"
 
+[[audits.fluent-fallback]]
+who = "Greg Tatum <tatum.creative@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.0 -> 0.7.0"
+
 [[audits.fluent-langneg]]
 who = "Zibi Braniecki <zibi@unicode.org>"
 criteria = "safe-to-deploy"
@@ -437,6 +459,11 @@ version = "0.11.0"
 who = "Zibi Braniecki <zibi@unicode.org>"
 criteria = "safe-to-run"
 version = "0.0.2"
+
+[[audits.fluent-testing]]
+who = "Greg Tatum <tatum.creative@gmail.com>"
+criteria = "safe-to-run"
+delta = "0.0.2 -> 0.0.3"
 
 [[audits.fnv]]
 who = "Bobby Holley <bobbyholley@gmail.com>"
@@ -679,6 +706,16 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-run"
 delta = "0.3.13 -> 0.3.14"
 
+[[audits.half]]
+who = "John M. Schanck <jschanck@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "1.8.2"
+notes = """
+This crate contains unsafe code for bitwise casts to/from binary16 floating-point
+format. I've reviewed these and found no issues. There are no uses of ambient
+capabilities.
+"""
+
 [[audits.hashbrown]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -819,6 +856,12 @@ criteria = "safe-to-deploy"
 version = "1.0.4"
 notes = "This is a trivial crate."
 
+[[audits.nss-gk-api]]
+who = "John M. Schanck <jschanck@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "Maintained by the CryptoEng team at Mozilla."
+
 [[audits.num]]
 who = "Josh Stone <jistone@redhat.com>"
 criteria = "safe-to-deploy"
@@ -879,6 +922,16 @@ criteria = "safe-to-deploy"
 version = "0.2.15"
 notes = "All code written or reviewed by Josh Stone."
 
+[[audits.ohttp]]
+who = "Dana Keeler <dkeeler@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = """
+Developed and maintained  by Mozilla.
+When configured to use NSS (as we do), this crate uses unsafe blocks to call
+NSS functions. These calls have been audited.
+"""
+
 [[audits.once_cell]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -936,6 +989,11 @@ who = "John M. Schanck <jmschanck@gmail.com>"
 criteria = "safe-to-deploy"
 version = "0.1.1"
 
+[[audits.pkcs11-bindings]]
+who = "Mike Hommey <mh+mozilla@glandium.org>"
+criteria = "safe-to-deploy"
+delta = "0.1.1 -> 0.1.4"
+
 [[audits.plane-split]]
 who = "Nicolas Silva <nical@fastmail.com>"
 criteria = "safe-to-deploy"
@@ -953,6 +1011,11 @@ who = "Simon Friedberger <simon@mozilla.com>"
 criteria = "safe-to-deploy"
 version = "0.8.4"
 notes = "The crate does not use any unsafe code or ambient capabilities and thus meets the criteria for safe-to-deploy. The cryptography itself should be considered experimental at this phase and is currently undergoing a thorough audit organized by Cloudflare."
+
+[[audits.prio]]
+who = "Simon Friedberger <simon@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.9.1"
 
 [[audits.proc-macro2]]
 who = "Nika Layzell <nika@thelayzells.com>"
@@ -1188,6 +1251,16 @@ delta = "1.0.143 -> 1.0.144"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.11.6 -> 0.11.7"
+
+[[audits.serde_cbor]]
+who = "R. Martinho Fernandes <bugs@rmf.io>"
+criteria = "safe-to-deploy"
+version = "0.11.1"
+
+[[audits.serde_cbor]]
+who = "John M. Schanck <jschanck@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.1 -> 0.11.2"
 
 [[audits.serde_derive]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -1551,6 +1624,11 @@ who = "Yury Delendik <ydelendik@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.16.0 -> 0.17.0"
 
+[[audits.wasm-encoder]]
+who = "Ryan Hunt <rhunt@eqrion.net>"
+criteria = "safe-to-deploy"
+delta = "0.19.0 -> 0.19.1"
+
 [[audits.wasm-smith]]
 who = "Ryan Hunt <rhunt@eqrion.net>"
 criteria = "safe-to-deploy"
@@ -1566,6 +1644,11 @@ delta = "0.11.2 -> 0.11.3"
 who = "Yury Delendik <ydelendik@mozilla.com>"
 criteria = "safe-to-run"
 delta = "0.11.4 -> 0.11.5"
+
+[[audits.wasm-smith]]
+who = "Ryan Hunt <rhunt@eqrion.net>"
+criteria = "safe-to-run"
+delta = "0.11.7 -> 0.11.8"
 
 [[audits.wasmparser]]
 who = "Ryan Hunt <rhunt@eqrion.net>"
@@ -1583,6 +1666,16 @@ who = "Yury Delendik <ydelendik@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.89.1 -> 0.91.0"
 
+[[audits.wasmparser]]
+who = "Ryan Hunt <rhunt@eqrion.net>"
+criteria = "safe-to-deploy"
+delta = "0.93.0 -> 0.94.0"
+
+[[audits.wast]]
+who = "Ryan Hunt <rhunt@eqrion.net>"
+criteria = "safe-to-deploy"
+version = "44.0.0"
+
 [[audits.wast]]
 who = "Ryan Hunt <rhunt@eqrion.net>"
 criteria = "safe-to-deploy"
@@ -1598,6 +1691,11 @@ delta = "44.0.0 -> 45.0.0"
 who = "Yury Delendik <ydelendik@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "46.0.0 -> 47.0.0"
+
+[[audits.wast]]
+who = "Ryan Hunt <rhunt@eqrion.net>"
+criteria = "safe-to-deploy"
+delta = "48.0.0 -> 49.0.0"
 
 [[audits.webdriver]]
 who = "Henrik Skupin <mail@hskupin.info>"
@@ -1707,4 +1805,3 @@ who = "Henri Sivonen <hsivonen@hsivonen.fi>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 notes = "I, Henri Sivonen, wrote this crate myself for Gecko even though it's published on crates.io."
-

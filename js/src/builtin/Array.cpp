@@ -935,7 +935,8 @@ static bool array_addProperty(JSContext* cx, HandleObject obj, HandleId id,
   return true;
 }
 
-static Shape* AddLengthProperty(JSContext* cx, Handle<Shape*> shape) {
+static SharedShape* AddLengthProperty(JSContext* cx,
+                                      Handle<SharedShape*> shape) {
   // Add the 'length' property for a newly created array shape.
 
   MOZ_ASSERT(shape->propMapLength() == 0);
@@ -945,7 +946,7 @@ static Shape* AddLengthProperty(JSContext* cx, Handle<Shape*> shape) {
   constexpr PropertyFlags flags = {PropertyFlag::CustomDataProperty,
                                    PropertyFlag::Writable};
 
-  Rooted<SharedPropMap*> map(cx, shape->sharedPropMap());
+  Rooted<SharedPropMap*> map(cx, shape->propMap());
   uint32_t mapLength = shape->propMapLength();
   ObjectFlags objectFlags = shape->objectFlags();
 
@@ -1068,17 +1069,26 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
 
   if (detector.foundCycle()) {
     if (!sb.append("[]")) {
+      sb.failure();
       return nullptr;
     }
-    return sb.finishString();
+    auto* result = sb.finishString();
+    if (!result) {
+      sb.failure();
+      return nullptr;
+    }
+    sb.ok();
+    return result;
   }
 
   if (!sb.append('[')) {
+    sb.failure();
     return nullptr;
   }
 
   uint64_t length;
   if (!GetLengthPropertyInlined(cx, obj, &length)) {
+    sb.failure();
     return nullptr;
   }
 
@@ -1087,6 +1097,7 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
     bool hole;
     if (!CheckForInterrupt(cx) ||
         !HasAndGetElement(cx, obj, index, &hole, &elt)) {
+      sb.failure();
       return nullptr;
     }
 
@@ -1097,20 +1108,24 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
     } else {
       str = ValueToSource(cx, elt);
       if (!str) {
+        sb.failure();
         return nullptr;
       }
     }
 
     /* Append element to buffer. */
     if (!sb.append(str)) {
+      sb.failure();
       return nullptr;
     }
     if (index + 1 != length) {
       if (!sb.append(", ")) {
+        sb.failure();
         return nullptr;
       }
     } else if (hole) {
       if (!sb.append(',')) {
+        sb.failure();
         return nullptr;
       }
     }
@@ -1118,10 +1133,17 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
 
   /* Finalize the buffer. */
   if (!sb.append(']')) {
+    sb.failure();
     return nullptr;
   }
 
-  return sb.finishString();
+  auto* result = sb.finishString();
+  if (!result) {
+    sb.failure();
+    return nullptr;
+  }
+  sb.ok();
+  return result;
 }
 
 static bool array_toSource(JSContext* cx, unsigned argc, Value* vp) {
@@ -1326,6 +1348,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   // Step 5.
   JSStringBuilder sb(cx);
   if (sepstr->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
+    sb.failure();
     return false;
   }
 
@@ -1335,16 +1358,19 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   if (seplen > 0) {
     if (length > UINT32_MAX) {
       ReportAllocationOverflow(cx);
+      sb.failure();
       return false;
     }
     CheckedInt<uint32_t> res =
         CheckedInt<uint32_t>(seplen) * (uint32_t(length) - 1);
     if (!res.isValid()) {
       ReportAllocationOverflow(cx);
+      sb.failure();
       return false;
     }
 
     if (!sb.reserve(res.value())) {
+      sb.failure();
       return false;
     }
   }
@@ -1353,6 +1379,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   if (seplen == 0) {
     auto sepOp = [](StringBuffer&) { return true; };
     if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
+      sb.failure();
       return false;
     }
   } else if (seplen == 1) {
@@ -1361,11 +1388,13 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
       Latin1Char l1char = Latin1Char(c);
       auto sepOp = [l1char](StringBuffer& sb) { return sb.append(l1char); };
       if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
+        sb.failure();
         return false;
       }
     } else {
       auto sepOp = [c](StringBuffer& sb) { return sb.append(c); };
       if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
+        sb.failure();
         return false;
       }
     }
@@ -1373,6 +1402,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
     Handle<JSLinearString*> sepHandle = sepstr;
     auto sepOp = [sepHandle](StringBuffer& sb) { return sb.append(sepHandle); };
     if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
+      sb.failure();
       return false;
     }
   }
@@ -1380,12 +1410,14 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   // Step 8.
   JSString* str = sb.finishString();
   if (!str) {
+    sb.failure();
     return false;
   }
 
   // TaintFox: add taint operation.
   str->taint().extend(TaintOperationFromContext(cx, "Array.join", true, sepstr));
 
+  sb.ok();
   args.rval().setString(str);
   return true;
 }
@@ -1933,7 +1965,8 @@ static bool SortLexicographically(JSContext* cx,
                                   size_t len) {
   MOZ_ASSERT(vec.length() >= len);
 
-  StringBuffer sb(cx);
+  AutoReportFrontendContext ec(cx);
+  StringBuffer sb(cx, &ec);
   Vector<StringifiedElement, 0, TempAllocPolicy> strElements(cx);
 
   /* MergeSort uses the upper half as scratch space. */
@@ -4747,8 +4780,8 @@ static inline bool EnsureNewArrayElements(JSContext* cx, ArrayObject* obj,
 
 template <uint32_t maxLength>
 static MOZ_ALWAYS_INLINE ArrayObject* NewArrayWithShape(
-    JSContext* cx, Handle<Shape*> shape, uint32_t length, NewObjectKind newKind,
-    gc::AllocSite* site = nullptr) {
+    JSContext* cx, Handle<SharedShape*> shape, uint32_t length,
+    NewObjectKind newKind, gc::AllocSite* site = nullptr) {
   // The shape must already have the |length| property defined on it.
   MOZ_ASSERT(shape->propMapLength() == 1);
   MOZ_ASSERT(shape->lastProperty().key() == NameToId(cx->names().length));
@@ -4777,10 +4810,10 @@ static MOZ_ALWAYS_INLINE ArrayObject* NewArrayWithShape(
   return arr;
 }
 
-static Shape* GetArrayShapeWithProto(JSContext* cx, HandleObject proto) {
+static SharedShape* GetArrayShapeWithProto(JSContext* cx, HandleObject proto) {
   // Get a shape with zero fixed slots, because arrays store the ObjectElements
   // header inline.
-  Rooted<Shape*> shape(
+  Rooted<SharedShape*> shape(
       cx, SharedShape::getInitialShape(cx, &ArrayObject::class_, cx->realm(),
                                        TaggedProto(proto), /* nfixed = */ 0));
   if (!shape) {
@@ -4803,7 +4836,7 @@ static Shape* GetArrayShapeWithProto(JSContext* cx, HandleObject proto) {
   return shape;
 }
 
-Shape* GlobalObject::createArrayShapeWithDefaultProto(JSContext* cx) {
+SharedShape* GlobalObject::createArrayShapeWithDefaultProto(JSContext* cx) {
   MOZ_ASSERT(!cx->global()->data().arrayShapeWithDefaultProto);
 
   RootedObject proto(cx,
@@ -4812,7 +4845,7 @@ Shape* GlobalObject::createArrayShapeWithDefaultProto(JSContext* cx) {
     return nullptr;
   }
 
-  Shape* shape = GetArrayShapeWithProto(cx, proto);
+  SharedShape* shape = GetArrayShapeWithProto(cx, proto);
   if (!shape) {
     return nullptr;
   }
@@ -4825,7 +4858,8 @@ template <uint32_t maxLength>
 static MOZ_ALWAYS_INLINE ArrayObject* NewArray(JSContext* cx, uint32_t length,
                                                NewObjectKind newKind,
                                                gc::AllocSite* site = nullptr) {
-  Rooted<Shape*> shape(cx, GlobalObject::getArrayShapeWithDefaultProto(cx));
+  Rooted<SharedShape*> shape(cx,
+                             GlobalObject::getArrayShapeWithDefaultProto(cx));
   if (!shape) {
     return nullptr;
   }
@@ -4838,7 +4872,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* NewArrayWithProto(JSContext* cx,
                                                         uint32_t length,
                                                         HandleObject proto,
                                                         NewObjectKind newKind) {
-  Rooted<Shape*> shape(cx);
+  Rooted<SharedShape*> shape(cx);
   if (!proto || proto == cx->global()->maybeGetArrayPrototype()) {
     shape = GlobalObject::getArrayShapeWithDefaultProto(cx);
   } else {
@@ -4853,12 +4887,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* NewArrayWithProto(JSContext* cx,
 
 static JSObject* CreateArrayPrototype(JSContext* cx, JSProtoKey key) {
   MOZ_ASSERT(key == JSProto_Array);
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateObjectPrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
+  RootedObject proto(cx, &cx->global()->getObjectPrototype());
   return NewArrayWithProto<0>(cx, 0, proto, TenuredObject);
 }
 
@@ -5009,7 +5038,7 @@ ArrayObject* js::NewDenseFullyAllocatedArrayWithTemplate(
   MOZ_ASSERT(CanChangeToBackgroundAllocKind(allocKind, &ArrayObject::class_));
   allocKind = ForegroundToBackgroundAllocKind(allocKind);
 
-  Rooted<Shape*> shape(cx, templateObject->shape());
+  Rooted<SharedShape*> shape(cx, templateObject->sharedShape());
 
   gc::InitialHeap heap = GetInitialHeap(GenericObject, &ArrayObject::class_);
   ArrayObject* arr = ArrayObject::create(cx, allocKind, heap, shape, length,
@@ -5281,7 +5310,7 @@ JS_PUBLIC_API bool JS::SetArrayLength(JSContext* cx, Handle<JSObject*> obj,
 }
 
 ArrayObject* js::NewArrayWithNullProto(JSContext* cx) {
-  Rooted<Shape*> shape(cx, GetArrayShapeWithProto(cx, nullptr));
+  Rooted<SharedShape*> shape(cx, GetArrayShapeWithProto(cx, nullptr));
   if (!shape) {
     return nullptr;
   }

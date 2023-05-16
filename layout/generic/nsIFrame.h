@@ -536,6 +536,7 @@ class nsIFrame : public nsQueryFrame {
   using ReflowOutput = mozilla::ReflowOutput;
   using Visibility = mozilla::Visibility;
   using LengthPercentage = mozilla::LengthPercentage;
+  using ContentRelevancy = mozilla::ContentRelevancy;
 
   using nsDisplayItem = mozilla::nsDisplayItem;
   using nsDisplayList = mozilla::nsDisplayList;
@@ -544,7 +545,6 @@ class nsIFrame : public nsQueryFrame {
 
   typedef mozilla::ComputedStyle ComputedStyle;
   typedef mozilla::FrameProperties FrameProperties;
-  typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Matrix Matrix;
@@ -1309,16 +1309,14 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(PageValuesProperty, PageValues)
 
   const nsAtom* GetStartPageValue() const {
-    if (const PageValues* const values =
-            FirstInFlow()->GetProperty(PageValuesProperty())) {
+    if (const PageValues* const values = GetProperty(PageValuesProperty())) {
       return values->mStartPageValue;
     }
     return nullptr;
   }
 
   const nsAtom* GetEndPageValue() const {
-    if (const PageValues* const values =
-            FirstInFlow()->GetProperty(PageValuesProperty())) {
+    if (const PageValues* const values = GetProperty(PageValuesProperty())) {
       return values->mEndPageValue;
     }
     return nullptr;
@@ -3182,10 +3180,33 @@ class nsIFrame : public nsQueryFrame {
   bool IsContentDisabled() const;
 
   /**
+   * Whether the content-visibility CSS property applies to this frame.
+   */
+  bool IsContentVisibilityPropertyApplicable() const;
+
+  enum class IncludeContentVisibility {
+    Auto,
+    Hidden,
+  };
+
+  constexpr static mozilla::EnumSet<IncludeContentVisibility>
+  IncludeAllContentVisibility() {
+    return {IncludeContentVisibility::Auto, IncludeContentVisibility::Hidden};
+  }
+
+  /**
+   * Returns true if this frame's `content-visibility: auto` element is
+   * considered relevant content.
+   */
+  bool IsContentRelevant() const;
+
+  /**
    * Whether this frame hides its contents via the `content-visibility`
    * property.
+   * @param aInclude specifies what kind of `content-visibility` to include.
    */
-  bool HidesContent() const;
+  bool HidesContent(const mozilla::EnumSet<IncludeContentVisibility>& =
+                        IncludeAllContentVisibility()) const;
 
   /**
    * Whether this frame hides its contents via the `content-visibility`
@@ -3198,14 +3219,38 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Returns true if this frame is entirely hidden due the `content-visibility`
    * property on an ancestor.
+   * @param aInclude specifies what kind of `content-visibility` to include.
    */
-  bool IsHiddenByContentVisibilityOnAnyAncestor() const;
+  bool IsHiddenByContentVisibilityOnAnyAncestor(
+      const mozilla::EnumSet<IncludeContentVisibility>& =
+          IncludeAllContentVisibility()) const;
 
   /**
    * Returns true is this frame is hidden by its first unskipped in flow
    * ancestor due to `content-visibility`.
    */
   bool IsHiddenByContentVisibilityOfInFlowParentForLayout() const;
+
+  /**
+   * Whether or not this frame's content is a descendant of a top layer element
+   * used to determine if this frame is relevant content for
+   * `content-visibility: auto`.
+   */
+  bool IsDescendantOfTopLayerElement() const;
+
+  /**
+   * Returns true if this frame has a SelectionType::eNormal type selection in
+   * somewhere in its subtree of frames. This is used to determine content
+   * relevancy for `content-visibility: auto`.
+   */
+  bool HasSelectionInSubtree();
+
+  /**
+   * Update the whether or not this frame is considered relevant content for the
+   * purposes of `content-visibility: auto` according to the rules specified in
+   * https://drafts.csswg.org/css-contain-2/#relevant-to-the-user.
+   */
+  void UpdateIsRelevantContent(const ContentRelevancy& aRelevancyToUpdate);
 
   /**
    * Get the "type" of the frame.
@@ -3996,7 +4041,9 @@ class nsIFrame : public nsQueryFrame {
     }
   }
 
-  mozilla::ContainSizeAxes GetContainSizeAxes() const;
+  mozilla::ContainSizeAxes GetContainSizeAxes() const {
+    return StyleDisplay()->GetContainSizeAxes(*this);
+  }
 
   Maybe<nscoord> ContainIntrinsicBSize(nscoord aNoneValue = 0) const {
     return GetContainSizeAxes().ContainIntrinsicBSize(*this, aNoneValue);
@@ -4591,10 +4638,6 @@ class nsIFrame : public nsQueryFrame {
    * Nothing().
    */
   Maybe<mozilla::StyleVerticalAlignKeyword> VerticalAlignEnum() const;
-
-  void CreateOwnLayerIfNeeded(nsDisplayListBuilder* aBuilder,
-                              nsDisplayList* aList, uint16_t aType,
-                              bool* aCreatedContainerItem = nullptr);
 
   /**
    * Adds the NS_FRAME_IN_POPUP state bit to aFrame, and

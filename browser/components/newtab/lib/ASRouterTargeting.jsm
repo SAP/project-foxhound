@@ -754,7 +754,7 @@ const TargetingGetters = {
   },
 
   get userPrefersReducedMotion() {
-    let window = lazy.BrowserWindowTracker.getTopWindow();
+    let window = Services.appShell.hiddenDOMWindow;
     return window?.matchMedia("(prefers-reduced-motion: reduce)")?.matches;
   },
   /**
@@ -942,7 +942,7 @@ const ASRouterTargeting = {
       if (onError) {
         onError(error, message);
       }
-      Cu.reportError(error);
+      console.error(error);
       result = false;
     }
     return result;

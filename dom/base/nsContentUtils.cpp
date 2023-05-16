@@ -25,7 +25,6 @@
 #include "HTMLSplitOnSpacesTokenizer.h"
 #include "ImageOps.h"
 #include "InProcessBrowserChildMessageManager.h"
-#include "Layers.h"
 #include "MainThreadUtils.h"
 #include "PLDHashTable.h"
 #include "ReferrerInfo.h"
@@ -3850,7 +3849,8 @@ nsresult nsContentUtils::LoadImage(
     nsIReferrerInfo* aReferrerInfo, imgINotificationObserver* aObserver,
     int32_t aLoadFlags, const nsAString& initiatorType,
     imgRequestProxy** aRequest, nsContentPolicyType aContentPolicyType,
-    bool aUseUrgentStartForChannel, bool aLinkPreload) {
+    bool aUseUrgentStartForChannel, bool aLinkPreload,
+    uint64_t aEarlyHintPreloaderId) {
   MOZ_ASSERT(aURI, "Must have a URI");
   MOZ_ASSERT(aContext, "Must have a context");
   MOZ_ASSERT(aLoadingDocument, "Must have a document");
@@ -3887,7 +3887,7 @@ nsresult nsContentUtils::LoadImage(
                               initiatorType,      /* the load initiator */
                               aUseUrgentStartForChannel, /* urgent-start flag */
                               aLinkPreload, /* <link preload> initiator */
-                              aRequest);
+                              aEarlyHintPreloaderId, aRequest);
 }
 
 // static
@@ -5664,7 +5664,8 @@ nsresult nsContentUtils::SetNodeTextContent(nsIContent* aContent,
   return rv.StealNSResult();
 }
 
-static bool AppendNodeTextContentsRecurse(nsINode* aNode, nsAString& aResult,
+static bool AppendNodeTextContentsRecurse(const nsINode* aNode,
+                                          nsAString& aResult,
                                           const fallible_t& aFallible) {
   for (nsIContent* child = aNode->GetFirstChild(); child;
        child = child->GetNextSibling()) {
@@ -5685,10 +5686,10 @@ static bool AppendNodeTextContentsRecurse(nsINode* aNode, nsAString& aResult,
 }
 
 /* static */
-bool nsContentUtils::AppendNodeTextContent(nsINode* aNode, bool aDeep,
+bool nsContentUtils::AppendNodeTextContent(const nsINode* aNode, bool aDeep,
                                            nsAString& aResult,
                                            const fallible_t& aFallible) {
-  if (Text* text = aNode->GetAsText()) {
+  if (const Text* text = aNode->GetAsText()) {
     return text->AppendTextTo(aResult, aFallible);
   }
   if (aDeep) {
@@ -7556,14 +7557,14 @@ mozilla::LogModule* nsContentUtils::ResistFingerprintingLog() {
 }
 mozilla::LogModule* nsContentUtils::DOMDumpLog() { return sDOMDumpLog; }
 
-bool nsContentUtils::GetNodeTextContent(nsINode* aNode, bool aDeep,
+bool nsContentUtils::GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                         nsAString& aResult,
                                         const fallible_t& aFallible) {
   aResult.Truncate();
   return AppendNodeTextContent(aNode, aDeep, aResult, aFallible);
 }
 
-void nsContentUtils::GetNodeTextContent(nsINode* aNode, bool aDeep,
+void nsContentUtils::GetNodeTextContent(const nsINode* aNode, bool aDeep,
                                         nsAString& aResult) {
   if (!GetNodeTextContent(aNode, aDeep, aResult, fallible)) {
     NS_ABORT_OOM(0);  // Unfortunately we don't know the allocation size
@@ -7899,8 +7900,8 @@ nsresult nsContentUtils::IPCTransferableToTransferable(
     nsITransferable* aTransferable, const bool aFilterUnknownFlavors) {
   aTransferable->SetIsPrivateData(aIsPrivateData);
 
-  nsresult rv = IPCTransferableToTransferable(aDataTransfer, aAddDataFlavor,
-                                              aTransferable, aFilterUnknownFlavors);
+  nsresult rv = IPCTransferableToTransferable(
+      aDataTransfer, aAddDataFlavor, aTransferable, aFilterUnknownFlavors);
   NS_ENSURE_SUCCESS(rv, rv);
 
   aTransferable->SetRequestingPrincipal(aRequestingPrincipal);
@@ -8561,6 +8562,44 @@ already_AddRefed<nsPIWindowRoot> nsContentUtils::GetWindowRoot(Document* aDoc) {
     }
   }
   return nullptr;
+}
+
+/* static */
+bool nsContentUtils::LinkContextIsURI(const nsAString& aAnchor,
+                                      nsIURI* aDocURI) {
+  if (aAnchor.IsEmpty()) {
+    // anchor parameter not present or empty -> same document reference
+    return true;
+  }
+
+  // the document URI might contain a fragment identifier ("#...')
+  // we want to ignore that because it's invisible to the server
+  // and just affects the local interpretation in the recipient
+  nsCOMPtr<nsIURI> contextUri;
+  nsresult rv = NS_GetURIWithoutRef(aDocURI, getter_AddRefs(contextUri));
+
+  if (NS_FAILED(rv)) {
+    // copying failed
+    return false;
+  }
+
+  // resolve anchor against context
+  nsCOMPtr<nsIURI> resolvedUri;
+  rv = NS_NewURI(getter_AddRefs(resolvedUri), aAnchor, nullptr, contextUri);
+
+  if (NS_FAILED(rv)) {
+    // resolving failed
+    return false;
+  }
+
+  bool same;
+  rv = contextUri->Equals(resolvedUri, &same);
+  if (NS_FAILED(rv)) {
+    // comparison failed
+    return false;
+  }
+
+  return same;
 }
 
 /* static */

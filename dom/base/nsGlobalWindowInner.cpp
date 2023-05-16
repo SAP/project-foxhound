@@ -196,6 +196,8 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/intl/LocaleService.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "nsAtom.h"
 #include "nsBaseHashtable.h"
@@ -1455,6 +1457,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExternal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInstallTrigger)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIntlUtils)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualViewport)
 
   tmp->TraverseObjectsInGlobal(cb);
 
@@ -1571,6 +1574,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExternal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mInstallTrigger)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIntlUtils)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualViewport)
 
   tmp->UnlinkObjectsInGlobal();
 
@@ -1630,7 +1634,9 @@ bool nsGlobalWindowInner::ShouldResistFingerprinting() const {
   if (mDoc) {
     return mDoc->ShouldResistFingerprinting();
   }
-  return nsIScriptGlobalObject::ShouldResistFingerprinting();
+  return nsContentUtils::ShouldResistFingerprinting(
+      "If we do not have a document then we do not have any context"
+      "to make an informed RFP choice, so we fall back to the global pref");
 }
 
 OriginTrials nsGlobalWindowInner::Trials() const {
@@ -1649,6 +1655,36 @@ uint32_t nsGlobalWindowInner::GetPrincipalHashValue() const {
     return mDoc->NodePrincipal()->GetHashValue();
   }
   return 0;
+}
+
+mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
+nsGlobalWindowInner::GetStorageKey() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsIPrincipal* principal = GetEffectiveStoragePrincipal();
+  if (!principal) {
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+
+  mozilla::ipc::PrincipalInfo principalInfo;
+  nsresult rv = PrincipalToPrincipalInfo(principal, &principalInfo);
+  if (NS_FAILED(rv)) {
+    return mozilla::Err(rv);
+  }
+
+  // Block expanded and null principals, let content and system through.
+  if (principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TContentPrincipalInfo &&
+      principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo) {
+    return Err(NS_ERROR_DOM_SECURITY_ERR);
+  }
+
+  return std::move(principalInfo);
+}
+
+mozilla::dom::StorageManager* nsGlobalWindowInner::GetStorageManager() {
+  return Navigator()->Storage();
 }
 
 nsresult nsGlobalWindowInner::EnsureScriptEnvironment() {

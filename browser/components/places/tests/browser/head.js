@@ -1,11 +1,6 @@
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
 
 XPCOMUtils.defineLazyGetter(this, "gFluentStrings", function() {
   return new Localization(["branding/brand.ftl", "browser/browser.ftl"], true);
@@ -260,7 +255,7 @@ var withBookmarksDialog = async function(autoCancel, openFn, taskFn, closeFn) {
 
   // Check the first input is focused.
   let doc = dialogWin.document;
-  let elt = doc.querySelector("vbox:not([collapsed=true]) > input");
+  let elt = doc.querySelector('input:not([hidden="true"])');
   ok(elt, "There should be an input to focus.");
 
   if (elt) {

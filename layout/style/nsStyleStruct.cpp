@@ -2207,10 +2207,11 @@ bool StyleAnimation::operator==(const StyleAnimation& aOther) const {
 nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
     : mDisplay(StyleDisplay::Inline),
       mOriginalDisplay(StyleDisplay::Inline),
-      mContain(StyleContain::NONE),
       mContentVisibility(StyleContentVisibility::Visible),
       mContainerType(StyleContainerType::Normal),
       mAppearance(StyleAppearance::None),
+      mContain(StyleContain::NONE),
+      mEffectiveContainment(StyleContain::NONE),
       mDefaultAppearance(StyleAppearance::None),
       mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
@@ -2263,10 +2264,11 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
 nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
     : mDisplay(aSource.mDisplay),
       mOriginalDisplay(aSource.mOriginalDisplay),
-      mContain(aSource.mContain),
       mContentVisibility(aSource.mContentVisibility),
       mContainerType(aSource.mContainerType),
       mAppearance(aSource.mAppearance),
+      mContain(aSource.mContain),
+      mEffectiveContainment(aSource.mEffectiveContainment),
       mDefaultAppearance(aSource.mDefaultAppearance),
       mPosition(aSource.mPosition),
       mFloat(aSource.mFloat),
@@ -2868,7 +2870,7 @@ nsStyleTextReset::nsStyleTextReset(const Document& aDocument)
     : mTextOverflow(),
       mTextDecorationLine(StyleTextDecorationLine::NONE),
       mTextDecorationStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID),
-      mUnicodeBidi(NS_STYLE_UNICODE_BIDI_NORMAL),
+      mUnicodeBidi(StyleUnicodeBidi::Normal),
       mInitialLetterSink(0),
       mInitialLetterSize(0.0f),
       mTextDecorationColor(StyleColor::CurrentColor()),
@@ -2941,7 +2943,7 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mRubyAlign(StyleRubyAlign::SpaceAround),
       mRubyPosition(StyleRubyPosition::AlternateOver),
       mTextSizeAdjust(StyleTextSizeAdjust::Auto),
-      mTextCombineUpright(NS_STYLE_TEXT_COMBINE_UPRIGHT_NONE),
+      mTextCombineUpright(StyleTextCombineUpright::None),
       mMozControlCharacterVisibility(
           StaticPrefs::layout_css_control_characters_visible()
               ? StyleMozControlCharacterVisibility::Visible
@@ -3544,6 +3546,12 @@ void StyleCalcNode::ScaleLengthsBy(float aScale) {
       ScaleNode(*round.step);
       break;
     }
+    case Tag::ModRem: {
+      const auto& mod_rem = AsModRem();
+      ScaleNode(*mod_rem.dividend);
+      ScaleNode(*mod_rem.divisor);
+      break;
+    }
     case Tag::MinMax: {
       for (auto& child : AsMinMax()._0.AsSpan()) {
         ScaleNode(child);
@@ -3632,6 +3640,35 @@ ResultT StyleCalcNode::ResolveInternal(ResultT aPercentageBasis,
         return CSSPixel::ToAppUnits(result);
       }
     }
+    case Tag::ModRem: {
+      const auto& mod_rem = AsModRem();
+
+      // Make sure to do the math in CSS pixels, so that floor() and trunc()
+      // below round to an integer number of CSS pixels, not app units.
+      CSSCoord dividend, divisor;
+      if constexpr (std::is_same_v<ResultT, CSSCoord>) {
+        dividend =
+            mod_rem.dividend->ResolveInternal(aPercentageBasis, aConverter);
+        divisor =
+            mod_rem.divisor->ResolveInternal(aPercentageBasis, aConverter);
+      } else {
+        dividend = CSSPixel::FromAppUnits(
+            mod_rem.dividend->ResolveInternal(aPercentageBasis, aConverter));
+        divisor = CSSPixel::FromAppUnits(
+            mod_rem.divisor->ResolveInternal(aPercentageBasis, aConverter));
+      }
+
+      const CSSCoord result =
+          mod_rem.op == StyleModRemOp::Mod
+              ? dividend - divisor * std::floor(dividend / divisor)
+              : dividend - divisor * std::trunc(dividend / divisor);
+
+      if constexpr (std::is_same_v<ResultT, CSSCoord>) {
+        return result;
+      } else {
+        return CSSPixel::ToAppUnits(result);
+      }
+    }
     case Tag::MinMax: {
       auto children = AsMinMax()._0.AsSpan();
       StyleMinMaxOp op = AsMinMax()._1;
@@ -3675,6 +3712,41 @@ template <>
 nscoord StyleCalcNode::Resolve(nscoord aBasis,
                                CoordPercentageRounder aRounder) const {
   return ResolveInternal(aBasis, aRounder);
+}
+
+ContainSizeAxes nsStyleDisplay::GetContainSizeAxes(
+    const nsIFrame& aFrame) const {
+  // Short circuit for no containment whatsoever
+  if (MOZ_LIKELY(!mEffectiveContainment)) {
+    return ContainSizeAxes(false, false);
+  }
+
+  // Note: The spec for size containment says it should have no effect on
+  // non-atomic, inline-level boxes.
+  bool isNonReplacedInline = aFrame.IsFrameOfType(nsIFrame::eLineParticipant) &&
+                             !aFrame.IsFrameOfType(nsIFrame::eReplaced);
+  if (isNonReplacedInline || PrecludesSizeContainment()) {
+    return ContainSizeAxes(false, false);
+  }
+
+  // Internal SVG elements do not use the standard CSS box model, and wouldn't
+  // be affected by size containment. By disabling it we prevent them from
+  // becoming query containers for size features.
+  if (aFrame.HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
+    return ContainSizeAxes(false, false);
+  }
+
+  // https://drafts.csswg.org/css-contain-2/#content-visibility
+  // If this content skips its content via content-visibility, it always has
+  // size containment.
+  if (MOZ_LIKELY(!(mEffectiveContainment & StyleContain::SIZE)) &&
+      MOZ_UNLIKELY(aFrame.HidesContent())) {
+    return ContainSizeAxes(true, true);
+  }
+
+  return ContainSizeAxes(
+      static_cast<bool>(mEffectiveContainment & StyleContain::INLINE_SIZE),
+      static_cast<bool>(mEffectiveContainment & StyleContain::BLOCK_SIZE));
 }
 
 static nscoord Resolve(const StyleContainIntrinsicSize& aSize,

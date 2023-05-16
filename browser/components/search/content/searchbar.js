@@ -12,12 +12,9 @@
   const lazy = {};
 
   ChromeUtils.defineESModuleGetters(lazy, {
+    FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
     SearchSuggestionController:
       "resource://gre/modules/SearchSuggestionController.sys.mjs",
-  });
-
-  XPCOMUtils.defineLazyModuleGetters(lazy, {
-    FormHistory: "resource://gre/modules/FormHistory.jsm",
   });
 
   /**
@@ -133,7 +130,7 @@
               BrowserSearch.updateOpenSearchBadge();
             })
             .catch(status =>
-              Cu.reportError(
+              console.error(
                 "Cannot initialize search service, bailing out: " + status
               )
             );
@@ -408,7 +405,7 @@
           value: aData,
           source: engine.name,
         }).catch(error =>
-          Cu.reportError(
+          console.error(
             "Saving search to form history failed: " + error.message
           )
         );

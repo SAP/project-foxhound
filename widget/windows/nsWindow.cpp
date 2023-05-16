@@ -128,7 +128,6 @@
 #include "nsWindowGfx.h"
 #include "gfxWindowsPlatform.h"
 #include "gfxDWriteFonts.h"
-#include "Layers.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Preferences.h"
 #include "SystemTimeConverter.h"
@@ -867,14 +866,12 @@ void nsWindow::SendAnAPZEvent(InputData& aEvent) {
   if (aEvent.mInputType == PANGESTURE_INPUT) {
     PanGestureInput& panInput = aEvent.AsPanGestureInput();
     WidgetWheelEvent event = panInput.ToWidgetEvent(this);
-    bool canTriggerSwipe = SwipeTracker::CanTriggerSwipe(panInput);
     if (!mAPZC) {
-      if (MayStartSwipeForNonAPZ(panInput, CanTriggerSwipe{canTriggerSwipe})) {
+      if (MayStartSwipeForNonAPZ(panInput)) {
         return;
       }
     } else {
-      event = MayStartSwipeForAPZ(panInput, result,
-                                  CanTriggerSwipe{canTriggerSwipe});
+      event = MayStartSwipeForAPZ(panInput, result);
     }
 
     ProcessUntransformedAPZEvent(&event, result);
@@ -3429,8 +3426,6 @@ void nsWindow::UpdateGlass() {
         margins.cxRightWidth += kGlassMarginAdjustment;
         margins.cyBottomHeight += kGlassMarginAdjustment;
       }
-      [[fallthrough]];
-    case eTransparencyGlass:
       policy = DWMNCRP_ENABLED;
       break;
     default:
@@ -5174,7 +5169,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
                               LRESULT* aRetValue) {
   // For some events we might change the parameter values, so log
   // before and after we process them.
-  PrintEvent printEvent(msg, wParam, lParam, *aRetValue);
+  PrintEvent printEvent(mWnd, msg, wParam, lParam, *aRetValue);
   bool result = ProcessMessageInternal(msg, wParam, lParam, aRetValue);
   printEvent.SetResult(result);
 
@@ -6192,6 +6187,10 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
             ActivateKeyboardLayout(mLastKeyboardLayout, 0);
         }
       }
+    } break;
+
+    case WM_ACTIVATEAPP: {
+      GPUProcessManager::Get()->SetAppInForeground(wParam);
     } break;
 
     case WM_MOUSEACTIVATE:

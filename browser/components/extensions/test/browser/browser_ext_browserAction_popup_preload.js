@@ -23,6 +23,7 @@ add_task(async function testBrowserActionClickCanceled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -158,6 +159,7 @@ add_task(async function testBrowserActionDisabled() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },
@@ -266,6 +268,7 @@ add_task(async function testBrowserActionTabPopulation() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
       permissions: ["activeTab"],
@@ -325,6 +328,7 @@ add_task(async function testClosePopupDuringPreload() {
     manifest: {
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
         browser_style: true,
       },
     },

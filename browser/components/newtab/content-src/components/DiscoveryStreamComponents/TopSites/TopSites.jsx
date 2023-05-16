@@ -30,6 +30,15 @@ export class _TopSites extends React.PureComponent {
     );
   }
 
+  reformatImageURL(url, width, height) {
+    // Change the image URL to request a size tailored for the parent container width
+    // Also: force JPEG, quality 60, no upscaling, no EXIF data
+    // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
+    return `https://img-getpocket.cdn.mozilla.net/${width}x${height}/filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(
+      url
+    )}`;
+  }
+
   // For the time being we only support 1 position.
   insertSpocContent(TopSites, data, promoPosition) {
     if (
@@ -49,7 +58,11 @@ export class _TopSites extends React.PureComponent {
     }
 
     const link = {
-      customScreenshotURL: topSiteSpoc.image_src,
+      customScreenshotURL: this.reformatImageURL(
+        topSiteSpoc.raw_image_src,
+        40,
+        40
+      ),
       type: "SPOC",
       label: topSiteSpoc.title || topSiteSpoc.sponsor,
       title: topSiteSpoc.title || topSiteSpoc.sponsor,
@@ -65,8 +78,19 @@ export class _TopSites extends React.PureComponent {
       pos: promoPosition,
     };
 
-    const replaceCount = topSites[promoPosition]?.show_sponsored_label ? 1 : 0;
-    topSites.splice(promoPosition, replaceCount, link);
+    // Remove first contile or regular topsite, then insert new spoc into position.
+    const replaceIndex = topSites.findIndex(
+      (topSite, index) =>
+        index >= promoPosition &&
+        (!topSite ||
+          topSite.show_sponsored_label ||
+          !(topSite.isPinned || topSite.searchTopSite))
+    );
+    // If we found something to replace, first remove it.
+    if (replaceIndex !== -1) {
+      topSites.splice(replaceIndex, 1);
+    }
+    topSites.splice(promoPosition, 0, link);
 
     return { ...TopSites, rows: topSites };
   }

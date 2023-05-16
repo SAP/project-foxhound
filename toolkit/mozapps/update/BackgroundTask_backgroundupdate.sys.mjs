@@ -188,7 +188,9 @@ export async function maybeSubmitBackgroundUpdatePing() {
   // It should be possible to turn AUSTLMY data into Glean data, but mapping histograms isn't
   // trivial, so we don't do it at this time.  Bug 1703313.
 
-  GleanPings.backgroundUpdate.submit();
+  // Including a reason allows to differentiate pings sent as part of the task
+  // and pings queued and sent by Glean on a different schedule.
+  GleanPings.backgroundUpdate.submit("backgroundupdate_task");
 
   lazy.log.info(`${SLUG}: submitted "background-update" ping`);
 }
@@ -271,22 +273,10 @@ export async function runBackgroundTask(commandLine) {
       );
       Glean.backgroundUpdate.clientId.set(telemetryClientID);
 
-      try {
-        defaultProfileTargetingSnapshot = await lazy.BackgroundTasksUtils.readFirefoxMessagingSystemTargetingSnapshot(
-          lock
-        );
-      } catch (f) {
-        if (DOMException.isInstance(f) && f.name === "NotFoundError") {
-          lazy.log.info(
-            `${SLUG}: no default profile targeting snapshot exists`
-          );
-        } else {
-          lazy.log.warn(
-            `${SLUG}: ignoring exception reading default profile targeting snapshot`,
-            f
-          );
-        }
-      }
+      // Read targeting snapshot, collect background update specific telemetry.  Never throws.
+      defaultProfileTargetingSnapshot = await BackgroundUpdate.readFirefoxMessagingSystemTargetingSnapshot(
+        lock
+      );
     });
 
     for (let [name, value] of Object.entries(defaultProfilePrefs)) {

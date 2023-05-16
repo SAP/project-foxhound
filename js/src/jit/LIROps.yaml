@@ -1074,6 +1074,30 @@
 - name: BigIntBitNot
   gen_boilerplate: false
 
+- name: Int32ToStringWithBase
+  result_type: WordSized
+  operands:
+    input: WordSized
+    base: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: NumberParseInt
+  result_type: BoxedValue
+  operands:
+    string: WordSized
+    radix: WordSized
+  num_temps: 1
+  call_instruction: true
+  mir_op: true
+
+- name: DoubleParseInt
+  result_type: WordSized
+  operands:
+    number: WordSized
+  num_temps: 1
+  mir_op: true
+
 # Adds two string, returning a string.
 - name: Concat
   result_type: WordSized
@@ -1082,8 +1106,33 @@
     rhs: WordSized
   num_temps: 5
 
+# Linearize a string before a character access.
+- name: LinearizeForCharAccess
+  result_type: WordSized
+  operands:
+    str: WordSized
+    index: WordSized
+  mir_op: true
+
 # Get uint16 character code from a string.
 - name: CharCodeAt
+  result_type: WordSized
+  operands:
+    str: WordSized
+    index: WordSized
+  num_temps: 2
+
+# Get uint16 character code from a string. Return NaN on out-of-bounds.
+- name: CharCodeAtMaybeOutOfBounds
+  result_type: BoxedValue
+  operands:
+    str: WordSized
+    index: WordSized
+  num_temps: 2
+
+# Get uint16 character code from a string and convert it to a string. Return
+# the empty string on out-of-bounds.
+- name: CharAtMaybeOutOfBounds
   result_type: WordSized
   operands:
     str: WordSized
@@ -2145,6 +2194,13 @@
   call_instruction: true
   mir_op: DeleteElement
 
+- name: ObjectToIterator
+  result_type: WordSized
+  operands:
+    object: WordSized
+  num_temps: 3
+  mir_op: true
+
 - name: ValueToIterator
   result_type: WordSized
   operands:
@@ -2390,6 +2446,11 @@
     symbol: WordSized
   mir_op: true
 
+- name: GuardSpecificInt32
+  operands:
+    num: WordSized
+  mir_op: true
+
 - name: GuardStringToIndex
   result_type: WordSized
   operands:
@@ -2412,6 +2473,14 @@
   operands:
     in: WordSized
   num_temps: 1
+  mir_op: true
+
+- name: GuardMultipleShapes
+  result_type: WordSized
+  operands:
+    object: WordSized
+    shapeList: WordSized
+  num_temps: 4
   mir_op: true
 
 - name: GuardProto
@@ -2795,6 +2864,7 @@
   arguments:
     offset: size_t
     type: MIRType
+    wideningOp: MWideningOp
 
 - name: WasmLoadSlotI64
   result_type: Int64
@@ -2810,6 +2880,7 @@
   arguments:
     offset: size_t
     type: MIRType
+    narrowingOp: MNarrowingOp
 
 - name: WasmStoreSlotI64
   operands:
@@ -3150,6 +3221,11 @@
 - name: GuardInt32IsNonNegative
   operands:
     index: WordSized
+
+- name: GuardInt32Range
+  operands:
+    input: WordSized
+  mir_op: true
 
 - name: GuardIndexIsNotDenseElement
   operands:

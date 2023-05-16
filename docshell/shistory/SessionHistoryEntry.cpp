@@ -45,6 +45,7 @@ SessionHistoryInfo::SessionHistoryInfo(nsDocShellLoadState* aLoadState,
     : mURI(aLoadState->URI()),
       mOriginalURI(aLoadState->OriginalURI()),
       mResultPrincipalURI(aLoadState->ResultPrincipalURI()),
+      mUnstrippedURI(aLoadState->GetUnstrippedURI()),
       mLoadType(aLoadState->LoadType()),
       mSrcdocData(aLoadState->SrcdocData().IsVoid()
                       ? Nothing()
@@ -103,6 +104,7 @@ SessionHistoryInfo::SessionHistoryInfo(
   aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
 
   loadInfo->GetResultPrincipalURI(getter_AddRefs(mResultPrincipalURI));
+  loadInfo->GetUnstrippedURI(getter_AddRefs(mUnstrippedURI));
   loadInfo->GetTriggeringPrincipal(
       getter_AddRefs(mSharedState.Get()->mTriggeringPrincipal));
   loadInfo->GetPrincipalToInherit(
@@ -135,6 +137,7 @@ void SessionHistoryInfo::Reset(nsIURI* aURI, const nsID& aDocShellID,
   mURI = aURI;
   mOriginalURI = nullptr;
   mResultPrincipalURI = nullptr;
+  mUnstrippedURI = nullptr;
   mReferrerInfo = nullptr;
   // Default title is the URL.
   nsAutoCString spec;
@@ -245,6 +248,7 @@ void SessionHistoryInfo::SetSaveLayoutStateFlag(bool aSaveLayoutStateFlag) {
 void SessionHistoryInfo::FillLoadInfo(nsDocShellLoadState& aLoadState) const {
   aLoadState.SetOriginalURI(mOriginalURI);
   aLoadState.SetMaybeResultPrincipalURI(Some(mResultPrincipalURI));
+  aLoadState.SetUnstrippedURI(mUnstrippedURI);
   aLoadState.SetLoadReplace(mLoadReplace);
   nsCOMPtr<nsIInputStream> postData = GetPostData();
   aLoadState.SetPostDataStream(postData);
@@ -375,7 +379,7 @@ void SessionHistoryInfo::SharedState::Init(
 
 static uint64_t gLoadingSessionHistoryInfoLoadId = 0;
 
-nsTHashMap<nsUint64HashKey, SessionHistoryEntry*>*
+nsTHashMap<nsUint64HashKey, SessionHistoryEntry::LoadingEntry>*
     SessionHistoryEntry::sLoadIdToEntry = nullptr;
 
 LoadingSessionHistoryInfo::LoadingSessionHistoryInfo(
@@ -391,8 +395,7 @@ LoadingSessionHistoryInfo::LoadingSessionHistoryInfo(
       mLoadIsFromSessionHistory(aInfo->mLoadIsFromSessionHistory),
       mOffset(aInfo->mOffset),
       mLoadingCurrentEntry(aInfo->mLoadingCurrentEntry) {
-  MOZ_ASSERT(SessionHistoryEntry::sLoadIdToEntry &&
-             SessionHistoryEntry::sLoadIdToEntry->Get(mLoadId) == aEntry);
+  MOZ_ASSERT(SessionHistoryEntry::GetByLoadId(mLoadId) == aEntry);
 }
 
 LoadingSessionHistoryInfo::LoadingSessionHistoryInfo(
@@ -419,19 +422,40 @@ SessionHistoryEntry* SessionHistoryEntry::GetByLoadId(uint64_t aLoadId) {
     return nullptr;
   }
 
-  return sLoadIdToEntry->Get(aLoadId);
+  if (auto entry = sLoadIdToEntry->Lookup(aLoadId)) {
+    return entry->mEntry;
+  }
+  return nullptr;
+}
+
+const SessionHistoryInfo*
+SessionHistoryEntry::GetInfoSnapshotForValidationByLoadId(uint64_t aLoadId) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  if (!sLoadIdToEntry) {
+    return nullptr;
+  }
+
+  if (auto entry = sLoadIdToEntry->Lookup(aLoadId)) {
+    return entry->mInfoSnapshotForValidation.get();
+  }
+  return nullptr;
 }
 
 void SessionHistoryEntry::SetByLoadId(uint64_t aLoadId,
                                       SessionHistoryEntry* aEntry) {
   if (!sLoadIdToEntry) {
-    sLoadIdToEntry = new nsTHashMap<nsUint64HashKey, SessionHistoryEntry*>();
+    sLoadIdToEntry = new nsTHashMap<nsUint64HashKey, LoadingEntry>();
   }
 
   MOZ_LOG(
       gSHLog, LogLevel::Verbose,
       ("SessionHistoryEntry::SetByLoadId(%" PRIu64 " - %p)", aLoadId, aEntry));
-  sLoadIdToEntry->InsertOrUpdate(aLoadId, aEntry);
+  sLoadIdToEntry->InsertOrUpdate(
+      aLoadId, LoadingEntry{
+                   .mEntry = aEntry,
+                   .mInfoSnapshotForValidation =
+                       MakeUnique<SessionHistoryInfo>(aEntry->Info()),
+               });
 }
 
 void SessionHistoryEntry::RemoveLoadId(uint64_t aLoadId) {
@@ -479,7 +503,7 @@ SessionHistoryEntry::~SessionHistoryEntry() {
 
   if (sLoadIdToEntry) {
     sLoadIdToEntry->RemoveIf(
-        [this](auto& aIter) { return aIter.Data() == this; });
+        [this](auto& aIter) { return aIter.Data().mEntry == this; });
     if (sLoadIdToEntry->IsEmpty()) {
       delete sLoadIdToEntry;
       sLoadIdToEntry = nullptr;
@@ -525,6 +549,19 @@ SessionHistoryEntry::GetResultPrincipalURI(nsIURI** aResultPrincipalURI) {
 NS_IMETHODIMP
 SessionHistoryEntry::SetResultPrincipalURI(nsIURI* aResultPrincipalURI) {
   mInfo->mResultPrincipalURI = aResultPrincipalURI;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SessionHistoryEntry::GetUnstrippedURI(nsIURI** aUnstrippedURI) {
+  nsCOMPtr<nsIURI> unstrippedURI = mInfo->mUnstrippedURI;
+  unstrippedURI.forget(aUnstrippedURI);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SessionHistoryEntry::SetUnstrippedURI(nsIURI* aUnstrippedURI) {
+  mInfo->mUnstrippedURI = aUnstrippedURI;
   return NS_OK;
 }
 
@@ -1049,9 +1086,9 @@ SessionHistoryEntry::Create(
     nsIPrincipal* aPartitionedPrincipalToInherit,
     nsIContentSecurityPolicy* aCsp, const nsID& aDocshellID,
     bool aDynamicCreation, nsIURI* aOriginalURI, nsIURI* aResultPrincipalURI,
-    bool aLoadReplace, nsIReferrerInfo* aReferrerInfo, const nsAString& aSrcdoc,
-    bool aSrcdocEntry, nsIURI* aBaseURI, bool aSaveLayoutState, bool aExpired,
-    bool aUserActivation) {
+    nsIURI* aUnstrippedURI, bool aLoadReplace, nsIReferrerInfo* aReferrerInfo,
+    const nsAString& aSrcdoc, bool aSrcdocEntry, nsIURI* aBaseURI,
+    bool aSaveLayoutState, bool aExpired, bool aUserActivation) {
   MOZ_CRASH("Might need to implement this");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -1513,6 +1550,7 @@ void IPDLParamTraits<dom::SessionHistoryInfo>::Write(
   WriteIPDLParam(aWriter, aActor, aParam.mURI);
   WriteIPDLParam(aWriter, aActor, aParam.mOriginalURI);
   WriteIPDLParam(aWriter, aActor, aParam.mResultPrincipalURI);
+  WriteIPDLParam(aWriter, aActor, aParam.mUnstrippedURI);
   WriteIPDLParam(aWriter, aActor, aParam.mReferrerInfo);
   WriteIPDLParam(aWriter, aActor, aParam.mTitle);
   WriteIPDLParam(aWriter, aActor, aParam.mName);
@@ -1554,6 +1592,7 @@ bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
   if (!ReadIPDLParam(aReader, aActor, &aResult->mURI) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mOriginalURI) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mResultPrincipalURI) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mUnstrippedURI) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mReferrerInfo) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mTitle) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mName) ||

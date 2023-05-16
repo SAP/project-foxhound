@@ -136,7 +136,8 @@ class WebrtcVideoConduit
 
   WebrtcVideoConduit(RefPtr<WebrtcCallWrapper> aCall,
                      nsCOMPtr<nsISerialEventTarget> aStsThread,
-                     Options aOptions, std::string aPCHandle);
+                     Options aOptions, std::string aPCHandle,
+                     const TrackingId& aRecvTrackingId);
   virtual ~WebrtcVideoConduit();
 
   // Call thread.
@@ -171,7 +172,8 @@ class WebrtcVideoConduit
   // will generate one if needed.
   void EnsureRemoteSSRC();
 
-  Maybe<webrtc::VideoReceiveStream::Stats> GetReceiverStats() const override;
+  Maybe<webrtc::VideoReceiveStreamInterface::Stats> GetReceiverStats()
+      const override;
   Maybe<webrtc::VideoSendStream::Stats> GetSenderStats() const override;
   Maybe<webrtc::CallBasicStats> GetCallStats() const override;
 
@@ -286,6 +288,10 @@ class WebrtcVideoConduit
   // thread.
   const nsCOMPtr<nsISerialEventTarget> mStsThread;
 
+  // Thread on which we are fed video frames. Set lazily on first call to
+  // SendVideoFrame().
+  nsCOMPtr<nsISerialEventTarget> mFrameSendingThread;
+
   struct Control {
     // Mirrors that map to VideoConduitControlInterface for control. Call thread
     // only.
@@ -369,7 +375,7 @@ class WebrtcVideoConduit
   // Must call webrtc::Call::DestroyVideoReceive/SendStream to delete this.
   // Written only on the Call thread. Guarded by mMutex, except for reads on the
   // Call thread.
-  webrtc::VideoReceiveStream* mRecvStream = nullptr;
+  webrtc::VideoReceiveStreamInterface* mRecvStream = nullptr;
 
   // Must call webrtc::Call::DestroyVideoReceive/SendStream to delete this.
   webrtc::VideoSendStream* mSendStream = nullptr;
@@ -444,7 +450,7 @@ class WebrtcVideoConduit
       mVideoStreamFactory;
 
   // Call thread only.
-  webrtc::VideoReceiveStream::Config mRecvStreamConfig;
+  webrtc::VideoReceiveStreamInterface::Config mRecvStreamConfig;
 
   // Are SSRC changes without signaling allowed or not.
   // Call thread only.

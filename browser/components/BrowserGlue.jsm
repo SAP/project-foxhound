@@ -44,6 +44,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
+  SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   SnapshotMonitor: "resource:///modules/SnapshotMonitor.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
@@ -94,8 +96,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
-  SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.jsm",
@@ -247,6 +247,19 @@ let JSWINDOWACTORS = {
     matches: ["about:logins", "about:logins?*", "about:loginsimportreport"],
     allFrames: true,
     remoteTypes: ["privilegedabout"],
+  },
+
+  AboutMessagePreview: {
+    parent: {
+      esModuleURI: "resource:///actors/AboutMessagePreviewParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/AboutMessagePreviewChild.sys.mjs",
+      events: {
+        DOMDocElementInserted: { capture: true },
+      },
+    },
+    matches: ["about:messagepreview", "about:messagepreview?*"],
   },
 
   AboutNewTab: {
@@ -596,6 +609,28 @@ let JSWINDOWACTORS = {
     messageManagerGroups: ["browsers"],
   },
 
+  MigrationWizard: {
+    parent: {
+      esModuleURI: "resource:///actors/MigrationWizardParent.sys.mjs",
+    },
+
+    child: {
+      esModuleURI: "resource:///actors/MigrationWizardChild.sys.mjs",
+      events: {
+        "MigrationWizard:Init": { wantUntrusted: true },
+      },
+    },
+
+    includeChrome: true,
+    allFrames: true,
+    matches: [
+      "about:welcome",
+      "about:welcome?*",
+      "about:preferences",
+      "chrome://browser/content/migration/migration-dialog.html",
+    ],
+  },
+
   PageInfo: {
     child: {
       esModuleURI: "resource:///actors/PageInfoChild.sys.mjs",
@@ -815,12 +850,6 @@ XPCOMUtils.defineLazyGetter(lazy, "gBrandBundle", function() {
 XPCOMUtils.defineLazyGetter(lazy, "gBrowserBundle", function() {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
-  );
-});
-
-XPCOMUtils.defineLazyGetter(lazy, "gTabbrowserBundle", function() {
-  return Services.strings.createBundle(
-    "chrome://browser/locale/tabbrowser.properties"
   );
 });
 
@@ -2845,10 +2874,9 @@ BrowserGlue.prototype = {
       },
 
       {
-        condition: Services.prefs.getBoolPref(
-          "toolkit.telemetry.dap_enabled",
-          false
-        ),
+        condition:
+          lazy.TelemetryUtils.isTelemetryEnabled &&
+          lazy.NimbusFeatures.dapTelemetry.getVariable("enabled"),
         task: () => {
           lazy.DAPTelemetrySender.startup();
         },
@@ -3041,8 +3069,8 @@ BrowserGlue.prototype = {
       return;
     }
 
-    var windowcount = 0;
-    var pagecount = 0;
+    let windowcount = 0;
+    let pagecount = 0;
     let pinnedcount = 0;
     for (let win of lazy.BrowserWindowTracker.orderedWindows) {
       if (win.closed) {
@@ -3052,10 +3080,7 @@ BrowserGlue.prototype = {
       let tabbrowser = win.gBrowser;
       if (tabbrowser) {
         pinnedcount += tabbrowser._numPinnedTabs;
-        pagecount +=
-          tabbrowser.browsers.length -
-          tabbrowser._numPinnedTabs -
-          tabbrowser._removingTabs.length;
+        pagecount += tabbrowser.visibleTabs.length - tabbrowser._numPinnedTabs;
       }
     }
 
@@ -3086,56 +3111,48 @@ BrowserGlue.prototype = {
     // Our prompt for quitting is most important, so replace others.
     win.gDialogBox.replaceDialogIfOpen();
 
-    let title, buttonLabel;
-    // More than 1 window. Compose our own message.
+    let titleId, buttonLabelId;
     if (windowcount > 1) {
-      title = lazy.gTabbrowserBundle.GetStringFromName(
-        "tabs.closeWindowsTitle"
-      );
-      title = lazy.PluralForm.get(windowcount, title).replace(
-        /#1/,
-        windowcount
-      );
-
-      buttonLabel =
-        AppConstants.platform == "win"
-          ? "tabs.closeWindowsButtonWin"
-          : "tabs.closeWindowsButton";
-      buttonLabel = lazy.gTabbrowserBundle.GetStringFromName(buttonLabel);
+      // More than 1 window. Compose our own message.
+      titleId = {
+        id: "tabbrowser-confirm-close-windows-title",
+        args: { windowCount: windowcount },
+      };
+      buttonLabelId = "tabbrowser-confirm-close-windows-button";
     } else if (shouldWarnForShortcut) {
-      let productName = lazy.gBrandBundle.GetStringFromName("brandShorterName");
-      title = lazy.gTabbrowserBundle.formatStringFromName(
-        "tabs.closeTabsWithKeyTitle",
-        [productName]
-      );
-      buttonLabel = lazy.gTabbrowserBundle.formatStringFromName(
-        "tabs.closeTabsWithKeyButton",
-        [productName]
-      );
+      titleId = "tabbrowser-confirm-close-tabs-with-key-title";
+      buttonLabelId = "tabbrowser-confirm-close-tabs-with-key-button";
     } else {
-      title = lazy.gTabbrowserBundle.GetStringFromName("tabs.closeTabsTitle");
-      title = lazy.PluralForm.get(pagecount, title).replace("#1", pagecount);
-      buttonLabel = lazy.gTabbrowserBundle.GetStringFromName(
-        "tabs.closeButtonMultiple"
-      );
+      titleId = {
+        id: "tabbrowser-confirm-close-tabs-title",
+        args: { tabCount: pagecount },
+      };
+      buttonLabelId = "tabbrowser-confirm-close-tabs-button";
     }
 
     // The checkbox label is different depending on whether the shortcut
     // was used to quit or not.
-    let checkboxLabel;
+    let checkboxLabelId;
     if (shouldWarnForShortcut) {
-      let quitKeyElement = win.document.getElementById("key_quitApplication");
-      let quitKey = lazy.ShortcutUtils.prettifyShortcut(quitKeyElement);
-
-      checkboxLabel = lazy.gTabbrowserBundle.formatStringFromName(
-        "tabs.closeTabsWithKeyConfirmCheckbox",
-        [quitKey]
-      );
+      const quitKeyElement = win.document.getElementById("key_quitApplication");
+      const quitKey = lazy.ShortcutUtils.prettifyShortcut(quitKeyElement);
+      checkboxLabelId = {
+        id: "tabbrowser-confirm-close-tabs-with-key-checkbox",
+        args: { quitKey },
+      };
     } else {
-      checkboxLabel = lazy.gTabbrowserBundle.GetStringFromName(
-        "tabs.closeTabsConfirmCheckbox"
-      );
+      checkboxLabelId = "tabbrowser-confirm-close-tabs-checkbox";
     }
+
+    const [
+      title,
+      buttonLabel,
+      checkboxLabel,
+    ] = win.gBrowser.tabLocalization.formatMessagesSync([
+      titleId,
+      buttonLabelId,
+      checkboxLabelId,
+    ]);
 
     let warnOnClose = { value: true };
     let flags =
@@ -3144,13 +3161,13 @@ BrowserGlue.prototype = {
     // buttonPressed will be 0 for closing, 1 for cancel (don't close/quit)
     let buttonPressed = Services.prompt.confirmEx(
       win,
-      title,
+      title.value,
       null,
       flags,
-      buttonLabel,
+      buttonLabel.value,
       null,
       null,
-      checkboxLabel,
+      checkboxLabel.value,
       warnOnClose
     );
     Services.telemetry.setEventRecordingEnabled("close_tab_warning", true);

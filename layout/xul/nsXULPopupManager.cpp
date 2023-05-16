@@ -486,16 +486,18 @@ uint32_t nsXULPopupManager::GetSubmenuWidgetChain(
     if (!item->IsNoAutoHide()) {
       nsCOMPtr<nsIWidget> widget = item->Frame()->GetWidget();
       NS_ASSERTION(widget, "open popup has no widget");
-      aWidgetChain->AppendElement(widget.get());
-      // In the case when a menulist inside a panel is open, clicking in the
-      // panel should still roll up the menu, so if a different type is found,
-      // stop scanning.
-      if (!sameTypeCount) {
-        count++;
-        if (!parent ||
-            item->Frame()->PopupType() != parent->Frame()->PopupType() ||
-            item->IsContextMenu() != parent->IsContextMenu()) {
-          sameTypeCount = count;
+      if (widget) {
+        aWidgetChain->AppendElement(widget.get());
+        // In the case when a menulist inside a panel is open, clicking in the
+        // panel should still roll up the menu, so if a different type is found,
+        // stop scanning.
+        if (!sameTypeCount) {
+          count++;
+          if (!parent ||
+              item->Frame()->PopupType() != parent->Frame()->PopupType() ||
+              item->IsContextMenu() != parent->IsContextMenu()) {
+            sameTypeCount = count;
+          }
         }
       }
     }
@@ -1551,7 +1553,7 @@ void nsXULPopupManager::BeginShowingPopup(const PendingPopup& aPendingPopup,
 
   RefPtr<nsPresContext> presContext = popupFrame->PresContext();
   RefPtr<PresShell> presShell = presContext->PresShell();
-  presShell->FrameNeedsReflow(popupFrame, IntrinsicDirty::TreeChange,
+  presShell->FrameNeedsReflow(popupFrame, IntrinsicDirty::FrameAndAncestors,
                               NS_FRAME_IS_DIRTY);
 
   nsPopupType popupType = popupFrame->PopupType();
@@ -1603,7 +1605,8 @@ void nsXULPopupManager::BeginShowingPopup(const PendingPopup& aPendingPopup,
       if (popup->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                           nsGkAtoms::arrow, eCaseMatters)) {
         popupFrame->ShowWithPositionedEvent();
-        presShell->FrameNeedsReflow(popupFrame, IntrinsicDirty::TreeChange,
+        presShell->FrameNeedsReflow(popupFrame,
+                                    IntrinsicDirty::FrameAndAncestors,
                                     NS_FRAME_HAS_DIRTY_CHILDREN);
       } else {
         ShowPopupCallback(popup, popupFrame, aIsContextMenu, aSelectFirstItem);
@@ -2724,12 +2727,9 @@ nsresult nsXULPopupManager::KeyDown(KeyboardEvent* aKeyEvent) {
     aKeyEvent->StopPropagation();
   }
 
-  int32_t menuAccessKey = -1;
-
   // If the key just pressed is the access key (usually Alt),
   // dismiss and unfocus the menu.
-
-  nsMenuBarListener::GetMenuAccessKey(&menuAccessKey);
+  int32_t menuAccessKey = nsMenuBarListener::GetMenuAccessKey();
   if (menuAccessKey) {
     uint32_t theChar = aKeyEvent->KeyCode();
 

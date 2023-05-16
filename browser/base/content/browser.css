@@ -157,11 +157,6 @@ panelview:not([visible]) {
   visibility: collapse;
 }
 
-/* Hide the header when a subview is reused as a main view. */
-panelview[mainview] > .panel-header {
-  display: none;
-}
-
 .panel-viewcontainer {
   overflow: hidden;
   min-width: 0;
@@ -894,6 +889,8 @@ toolbarspring {
   /* ensure we use the direction of the bookmarks label instead of the
    * browser locale */
   unicode-bidi: plaintext;
+  /* Preserve whitespace in bookmark names */
+  white-space: pre;
 }
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */
@@ -1079,18 +1076,6 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
 
 toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
   display: none;
-}
-
-/* Give these menupopups an arrow panel styling */
-#BMB_bookmarksPopup,
-#PlacesToolbar menupopup {
-  background: transparent;
-  border: none;
-}
-
-#BMB_bookmarksPopup,
-#BMB_bookmarksPopup menupopup {
-  appearance: none;
 }
 
 @media (-moz-panel-animations) and (prefers-reduced-motion: no-preference) {
@@ -1523,18 +1508,6 @@ printpreview-pagination:focus-within,
 
 toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   -moz-user-focus: normal;
-}
-
-/* Frame used for rendering the DevTools inspector highlighters */
-:root > iframe.devtools-highlighter-renderer {
-  border: none;
-  pointer-events: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
 }
 
 /**

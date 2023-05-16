@@ -69,6 +69,8 @@ union Utf8Unit;
 
 namespace JS {
 
+class JS_PUBLIC_API AutoStableStringChars;
+
 namespace detail {
 
 MOZ_COLD extern JS_PUBLIC_API void ReportSourceTooLong(JSContext* cx);
@@ -249,6 +251,16 @@ class SourceText final : public TaintableString {
                           size_t dataLength) {
     return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
   }
+
+  /**
+   * Initialize this using an AutoStableStringChars. Transfers the code units if
+   * they are owned by the AutoStableStringChars, otherwise borrow directly from
+   * the underlying JSString. The AutoStableStringChars must outlive this
+   * SourceText and must be explicitly configured to the same unit type as this
+   * SourceText.
+   */
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
+                                       AutoStableStringChars& linearChars);
 
   /**
    * Access the encapsulated data using a code unit type.

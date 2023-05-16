@@ -70,11 +70,9 @@ inline void ImplCycleCollectionUnlink(
 namespace mozilla::dom {
 
 // Only needed for refcounted objects.
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(ReadableStream,
-                                                      (mGlobal, mController,
-                                                       mReader, mAlgorithms,
-                                                       mNativeUnderlyingSource),
-                                                      (mStoredError))
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(
+    ReadableStream, (mGlobal, mController, mReader, mNativeUnderlyingSource),
+    (mStoredError))
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ReadableStream)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ReadableStream)
@@ -143,18 +141,13 @@ void ReadableStream::SetNativeUnderlyingSource(
   mNativeUnderlyingSource = aUnderlyingSource;
 }
 
-void ReadableStream::ReleaseObjects() {
+void ReadableStream::ReleaseObjectsFromBodyStream() {
   SetNativeUnderlyingSource(nullptr);
 
-  SetErrorAlgorithm(nullptr);
-
-  if (mController->IsByte()) {
-    ReadableByteStreamControllerClearAlgorithms(mController->AsByte());
-    return;
-  }
-
-  MOZ_ASSERT(mController->IsDefault());
-  ReadableStreamDefaultControllerClearAlgorithms(mController->AsDefault());
+  // XXX(krosylight): Hacky way to workaround the ownership issue between
+  // BodyStream and ReadableStream trying to cleanup each other. See bug
+  // 1803386.
+  mController->ClearAlgorithmsWithoutRelease();
 }
 
 // Streams Spec: 4.2.4: https://streams.spec.whatwg.org/#rs-prototype
@@ -609,12 +602,6 @@ void ReadableStreamError(JSContext* aCx, ReadableStream* aStream,
     if (aRv.Failed()) {
       return;
     }
-  }
-
-  // Not in Specification: Allow notifying native underlying sources that a
-  // stream has been errored.
-  if (UnderlyingSourceAlgorithmsBase* algorithms = aStream->GetAlgorithms()) {
-    algorithms->ErrorCallback();
   }
 }
 

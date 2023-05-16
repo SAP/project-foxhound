@@ -16,9 +16,12 @@ panel {
   --panel-border-radius: 0;
   --panel-border-color: ThreeDShadow;
   --panel-width: initial;
-  --windows-panel-box-shadow: 0 0 4px hsla(0,0%,0%,.2);
-}
 
+  --panel-shadow: 0 0 var(--panel-shadow-margin) hsla(0,0%,0%,.2);
+  --panel-shadow-margin: 4px;
+  -moz-window-input-region-margin: var(--panel-shadow-margin);
+  margin: calc(-1 * var(--panel-shadow-margin));
+}
 
 @media not (-moz-windows-non-native-menus) {
   menupopup {
@@ -36,6 +39,7 @@ panel {
     --panel-background: transparent;
     --panel-border-color: transparent;
     --nested-margin: -3px;
+    --panel-shadow-margin: 0px;
   }
 }
 
@@ -47,9 +51,6 @@ panel {
     /* Prevent any background or border around the outside of the shadow. */
     background-color: transparent;
     border: none;
-    /* To account for the box-shadow below */
-    margin: -4px;
-    -moz-window-input-region-margin: 4px;
 
     --panel-border-radius: 4px;
     --panel-padding: 4px 0;
@@ -63,11 +64,6 @@ panel {
     padding-block: 0.5em;
     padding-inline-start: 1em;
   }
-
-  menupopup::part(content) {
-    box-shadow: var(--windows-panel-box-shadow);
-    margin: 4px;
-  }
 }
 
 menupopup > menu > menupopup {
@@ -76,21 +72,18 @@ menupopup > menu > menupopup {
   margin-top: var(--nested-margin);
 }
 
-#PlacesToolbar menupopup,
-#BMB_bookmarksPopup menupopup,
 :is(panel, menupopup)[type="arrow"] {
   appearance: none;
   background: transparent;
   border: none;
-  /* To account for the box-shadow below */
-  margin: -4px;
-  -moz-window-input-region-margin: 4px;
 }
 
 :is(panel, menupopup)::part(content) {
   display: -moz-box;
   -moz-box-flex: 1;
   padding: var(--panel-padding);
+  margin: var(--panel-shadow-margin);
+  box-shadow: var(--panel-shadow);
   color: var(--panel-color);
   background: var(--panel-background);
   border-radius: var(--panel-border-radius);
@@ -102,13 +95,6 @@ menupopup > menu > menupopup {
 
 :is(panel, menupopup)[orient=vertical]::part(content) {
   -moz-box-orient: vertical;
-}
-
-#PlacesToolbar menupopup::part(content),
-#BMB_bookmarksPopup menupopup::part(content),
-:is(panel, menupopup)[type="arrow"]::part(content) {
-  margin: 4px;
-  box-shadow: var(--windows-panel-box-shadow);
 }
 
 panel[type="arrow"].panel-no-padding::part(content) {

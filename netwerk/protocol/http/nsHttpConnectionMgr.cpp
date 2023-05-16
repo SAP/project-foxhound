@@ -15,7 +15,10 @@
 #include <algorithm>
 #include <utility>
 
+#include "ConnectionHandle.h"
+#include "HttpConnectionUDP.h"
 #include "NullHttpTransaction.h"
+#include "SpeculativeTransaction.h"
 #include "mozilla/Components.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -28,10 +31,11 @@
 #include "nsHttpHandler.h"
 #include "nsIClassOfService.h"
 #include "nsIDNSByTypeRecord.h"
-#include "nsIDNSRecord.h"
 #include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
 #include "nsIDNSService.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsIPipe.h"
 #include "nsIRequestContext.h"
 #include "nsISocketTransport.h"
 #include "nsISocketTransportService.h"
@@ -39,11 +43,11 @@
 #include "nsIXPConnect.h"
 #include "nsInterfaceRequestorAgg.h"
 #include "nsNetCID.h"
+#include "nsNetSegmentUtils.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
-#include "ConnectionHandle.h"
-#include "HttpConnectionUDP.h"
-#include "SpeculativeTransaction.h"
+#include "nsSocketTransportService2.h"
+#include "nsStreamUtils.h"
 
 namespace mozilla::net {
 
@@ -1343,12 +1347,39 @@ nsresult nsHttpConnectionMgr::TryDispatchTransaction(
        (caps & NS_HTTP_DISALLOW_SPDY)),
       (!nsHttpHandler::IsHttp3Enabled() || (caps & NS_HTTP_DISALLOW_HTTP3)));
   if (conn) {
-    if (trans->IsWebsocketUpgrade() && !conn->CanAcceptWebsocket()) {
-      // This is a websocket transaction and we already have a h2 connection
-      // that do not support websockets, we should disable h2 for this
-      // transaction.
-      trans->DisableSpdy();
-      caps &= NS_HTTP_DISALLOW_SPDY;
+    LOG(("TryingDispatchTransaction: an active h2 connection exists"));
+    WebSocketSupport wsSupp = conn->GetWebSocketSupport();
+    if (trans->IsWebsocketUpgrade()) {
+      LOG(("TryingDispatchTransaction: this is a websocket upgrade"));
+      if (wsSupp == WebSocketSupport::NO_SUPPORT) {
+        LOG((
+            "TryingDispatchTransaction: no support for websockets over Http2"));
+        // This is a websocket transaction and we already have a h2 connection
+        // that do not support websockets, we should disable h2 for this
+        // transaction.
+        trans->DisableSpdy();
+        caps &= NS_HTTP_DISALLOW_SPDY;
+      } else if (wsSupp == WebSocketSupport::SUPPORTED) {
+        RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
+        LOG(("TryingDispatchTransaction: websockets over Http2"));
+
+        // No limit for number of websockets, dispatch transaction to the tunnel
+        RefPtr<nsHttpConnection> connToTunnel;
+        connTCP->CreateTunnelStream(trans, getter_AddRefs(connToTunnel), true);
+        trans->SetConnection(nullptr);
+        connToTunnel->SetInSpdyTunnel();  // tells conn it is already in tunnel
+        trans->SetIsHttp2Websocket(true);
+        nsresult rv = DispatchTransaction(ent, trans, connToTunnel);
+        // need to undo NonSticky bypass for transaction reset to continue
+        // for correct websocket upgrade handling
+        trans->MakeSticky();
+        return rv;
+      } else {
+        // if we aren't sure that websockets are supported yet or we are
+        // already at the connection limit then we queue the transaction
+        LOG(("TryingDispatchTransaction: unsure if websockets over Http2"));
+        return NS_ERROR_NOT_AVAILABLE;
+      }
     } else {
       if ((caps & NS_HTTP_ALLOW_KEEPALIVE) ||
           (caps & NS_HTTP_ALLOW_SPDY_WITHOUT_KEEPALIVE) ||
@@ -1591,11 +1622,6 @@ nsresult nsHttpConnectionMgr::DispatchTransaction(ConnectionEntry* ent,
   return rv;
 }
 
-nsAHttpConnection* nsHttpConnectionMgr::MakeConnectionHandle(
-    HttpConnectionBase* aWrapped) {
-  return new ConnectionHandle(aWrapped);
-}
-
 // Use this method for dispatching nsAHttpTransction's. It can only safely be
 // used upon first use of a connection when NPN has not negotiated SPDY vs
 // HTTP/1 yet as multiplexing onto an existing SPDY session requires a
@@ -1674,7 +1700,7 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
       RefPtr<Http2Session> session = pushedStream->Session();
       LOG(("  ProcessNewTransaction %p tied to h2 session push %p\n", trans,
            session.get()));
-      return session->AddStream(trans, trans->Priority(), false, nullptr)
+      return session->AddStream(trans, trans->Priority(), nullptr)
                  ? NS_OK
                  : NS_ERROR_UNEXPECTED;
     }
@@ -1757,6 +1783,8 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
         trans->SetConnection(nullptr);
         newTunnel->SetInSpdyTunnel();
         rv = DispatchTransaction(ent, trans, newTunnel);
+        // need to undo the bypass for transaction reset for proxy
+        trans->MakeNonRestartable();
       }
     } else {
       rv = DispatchTransaction(ent, trans, connTCP);
@@ -2475,8 +2503,42 @@ void nsHttpConnectionMgr::OnMsgCompleteUpgrade(int32_t, ARefBase* param) {
   }
 
   RefPtr<nsCompleteUpgradeData> upgradeData(data);
-  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)},
-                                 aRv(rv)]() {
+
+  nsCOMPtr<nsIAsyncInputStream> socketIn;
+  nsCOMPtr<nsIAsyncOutputStream> socketOut;
+
+  // If this is for JS, the input and output sockets need to be piped over the
+  // socket thread. Otherwise, the JS may attempt to read and/or write the
+  // sockets on the main thread, which could cause network I/O on the main
+  // thread. This is particularly bad in the case of TLS connections, because
+  // PSM and NSS rely on those connections only being used on the socket
+  // thread.
+  if (data->mJsWrapped) {
+    nsCOMPtr<nsIAsyncInputStream> pipeIn;
+    uint32_t segsize = 0;
+    uint32_t segcount = 0;
+    net_ResolveSegmentParams(segsize, segcount);
+    if (NS_SUCCEEDED(rv)) {
+      NS_NewPipe2(getter_AddRefs(pipeIn), getter_AddRefs(socketOut), true, true,
+                  segsize, segcount);
+      rv = NS_AsyncCopy(pipeIn, data->mSocketOut, gSocketTransportService,
+                        NS_ASYNCCOPY_VIA_READSEGMENTS, segsize);
+    }
+
+    nsCOMPtr<nsIAsyncOutputStream> pipeOut;
+    if (NS_SUCCEEDED(rv)) {
+      NS_NewPipe2(getter_AddRefs(socketIn), getter_AddRefs(pipeOut), true, true,
+                  segsize, segcount);
+      rv = NS_AsyncCopy(data->mSocketIn, pipeOut, gSocketTransportService,
+                        NS_ASYNCCOPY_VIA_WRITESEGMENTS, segsize);
+    }
+  } else {
+    socketIn = upgradeData->mSocketIn;
+    socketOut = upgradeData->mSocketOut;
+  }
+
+  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)}, socketIn,
+                                 socketOut, aRv(rv)]() {
     // Handle any potential previous errors first
     // and call OnUpgradeFailed if necessary.
     nsresult rv = aRv;
@@ -2493,8 +2555,7 @@ void nsHttpConnectionMgr::OnMsgCompleteUpgrade(int32_t, ARefBase* param) {
     }
 
     rv = upgradeData->mUpgradeListener->OnTransportAvailable(
-        upgradeData->mSocketTransport, upgradeData->mSocketIn,
-        upgradeData->mSocketOut);
+        upgradeData->mSocketTransport, socketIn, socketOut);
     if (NS_FAILED(rv)) {
       LOG(
           ("nsHttpConnectionMgr::OnMsgCompleteUpgrade OnTransportAvailable "

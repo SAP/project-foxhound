@@ -16,17 +16,19 @@ import {
 describe("Discovery Stream <TopSites>", () => {
   let wrapper;
   let store;
-  const defaultTopSiteRows = [
-    { label: "facebook" },
-    { label: "amazon" },
-    { label: "google" },
-    { label: "apple" },
-  ];
-  const defaultTopSites = {
-    rows: defaultTopSiteRows,
-  };
+  let defaultTopSiteRows;
+  let defaultTopSites;
 
   beforeEach(() => {
+    defaultTopSiteRows = [
+      { label: "facebook" },
+      { label: "amazon" },
+      { label: "google" },
+      { label: "apple" },
+    ];
+    defaultTopSites = {
+      rows: defaultTopSiteRows,
+    };
     INITIAL_STATE.Prefs.values.topSitesRows = TOP_SITES_DEFAULT_ROWS;
     store = createStore(combineReducers(reducers), INITIAL_STATE);
     wrapper = mount(
@@ -74,14 +76,15 @@ describe("Discovery Stream <TopSites>", () => {
     const topSiteSpoc = {
       url: "foo",
       sponsor: "bar",
-      image_src: "foobar",
+      raw_image_src: "foobar",
       flight_id: "1234",
       id: "5678",
       shim: { impression: "1011" },
     };
     const data = { spocs: [topSiteSpoc] };
     const resultSpocFirst = {
-      customScreenshotURL: "foobar",
+      customScreenshotURL:
+        "https://img-getpocket.cdn.mozilla.net/40x40/filters:format(jpeg):quality(60):no_upscale():strip_exif()/foobar",
       type: "SPOC",
       label: "bar",
       title: "bar",
@@ -95,7 +98,8 @@ describe("Discovery Stream <TopSites>", () => {
       pos: 0,
     };
     const resultSpocForth = {
-      customScreenshotURL: "foobar",
+      customScreenshotURL:
+        "https://img-getpocket.cdn.mozilla.net/40x40/filters:format(jpeg):quality(60):no_upscale():strip_exif()/foobar",
       type: "SPOC",
       label: "bar",
       title: "bar",
@@ -141,7 +145,7 @@ describe("Discovery Stream <TopSites>", () => {
           {
             url: "foo2",
             sponsor: "bar2",
-            image_src: "foobar2",
+            raw_image_src: "foobar2",
             flight_id: "1234",
             id: "5678",
             shim: { impression: "1011" },
@@ -156,7 +160,8 @@ describe("Discovery Stream <TopSites>", () => {
       );
 
       const availableSpoc = {
-        customScreenshotURL: "foobar2",
+        customScreenshotURL:
+          "https://img-getpocket.cdn.mozilla.net/40x40/filters:format(jpeg):quality(60):no_upscale():strip_exif()/foobar2",
         type: "SPOC",
         label: "bar2",
         title: "bar2",
@@ -188,7 +193,7 @@ describe("Discovery Stream <TopSites>", () => {
     it("should add to first position", () => {
       const result = insertSpocContent(defaultTopSites, data, 0);
       assert.deepEqual(result, {
-        rows: [resultSpocFirst, ...defaultTopSiteRows],
+        rows: [resultSpocFirst, ...defaultTopSiteRows.slice(1)],
       });
     });
 
@@ -202,7 +207,12 @@ describe("Discovery Stream <TopSites>", () => {
       const result = insertSpocContent({ rows: topSiteRowsWithPins }, data, 0);
 
       assert.deepEqual(result, {
-        rows: [resultSpocFirst, pinnedSite, pinnedSite, ...defaultTopSiteRows],
+        rows: [
+          resultSpocFirst,
+          pinnedSite,
+          pinnedSite,
+          ...defaultTopSiteRows.slice(1),
+        ],
       });
     });
   });

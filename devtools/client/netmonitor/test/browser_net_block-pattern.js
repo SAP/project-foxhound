@@ -26,25 +26,9 @@ add_task(async function() {
   // Open the request blocking panel
   store.dispatch(Actions.toggleRequestBlockingPanel());
 
-  // Helper for keyboard typing
-  const type = string => {
-    for (const ch of string) {
-      EventUtils.synthesizeKey(ch, {}, monitor.panelWin);
-    }
-  };
-
-  // wait for the add input to get focus
-  await waitUntil(() => {
-    return document.querySelector(
-      "#network-action-bar-blocked-panel .request-blocking-add-form input.devtools-searchinput:focus"
-    );
-  });
-
   // Add patterns which should block some of the requests
-  type("test1");
-  EventUtils.synthesizeKey("KEY_Enter");
-  type("test/*/test3");
-  EventUtils.synthesizeKey("KEY_Enter");
+  await addBlockedRequest("test1", monitor);
+  await addBlockedRequest("test/*/test3", monitor);
 
   // Close the blocking panel to ensure it's opened by the context menu later
   store.dispatch(Actions.toggleRequestBlockingPanel());
@@ -120,7 +104,3 @@ add_task(async function() {
 
   await teardown(monitor);
 });
-
-function checkRequestListItemBlocked(item) {
-  return item.className.includes("blocked");
-}

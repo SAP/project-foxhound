@@ -1571,7 +1571,7 @@ impl ContainerName {
             return Ok(Self::none());
         }
         const DISALLOWED_CONTAINER_NAMES: &'static [&'static str] =
-            &["none", "not", "or", "and", "auto", "normal"];
+            &["none", "not", "or", "and"];
         idents.push(CustomIdent::from_ident(
             location,
             first,
@@ -2011,9 +2011,6 @@ pub enum Appearance {
     MozWinMediaToolbox,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWinBrowsertabbarToolbox,
-    /// Vista glass.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinGlass,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWinBorderlessGlass,
     /// -moz-apperance style used in setting proper glass margins.
@@ -2037,12 +2034,6 @@ pub enum Appearance {
     MozWindowButtonMinimize,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWindowButtonRestore,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWindowFrameBottom,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWindowFrameLeft,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWindowFrameRight,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWindowTitlebar,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]

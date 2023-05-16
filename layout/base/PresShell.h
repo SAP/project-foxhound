@@ -13,6 +13,7 @@
 
 #include <stdio.h>  // for FILE definition
 #include "FrameMetrics.h"
+#include "LayoutConstants.h"
 #include "TouchManager.h"
 #include "Units.h"
 #include "Visibility.h"
@@ -56,9 +57,6 @@ class AutoPointerEventTargetUpdater;
 class AutoWeakFrame;
 class gfxContext;
 class MobileViewportManager;
-#ifdef ACCESSIBILITY
-class nsAccessibilityService;
-#endif
 class nsAutoCauseReflowNotifier;
 class nsCanvasFrame;
 class nsCaret;
@@ -233,16 +231,6 @@ class PresShell final : public nsStubDocumentObserver,
   void SetDocAccessible(a11y::DocAccessible* aDocAccessible) {
     mDocAccessible = aDocAccessible;
   }
-
-  /**
-   * Return true if accessibility is active.
-   */
-  static bool IsAccessibilityActive();
-
-  /**
-   * Return accessibility service if accessibility is active.
-   */
-  static nsAccessibilityService* GetAccessibilityService();
 #endif  // #ifdef ACCESSIBILITY
 
   /**
@@ -1762,6 +1750,13 @@ class PresShell final : public nsStubDocumentObserver,
    */
   bool IsForcingLayoutForHiddenContent(const nsIFrame*) const;
 
+  void RegisterContentVisibilityAutoFrame(nsIFrame* aFrame) {
+    mContentVisibilityAutoFrames.Insert(aFrame);
+  }
+
+  void UpdateRelevancyOfContentVisibilityAutoFrames();
+  void ScheduleContentRelevancyUpdate(ContentRelevancyReason aReason);
+
  private:
   ~PresShell();
 
@@ -1921,8 +1916,7 @@ class PresShell final : public nsStubDocumentObserver,
       mPresShell->mRenderingStateFlags = mOldState.mRenderingStateFlags;
       mPresShell->mResolution = mOldState.mResolution;
 #ifdef ACCESSIBILITY
-      if (nsAccessibilityService* accService =
-              PresShell::GetAccessibilityService()) {
+      if (nsAccessibilityService* accService = GetAccService()) {
         accService->NotifyOfResolutionChange(mPresShell,
                                              mPresShell->GetResolution());
       }
@@ -3022,6 +3016,12 @@ class PresShell final : public nsStubDocumentObserver,
   nsTHashSet<nsIScrollableFrame*> mPendingScrollResnap;
 
   nsTHashSet<nsIContent*> mHiddenContentInForcedLayout;
+
+  nsTHashSet<nsIFrame*> mContentVisibilityAutoFrames;
+
+  // The type of content relevancy to update the next time content relevancy
+  // updates are triggered for `content-visibility: auto` frames.
+  ContentRelevancy mContentVisibilityRelevancyToUpdate;
 
   nsCallbackEventRequest* mFirstCallbackEventRequest = nullptr;
   nsCallbackEventRequest* mLastCallbackEventRequest = nullptr;

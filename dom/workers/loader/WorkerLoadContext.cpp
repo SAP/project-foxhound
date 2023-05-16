@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerLoadContext.h"
+#include "mozilla/dom/workerinternals/ScriptLoader.h"
 #include "CacheLoadHandler.h"  // CacheCreator
 
 namespace mozilla {
@@ -12,27 +13,60 @@ namespace dom {
 
 WorkerLoadContext::WorkerLoadContext(Kind aKind,
                                      const Maybe<ClientInfo>& aClientInfo)
-    : JS::loader::LoadContextNoCCBase(JS::loader::ContextKind::Worker),
+    : JS::loader::LoadContextBase(JS::loader::ContextKind::Worker),
       mKind(aKind),
       mClientInfo(aClientInfo){};
 
-void WorkerLoadContext::SetCacheCreator(
-    RefPtr<workerinternals::loader::CacheCreator> aCacheCreator) {
-  AssertIsOnMainThread();
-  mCacheCreator =
-      new nsMainThreadPtrHolder<workerinternals::loader::CacheCreator>(
-          "WorkerLoadContext::mCacheCreator", aCacheCreator);
+ThreadSafeRequestHandle::ThreadSafeRequestHandle(
+    JS::loader::ScriptLoadRequest* aRequest, nsISerialEventTarget* aSyncTarget)
+    : mRequest(aRequest), mOwningEventTarget(aSyncTarget) {}
+
+already_AddRefed<JS::loader::ScriptLoadRequest>
+ThreadSafeRequestHandle::ReleaseRequest() {
+  RefPtr<JS::loader::ScriptLoadRequest> request;
+  mRequest.swap(request);
+  mRunnable = nullptr;
+  return request.forget();
 }
 
-void WorkerLoadContext::ClearCacheCreator() {
-  AssertIsOnMainThread();
-  mCacheCreator = nullptr;
+nsresult ThreadSafeRequestHandle::OnStreamComplete(nsresult aStatus) {
+  return mRunnable->OnStreamComplete(this, aStatus);
 }
 
-RefPtr<workerinternals::loader::CacheCreator>
-WorkerLoadContext::GetCacheCreator() {
+void ThreadSafeRequestHandle::LoadingFinished(nsresult aRv) {
+  mRunnable->LoadingFinished(this, aRv);
+}
+
+void ThreadSafeRequestHandle::MaybeExecuteFinishedScripts() {
+  mRunnable->MaybeExecuteFinishedScripts(this);
+}
+
+bool ThreadSafeRequestHandle::IsCancelled() { return mRunnable->IsCancelled(); }
+
+nsresult ThreadSafeRequestHandle::GetCancelResult() {
+  return mRunnable->GetCancelResult();
+}
+
+workerinternals::loader::CacheCreator*
+ThreadSafeRequestHandle::GetCacheCreator() {
   AssertIsOnMainThread();
-  return mCacheCreator.get();
+  return mRunnable->GetCacheCreator();
+}
+
+ThreadSafeRequestHandle::~ThreadSafeRequestHandle() {
+  // Normally we only touch mStrongRef on the owning thread.  This is safe,
+  // however, because when we do use mStrongRef on the owning thread we are
+  // always holding a strong ref to the ThreadsafeHandle via the owning
+  // runnable.  So we cannot run the ThreadsafeHandle destructor simultaneously.
+  if (!mRequest || mOwningEventTarget->IsOnCurrentThread()) {
+    return;
+  }
+
+  // Dispatch in NS_ProxyRelease is guaranteed to succeed here because we block
+  // shutdown until all Contexts have been destroyed. Therefore it is ok to have
+  // MOZ_ALWAYS_SUCCEED here.
+  MOZ_ALWAYS_SUCCEEDS(NS_ProxyRelease("ThreadSafeRequestHandle::mRequest",
+                                      mOwningEventTarget, mRequest.forget()));
 }
 
 }  // namespace dom

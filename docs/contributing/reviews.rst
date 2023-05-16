@@ -68,6 +68,9 @@ Review groups
    * - #gfx-reviewers
      - Changes to Graphics code
      - `Member list <https://phabricator.services.mozilla.com/project/members/122/>`__
+   * - #webgpu-reviewers
+     - Changes to WebGPU code
+     - `Member list <https://phabricator.services.mozilla.com/project/members/170/>`__
    * - #intermittent-reviewers
      - Test manifest changes
      - `Member list <https://phabricator.services.mozilla.com/project/members/110/>`__
@@ -125,6 +128,9 @@ Review groups
    * - #media-playback-reviewers
      - `Media playback <https://wiki.mozilla.org/Modules/All#Media_Playback>`__
      - `Member list <https://phabricator.services.mozilla.com/project/profile/159/>`__
+   * - #cubeb-reviewers
+     - Changes related to cubeb, Gecko's audio input/output library and associated projects (audioipc, cubeb-rs, rust cubeb backends)
+     - `Member list <https://phabricator.services.mozilla.com/project/profile/129/>`__
 
 To create a new group, fill a `new bug in Conduit::Administration <https://bugzilla.mozilla.org/enter_bug.cgi?product=Conduit&component=Administration>`__.
 See `bug 1613306 <https://bugzilla.mozilla.org/show_bug.cgi?id=1613306>`__ as example.

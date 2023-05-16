@@ -9,6 +9,7 @@ const { ComponentUtils } = ChromeUtils.import(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -16,9 +17,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AboutHomeStartupCache: "resource:///modules/BrowserGlue.jsm",
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
   PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -28,13 +27,10 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsISubstitutingProtocolHandler"
 );
 
-// To support the 'new TextEncoder()' call inside of 'profilerFinish()' here,
-// we have to import TextEncoder.  It's not automagically defined for us,
-// because we are in a child process, because we are an extension. See second
-// category in https://bugzilla.mozilla.org/show_bug.cgi?id=1501127#c2
+// These are not automagically defined for us because we are an extension.
 //
 // eslint-disable-next-line mozilla/reject-importGlobalProperties
-Cu.importGlobalProperties(["TextEncoder"]);
+Cu.importGlobalProperties(["IOUtils", "PathUtils"]);
 
 const Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
@@ -140,29 +136,28 @@ TalosPowersService.prototype = {
    * the profiles have been dumped. This method returns a Promise that
    * will resolve once this has occurred.
    *
+   * @param profileDir (string)
+   *        The name of the directory to write the profile in.
    * @param profileFile (string)
    *        The name of the file to write to.
    *
    * @returns Promise
    */
-  profilerFinish(profileFile) {
+  profilerFinish(profileDir, profileFile) {
+    const profilePath = PathUtils.join(profileDir, profileFile);
     return new Promise((resolve, reject) => {
       Services.profiler.Pause();
       Services.profiler.getProfileDataAsync().then(
-        profile => {
-          let encoder = new TextEncoder();
-          let array = encoder.encode(JSON.stringify(profile));
-
-          OS.File.writeAtomic(profileFile, array, {
-            tmpPath: profileFile + ".tmp",
+        profile =>
+          IOUtils.writeJSON(profilePath, profile, {
+            tmpPath: `${profilePath}.tmp`,
           }).then(() => {
             Services.profiler.StopProfiler();
             resolve();
             Services.obs.notifyObservers(null, "talos-profile-gathered");
-          });
-        },
+          }),
         error => {
-          Cu.reportError("Failed to gather profile: " + error);
+          console.error("Failed to gather profile: " + error);
           // FIXME: We should probably send a message down to the
           // child which causes it to reject the waiting Promise.
           reject();
@@ -249,7 +244,7 @@ TalosPowersService.prototype = {
 
       case "Profiler:Finish": {
         // The test is done. Dump the profile.
-        this.profilerFinish(data.profileFile).then(() => {
+        this.profilerFinish(data.profileDir, data.profileFile).then(() => {
           mm.sendAsyncMessage(ACK_NAME, { name });
         });
         break;

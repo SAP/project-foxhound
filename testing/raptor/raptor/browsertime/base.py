@@ -6,19 +6,18 @@
 
 from __future__ import absolute_import, division
 
+import json
+import os
+import re
+import sys
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 
-import os
-import json
-import re
-import six
-import sys
-
 import mozprocess
-from manifestparser.util import evaluate_list_from_string
+import six
 from benchmark import Benchmark
 from logger.logger import RaptorLogger
+from manifestparser.util import evaluate_list_from_string
 from perftest import Perftest
 from results import BrowsertimeResultsHandler
 
@@ -85,7 +84,8 @@ class Browsertime(Perftest):
 
     def build_browser_profile(self):
         super(Browsertime, self).build_browser_profile()
-        self.remove_mozprofile_delimiters_from_profile()
+        if self.profile is not None:
+            self.remove_mozprofile_delimiters_from_profile()
 
     def remove_mozprofile_delimiters_from_profile(self):
         # Perftest.build_browser_profile uses mozprofile to create the profile and merge in prefs;
@@ -371,9 +371,10 @@ class Browsertime(Perftest):
                     self.results_handler.result_dir_for_test_profiling(test),
                 ]
             )
-        priority1_options.extend(
-            ["--firefox.profileTemplate", str(self.profile.profile)]
-        )
+        if self.profile is not None:
+            priority1_options.extend(
+                ["--firefox.profileTemplate", str(self.profile.profile)]
+            )
 
         # This argument can have duplicates of the value "--firefox.env" so we do not need
         # to check if it conflicts
@@ -443,7 +444,7 @@ class Browsertime(Perftest):
                 (
                     "gecko_profile_features",
                     "--firefox.geckoProfilerParams.features",
-                    "js,leaf,stackwalk,cpu,screenshots",
+                    "js,stackwalk,cpu,screenshots",
                 ),
                 (
                     "gecko_profile_threads",

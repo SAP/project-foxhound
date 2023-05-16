@@ -83,6 +83,44 @@ addAccessibleTask(
 );
 
 /*
+ * Test mutation of LABEL relations via accessible shutdown.
+ */
+addAccessibleTask(
+  `
+  <div id="d"></div>
+  <label id="l">
+    <select id="s">
+  `,
+  async function(browser, accDoc) {
+    const label = findAccessibleChildByID(accDoc, "l");
+    const select = findAccessibleChildByID(accDoc, "s");
+    const div = findAccessibleChildByID(accDoc, "d");
+
+    await testCachedRelation(label, RELATION_LABEL_FOR, select);
+    await testCachedRelation(select, RELATION_LABELLED_BY, label);
+    await testCachedRelation(div, RELATION_LABELLED_BY, null);
+
+    const r = waitForEvent(EVENT_REORDER, "l");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("s").remove();
+    });
+    await r;
+    await invokeContentTask(browser, [], () => {
+      const l = content.document.getElementById("l");
+      l.htmlFor = "d";
+    });
+    await testCachedRelation(label, RELATION_LABEL_FOR, div);
+    await testCachedRelation(div, RELATION_LABELLED_BY, label);
+  },
+  {
+    chrome: false,
+    iframe: isCacheEnabled,
+    remoteIframe: isCacheEnabled,
+    topLevel: isCacheEnabled,
+  }
+);
+
+/*
  * Test LINKS_TO relation caching an anchor with multiple hashes
  */
 addAccessibleTask(
@@ -97,7 +135,10 @@ addAccessibleTask(
   },
   {
     chrome: true,
-    iframe: true,
-    remoteIframe: true,
+    // IA2 doesn't have a LINKS_TO relation and Windows non-cached
+    // RemoteAccessible uses IA2, so we can't run these tests in this case.
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
   }
 );

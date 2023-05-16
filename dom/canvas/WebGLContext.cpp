@@ -25,7 +25,6 @@
 #include "GLScreenBuffer.h"
 #include "ImageContainer.h"
 #include "ImageEncoder.h"
-#include "Layers.h"
 #include "LayerUserData.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Document.h"
@@ -1194,6 +1193,7 @@ bool WebGLContext::PushRemoteTexture(WebGLFramebuffer* fb,
   switch (desc->type()) {
     case layers::SurfaceDescriptor::TSurfaceDescriptorD3D10:
     case layers::SurfaceDescriptor::TSurfaceDescriptorMacIOSurface:
+    case layers::SurfaceDescriptor::TSurfaceTextureDescriptor:
       keepAlive = surf;
       break;
     default:
@@ -2002,7 +2002,7 @@ static std::vector<std::string> ExplodeName(const std::string& str) {
 
 //-
 
-//#define DUMP_MakeLinkResult
+// #define DUMP_MakeLinkResult
 
 webgl::LinkActiveInfo GetLinkActiveInfo(
     gl::GLContext& gl, const GLuint prog, const bool webgl2,
@@ -2160,6 +2160,7 @@ webgl::LinkActiveInfo GetLinkActiveInfo(
         }();
 
         const auto userName = fnUnmapName(mappedName);
+        if (StartsWith(userName, "webgl_")) continue;
 
         // -
 

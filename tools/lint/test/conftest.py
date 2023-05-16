@@ -6,14 +6,13 @@ import pathlib
 import sys
 from collections import defaultdict
 
+import pytest
 from mozbuild.base import MozbuildObject
-from mozlint.pathutils import findobject
 from mozlint.parser import Parser
+from mozlint.pathutils import findobject
 from mozlint.result import ResultSummary
 from mozlog.structuredlog import StructuredLogger
 from mozpack import path
-
-import pytest
 
 here = path.abspath(path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here, virtualenv_name="python-test")
@@ -201,6 +200,43 @@ def structuredlog_lint(config, root, logger=None):
 
 
 @pytest.fixture
+def global_lint(config, root, request):
+    try:
+        func = findobject(config["payload"])
+    except (ImportError, ValueError):
+        pytest.fail(
+            "could not resolve a lint function from '{}'".format(config["payload"])
+        )
+
+    ResultSummary.root = root
+
+    def wrapper(config=config, root=root, collapse_results=False, **lintargs):
+        logger.setLevel(logging.DEBUG)
+        lintargs["log"] = logging.LoggerAdapter(
+            logger, {"lintname": config.get("name"), "pid": os.getpid()}
+        )
+        results = func(config, root=root, **lintargs)
+        if hasattr(request.module, "fixed") and isinstance(results, dict):
+            request.module.fixed += results["fixed"]
+
+        if isinstance(results, dict):
+            results = results["results"]
+
+        if isinstance(results, (list, tuple)):
+            results = sorted(results)
+
+        if not collapse_results:
+            return results
+
+        ret = defaultdict(list)
+        for r in results:
+            ret[r.relpath].append(r)
+        return ret
+
+    return wrapper
+
+
+@pytest.fixture
 def create_temp_file(tmpdir):
     def inner(contents, name=None):
         name = name or "temp.py"
@@ -219,10 +255,10 @@ def structured_logger():
 @pytest.fixture
 def perfdocs_sample():
     from test_perfdocs import (
-        SAMPLE_TEST,
-        SAMPLE_CONFIG,
         DYNAMIC_SAMPLE_CONFIG,
+        SAMPLE_CONFIG,
         SAMPLE_INI,
+        SAMPLE_TEST,
         temp_dir,
         temp_file,
     )

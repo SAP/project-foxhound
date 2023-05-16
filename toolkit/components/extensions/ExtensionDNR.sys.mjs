@@ -67,12 +67,61 @@ const gRuleManagers = [];
  *  - block
  *  - redirect / upgradeScheme
  *  - allow / allowAllRequests
- **/
+ */
+
+const lazy = {};
+
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "WebRequest",
+  "resource://gre/modules/WebRequest.jsm"
+);
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  ExtensionDNRStore: "resource://gre/modules/ExtensionDNRStore.sys.mjs",
+});
+
+/**
+ * The minimum number of static rules guaranteed to an extension across its
+ * enabled static rulesets. Any rules above this limit will count towards the
+ * global static rule limit.
+ */
+const GUARANTEED_MINIMUM_STATIC_RULES = 30000;
+
+/**
+ * The maximum number of static Rulesets an extension can specify as part of
+ * the "rule_resources" manifest key.
+ *
+ * NOTE: this limit may be increased in the future, see https://github.com/w3c/webextensions/issues/318
+ */
+const MAX_NUMBER_OF_STATIC_RULESETS = 50;
+
+/**
+ * The maximum number of static Rulesets an extension can enable at any one time.
+ *
+ * NOTE: this limit may be increased in the future, see https://github.com/w3c/webextensions/issues/318
+ */
+const MAX_NUMBER_OF_ENABLED_STATIC_RULESETS = 10;
+
+// TODO(Bug 1803370): allow extension to exceed the GUARANTEED_MINIMUM_STATIC_RULES limit.
+//
+// The maximum number of static rules exceeding the per-extension
+// GUARANTEED_MINIMUM_STATIC_RULES across every extensions.
+//
+// const MAX_GLOBAL_NUMBER_OF_STATIC_RULES = 300000;
+
+// As documented above:
+// Ruleset precedence: session > dynamic > static (order from manifest.json).
+const PRECEDENCE_SESSION_RULESET = 1;
+const PRECEDENCE_DYNAMIC_RULESET = 2;
+const PRECEDENCE_STATIC_RULESETS_BASE = 3;
 
 // The RuleCondition class represents a rule's "condition" type as described in
 // schemas/declarative_net_request.json. This class exists to allow the JS
 // engine to use one Shape for all Rule instances.
 class RuleCondition {
+  #compiledUrlFilter;
+
   constructor(cond) {
     this.urlFilter = cond.urlFilter;
     this.regexFilter = cond.regexFilter;
@@ -88,6 +137,25 @@ class RuleCondition {
     this.domainType = cond.domainType;
     this.tabIds = cond.tabIds;
     this.excludedTabIds = cond.excludedTabIds;
+  }
+
+  // See CompiledUrlFilter for documentation.
+  urlFilterMatches(requestDataForUrlFilter) {
+    if (!this.#compiledUrlFilter) {
+      // eslint-disable-next-line no-use-before-define
+      this.#compiledUrlFilter = new CompiledUrlFilter(
+        this.urlFilter,
+        this.isUrlFilterCaseSensitive
+      );
+    }
+    return this.#compiledUrlFilter.matchesRequest(requestDataForUrlFilter);
+  }
+
+  getCompiledUrlFilter() {
+    return this.#compiledUrlFilter;
+  }
+  setCompiledUrlFilter(compiledUrlFilter) {
+    this.#compiledUrlFilter = compiledUrlFilter;
   }
 }
 
@@ -142,10 +210,544 @@ class Ruleset {
   }
 }
 
+/**
+ * @param {string} uriQuery - The query of a nsIURI to transform.
+ * @param {object} queryTransform - The value of the
+ *   Rule.action.redirect.transform.queryTransform property as defined in
+ *   declarative_net_request.json.
+ * @returns {string} The uriQuery with the queryTransform applied to it.
+ */
+function applyQueryTransform(uriQuery, queryTransform) {
+  // URLSearchParams cannot be applied to the full query string, because that
+  // API formats the full query string using form-urlencoding. But the input
+  // may be in a different format. So we try to only modify matched params.
+
+  function urlencode(s) {
+    // Encode in application/x-www-form-urlencoded format.
+    // The only JS API to do that is URLSearchParams. encodeURIComponent is not
+    // the same, it differs in how it handles " " ("%20") and "!'()~" (raw).
+    // But urlencoded space should be "+" and the latter be "%21%27%28%29%7E".
+    return new URLSearchParams({ s }).toString().slice(2);
+  }
+  if (!uriQuery.length && !queryTransform.addOrReplaceParams) {
+    // Nothing to do.
+    return "";
+  }
+  const removeParamsSet = new Set(queryTransform.removeParams?.map(urlencode));
+  const addParams = (queryTransform.addOrReplaceParams || []).map(orig => ({
+    normalizedKey: urlencode(orig.key),
+    orig,
+  }));
+  const finalParams = [];
+  if (uriQuery.length) {
+    for (let part of uriQuery.split("&")) {
+      let key = part.split("=", 1)[0];
+      if (removeParamsSet.has(key)) {
+        continue;
+      }
+      let i = addParams.findIndex(p => p.normalizedKey === key);
+      if (i !== -1) {
+        // Replace found param with the key-value from addOrReplaceParams.
+        finalParams.push(`${key}=${urlencode(addParams[i].orig.value)}`);
+        // Omit param so that a future search for the same key can find the next
+        // specified key-value pair, if any. And to prevent the already-used
+        // key-value pairs from being appended after the loop.
+        addParams.splice(i, 1);
+      } else {
+        finalParams.push(part);
+      }
+    }
+  }
+  // Append remaining, unused key-value pairs.
+  for (let { normalizedKey, orig } of addParams) {
+    if (!orig.replaceOnly) {
+      finalParams.push(`${normalizedKey}=${urlencode(orig.value)}`);
+    }
+  }
+  return finalParams.length ? `?${finalParams.join("&")}` : "";
+}
+
+/**
+ * @param {nsIURI} uri - Usually a http(s) URL.
+ * @param {object} transform - The value of the Rule.action.redirect.transform
+ *   property as defined in declarative_net_request.json.
+ * @returns {nsIURI} uri - The new URL.
+ * @throws if the transformation is invalid.
+ */
+function applyURLTransform(uri, transform) {
+  let mut = uri.mutate();
+  if (transform.scheme) {
+    // Note: declarative_net_request.json only allows http(s)/moz-extension:.
+    mut.setScheme(transform.scheme);
+    if (uri.port !== -1 || transform.port) {
+      // If the URI contains a port or transform.port was specified, the default
+      // port is significant. So we must set it in that case.
+      if (transform.scheme === "https") {
+        mut.QueryInterface(Ci.nsIStandardURLMutator).setDefaultPort(443);
+      } else if (transform.scheme === "http") {
+        mut.QueryInterface(Ci.nsIStandardURLMutator).setDefaultPort(80);
+      }
+    }
+  }
+  if (transform.username != null) {
+    mut.setUsername(transform.username);
+  }
+  if (transform.password != null) {
+    mut.setPassword(transform.password);
+  }
+  if (transform.host != null) {
+    mut.setHost(transform.host);
+  }
+  if (transform.port != null) {
+    // The caller ensures that transform.port is a string consisting of digits
+    // only. When it is an empty string, it should be cleared (-1).
+    mut.setPort(transform.port || -1);
+  }
+  if (transform.path != null) {
+    mut.setFilePath(transform.path);
+  }
+  if (transform.query != null) {
+    mut.setQuery(transform.query);
+  } else if (transform.queryTransform) {
+    mut.setQuery(applyQueryTransform(uri.query, transform.queryTransform));
+  }
+  if (transform.fragment != null) {
+    mut.setRef(transform.fragment);
+  }
+  return mut.finalize();
+}
+
+/**
+ * An urlFilter is a string pattern to match a canonical http(s) URL.
+ * urlFilter matches anywhere in the string, unless an anchor is present:
+ * - ||... ("Domain name anchor") - domain or subdomain starts with ...
+ * - |... ("Left anchor") - URL starts with ...
+ * - ...| ("Right anchor") - URL ends with ...
+ *
+ * Other than the anchors, the following special characters exist:
+ * - ^ = end of URL, or any char except: alphanum _ - . % ("Separator")
+ * - * = any number of characters ("Wildcard")
+ *
+ * Ambiguous cases (undocumented but actual Chrome behavior):
+ * - Plain "||" is a domain name anchor, not left + empty + right anchor.
+ * - "^" repeated at end of pattern: "^" matches end of URL only once.
+ * - "^|" at end of pattern: "^" is allowed to match end of URL.
+ *
+ * Implementation details:
+ * - CompiledUrlFilter's constructor (+#initializeUrlFilter) extracts the
+ *   actual urlFilter and anchors, for matching against URLs later.
+ * - RequestDataForUrlFilter class precomputes the URL / domain anchors to
+ *   support matching more efficiently.
+ * - CompiledUrlFilter's matchesRequest(request) checks whether the request is
+ *   actually matched, using the precomputed information.
+ *
+ * The class was designed to minimize the number of string allocations during
+ * request evaluation, because the matchesRequest method may be called very
+ * often for every network request.
+ */
+class CompiledUrlFilter {
+  #isUrlFilterCaseSensitive;
+  #urlFilterParts; // = parts of urlFilter, minus anchors, split at "*".
+  // isAnchorLeft and isAnchorDomain are mutually exclusive.
+  #isAnchorLeft = false;
+  #isAnchorDomain = false;
+  #isAnchorRight = false;
+  #isTrailingSeparator = false; // Whether urlFilter ends with "^".
+
+  /**
+   * @param {string} urlFilter - non-empty urlFilter
+   * @param {boolean} [isUrlFilterCaseSensitive]
+   */
+  constructor(urlFilter, isUrlFilterCaseSensitive) {
+    this.#isUrlFilterCaseSensitive = isUrlFilterCaseSensitive;
+    this.#initializeUrlFilter(urlFilter, isUrlFilterCaseSensitive);
+  }
+
+  #initializeUrlFilter(urlFilter, isUrlFilterCaseSensitive) {
+    let start = 0;
+    let end = urlFilter.length;
+
+    // First, trim the anchors off urlFilter.
+    if (urlFilter[0] === "|") {
+      if (urlFilter[1] === "|") {
+        start = 2;
+        this.#isAnchorDomain = true;
+        // ^ will not revert to false below, because "||*" is already rejected
+        // by RuleValidator's #checkCondUrlFilterAndRegexFilter method.
+      } else {
+        start = 1;
+        this.#isAnchorLeft = true; // may revert to false below.
+      }
+    }
+    if (end > start && urlFilter[end - 1] === "|") {
+      --end;
+      this.#isAnchorRight = true; // may revert to false below.
+    }
+
+    // Skip unnecessary wildcards, and adjust meaningless anchors accordingly:
+    // "|*" and "*|" are not effective anchors, they could have been omitted.
+    while (start < end && urlFilter[start] === "*") {
+      ++start;
+      this.#isAnchorLeft = false;
+    }
+    while (end > start && urlFilter[end - 1] === "*") {
+      --end;
+      this.#isAnchorRight = false;
+    }
+
+    // Special-case the last "^", so that the matching algorithm can rely on
+    // the simple assumption that a "^" in the filter matches exactly one char:
+    // The "^" at the end of the pattern is specified to match either one char
+    // as usual, or as an anchor for the end of the URL (i.e. zero characters).
+    this.#isTrailingSeparator = urlFilter[end - 1] === "^";
+
+    let urlFilterWithoutAnchors = urlFilter.slice(start, end);
+    if (!isUrlFilterCaseSensitive) {
+      urlFilterWithoutAnchors = urlFilterWithoutAnchors.toLowerCase();
+    }
+    this.#urlFilterParts = urlFilterWithoutAnchors.split("*");
+  }
+
+  /**
+   * Tests whether |request| matches the urlFilter.
+   *
+   * @param {RequestDataForUrlFilter} requestDataForUrlFilter
+   * @returns {boolean} Whether the condition matches the URL.
+   */
+  matchesRequest(requestDataForUrlFilter) {
+    const url = requestDataForUrlFilter.getUrl(this.#isUrlFilterCaseSensitive);
+    const domainAnchors = requestDataForUrlFilter.domainAnchors;
+
+    const urlFilterParts = this.#urlFilterParts;
+
+    const REAL_END_OF_URL = url.length - 1; // minus trailing "^"
+
+    // atUrlIndex is the position after the most recently matched part.
+    // If a match is not found, it is -1 and we should return false.
+    let atUrlIndex = 0;
+
+    // The head always exists, potentially even an empty string.
+    const head = urlFilterParts[0];
+    if (this.#isAnchorLeft) {
+      if (!this.#startsWithPart(head, url, 0)) {
+        return false;
+      }
+      atUrlIndex = head.length;
+    } else if (this.#isAnchorDomain) {
+      atUrlIndex = this.#indexAfterDomainPart(head, url, domainAnchors);
+    } else {
+      atUrlIndex = this.#indexAfterPart(head, url, 0);
+    }
+
+    let previouslyAtUrlIndex = 0;
+    for (let i = 1; i < urlFilterParts.length && atUrlIndex !== -1; ++i) {
+      previouslyAtUrlIndex = atUrlIndex;
+      atUrlIndex = this.#indexAfterPart(urlFilterParts[i], url, atUrlIndex);
+    }
+    if (atUrlIndex === -1) {
+      return false;
+    }
+    if (atUrlIndex === url.length) {
+      // We always append a "^" to the URL, so if the match is at the end of the
+      // URL (REAL_END_OF_URL), only accept if the pattern ended with a "^".
+      return this.#isTrailingSeparator;
+    }
+    if (!this.#isAnchorRight || atUrlIndex === REAL_END_OF_URL) {
+      // Either not interested in the end, or already at the end of the URL.
+      return true;
+    }
+
+    // #isAnchorRight is true but we are not at the end of the URL.
+    // Backtrack once, to retry the last pattern (tail) with the end of the URL.
+
+    const tail = urlFilterParts[urlFilterParts.length - 1];
+    // The expected offset where the tail should be located.
+    const expectedTailIndex = REAL_END_OF_URL - tail.length;
+    // If #isTrailingSeparator is true, then accept the URL's trailing "^".
+    const expectedTailIndexPlus1 = expectedTailIndex + 1;
+    if (urlFilterParts.length === 1) {
+      if (this.#isAnchorLeft) {
+        // If matched, we would have returned at the REAL_END_OF_URL checks.
+        return false;
+      }
+      if (this.#isAnchorDomain) {
+        // The tail must be exactly at one of the domain anchors.
+        return (
+          (domainAnchors.includes(expectedTailIndex) &&
+            this.#startsWithPart(tail, url, expectedTailIndex)) ||
+          (this.#isTrailingSeparator &&
+            domainAnchors.includes(expectedTailIndexPlus1) &&
+            this.#startsWithPart(tail, url, expectedTailIndexPlus1))
+        );
+      }
+      // head has no left/domain anchor, fall through.
+    }
+    // The tail is not left/domain anchored, accept it as long as it did not
+    // overlap with an already-matched part of the URL.
+    return (
+      (expectedTailIndex > previouslyAtUrlIndex &&
+        this.#startsWithPart(tail, url, expectedTailIndex)) ||
+      (this.#isTrailingSeparator &&
+        expectedTailIndexPlus1 > previouslyAtUrlIndex &&
+        this.#startsWithPart(tail, url, expectedTailIndexPlus1))
+    );
+  }
+
+  // Whether a character should match "^" in an urlFilter.
+  // The "match end of URL" meaning of "^" is covered by #isTrailingSeparator.
+  static #regexIsSep = /[^A-Za-z0-9_\-.%]/;
+
+  #matchPartAt(part, url, urlIndex, sepStart) {
+    if (sepStart === -1) {
+      // Fast path.
+      return url.startsWith(part, urlIndex);
+    }
+    if (urlIndex + part.length > url.length) {
+      return false;
+    }
+    for (let i = 0; i < part.length; ++i) {
+      let partChar = part[i];
+      let urlChar = url[urlIndex + i];
+      if (
+        partChar !== urlChar &&
+        (partChar !== "^" || !CompiledUrlFilter.#regexIsSep.test(urlChar))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  #startsWithPart(part, url, urlIndex) {
+    const sepStart = part.indexOf("^");
+    return this.#matchPartAt(part, url, urlIndex, sepStart);
+  }
+
+  #indexAfterPart(part, url, urlIndex) {
+    let sepStart = part.indexOf("^");
+    if (sepStart === -1) {
+      // Fast path.
+      let i = url.indexOf(part, urlIndex);
+      return i === -1 ? i : i + part.length;
+    }
+    let maxUrlIndex = url.length - part.length;
+    for (let i = urlIndex; i <= maxUrlIndex; ++i) {
+      if (this.#matchPartAt(part, url, i, sepStart)) {
+        return i + part.length;
+      }
+    }
+    return -1;
+  }
+
+  #indexAfterDomainPart(part, url, domainAnchors) {
+    const sepStart = part.indexOf("^");
+    for (let offset of domainAnchors) {
+      if (this.#matchPartAt(part, url, offset, sepStart)) {
+        return offset + part.length;
+      }
+    }
+    return -1;
+  }
+}
+
+// See CompiledUrlFilter for documentation of RequestDataForUrlFilter.
+class RequestDataForUrlFilter {
+  /**
+   * @param {nsIURI} requestURI - The URL to match against.
+   * @returns {object} An object to p
+   */
+  constructor(requestURI) {
+    // "^" is appended, see CompiledUrlFilter's #initializeUrlFilter.
+    this.urlAnyCase = requestURI.spec + "^";
+    this.urlLowerCase = this.urlAnyCase.toLowerCase();
+    // For "||..." (Domain name anchor): where (sub)domains start in the URL.
+    this.domainAnchors = this.#getDomainAnchors(this.urlAnyCase);
+  }
+
+  getUrl(isUrlFilterCaseSensitive) {
+    return isUrlFilterCaseSensitive ? this.urlAnyCase : this.urlLowerCase;
+  }
+
+  #getDomainAnchors(url) {
+    let hostStart = url.indexOf("://") + 3;
+    let hostEnd = url.indexOf("/", hostStart);
+    let userpassEnd = url.lastIndexOf("@", hostEnd) + 1;
+    if (userpassEnd) {
+      hostStart = userpassEnd;
+    }
+    let host = url.slice(hostStart, hostEnd);
+    let domainAnchors = [hostStart];
+    let offset = 0;
+    // Find all offsets after ".". If not found, -1 + 1 = 0, and the loop ends.
+    while ((offset = host.indexOf(".", offset) + 1)) {
+      domainAnchors.push(hostStart + offset);
+    }
+    return domainAnchors;
+  }
+}
+
+class ModifyHeadersBase {
+  // Map<string,MatchedRule> - The first MatchedRule that modified the header.
+  // After modifying a header, it cannot be modified further, with the exception
+  // of the "append" operation, provided that they are from the same extension.
+  #alreadyModifiedMap = new Map();
+  // Set<string> - The list of headers allowed to be modified with "append",
+  // despite having been modified. Allowed for "set"/"append", not for "remove".
+  #appendStillAllowed = new Set();
+
+  /**
+   * @param {ChannelWrapper} channel
+   */
+  constructor(channel) {
+    this.channel = channel;
+  }
+
+  applyModifyHeaders(matchedRules) {
+    for (const matchedRule of matchedRules) {
+      for (const headerAction of this.headerActionsFor(matchedRule)) {
+        const { header: name, operation, value } = headerAction;
+        if (!this.#isOperationAllowed(name, operation, matchedRule)) {
+          continue;
+        }
+        let ok;
+        switch (operation) {
+          case "set":
+            ok = this.setHeader(matchedRule, name, value, /* merge */ false);
+            if (ok) {
+              this.#appendStillAllowed.add(name);
+            }
+            break;
+          case "append":
+            ok = this.setHeader(matchedRule, name, value, /* merge */ true);
+            if (ok) {
+              this.#appendStillAllowed.add(name);
+            }
+            break;
+          case "remove":
+            ok = this.setHeader(matchedRule, name, "", /* merge */ false);
+            // Note: removal is final, so we don't add to #appendStillAllowed.
+            break;
+        }
+        if (ok) {
+          this.#alreadyModifiedMap.set(name, matchedRule);
+        }
+      }
+    }
+  }
+
+  #isOperationAllowed(name, operation, matchedRule) {
+    const modifiedBy = this.#alreadyModifiedMap.get(name);
+    if (!modifiedBy) {
+      return true;
+    }
+    if (
+      operation === "append" &&
+      this.#appendStillAllowed.has(name) &&
+      matchedRule.ruleManager === modifiedBy.ruleManager
+    ) {
+      return true;
+    }
+    // TODO bug 1803369: dev experience improvement: consider logging when
+    // a header modification was rejected.
+    return false;
+  }
+
+  setHeader(matchedRule, name, value, merge) {
+    try {
+      this.setHeaderImpl(matchedRule, name, value, merge);
+      return true;
+    } catch (e) {
+      const extension = matchedRule.ruleManager.extension;
+      extension.logger.error(
+        `Failed to apply modifyHeaders action to header "${name}" (DNR rule id ${matchedRule.rule.id} from ruleset "${matchedRule.ruleset.id}"): ${e}`
+      );
+    }
+    return false;
+  }
+
+  // kName should already be in lower case.
+  isHeaderNameEqual(name, kName) {
+    return name.length === kName.length && name.toLowerCase() === kName;
+  }
+}
+
+class ModifyRequestHeaders extends ModifyHeadersBase {
+  static maybeApplyModifyHeaders(channel, matchedRules) {
+    matchedRules = matchedRules.filter(mr => {
+      const action = mr.rule.action;
+      return action.type === "modifyHeaders" && action.requestHeaders?.length;
+    });
+    if (matchedRules.length) {
+      new ModifyRequestHeaders(channel).applyModifyHeaders(matchedRules);
+    }
+  }
+
+  headerActionsFor(matchedRule) {
+    return matchedRule.rule.action.requestHeaders;
+  }
+
+  setHeaderImpl(matchedRule, name, value, merge) {
+    if (this.isHeaderNameEqual(name, "host")) {
+      this.#checkHostHeader(matchedRule, value);
+    }
+    if (merge && value && this.isHeaderNameEqual(name, "cookie")) {
+      // By default, headers are merged with ",". But Cookie should use "; ".
+      // HTTP/1.1 allowed only one Cookie header, but HTTP/2.0 allows multiple,
+      // but recommends concatenation on one line. Relevant RFCs:
+      // - https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+      // - https://www.rfc-editor.org/rfc/rfc7540#section-8.1.2.5
+      // Consistent with Firefox internals, we ensure that there is at most one
+      // Cookie header, by overwriting the previous one, if any.
+      let existingCookie = this.channel.getRequestHeader("cookie");
+      if (existingCookie) {
+        value = existingCookie + "; " + value;
+        merge = false;
+      }
+    }
+    this.channel.setRequestHeader(name, value, merge);
+  }
+
+  #checkHostHeader(matchedRule, value) {
+    let uri = Services.io.newURI(`https://${value}/`);
+    let { policy } = matchedRule.ruleManager.extension;
+
+    if (!policy.allowedOrigins.matches(uri)) {
+      throw new Error(
+        `Unable to set host header, url missing from permissions.`
+      );
+    }
+
+    if (WebExtensionPolicy.isRestrictedURI(uri)) {
+      throw new Error(`Unable to set host header to restricted url.`);
+    }
+  }
+}
+
+class ModifyResponseHeaders extends ModifyHeadersBase {
+  static maybeApplyModifyHeaders(channel, matchedRules) {
+    matchedRules = matchedRules.filter(mr => {
+      const action = mr.rule.action;
+      return action.type === "modifyHeaders" && action.responseHeaders?.length;
+    });
+    if (matchedRules.length) {
+      new ModifyResponseHeaders(channel).applyModifyHeaders(matchedRules);
+    }
+  }
+
+  headerActionsFor(matchedRule) {
+    return matchedRule.rule.action.responseHeaders;
+  }
+
+  setHeaderImpl(matchedRule, name, value, merge) {
+    this.channel.setResponseHeader(name, value, merge);
+  }
+}
+
 class RuleValidator {
-  constructor(alreadyValidatedRules) {
+  constructor(alreadyValidatedRules, { isSessionRuleset = false } = {}) {
     this.rulesMap = new Map(alreadyValidatedRules.map(r => [r.id, r]));
     this.failures = [];
+    this.isSessionRuleset = isSessionRuleset;
   }
 
   removeRuleIds(ruleIds) {
@@ -175,12 +777,11 @@ class RuleValidator {
       // - domainType (enum string)
       // - initiatorDomains & excludedInitiatorDomains & requestDomains &
       //   excludedRequestDomains (array of string in canonicalDomain format)
-      // TODO bug 1745759: urlFilter validation
-      // TODO bug 1745760: regexFilter validation
       if (
         !this.#checkCondResourceTypes(rule) ||
         !this.#checkCondRequestMethods(rule) ||
         !this.#checkCondTabIds(rule) ||
+        !this.#checkCondUrlFilterAndRegexFilter(rule) ||
         !this.#checkAction(rule)
       ) {
         continue;
@@ -245,6 +846,15 @@ class RuleValidator {
   // Checks: tabIds & excludedTabIds
   #checkCondTabIds(rule) {
     const { tabIds, excludedTabIds } = rule.condition;
+
+    if ((tabIds || excludedTabIds) && !this.isSessionRuleset) {
+      this.#collectInvalidRule(
+        rule,
+        "tabIds and excludedTabIds can only be specified in session rules"
+      );
+      return false;
+    }
+
     if (this.#hasOverlap(tabIds, excludedTabIds)) {
       this.#collectInvalidRule(
         rule,
@@ -254,6 +864,55 @@ class RuleValidator {
     }
     // TODO bug 1745764 / bug 1745763: after adding support for dynamic/static
     // rules, validate that we only have a session ruleset here.
+    return true;
+  }
+
+  static #regexNonASCII = /[^\x00-\x7F]/; // eslint-disable-line no-control-regex
+
+  // Checks: urlFilter & regexFilter
+  #checkCondUrlFilterAndRegexFilter(rule) {
+    const { urlFilter, regexFilter } = rule.condition;
+    const checkEmptyOrNonASCII = (str, prop) => {
+      if (!str) {
+        this.#collectInvalidRule(rule, `${prop} should not be an empty string`);
+        return false;
+      }
+      // Non-ASCII in URLs are always encoded in % (or punycode in domains).
+      if (RuleValidator.#regexNonASCII.test(str)) {
+        this.#collectInvalidRule(
+          rule,
+          `${prop} should not contain non-ASCII characters`
+        );
+        return false;
+      }
+      return true;
+    };
+    if (urlFilter != null) {
+      if (regexFilter != null) {
+        this.#collectInvalidRule(
+          rule,
+          "urlFilter and regexFilter are mutually exclusive"
+        );
+        return false;
+      }
+      if (!checkEmptyOrNonASCII(urlFilter, "urlFilter")) {
+        // #collectInvalidRule already called by checkEmptyOrNonASCII.
+        return false;
+      }
+      if (urlFilter.startsWith("||*")) {
+        // Rejected because Chrome does too. '||*' is equivalent to '*'.
+        this.#collectInvalidRule(rule, "urlFilter should not start with '||*'");
+        return false;
+      }
+    } else if (regexFilter != null) {
+      if (!checkEmptyOrNonASCII(regexFilter, "regexFilter")) {
+        // #collectInvalidRule already called by checkEmptyOrNonASCII.
+        return false;
+      }
+      // TODO bug 1745760: accept when regexFilter is a valid regexp.
+      this.#collectInvalidRule(rule, "regexFilter is not supported yet");
+      return false;
+    }
     return true;
   }
 
@@ -278,8 +937,8 @@ class RuleValidator {
   }
 
   #checkActionRedirect(rule) {
-    const { extensionPath, url } = rule.action.redirect ?? {};
-    if (!url && extensionPath == null) {
+    const { extensionPath, url, transform } = rule.action.redirect ?? {};
+    if (!url && extensionPath == null && !transform) {
       this.#collectInvalidRule(
         rule,
         "A redirect rule must have a non-empty action.redirect object"
@@ -307,8 +966,61 @@ class RuleValidator {
     // http(s) URLs can (regardless of extension permissions).
     // data:-URLs are currently blocked due to bug 1622986.
 
-    // TODO bug 1745761: With the redirect action, add schema definitions +
-    // implement rule.action.redirect.transform / regexSubstitution.
+    if (transform) {
+      if (transform.query != null && transform.queryTransform) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform.query and redirect.transform.queryTransform are mutually exclusive"
+        );
+        return false;
+      }
+      // Most of the validation is done by nsIURIMutator via applyURLTransform.
+      // nsIURIMutator is not very strict, so we perform some extra checks here
+      // to reject values that are not technically valid URLs.
+
+      if (transform.port && /\D/.test(transform.port)) {
+        // nsIURIMutator's setPort takes an int, so any string will implicitly
+        // be converted to a number. This part verifies that the input only
+        // consists of digits. setPort will ensure that it is at most 65535.
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform.port should be empty or an integer"
+        );
+        return false;
+      }
+
+      // Note: we don't verify whether transform.query starts with '/', because
+      // Chrome does not require it, and nsIURIMutator prepends it if missing.
+
+      if (transform.query && !transform.query.startsWith("?")) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform.query should be empty or start with a '?'"
+        );
+        return false;
+      }
+      if (transform.fragment && !transform.fragment.startsWith("#")) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform.fragment should be empty or start with a '#'"
+        );
+        return false;
+      }
+      try {
+        const dummyURI = Services.io.newURI("http://dummy");
+        // applyURLTransform uses nsIURIMutator to transform a URI, and throws
+        // if |transform| is invalid, e.g. invalid host, port, etc.
+        applyURLTransform(dummyURI, transform);
+      } catch (e) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform does not describe a valid URL transformation"
+        );
+        return false;
+      }
+    }
+
+    // TODO bug 1745760: With regexFilter support, implement regexSubstitution.
     return true;
   }
 
@@ -347,6 +1059,7 @@ class RuleValidator {
       (requestHeaders && !requestHeaders.every(isValidModifyHeadersOp)) ||
       (responseHeaders && !responseHeaders.every(isValidModifyHeadersOp))
     ) {
+      // #collectInvalidRule already called by isValidModifyHeadersOp.
       return false;
     }
     return true;
@@ -417,14 +1130,22 @@ class MatchedRule {
   }
 }
 
+// tabId computation is currently not free, and depends on the initialization of
+// ExtensionParent.apiManager.global (see WebRequest.getTabIdForChannelWrapper).
+// Fortunately, DNR only supports tabIds in session rules, so by keeping track
+// of session rules with tabIds/excludedTabIds conditions, we can find tabId
+// exactly and only when necessary.
+let gHasAnyTabIdConditions = false;
+
 class RequestDetails {
   /**
-   * @param {nsIURI} requestURI - URL of the requested resource.
-   * @param {nsIURI} [initiatorURI] - URL of triggering principal (non-null).
-   * @param {string} type - ResourceType (MozContentPolicyType).
-   * @param {string} [method] - HTTP method
-   * @param {integer} [tabId]
-   **/
+   * @param {object} options
+   * @param {nsIURI} options.requestURI - URL of the requested resource.
+   * @param {nsIURI} [options.initiatorURI] - URL of triggering principal (non-null).
+   * @param {string} options.type - ResourceType (MozContentPolicyType).
+   * @param {string} [options.method] - HTTP method
+   * @param {integer} [options.tabId]
+   */
   constructor({ requestURI, initiatorURI, type, method, tabId }) {
     this.requestURI = requestURI;
     this.initiatorURI = initiatorURI;
@@ -436,6 +1157,23 @@ class RequestDetails {
     this.initiatorDomain = initiatorURI
       ? this.#domainFromURI(initiatorURI)
       : null;
+
+    this.requestDataForUrlFilter = new RequestDataForUrlFilter(requestURI);
+  }
+
+  static fromChannelWrapper(channel) {
+    let tabId = -1;
+    if (gHasAnyTabIdConditions) {
+      tabId = lazy.WebRequest.getTabIdForChannelWrapper(channel);
+    }
+    return new RequestDetails({
+      requestURI: channel.finalURI,
+      // Note: originURI may be null, if missing or null principal, as desired.
+      initiatorURI: channel.originURI,
+      type: channel.type,
+      method: channel.method.toLowerCase(),
+      tabId,
+    });
   }
 
   canExtensionModify(extension) {
@@ -553,9 +1291,6 @@ class RequestEvaluator {
       return;
     }
 
-    // TODO bug 1745761: when the channel/originAttributes is chosen, use
-    // ruleManager.extension to exclude private requests if needed.
-
     this.#collectMatchInRuleset(this.ruleManager.sessionRules);
     this.#collectMatchInRuleset(this.ruleManager.dynamicRules);
     for (let ruleset of this.ruleManager.enabledStaticRules) {
@@ -645,7 +1380,9 @@ class RequestEvaluator {
 
     // Check this.req.requestURI:
     if (cond.urlFilter) {
-      // TODO bug 1745759: Check cond.urlFilter + isUrlFilterCaseSensitive
+      if (!cond.urlFilterMatches(this.req.requestDataForUrlFilter)) {
+        return false;
+      }
     } else if (cond.regexFilter) {
       // TODO bug 1745760: check cond.regexFilter + isUrlFilterCaseSensitive
     }
@@ -709,7 +1446,7 @@ class RequestEvaluator {
    * @param {string} host - The canonical representation of the host of a URL.
    * @returns {boolean} Whether the given host is a (sub)domain of any of the
    *   given domains.
-   **/
+   */
   #matchesDomains(domains, host) {
     return domains.some(domain => {
       return (
@@ -745,16 +1482,171 @@ class RequestEvaluator {
   }
 }
 
+const NetworkIntegration = {
+  register() {
+    // We register via WebRequest.jsm to ensure predictable ordering of DNR and
+    // WebRequest behavior.
+    lazy.WebRequest.setDNRHandlingEnabled(true);
+  },
+  unregister() {
+    lazy.WebRequest.setDNRHandlingEnabled(false);
+  },
+  maybeUpdateTabIdChecker() {
+    gHasAnyTabIdConditions = gRuleManagers.some(rm => rm.hasRulesWithTabIds);
+  },
+
+  startDNREvaluation(channel) {
+    let ruleManagers = gRuleManagers;
+    if (!channel.canModify) {
+      ruleManagers = [];
+    }
+    if (channel.loadInfo.originAttributes.privateBrowsingId > 0) {
+      ruleManagers = ruleManagers.filter(
+        rm => rm.extension.privateBrowsingAllowed
+      );
+    }
+    let matchedRules;
+    if (ruleManagers.length) {
+      const request = RequestDetails.fromChannelWrapper(channel);
+      matchedRules = RequestEvaluator.evaluateRequest(request, ruleManagers);
+    }
+    // Cache for later. In case of redirects, _dnrMatchedRules may exist for
+    // the pre-redirect HTTP channel, and is overwritten here again.
+    channel._dnrMatchedRules = matchedRules;
+  },
+
+  /**
+   * Applies the actions of the DNR rules.
+   *
+   * @param {ChannelWrapper} channel
+   * @returns {boolean} Whether to ignore any responses from the webRequest API.
+   */
+  onBeforeRequest(channel) {
+    let matchedRules = channel._dnrMatchedRules;
+    if (!matchedRules?.length) {
+      return false;
+    }
+    // If a matched rule closes the channel, it is the sole match.
+    const finalMatch = matchedRules[0];
+    switch (finalMatch.rule.action.type) {
+      case "block":
+        this.applyBlock(channel, finalMatch);
+        return true;
+      case "redirect":
+        this.applyRedirect(channel, finalMatch);
+        return true;
+      case "upgradeScheme":
+        this.applyUpgradeScheme(channel, finalMatch);
+        return true;
+    }
+    // If there are multiple rules, then it may be a combination of allow,
+    // allowAllRequests and/or modifyHeaders.
+
+    // TODO bug 1797403: Apply allowAllRequests actions.
+
+    return false;
+  },
+
+  onBeforeSendHeaders(channel) {
+    let matchedRules = channel._dnrMatchedRules;
+    if (!matchedRules?.length) {
+      return;
+    }
+    ModifyRequestHeaders.maybeApplyModifyHeaders(channel, matchedRules);
+  },
+
+  onHeadersReceived(channel) {
+    let matchedRules = channel._dnrMatchedRules;
+    if (!matchedRules?.length) {
+      return;
+    }
+    ModifyResponseHeaders.maybeApplyModifyHeaders(channel, matchedRules);
+  },
+
+  applyBlock(channel, matchedRule) {
+    // TODO bug 1802259: Consider a DNR-specific reason.
+    channel.cancel(
+      Cr.NS_ERROR_ABORT,
+      Ci.nsILoadInfo.BLOCKING_REASON_EXTENSION_WEBREQUEST
+    );
+    const addonId = matchedRule.ruleManager.extension.id;
+    let properties = channel.channel.QueryInterface(Ci.nsIWritablePropertyBag);
+    properties.setProperty("cancelledByExtension", addonId);
+  },
+
+  applyUpgradeScheme(channel, matchedRule) {
+    // Request upgrade. No-op if already secure (i.e. https).
+    channel.upgradeToSecure();
+  },
+
+  applyRedirect(channel, matchedRule) {
+    // Ambiguity resolution order of redirect dict keys, consistent with Chrome:
+    // - url > extensionPath > transform > regexSubstitution
+    const redirect = matchedRule.rule.action.redirect;
+    const extension = matchedRule.ruleManager.extension;
+    let redirectUri;
+    if (redirect.url) {
+      // redirect.url already validated by checkActionRedirect.
+      redirectUri = Services.io.newURI(redirect.url);
+    } else if (redirect.extensionPath) {
+      redirectUri = extension.baseURI
+        .mutate()
+        .setPathQueryRef(redirect.extensionPath)
+        .finalize();
+    } else if (redirect.transform) {
+      redirectUri = applyURLTransform(channel.finalURI, redirect.transform);
+    } else if (redirect.regexSubstitution) {
+      // TODO bug 1745760: Implement along with regexFilter support.
+      throw new Error("regexSubstitution not implemented");
+    } else {
+      // #checkActionRedirect ensures that the redirect action is non-empty.
+    }
+
+    channel.redirectTo(redirectUri);
+
+    let properties = channel.channel.QueryInterface(Ci.nsIWritablePropertyBag);
+    properties.setProperty("redirectedByExtension", extension.id);
+
+    let origin = channel.getRequestHeader("Origin");
+    if (origin) {
+      channel.setResponseHeader("Access-Control-Allow-Origin", origin);
+      channel.setResponseHeader("Access-Control-Allow-Credentials", "true");
+      channel.setResponseHeader("Access-Control-Max-Age", "0");
+    }
+  },
+};
+
 class RuleManager {
   constructor(extension) {
     this.extension = extension;
-    this.sessionRules = this.makeRuleset("_session", 1);
+    this.sessionRules = this.makeRuleset(
+      "_session",
+      PRECEDENCE_SESSION_RULESET
+    );
     // TODO bug 1745764: support registration of (persistent) dynamic rules.
-    this.dynamicRules = this.makeRuleset("_dynamic", 2);
-    // TODO bug 1745763: support registration of static rules.
+    this.dynamicRules = this.makeRuleset(
+      "_dynamic",
+      PRECEDENCE_DYNAMIC_RULESET
+    );
     this.enabledStaticRules = [];
 
     this.hasBlockPermission = extension.hasPermission("declarativeNetRequest");
+    this.hasRulesWithTabIds = false;
+  }
+
+  get availableStaticRuleCount() {
+    return Math.max(
+      GUARANTEED_MINIMUM_STATIC_RULES -
+        this.enabledStaticRules.reduce(
+          (acc, ruleset) => acc + ruleset.rules.length,
+          0
+        ),
+      0
+    );
+  }
+
+  get enabledStaticRulesetIds() {
+    return this.enabledStaticRules.map(ruleset => ruleset.id);
   }
 
   makeRuleset(rulesetId, rulesetPrecedence, rules = []) {
@@ -763,6 +1655,28 @@ class RuleManager {
 
   setSessionRules(validatedSessionRules) {
     this.sessionRules.rules = validatedSessionRules;
+    this.hasRulesWithTabIds = !!this.sessionRules.rules.find(rule => {
+      return rule.condition.tabIds || rule.condition.excludedTabIds;
+    });
+    NetworkIntegration.maybeUpdateTabIdChecker();
+  }
+
+  /**
+   * Set the enabled static rulesets.
+   *
+   * @param {Array<{ id, rules }>} enabledStaticRulesets
+   *        Array of objects including the ruleset id and rules.
+   *        The order of the rulesets in the Array is expected to
+   *        match the order of the rulesets in the extension manifest.
+   */
+  setEnabledStaticRulesets(enabledStaticRulesets) {
+    const rulesets = [];
+    for (const [idx, { id, rules }] of enabledStaticRulesets.entries()) {
+      rulesets.push(
+        this.makeRuleset(id, idx + PRECEDENCE_STATIC_RULESETS_BASE, rules)
+      );
+    }
+    this.enabledStaticRules = rulesets;
   }
 
   getSessionRules() {
@@ -773,6 +1687,11 @@ class RuleManager {
 function getRuleManager(extension, createIfMissing = true) {
   let ruleManager = gRuleManagers.find(rm => rm.extension === extension);
   if (!ruleManager && createIfMissing) {
+    if (extension.hasShutdown) {
+      throw new Error(
+        `Error on creating new DNR RuleManager after extension shutdown: ${extension.id}`
+      );
+    }
     ruleManager = new RuleManager(extension);
     // The most recently installed extension gets priority, i.e. appears at the
     // start of the gRuleManagers list. It is not yet possible to determine the
@@ -780,6 +1699,10 @@ function getRuleManager(extension, createIfMissing = true) {
     // instantiate a RuleManager claims the highest priority.
     // TODO bug 1786059: order extensions by "installation time".
     gRuleManagers.unshift(ruleManager);
+    if (gRuleManagers.length === 1) {
+      // The first DNR registration.
+      NetworkIntegration.register();
+    }
   }
   return ruleManager;
 }
@@ -788,6 +1711,11 @@ function clearRuleManager(extension) {
   let i = gRuleManagers.findIndex(rm => rm.extension === extension);
   if (i !== -1) {
     gRuleManagers.splice(i, 1);
+    NetworkIntegration.maybeUpdateTabIdChecker();
+    if (gRuleManagers.length === 0) {
+      // The last DNR registration.
+      NetworkIntegration.unregister();
+    }
   }
 }
 
@@ -798,7 +1726,7 @@ function clearRuleManager(extension) {
  * @param {object|RequestDetails} request
  * @param {Extension} [extension]
  * @returns {MatchedRule[]}
- **/
+ */
 function getMatchedRulesForRequest(request, extension) {
   let requestDetails = new RequestDetails(request);
   let ruleManagers = gRuleManagers;
@@ -808,9 +1736,167 @@ function getMatchedRulesForRequest(request, extension) {
   return RequestEvaluator.evaluateRequest(requestDetails, ruleManagers);
 }
 
+/**
+ * Runs before any webRequest event is notified. Headers may be modified, but
+ * the request should not be canceled (see handleRequest instead).
+ *
+ * @param {ChannelWrapper} channel
+ * @param {string} kind - The name of the webRequest event.
+ */
+function beforeWebRequestEvent(channel, kind) {
+  try {
+    switch (kind) {
+      case "onBeforeRequest":
+        NetworkIntegration.startDNREvaluation(channel);
+        break;
+      case "onBeforeSendHeaders":
+        NetworkIntegration.onBeforeSendHeaders(channel);
+        break;
+      case "onHeadersReceived":
+        NetworkIntegration.onHeadersReceived(channel);
+        break;
+    }
+  } catch (e) {
+    Cu.reportError(e);
+  }
+}
+
+/**
+ * Applies matching DNR rules, some of which may potentially cancel the request.
+ *
+ * @param {ChannelWrapper} channel
+ * @param {string} kind - The name of the webRequest event.
+ * @returns {boolean} Whether to ignore any responses from the webRequest API.
+ */
+function handleRequest(channel, kind) {
+  try {
+    if (kind === "onBeforeRequest") {
+      return NetworkIntegration.onBeforeRequest(channel);
+    }
+  } catch (e) {
+    Cu.reportError(e);
+  }
+  return false;
+}
+
+async function initExtension(extension) {
+  // These permissions are NOT an OptionalPermission, so their status can be
+  // assumed to be constant for the lifetime of the extension.
+  if (
+    extension.hasPermission("declarativeNetRequest") ||
+    extension.hasPermission("declarativeNetRequestWithHostAccess")
+  ) {
+    if (extension.hasShutdown) {
+      throw new Error(
+        `Aborted ExtensionDNR.initExtension call, extension "${extension.id}" is not active anymore`
+      );
+    }
+    await lazy.ExtensionDNRStore.initExtension(extension);
+  }
+}
+
+function ensureInitialized(extension) {
+  return (extension._dnrReady ??= initExtension(extension));
+}
+
+function validateManifestEntry(extension) {
+  const ruleResourcesArray =
+    extension.manifest.declarative_net_request.rule_resources;
+
+  const getWarningMessage = msg =>
+    `Warning processing declarative_net_request: ${msg}`;
+
+  if (ruleResourcesArray.length > MAX_NUMBER_OF_STATIC_RULESETS) {
+    extension.manifestWarning(
+      getWarningMessage(
+        `Static rulesets are exceeding the MAX_NUMBER_OF_STATIC_RULESETS limit (${MAX_NUMBER_OF_STATIC_RULESETS}).`
+      )
+    );
+  }
+
+  const seenRulesetIds = new Set();
+  const seenRulesetPaths = new Set();
+  const duplicatedRulesetIds = [];
+  const duplicatedRulesetPaths = [];
+  for (const [idx, { id, path }] of ruleResourcesArray.entries()) {
+    if (seenRulesetIds.has(id)) {
+      duplicatedRulesetIds.push({ idx, id });
+    }
+    if (seenRulesetPaths.has(path)) {
+      duplicatedRulesetPaths.push({ idx, path });
+    }
+    seenRulesetIds.add(id);
+    seenRulesetPaths.add(path);
+  }
+
+  if (duplicatedRulesetIds.length) {
+    const errorDetails = duplicatedRulesetIds
+      .map(({ idx, id }) => `"${id}" at index ${idx}`)
+      .join(", ");
+    extension.manifestWarning(
+      getWarningMessage(
+        `Static ruleset ids should be unique, duplicated ruleset ids: ${errorDetails}.`
+      )
+    );
+  }
+
+  if (duplicatedRulesetPaths.length) {
+    // NOTE: technically Chrome allows duplicated paths without any manifest
+    // validation warnings or errors, but if this happens it not unlikely to be
+    // actually a mistake in the manifest that may have been missed.
+    //
+    // In Firefox we decided to allow the same behavior to avoid introducing a chrome
+    // incompatibility, but we still warn about it to avoid extension developers
+    // to investigate more easily issue that may be due to duplicated rulesets
+    // paths.
+    const errorDetails = duplicatedRulesetPaths
+      .map(({ idx, path }) => `"${path}" at index ${idx}`)
+      .join(", ");
+    extension.manifestWarning(
+      getWarningMessage(
+        `Static rulesets paths are not unique, duplicated ruleset paths: ${errorDetails}.`
+      )
+    );
+  }
+
+  const enabledRulesets = ruleResourcesArray.filter(rs => rs.enabled);
+  if (enabledRulesets.length > MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) {
+    const exceedingRulesetIds = enabledRulesets
+      .slice(MAX_NUMBER_OF_ENABLED_STATIC_RULESETS)
+      .map(ruleset => `"${ruleset.id}"`)
+      .join(", ");
+    extension.manifestWarning(
+      getWarningMessage(
+        `Enabled static rulesets are exceeding the MAX_NUMBER_OF_ENABLED_STATIC_RULESETS limit (${MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}): ${exceedingRulesetIds}.`
+      )
+    );
+  }
+}
+
+async function updateEnabledStaticRulesets(extension, updateRulesetOptions) {
+  await ensureInitialized(extension);
+  await lazy.ExtensionDNRStore.updateEnabledStaticRulesets(
+    extension,
+    updateRulesetOptions
+  );
+}
+
+// exports used by the DNR API implementation.
 export const ExtensionDNR = {
   RuleValidator,
-  getRuleManager,
   clearRuleManager,
+  ensureInitialized,
   getMatchedRulesForRequest,
+  getRuleManager,
+  updateEnabledStaticRulesets,
+  validateManifestEntry,
+  // TODO(Bug 1803370): consider allowing changing DNR limits through about:config prefs).
+  limits: {
+    GUARANTEED_MINIMUM_STATIC_RULES,
+    MAX_NUMBER_OF_STATIC_RULESETS,
+    MAX_NUMBER_OF_ENABLED_STATIC_RULESETS,
+  },
+
+  beforeWebRequestEvent,
+  handleRequest,
 };

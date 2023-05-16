@@ -77,17 +77,17 @@ exports.WorkerTask = WorkerTask;
 class WorkerMessageHandler {
   static setup(handler, port) {
     let testMessageProcessed = false;
-    handler.on("test", function wphSetupTest(data) {
+    handler.on("test", function (data) {
       if (testMessageProcessed) {
         return;
       }
       testMessageProcessed = true;
       handler.send("test", data instanceof Uint8Array);
     });
-    handler.on("configure", function wphConfigure(data) {
+    handler.on("configure", function (data) {
       (0, _util.setVerbosityLevel)(data.verbosity);
     });
-    handler.on("GetDocRequest", function wphSetupDoc(data) {
+    handler.on("GetDocRequest", function (data) {
       return WorkerMessageHandler.createDocumentHandler(data, port);
     });
   }
@@ -101,7 +101,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = '3.1.22';
+    const workerVersion = '3.2.47';
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -206,7 +206,7 @@ class WorkerMessageHandler {
         }
         cachedChunks = [];
       };
-      const readPromise = new Promise(function (resolve, reject) {
+      new Promise(function (resolve, reject) {
         const readChunk = function ({
           value,
           done
@@ -238,8 +238,7 @@ class WorkerMessageHandler {
           }
         };
         fullRequest.read().then(readChunk, reject);
-      });
-      readPromise.catch(function (e) {
+      }).catch(function (e) {
         pdfManagerCapability.reject(e);
         cancelXHRs = null;
       });
@@ -304,7 +303,7 @@ class WorkerMessageHandler {
         });
       }).then(pdfManagerReady, onFailure);
     }
-    handler.on("GetPage", function wphSetupGetPage(data) {
+    handler.on("GetPage", function (data) {
       return pdfManager.getPage(data.pageIndex).then(function (page) {
         return Promise.all([pdfManager.ensure(page, "rotate"), pdfManager.ensure(page, "ref"), pdfManager.ensure(page, "userUnit"), pdfManager.ensure(page, "view")]).then(function ([rotate, ref, userUnit, view]) {
           return {
@@ -316,23 +315,23 @@ class WorkerMessageHandler {
         });
       });
     });
-    handler.on("GetPageIndex", function wphSetupGetPageIndex(data) {
+    handler.on("GetPageIndex", function (data) {
       const pageRef = _primitives.Ref.get(data.num, data.gen);
       return pdfManager.ensureCatalog("getPageIndex", [pageRef]);
     });
-    handler.on("GetDestinations", function wphSetupGetDestinations(data) {
+    handler.on("GetDestinations", function (data) {
       return pdfManager.ensureCatalog("destinations");
     });
-    handler.on("GetDestination", function wphSetupGetDestination(data) {
+    handler.on("GetDestination", function (data) {
       return pdfManager.ensureCatalog("getDestination", [data.id]);
     });
-    handler.on("GetPageLabels", function wphSetupGetPageLabels(data) {
+    handler.on("GetPageLabels", function (data) {
       return pdfManager.ensureCatalog("pageLabels");
     });
-    handler.on("GetPageLayout", function wphSetupGetPageLayout(data) {
+    handler.on("GetPageLayout", function (data) {
       return pdfManager.ensureCatalog("pageLayout");
     });
-    handler.on("GetPageMode", function wphSetupGetPageMode(data) {
+    handler.on("GetPageMode", function (data) {
       return pdfManager.ensureCatalog("pageMode");
     });
     handler.on("GetViewerPreferences", function (data) {
@@ -341,13 +340,13 @@ class WorkerMessageHandler {
     handler.on("GetOpenAction", function (data) {
       return pdfManager.ensureCatalog("openAction");
     });
-    handler.on("GetAttachments", function wphSetupGetAttachments(data) {
+    handler.on("GetAttachments", function (data) {
       return pdfManager.ensureCatalog("attachments");
     });
-    handler.on("GetJavaScript", function wphSetupGetJavaScript(data) {
+    handler.on("GetJavaScript", function (data) {
       return pdfManager.ensureCatalog("javaScript");
     });
-    handler.on("GetDocJSActions", function wphSetupGetDocJSActions(data) {
+    handler.on("GetDocJSActions", function (data) {
       return pdfManager.ensureCatalog("jsActions");
     });
     handler.on("GetPageJSActions", function ({
@@ -357,7 +356,7 @@ class WorkerMessageHandler {
         return pdfManager.ensure(page, "jsActions");
       });
     });
-    handler.on("GetOutline", function wphSetupGetOutline(data) {
+    handler.on("GetOutline", function (data) {
       return pdfManager.ensureCatalog("documentOutline");
     });
     handler.on("GetOptionalContentConfig", function (data) {
@@ -366,13 +365,13 @@ class WorkerMessageHandler {
     handler.on("GetPermissions", function (data) {
       return pdfManager.ensureCatalog("permissions");
     });
-    handler.on("GetMetadata", function wphSetupGetMetadata(data) {
+    handler.on("GetMetadata", function (data) {
       return Promise.all([pdfManager.ensureDoc("documentInfo"), pdfManager.ensureCatalog("metadata")]);
     });
-    handler.on("GetMarkInfo", function wphSetupGetMarkInfo(data) {
+    handler.on("GetMarkInfo", function (data) {
       return pdfManager.ensureCatalog("markInfo");
     });
-    handler.on("GetData", function wphSetupGetData(data) {
+    handler.on("GetData", function (data) {
       return pdfManager.requestLoadedStream().then(function (stream) {
         return stream.bytes;
       });
@@ -503,7 +502,7 @@ class WorkerMessageHandler {
         }
       });
     });
-    handler.on("GetOperatorList", function wphSetupRenderPage(data, sink) {
+    handler.on("GetOperatorList", function (data, sink) {
       const pageIndex = data.pageIndex;
       pdfManager.getPage(pageIndex).then(function (page) {
         const task = new WorkerTask(`GetOperatorList: page ${pageIndex}`);
@@ -531,7 +530,7 @@ class WorkerMessageHandler {
         });
       });
     });
-    handler.on("GetTextContent", function wphExtractText(data, sink) {
+    handler.on("GetTextContent", function (data, sink) {
       const pageIndex = data.pageIndex;
       pdfManager.getPage(pageIndex).then(function (page) {
         const task = new WorkerTask("GetTextContent: page " + pageIndex);
@@ -558,7 +557,7 @@ class WorkerMessageHandler {
         });
       });
     });
-    handler.on("GetStructTree", function wphGetStructTree(data) {
+    handler.on("GetStructTree", function (data) {
       return pdfManager.getPage(data.pageIndex).then(function (page) {
         return pdfManager.ensure(page, "getStructTree");
       });
@@ -566,10 +565,10 @@ class WorkerMessageHandler {
     handler.on("FontFallback", function (data) {
       return pdfManager.fontFallback(data.id, handler);
     });
-    handler.on("Cleanup", function wphCleanup(data) {
+    handler.on("Cleanup", function (data) {
       return pdfManager.cleanup(true);
     });
-    handler.on("Terminate", function wphTerminate(data) {
+    handler.on("Terminate", function (data) {
       terminated = true;
       const waitOn = [];
       if (pdfManager) {
@@ -592,7 +591,7 @@ class WorkerMessageHandler {
         handler = null;
       });
     });
-    handler.on("Ready", function wphReady(data) {
+    handler.on("Ready", function (data) {
       setupDoc(docParams);
       docParams = null;
     });
@@ -628,13 +627,11 @@ exports.assert = assert;
 exports.bytesToString = bytesToString;
 exports.createPromiseCapability = createPromiseCapability;
 exports.createValidAbsoluteUrl = createValidAbsoluteUrl;
-exports.escapeString = escapeString;
 exports.getModificationDate = getModificationDate;
 exports.getVerbosityLevel = getVerbosityLevel;
 exports.info = info;
 exports.isArrayBuffer = isArrayBuffer;
 exports.isArrayEqual = isArrayEqual;
-exports.isAscii = isAscii;
 exports.objectFromMap = objectFromMap;
 exports.objectSize = objectSize;
 exports.setVerbosityLevel = setVerbosityLevel;
@@ -642,7 +639,6 @@ exports.shadow = shadow;
 exports.string32 = string32;
 exports.stringToBytes = stringToBytes;
 exports.stringToPDFString = stringToPDFString;
-exports.stringToUTF16BEString = stringToUTF16BEString;
 exports.stringToUTF8String = stringToUTF8String;
 exports.unreachable = unreachable;
 exports.utf8StringToString = utf8StringToString;
@@ -1241,6 +1237,12 @@ class FeatureTest {
   static get isOffscreenCanvasSupported() {
     return shadow(this, "isOffscreenCanvasSupported", typeof OffscreenCanvas !== "undefined");
   }
+  static get platform() {
+    return shadow(this, "platform", {
+      isWin: navigator.platform.includes("Win"),
+      isMac: navigator.platform.includes("Mac")
+    });
+  }
 }
 exports.FeatureTest = FeatureTest;
 const hexNumbers = [...Array(256).keys()].map(n => n.toString(16).padStart(2, "0"));
@@ -1439,27 +1441,6 @@ function stringToPDFString(str) {
     strBuf.push(code ? String.fromCharCode(code) : str.charAt(i));
   }
   return strBuf.join("");
-}
-function escapeString(str) {
-  return str.replace(/([()\\\n\r])/g, match => {
-    if (match === "\n") {
-      return "\\n";
-    } else if (match === "\r") {
-      return "\\r";
-    }
-    return `\\${match}`;
-  });
-}
-function isAscii(str) {
-  return /^[\x00-\x7F]*$/.test(str);
-}
-function stringToUTF16BEString(str) {
-  const buf = ["\xFE\xFF"];
-  for (let i = 0, ii = str.length; i < ii; i++) {
-    const char = str.charCodeAt(i);
-    buf.push(String.fromCharCode(char >> 8 & 0xff), String.fromCharCode(char & 0xff));
-  }
-  return buf.join("");
 }
 function stringToUTF8String(str) {
   return decodeURIComponent(escape(str));
@@ -1796,11 +1777,13 @@ exports.XRefParseException = exports.XRefEntryException = exports.ParserEOFExcep
 exports.collectActions = collectActions;
 exports.encodeToXmlString = encodeToXmlString;
 exports.escapePDFName = escapePDFName;
+exports.escapeString = escapeString;
 exports.getArrayLookupTableFactory = getArrayLookupTableFactory;
 exports.getInheritableProperty = getInheritableProperty;
 exports.getLookupTableFactory = getLookupTableFactory;
 exports.getNewAnnotationsMap = getNewAnnotationsMap;
 exports.getRotationMatrix = getRotationMatrix;
+exports.isAscii = isAscii;
 exports.isWhiteSpace = isWhiteSpace;
 exports.log2 = log2;
 exports.numberToString = numberToString;
@@ -2006,6 +1989,16 @@ function escapePDFName(str) {
   }
   return buffer.join("");
 }
+function escapeString(str) {
+  return str.replace(/([()\\\n\r])/g, match => {
+    if (match === "\n") {
+      return "\\n";
+    } else if (match === "\r") {
+      return "\\r";
+    }
+    return `\\${match}`;
+  });
+}
 function _collectJS(entry, xref, list, parents) {
   if (!entry) {
     return;
@@ -2203,6 +2196,9 @@ function getNewAnnotationsMap(annotationStorage) {
   }
   return newAnnotationsByPage.size > 0 ? newAnnotationsByPage : null;
 }
+function isAscii(str) {
+  return /^[\x00-\x7F]*$/.test(str);
+}
 function stringToUTF16HexString(str) {
   const buf = [];
   for (let i = 0, ii = str.length; i < ii; i++) {
@@ -2211,8 +2207,11 @@ function stringToUTF16HexString(str) {
   }
   return buf.join("");
 }
-function stringToUTF16String(str) {
+function stringToUTF16String(str, bigEndian = false) {
   const buf = [];
+  if (bigEndian) {
+    buf.push("\xFE\xFF");
+  }
   for (let i = 0, ii = str.length; i < ii; i++) {
     const char = str.charCodeAt(i);
     buf.push(String.fromCharCode(char >> 8 & 0xff), String.fromCharCode(char & 0xff));
@@ -3101,12 +3100,13 @@ class Page {
     if (this.xfaData) {
       return this.xfaData.bbox;
     }
-    const box = this._getInheritableProperty(name, true);
+    let box = this._getInheritableProperty(name, true);
     if (Array.isArray(box) && box.length === 4) {
-      if (box[2] - box[0] !== 0 && box[3] - box[1] !== 0) {
+      box = _util.Util.normalizeRect(box);
+      if (box[2] - box[0] > 0 && box[3] - box[1] > 0) {
         return box;
       }
-      (0, _util.warn)(`Empty /${name} entry.`);
+      (0, _util.warn)(`Empty, or invalid, /${name} entry.`);
     }
     return null;
   }
@@ -3128,18 +3128,14 @@ class Page {
       cropBox,
       mediaBox
     } = this;
-    let view;
-    if (cropBox === mediaBox || (0, _util.isArrayEqual)(cropBox, mediaBox)) {
-      view = mediaBox;
-    } else {
+    if (cropBox !== mediaBox && !(0, _util.isArrayEqual)(cropBox, mediaBox)) {
       const box = _util.Util.intersect(cropBox, mediaBox);
-      if (box && box[2] - box[0] !== 0 && box[3] - box[1] !== 0) {
-        view = box;
-      } else {
-        (0, _util.warn)("Empty /CropBox and /MediaBox intersection.");
+      if (box && box[2] - box[0] > 0 && box[3] - box[1] > 0) {
+        return (0, _util.shadow)(this, "view", box);
       }
+      (0, _util.warn)("Empty /CropBox and /MediaBox intersection.");
     }
-    return (0, _util.shadow)(this, "view", view || mediaBox);
+    return (0, _util.shadow)(this, "view", mediaBox);
   }
   get rotate() {
     let rotate = this._getInheritableProperty("Rotate") || 0;
@@ -4491,45 +4487,46 @@ function getRgbColor(color, defaultColor = new Uint8ClampedArray(3)) {
       return defaultColor;
   }
 }
+function getPdfColorArray(color) {
+  return Array.from(color, c => c / 255);
+}
 function getQuadPoints(dict, rect) {
-  if (!dict.has("QuadPoints")) {
-    return null;
-  }
   const quadPoints = dict.getArray("QuadPoints");
   if (!Array.isArray(quadPoints) || quadPoints.length === 0 || quadPoints.length % 8 > 0) {
     return null;
   }
   const quadPointsLists = [];
   for (let i = 0, ii = quadPoints.length / 8; i < ii; i++) {
-    quadPointsLists.push([]);
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (let j = i * 8, jj = i * 8 + 8; j < jj; j += 2) {
       const x = quadPoints[j];
       const y = quadPoints[j + 1];
-      if (rect !== null && (x < rect[0] || x > rect[2] || y < rect[1] || y > rect[3])) {
-        return null;
-      }
-      quadPointsLists[i].push({
-        x,
-        y
-      });
+      minX = Math.min(x, minX);
+      maxX = Math.max(x, maxX);
+      minY = Math.min(y, minY);
+      maxY = Math.max(y, maxY);
     }
+    if (rect !== null && (minX < rect[0] || maxX > rect[2] || minY < rect[1] || maxY > rect[3])) {
+      return null;
+    }
+    quadPointsLists.push([{
+      x: minX,
+      y: maxY
+    }, {
+      x: maxX,
+      y: maxY
+    }, {
+      x: minX,
+      y: minY
+    }, {
+      x: maxX,
+      y: minY
+    }]);
   }
-  return quadPointsLists.map(quadPointsList => {
-    const [minX, maxX, minY, maxY] = quadPointsList.reduce(([mX, MX, mY, MY], quadPoint) => [Math.min(mX, quadPoint.x), Math.max(MX, quadPoint.x), Math.min(mY, quadPoint.y), Math.max(MY, quadPoint.y)], [Number.MAX_VALUE, Number.MIN_VALUE, Number.MAX_VALUE, Number.MIN_VALUE]);
-    return [{
-      x: minX,
-      y: maxY
-    }, {
-      x: maxX,
-      y: maxY
-    }, {
-      x: minX,
-      y: minY
-    }, {
-      x: maxX,
-      y: minY
-    }];
-  });
+  return quadPointsLists;
 }
 function getTransformMatrix(rect, bbox, matrix) {
   const [minX, minY, maxX, maxY] = _util.Util.getAxialAlignedBoundingBox(bbox, matrix);
@@ -4542,7 +4539,10 @@ function getTransformMatrix(rect, bbox, matrix) {
 }
 class Annotation {
   constructor(params) {
-    const dict = params.dict;
+    const {
+      dict,
+      xref
+    } = params;
     this.setTitle(dict.get("T"));
     this.setContents(dict.get("Contents"));
     this.setModificationDate(dict.get("M"));
@@ -4587,7 +4587,7 @@ class Annotation {
           this.data.kidIds = kidIds;
         }
       }
-      this.data.actions = (0, _core_utils.collectActions)(params.xref, dict, _util.AnnotationActionEventType);
+      this.data.actions = (0, _core_utils.collectActions)(xref, dict, _util.AnnotationActionEventType);
       this.data.fieldName = this._constructFieldName(dict);
       this.data.pageIndex = params.pageIndex;
     }
@@ -5024,9 +5024,11 @@ class AnnotationBorderStyle {
 }
 exports.AnnotationBorderStyle = AnnotationBorderStyle;
 class MarkupAnnotation extends Annotation {
-  constructor(parameters) {
-    super(parameters);
-    const dict = parameters.dict;
+  constructor(params) {
+    super(params);
+    const {
+      dict
+    } = params;
     if (dict.has("IRT")) {
       const rawIRT = dict.getRaw("IRT");
       this.data.inReplyTo = rawIRT instanceof _primitives.Ref ? rawIRT.toString() : null;
@@ -5194,7 +5196,10 @@ exports.MarkupAnnotation = MarkupAnnotation;
 class WidgetAnnotation extends Annotation {
   constructor(params) {
     super(params);
-    const dict = params.dict;
+    const {
+      dict,
+      xref
+    } = params;
     const data = this.data;
     this.ref = params.ref;
     this._needAppearances = params.needAppearances;
@@ -5203,7 +5208,7 @@ class WidgetAnnotation extends Annotation {
       data.fieldName = this._constructFieldName(dict);
     }
     if (data.actions === undefined) {
-      data.actions = (0, _core_utils.collectActions)(params.xref, dict, _util.AnnotationActionEventType);
+      data.actions = (0, _core_utils.collectActions)(xref, dict, _util.AnnotationActionEventType);
     }
     let fieldValue = (0, _core_utils.getInheritableProperty)({
       dict,
@@ -5246,7 +5251,7 @@ class WidgetAnnotation extends Annotation {
       acroFormResources,
       appearanceResources,
       mergedResources: _primitives.Dict.merge({
-        xref: params.xref,
+        xref,
         dictArray: [localResources, appearanceResources, acroFormResources],
         mergeSubDicts: true
       })
@@ -5367,10 +5372,10 @@ class WidgetAnnotation extends Annotation {
       mk.set("R", rotation);
     }
     if (this.borderColor) {
-      mk.set("BC", Array.from(this.borderColor, c => c / 255));
+      mk.set("BC", getPdfColorArray(this.borderColor));
     }
     if (this.backgroundColor) {
-      mk.set("BG", Array.from(this.backgroundColor, c => c / 255));
+      mk.set("BG", getPdfColorArray(this.backgroundColor));
     }
     return mk.size > 0 ? mk : null;
   }
@@ -5419,7 +5424,9 @@ class WidgetAnnotation extends Annotation {
       path: (0, _util.stringToPDFString)(dict.get("T") || ""),
       value
     };
-    const encoder = val => (0, _util.isAscii)(val) ? val : (0, _util.stringToUTF16BEString)(val);
+    const encoder = val => {
+      return (0, _core_utils.isAscii)(val) ? val : (0, _core_utils.stringToUTF16String)(val, true);
+    };
     dict.set("V", Array.isArray(value) ? value.map(encoder) : encoder(value));
     const maybeMK = this._getMKDict(rotation);
     if (maybeMK) {
@@ -5585,7 +5592,7 @@ class WidgetAnnotation extends Annotation {
     }
     const bottomPadding = defaultVPadding + descent;
     if (alignment === 0 || alignment > 2) {
-      return `/Tx BMC q ${colors}BT ` + defaultAppearance + ` 1 0 0 1 ${(0, _core_utils.numberToString)(defaultHPadding)} ${(0, _core_utils.numberToString)(bottomPadding)} Tm (${(0, _util.escapeString)(encodedLines[0])}) Tj` + " ET Q EMC";
+      return `/Tx BMC q ${colors}BT ` + defaultAppearance + ` 1 0 0 1 ${(0, _core_utils.numberToString)(defaultHPadding)} ${(0, _core_utils.numberToString)(bottomPadding)} Tm (${(0, _core_utils.escapeString)(encodedLines[0])}) Tj` + " ET Q EMC";
     }
     const prevInfo = {
       shift: 0
@@ -5684,7 +5691,7 @@ class WidgetAnnotation extends Annotation {
     const shiftStr = (0, _core_utils.numberToString)(shift - prevInfo.shift);
     prevInfo.shift = shift;
     vPadding = (0, _core_utils.numberToString)(vPadding);
-    return `${shiftStr} ${vPadding} Td (${(0, _util.escapeString)(text)}) Tj`;
+    return `${shiftStr} ${vPadding} Td (${(0, _core_utils.escapeString)(text)}) Tj`;
   }
   _getSaveFieldResources(xref) {
     const {
@@ -5758,7 +5765,7 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     const buf = [];
     const positions = font.getCharPositions(text);
     for (const [start, end] of positions) {
-      buf.push(`(${(0, _util.escapeString)(text.substring(start, end))}) Tj`);
+      buf.push(`(${(0, _core_utils.escapeString)(text.substring(start, end))}) Tj`);
     }
     const renderedComb = buf.join(` ${(0, _core_utils.numberToString)(combWidth)} 0 Td `);
     return `/Tx BMC q ${colors}BT ` + defaultAppearance + ` 1 0 0 1 ${(0, _core_utils.numberToString)(hPadding)} ${(0, _core_utils.numberToString)(vPadding + descent)} Tm ${renderedComb}` + " ET Q EMC";
@@ -6230,13 +6237,16 @@ class ButtonWidgetAnnotation extends WidgetAnnotation {
 class ChoiceWidgetAnnotation extends WidgetAnnotation {
   constructor(params) {
     super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.options = [];
     const options = (0, _core_utils.getInheritableProperty)({
-      dict: params.dict,
+      dict,
       key: "Opt"
     });
     if (Array.isArray(options)) {
-      const xref = params.xref;
       for (let i = 0, ii = options.length; i < ii; i++) {
         const option = xref.fetchIfRef(options[i]);
         const isOptionArray = Array.isArray(option);
@@ -6388,10 +6398,12 @@ class SignatureWidgetAnnotation extends WidgetAnnotation {
   }
 }
 class TextAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
+  constructor(params) {
     const DEFAULT_ICON_SIZE = 22;
-    super(parameters);
-    const dict = parameters.dict;
+    super(params);
+    const {
+      dict
+    } = params;
     this.data.annotationType = _util.AnnotationType.TEXT;
     if (this.data.hasAppearance) {
       this.data.name = "NoIcon";
@@ -6427,17 +6439,20 @@ class LinkAnnotation extends Annotation {
   }
 }
 class PopupAnnotation extends Annotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict
+    } = params;
     this.data.annotationType = _util.AnnotationType.POPUP;
-    let parentItem = parameters.dict.get("Parent");
+    let parentItem = dict.get("Parent");
     if (!parentItem) {
       (0, _util.warn)("Popup annotation has a missing or invalid parent annotation.");
       return;
     }
     const parentSubtype = parentItem.get("Subtype");
     this.data.parentType = parentSubtype instanceof _primitives.Name ? parentSubtype.name : null;
-    const rawParent = parameters.dict.getRaw("Parent");
+    const rawParent = dict.getRaw("Parent");
     this.data.parentId = rawParent instanceof _primitives.Ref ? rawParent.toString() : null;
     const parentRect = parentItem.getArray("Rect");
     if (Array.isArray(parentRect) && parentRect.length === 4) {
@@ -6478,12 +6493,15 @@ class PopupAnnotation extends Annotation {
 }
 exports.PopupAnnotation = PopupAnnotation;
 class FreeTextAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.FREETEXT;
-    this.setDefaultAppearance(parameters);
+    this.setDefaultAppearance(params);
     if (!this.appearance && this._isOffscreenCanvasSupported) {
-      const fakeUnicodeFont = new _default_appearance.FakeUnicodeFont(parameters.xref, "sans-serif");
+      const fakeUnicodeFont = new _default_appearance.FakeUnicodeFont(xref, "sans-serif");
       const fontData = this.data.defaultAppearanceData;
       this.appearance = fakeUnicodeFont.createAppearance(this._contents.str, this.rectangle, this.rotation, fontData.fontSize || 10, fontData.fontColor);
       this._streams.push(this.appearance, _default_appearance.FakeUnicodeFont.toUnicodeStream);
@@ -6513,12 +6531,12 @@ class FreeTextAnnotation extends MarkupAnnotation {
     freetext.set("Rect", rect);
     const da = `/Helv ${fontSize} Tf ${(0, _default_appearance.getPdfColor)(color, true)}`;
     freetext.set("DA", da);
-    freetext.set("Contents", (0, _util.isAscii)(value) ? value : (0, _util.stringToUTF16BEString)(value));
+    freetext.set("Contents", (0, _core_utils.isAscii)(value) ? value : (0, _core_utils.stringToUTF16String)(value, true));
     freetext.set("F", 4);
     freetext.set("Border", [0, 0, 0]);
     freetext.set("Rotate", rotation);
     if (user) {
-      freetext.set("T", (0, _util.isAscii)(user) ? user : (0, _util.stringToUTF16BEString)(user));
+      freetext.set("T", (0, _core_utils.isAscii)(user) ? user : (0, _core_utils.stringToUTF16String)(user, true));
     }
     if (apRef || ap) {
       const n = new _primitives.Dict(xref);
@@ -6601,7 +6619,7 @@ class FreeTextAnnotation extends MarkupAnnotation {
     const buffer = ["q", `0 0 ${(0, _core_utils.numberToString)(w)} ${(0, _core_utils.numberToString)(h)} re W n`, `BT`, `1 0 0 1 0 ${(0, _core_utils.numberToString)(h + lineDescent)} Tm 0 Tc ${(0, _default_appearance.getPdfColor)(color, true)}`, `/Helv ${(0, _core_utils.numberToString)(newFontSize)} Tf`];
     const vShift = (0, _core_utils.numberToString)(lineHeight);
     for (const line of encodedLines) {
-      buffer.push(`0 -${vShift} Td (${(0, _util.escapeString)(line)}) Tj`);
+      buffer.push(`0 -${vShift} Td (${(0, _core_utils.escapeString)(line)}) Tj`);
     }
     buffer.push("ET", "Q");
     const appearance = buffer.join("\n");
@@ -6622,25 +6640,22 @@ class FreeTextAnnotation extends MarkupAnnotation {
   }
 }
 class LineAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
     const {
-      dict
-    } = parameters;
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.LINE;
     const lineCoordinates = dict.getArray("L");
     this.data.lineCoordinates = _util.Util.normalizeRect(lineCoordinates);
     this.setLineEndings(dict.getArray("LE"));
     this.data.lineEndings = this.lineEndings;
     if (!this.appearance) {
-      const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
+      const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
       const strokeAlpha = dict.get("CA");
-      let fillColor = null,
-        interiorColor = dict.getArray("IC");
-      if (interiorColor) {
-        interiorColor = getRgbColor(interiorColor, null);
-        fillColor = interiorColor ? Array.from(interiorColor, c => c / 255) : null;
-      }
+      const interiorColor = getRgbColor(dict.getArray("IC"), null);
+      const fillColor = interiorColor ? getPdfColorArray(interiorColor) : null;
       const fillAlpha = fillColor ? strokeAlpha : null;
       const borderWidth = this.borderStyle.width || 1,
         borderAdjust = 2 * borderWidth;
@@ -6649,7 +6664,7 @@ class LineAnnotation extends MarkupAnnotation {
         this.rectangle = bbox;
       }
       this._setDefaultAppearance({
-        xref: parameters.xref,
+        xref,
         extra: `${borderWidth} w`,
         strokeColor,
         fillColor,
@@ -6664,24 +6679,24 @@ class LineAnnotation extends MarkupAnnotation {
   }
 }
 class SquareAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.SQUARE;
     if (!this.appearance) {
-      const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-      const strokeAlpha = parameters.dict.get("CA");
-      let fillColor = null,
-        interiorColor = parameters.dict.getArray("IC");
-      if (interiorColor) {
-        interiorColor = getRgbColor(interiorColor, null);
-        fillColor = interiorColor ? Array.from(interiorColor, c => c / 255) : null;
-      }
+      const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+      const strokeAlpha = dict.get("CA");
+      const interiorColor = getRgbColor(dict.getArray("IC"), null);
+      const fillColor = interiorColor ? getPdfColorArray(interiorColor) : null;
       const fillAlpha = fillColor ? strokeAlpha : null;
       if (this.borderStyle.width === 0 && !fillColor) {
         return;
       }
       this._setDefaultAppearance({
-        xref: parameters.xref,
+        xref,
         extra: `${this.borderStyle.width} w`,
         strokeColor,
         fillColor,
@@ -6705,25 +6720,25 @@ class SquareAnnotation extends MarkupAnnotation {
   }
 }
 class CircleAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.CIRCLE;
     if (!this.appearance) {
-      const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-      const strokeAlpha = parameters.dict.get("CA");
-      let fillColor = null;
-      let interiorColor = parameters.dict.getArray("IC");
-      if (interiorColor) {
-        interiorColor = getRgbColor(interiorColor, null);
-        fillColor = interiorColor ? Array.from(interiorColor, c => c / 255) : null;
-      }
+      const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+      const strokeAlpha = dict.get("CA");
+      const interiorColor = getRgbColor(dict.getArray("IC"), null);
+      const fillColor = interiorColor ? getPdfColorArray(interiorColor) : null;
       const fillAlpha = fillColor ? strokeAlpha : null;
       if (this.borderStyle.width === 0 && !fillColor) {
         return;
       }
       const controlPointsDistance = 4 / 3 * Math.tan(Math.PI / (2 * 4));
       this._setDefaultAppearance({
-        xref: parameters.xref,
+        xref,
         extra: `${this.borderStyle.width} w`,
         strokeColor,
         fillColor,
@@ -6751,11 +6766,12 @@ class CircleAnnotation extends MarkupAnnotation {
   }
 }
 class PolylineAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
     const {
-      dict
-    } = parameters;
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.POLYLINE;
     this.data.vertices = [];
     if (!(this instanceof PolygonAnnotation)) {
@@ -6773,7 +6789,7 @@ class PolylineAnnotation extends MarkupAnnotation {
       });
     }
     if (!this.appearance) {
-      const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
+      const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
       const strokeAlpha = dict.get("CA");
       const borderWidth = this.borderStyle.width || 1,
         borderAdjust = 2 * borderWidth;
@@ -6788,7 +6804,7 @@ class PolylineAnnotation extends MarkupAnnotation {
         this.rectangle = bbox;
       }
       this._setDefaultAppearance({
-        xref: parameters.xref,
+        xref,
         extra: `${borderWidth} w`,
         strokeColor,
         strokeAlpha,
@@ -6805,27 +6821,30 @@ class PolylineAnnotation extends MarkupAnnotation {
   }
 }
 class PolygonAnnotation extends PolylineAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
     this.data.annotationType = _util.AnnotationType.POLYGON;
   }
 }
 class CaretAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
     this.data.annotationType = _util.AnnotationType.CARET;
   }
 }
 class InkAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.INK;
     this.data.inkLists = [];
-    const rawInkLists = parameters.dict.getArray("InkList");
+    const rawInkLists = dict.getArray("InkList");
     if (!Array.isArray(rawInkLists)) {
       return;
     }
-    const xref = parameters.xref;
     for (let i = 0, ii = rawInkLists.length; i < ii; ++i) {
       this.data.inkLists.push([]);
       for (let j = 0, jj = rawInkLists[i].length; j < jj; j += 2) {
@@ -6836,8 +6855,8 @@ class InkAnnotation extends MarkupAnnotation {
       }
     }
     if (!this.appearance) {
-      const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-      const strokeAlpha = parameters.dict.get("CA");
+      const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+      const strokeAlpha = dict.get("CA");
       const borderWidth = this.borderStyle.width || 1,
         borderAdjust = 2 * borderWidth;
       const bbox = [Infinity, Infinity, -Infinity, -Infinity];
@@ -6853,7 +6872,7 @@ class InkAnnotation extends MarkupAnnotation {
         this.rectangle = bbox;
       }
       this._setDefaultAppearance({
-        xref: parameters.xref,
+        xref,
         extra: `${borderWidth} w`,
         strokeColor,
         strokeAlpha,
@@ -6955,20 +6974,24 @@ class InkAnnotation extends MarkupAnnotation {
   }
 }
 class HighlightAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.HIGHLIGHT;
-    const quadPoints = this.data.quadPoints = getQuadPoints(parameters.dict, null);
+    const quadPoints = this.data.quadPoints = getQuadPoints(dict, null);
     if (quadPoints) {
       const resources = this.appearance && this.appearance.dict.get("Resources");
       if (!this.appearance || !(resources && resources.has("ExtGState"))) {
         if (this.appearance) {
           (0, _util.warn)("HighlightAnnotation - ignoring built-in appearance stream.");
         }
-        const fillColor = this.color ? Array.from(this.color, c => c / 255) : [1, 1, 0];
-        const fillAlpha = parameters.dict.get("CA");
+        const fillColor = this.color ? getPdfColorArray(this.color) : [1, 1, 0];
+        const fillAlpha = dict.get("CA");
         this._setDefaultAppearance({
-          xref: parameters.xref,
+          xref,
           fillColor,
           blendMode: "Multiply",
           fillAlpha,
@@ -6984,16 +7007,20 @@ class HighlightAnnotation extends MarkupAnnotation {
   }
 }
 class UnderlineAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.UNDERLINE;
-    const quadPoints = this.data.quadPoints = getQuadPoints(parameters.dict, null);
+    const quadPoints = this.data.quadPoints = getQuadPoints(dict, null);
     if (quadPoints) {
       if (!this.appearance) {
-        const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-        const strokeAlpha = parameters.dict.get("CA");
+        const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+        const strokeAlpha = dict.get("CA");
         this._setDefaultAppearance({
-          xref: parameters.xref,
+          xref,
           extra: "[] 0 d 1 w",
           strokeColor,
           strokeAlpha,
@@ -7009,16 +7036,20 @@ class UnderlineAnnotation extends MarkupAnnotation {
   }
 }
 class SquigglyAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.SQUIGGLY;
-    const quadPoints = this.data.quadPoints = getQuadPoints(parameters.dict, null);
+    const quadPoints = this.data.quadPoints = getQuadPoints(dict, null);
     if (quadPoints) {
       if (!this.appearance) {
-        const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-        const strokeAlpha = parameters.dict.get("CA");
+        const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+        const strokeAlpha = dict.get("CA");
         this._setDefaultAppearance({
-          xref: parameters.xref,
+          xref,
           extra: "[] 0 d 1 w",
           strokeColor,
           strokeAlpha,
@@ -7045,16 +7076,20 @@ class SquigglyAnnotation extends MarkupAnnotation {
   }
 }
 class StrikeOutAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
     this.data.annotationType = _util.AnnotationType.STRIKEOUT;
-    const quadPoints = this.data.quadPoints = getQuadPoints(parameters.dict, null);
+    const quadPoints = this.data.quadPoints = getQuadPoints(dict, null);
     if (quadPoints) {
       if (!this.appearance) {
-        const strokeColor = this.color ? Array.from(this.color, c => c / 255) : [0, 0, 0];
-        const strokeAlpha = parameters.dict.get("CA");
+        const strokeColor = this.color ? getPdfColorArray(this.color) : [0, 0, 0];
+        const strokeAlpha = dict.get("CA");
         this._setDefaultAppearance({
-          xref: parameters.xref,
+          xref,
           extra: "[] 0 d 1 w",
           strokeColor,
           strokeAlpha,
@@ -7070,17 +7105,23 @@ class StrikeOutAnnotation extends MarkupAnnotation {
   }
 }
 class StampAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
+  constructor(params) {
+    super(params);
     this.data.annotationType = _util.AnnotationType.STAMP;
   }
 }
 class FileAttachmentAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
-    const file = new _file_spec.FileSpec(parameters.dict.get("FS"), parameters.xref);
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref
+    } = params;
+    const file = new _file_spec.FileSpec(dict.get("FS"), xref);
     this.data.annotationType = _util.AnnotationType.FILEATTACHMENT;
     this.data.file = file.serializable;
+    const name = dict.get("Name");
+    this.data.name = name instanceof _primitives.Name ? (0, _util.stringToPDFString)(name.name) : "PushPin";
   }
 }
 
@@ -9922,8 +9963,10 @@ class PartialEvaluator {
       if (textContentItem.initialized) {
         return textContentItem;
       }
-      const font = textState.font,
-        loadedName = font.loadedName;
+      const {
+        font,
+        loadedName
+      } = textState;
       if (!seenStyles.has(loadedName)) {
         seenStyles.add(loadedName);
         textContent.styles[loadedName] = {
@@ -9997,6 +10040,7 @@ class PartialEvaluator {
           return translated;
         });
       }).then(function (translated) {
+        textState.loadedName = translated.loadedName;
         textState.font = translated.font;
         textState.fontMatrix = translated.font.fontMatrix || _util.FONT_IDENTITY_MATRIX;
       });
@@ -10213,7 +10257,7 @@ class PartialEvaluator {
           width: 0,
           height: 0,
           transform: getCurrentTextTransform(),
-          fontName: textState.font.loadedName,
+          fontName: textState.loadedName,
           hasEOL: true
         });
       }
@@ -11518,6 +11562,7 @@ class TextState {
     this.ctm = new Float32Array(_util.IDENTITY_MATRIX);
     this.fontName = null;
     this.fontSize = 0;
+    this.loadedName = null;
     this.font = null;
     this.fontMatrix = _util.FONT_IDENTITY_MATRIX;
     this.textMatrix = _util.IDENTITY_MATRIX.slice();
@@ -12803,16 +12848,17 @@ var _stream = __w_pdfjs_require__(8);
 var _predictor_stream = __w_pdfjs_require__(30);
 var _run_length_stream = __w_pdfjs_require__(31);
 const MAX_LENGTH_TO_CACHE = 1000;
-const MAX_ADLER32_LENGTH = 5552;
-function computeAdler32(bytes) {
-  const bytesLength = bytes.length;
-  let a = 1,
-    b = 0;
-  for (let i = 0; i < bytesLength; ++i) {
-    a += bytes[i] & 0xff;
-    b += a;
+function getInlineImageCacheKey(bytes) {
+  const strBuf = [],
+    ii = bytes.length;
+  let i = 0;
+  while (i < ii - 1) {
+    strBuf.push(bytes[i++] << 8 | bytes[i++]);
   }
-  return b % 65521 << 16 | a % 65521;
+  if (i < ii) {
+    strBuf.push(bytes[i]);
+  }
+  return ii + "_" + String.fromCharCode.apply(null, strBuf);
 }
 class Parser {
   constructor({
@@ -12826,6 +12872,7 @@ class Parser {
     this.allowStreams = allowStreams;
     this.recoveryMode = recoveryMode;
     this.imageCache = Object.create(null);
+    this._imageId = 0;
     this.refill();
   }
   refill() {
@@ -12938,7 +12985,6 @@ class Parser {
       } else if (state === 1) {
         state = ch === I ? 2 : 0;
       } else {
-        (0, _util.assert)(state === 2, "findDefaultInlineStreamEnd - invalid state.");
         if (ch === SPACE || ch === LF || ch === CR) {
           maybeEIPos = stream.pos;
           const followingBytes = stream.peekBytes(n);
@@ -13134,7 +13180,7 @@ class Parser {
   makeInlineImage(cipherTransform) {
     const lexer = this.lexer;
     const stream = lexer.stream;
-    const dict = new _primitives.Dict(this.xref);
+    const dictMap = Object.create(null);
     let dictLength;
     while (!(0, _primitives.isCmd)(this.buf1, "ID") && this.buf1 !== _primitives.EOF) {
       if (!(this.buf1 instanceof _primitives.Name)) {
@@ -13145,12 +13191,12 @@ class Parser {
       if (this.buf1 === _primitives.EOF) {
         break;
       }
-      dict.set(key, this.getObj(cipherTransform));
+      dictMap[key] = this.getObj(cipherTransform);
     }
     if (lexer.beginInlineImagePos !== -1) {
       dictLength = stream.pos - lexer.beginInlineImagePos;
     }
-    const filter = dict.get("F", "Filter");
+    const filter = this.xref.fetchIfRef(dictMap.F || dictMap.Filter);
     let filterName;
     if (filter instanceof _primitives.Name) {
       filterName = filter.name;
@@ -13178,16 +13224,12 @@ class Parser {
       default:
         length = this.findDefaultInlineStreamEnd(stream);
     }
-    let imageStream = stream.makeSubStream(startPos, length, dict);
     let cacheKey;
-    if (length < MAX_LENGTH_TO_CACHE && dictLength < MAX_ADLER32_LENGTH) {
-      const imageBytes = imageStream.getBytes();
-      imageStream.reset();
+    if (length < MAX_LENGTH_TO_CACHE && dictLength > 0) {
       const initialStreamPos = stream.pos;
       stream.pos = lexer.beginInlineImagePos;
-      const dictBytes = stream.getBytes(dictLength);
+      cacheKey = getInlineImageCacheKey(stream.getBytes(dictLength + length));
       stream.pos = initialStreamPos;
-      cacheKey = computeAdler32(imageBytes) + "_" + computeAdler32(dictBytes);
       const cacheEntry = this.imageCache[cacheKey];
       if (cacheEntry !== undefined) {
         this.buf2 = _primitives.Cmd.get("EI");
@@ -13196,13 +13238,18 @@ class Parser {
         return cacheEntry;
       }
     }
+    const dict = new _primitives.Dict(this.xref);
+    for (const key in dictMap) {
+      dict.set(key, dictMap[key]);
+    }
+    let imageStream = stream.makeSubStream(startPos, length, dict);
     if (cipherTransform) {
       imageStream = cipherTransform.createStream(imageStream, length);
     }
     imageStream = this.filter(imageStream, dict, length);
     imageStream.dict = dict;
     if (cacheKey !== undefined) {
-      imageStream.cacheKey = `inline_${length}_${cacheKey}`;
+      imageStream.cacheKey = `inline_img_${++this._imageId}`;
       this.imageCache[cacheKey] = imageStream;
     }
     this.buf2 = _primitives.Cmd.get("EI");
@@ -21359,7 +21406,7 @@ class Font {
         map[+charCode] = unicodeCharCode;
       });
       if (this.composite && this.toUnicode instanceof _to_unicode_map.IdentityToUnicodeMap) {
-        if (/Verdana/i.test(name)) {
+        if (/Tahoma|Verdana/i.test(name)) {
           applyStandardFontGlyphMap(map, (0, _standard_fonts.getGlyphMapForStandardFonts)());
         }
       }
@@ -34613,9 +34660,7 @@ class MurmurHash3_64 {
     h1 = h1 * 0x1a85ec53 & MASK_HIGH | h1 * 0xec53 & MASK_LOW;
     h2 = h2 * 0xc4ceb9fe & MASK_HIGH | ((h2 << 16 | h1 >>> 16) * 0xb9fe1a85 & MASK_HIGH) >>> 16;
     h1 ^= h2 >>> 1;
-    const hex1 = (h1 >>> 0).toString(16),
-      hex2 = (h2 >>> 0).toString(16);
-    return hex1.padStart(8, "0") + hex2.padStart(8, "0");
+    return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   }
 }
 exports.MurmurHash3_64 = MurmurHash3_64;
@@ -35893,7 +35938,7 @@ function writeValue(value, buffer, transform) {
     if (transform !== null) {
       value = transform.encryptString(value);
     }
-    buffer.push(`(${(0, _util.escapeString)(value)})`);
+    buffer.push(`(${(0, _core_utils.escapeString)(value)})`);
   } else if (typeof value === "number") {
     buffer.push((0, _core_utils.numberToString)(value));
   } else if (typeof value === "boolean") {
@@ -52451,8 +52496,8 @@ Object.defineProperty(exports, "WorkerMessageHandler", ({
   }
 }));
 var _worker = __w_pdfjs_require__(1);
-const pdfjsVersion = '3.1.22';
-const pdfjsBuild = 'f4341779d';
+const pdfjsVersion = '3.2.47';
+const pdfjsBuild = 'feb6f5951';
 })();
 
 /******/ 	return __webpack_exports__;

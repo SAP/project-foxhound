@@ -706,14 +706,6 @@ class HTMLEditor final : public EditorBase,
    * to make sure that AutoEditActionDataSetter is created.
    ****************************************************************************/
 
-  enum class WithTransaction { No, Yes };
-  friend std::ostream& operator<<(std::ostream& aStream,
-                                  WithTransaction aWithTransaction) {
-    aStream << "WithTransaction::"
-            << (aWithTransaction == WithTransaction::Yes ? "Yes" : "No");
-    return aStream;
-  }
-
   /**
    * InsertBRElement() creates a <br> element and inserts it before
    * aPointToInsert.
@@ -860,13 +852,6 @@ class HTMLEditor final : public EditorBase,
   SetFontSizeOnTextNode(Text& aTextNode, uint32_t aStartOffset,
                         uint32_t aEndOffset, FontSize aIncrementOrDecrement);
 
-  /**
-   * @return            A suggest point to put caret.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  SetInlinePropertyOnNode(nsIContent& aContent, nsAtom& aProperty,
-                          nsAtom* aAttribute, const nsAString& aValue);
-
   enum class SplitAtEdges {
     // SplitNodeDeepWithTransaction() won't split container element
     // nodes at their edges.  I.e., when split point is start or end of
@@ -885,26 +870,21 @@ class HTMLEditor final : public EditorBase,
    *
    * @param aRange      Ancestor inline elements of the start and end boundaries
    *                    will be split.
-   * @param aProperty   The style tag name which you want to split.  Set
-   *                    nullptr if you want to split any styled elements.
-   * @param aAttribute  Attribute name if aProperty has some styles like
-   *                    nsGkAtoms::font.
+   * @param aStyle      The style which you want to split. RemoveAllStyles
+   *                    instance is allowed to split any inline elements.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitRangeOffResult, nsresult>
-  SplitAncestorStyledInlineElementsAtRangeEdges(const EditorDOMRange& aRange,
-                                                nsAtom* aProperty,
-                                                nsAtom* aAttribute);
+  SplitAncestorStyledInlineElementsAtRangeEdges(
+      const EditorDOMRange& aRange, const EditorInlineStyle& aStyle);
 
   /**
    * SplitAncestorStyledInlineElementsAt() splits ancestor inline elements at
    * aPointToSplit if specified style matches with them.
    *
    * @param aPointToSplit       The point to split style at.
-   * @param aProperty           The style tag name which you want to split.
-   *                            Set nullptr if you want to split any styled
-   *                            elements.
-   * @param aAttribute          Attribute name if aProperty has some styles
-   *                            like nsGkAtoms::font.
+   * @param aStyle              The style which you want to split.
+   *                            RemoveAllStyles instance is allowed to split any
+   *                            inline elements.
    * @param aSplitAtEdges       Whether this should split elements at start or
    *                            end of inline elements or not.
    * @return                    The result of SplitNodeDeepWithTransaction()
@@ -914,12 +894,12 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
   SplitAncestorStyledInlineElementsAt(const EditorDOMPoint& aPointToSplit,
-                                      nsAtom* aProperty, nsAtom* aAttribute,
+                                      const EditorInlineStyle& aStyle,
                                       SplitAtEdges aSplitAtEdges);
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult GetInlinePropertyBase(
-      nsStaticAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString* aValue,
-      bool* aFirst, bool* aAny, bool* aAll, nsAString* outValue) const;
+      const EditorInlineStyle& aStyle, const nsAString* aValue, bool* aFirst,
+      bool* aAny, bool* aAll, nsAString* outValue) const;
 
   /**
    * ClearStyleAt() splits parent elements to remove the specified style.
@@ -928,10 +908,7 @@ class HTMLEditor final : public EditorBase,
    * from the point and returns DOM point to put caret.
    *
    * @param aPoint      The point to clear style at.
-   * @param aProperty   An HTML tag name which represents a style.
-   *                    Set nullptr if you want to clear all styles.
-   * @param aAttribute  Attribute name if aProperty has some styles like
-   *                    nsGkAtoms::font.
+   * @param aStyleToRemove   The style which you want to clear.
    * @param aSpecifiedStyle  Whether the class and style attributes should
    *                         be preserved or discarded.
    * @return            A candidate position to put caret.  If there is
@@ -939,8 +916,9 @@ class HTMLEditor final : public EditorBase,
    *                    suggesting caret point only in some cases.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  ClearStyleAt(const EditorDOMPoint& aPoint, nsAtom* aProperty,
-               nsAtom* aAttribute, SpecifiedStyle aSpecifiedStyle);
+  ClearStyleAt(const EditorDOMPoint& aPoint,
+               const EditorInlineStyle& aStyleToRemove,
+               SpecifiedStyle aSpecifiedStyle);
 
   MOZ_CAN_RUN_SCRIPT nsresult SetPositionToAbsolute(Element& aElement);
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
@@ -1074,21 +1052,20 @@ class HTMLEditor final : public EditorBase,
       nsIPrincipal* aSourcePrincipal) final;
 
   /**
-   * GetInlineStyles() retrieves the style of aNode and modifies each item of
+   * GetInlineStyles() retrieves the style of aElement and modifies each item of
    * aPendingStyleCacheArray.  This might cause flushing layout at retrieving
    * computed values of CSS properties.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  GetInlineStyles(nsIContent& aContent,
-                  AutoPendingStyleCacheArray& aPendingStyleCacheArray);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult GetInlineStyles(
+      Element& aElement, AutoPendingStyleCacheArray& aPendingStyleCacheArray);
 
   /**
-   * CacheInlineStyles() caches style of aContent into mCachedPendingStyles of
+   * CacheInlineStyles() caches style of aElement into mCachedPendingStyles of
    * TopLevelEditSubAction.  This may cause flushing layout at retrieving
    * computed value of CSS properties.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  CacheInlineStyles(nsIContent& aContent);
+  CacheInlineStyles(Element& aElement);
 
   /**
    * ReapplyCachedStyles() restores some styles which are disappeared during
@@ -3894,25 +3871,14 @@ class HTMLEditor final : public EditorBase,
   SetFontSizeOfFontElementChildren(nsIContent& aContent,
                                    FontSize aIncrementOrDecrement);
 
-  /**
-   * SetInlinePropertyOnTextNode() splits aData if aStartOffset and/or
-   * aEndOffset are not start/end of aData.  Then, the text node which was
-   * contained in the range is wrapped into an element which applies the style.
-   *
-   * @return            The result of splitting aData.  Note that middle text
-   *                    node may be moved in an element, so left/middle/right
-   *                    nodes may not be siblings.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitRangeOffFromNodeResult, nsresult>
-  SetInlinePropertyOnTextNode(Text& aData, uint32_t aStartOffset,
-                              uint32_t aEndOffset, nsAtom& aProperty,
-                              nsAtom* aAttribute, const nsAString& aValue);
-
   nsresult PromoteInlineRange(nsRange& aRange);
   nsresult PromoteRangeIfStartsOrEndsInNamedAnchor(nsRange& aRange);
 
+  // Declared in HTMLEditorNestedClasses.h and defined in HTMLStyleEditor.cpp
+  class AutoInlineStyleSetter;
+
   /**
-   * RemoveStyleInside() removes elements which represent aProperty/aAttribute
+   * RemoveStyleInside() removes elements which represent aStyleToRemove
    * and removes CSS style.  This handles aElement and all its descendants
    * (including leaf text nodes) recursively.
    * TODO: Rename this to explain that this maybe remove aElement from the DOM
@@ -3923,7 +3889,7 @@ class HTMLEditor final : public EditorBase,
    * @return                 A suggest point to put caret.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  RemoveStyleInside(Element& aElement, nsAtom* aProperty, nsAtom* aAttribute,
+  RemoveStyleInside(Element& aElement, const EditorInlineStyle& aStyleToRemove,
                     SpecifiedStyle aSpecifiedStyle);
 
   /**
@@ -3933,10 +3899,10 @@ class HTMLEditor final : public EditorBase,
       Element& aElement, nsTArray<OwningNonNull<Text>>& aLeafTextNodes) const;
 
   /**
-   * IsRemovableParentStyleWithNewSpanElement() checks whether
-   * aProperty/aAttribute of parent block can be removed from aContent with
-   * creating `<span>` element.  Note that this does NOT check whether the
-   * specified style comes from parent block or not.
+   * IsRemovableParentStyleWithNewSpanElement() checks whether aStyle of parent
+   * block can be removed from aContent with creating `<span>` element.  Note
+   * that this does NOT check whether the specified style comes from parent
+   * block or not.
    * XXX This may destroy the editor, but using `Result<bool, nsresult>`
    *     is not reasonable because code for accessing the result becomes
    *     messy.  However, anybody must forget to check `Destroyed()` after
@@ -3944,9 +3910,8 @@ class HTMLEditor final : public EditorBase,
    *     must check the editor state?
    */
   MOZ_CAN_RUN_SCRIPT Result<bool, nsresult>
-  IsRemovableParentStyleWithNewSpanElement(nsIContent& aContent,
-                                           nsAtom* aHTMLProperty,
-                                           nsAtom* aAttribute) const;
+  IsRemovableParentStyleWithNewSpanElement(
+      nsIContent& aContent, const EditorInlineStyle& aStyle) const;
 
   /**
    * XXX These methods seem odd and except the only caller,
@@ -3956,8 +3921,6 @@ class HTMLEditor final : public EditorBase,
       const EditorRawDOMPoint& aPoint) const;
   bool IsEndOfContainerOrEqualsOrAfterLastEditableChild(
       const EditorRawDOMPoint& aPoint) const;
-
-  bool IsOnlyAttribute(const Element* aElement, nsAtom* aAttribute);
 
   /**
    * HasStyleOrIdOrClassAttribute() returns true when at least one of
@@ -4208,25 +4171,6 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   RefreshInlineTableEditingUIInternal();
-
-  /**
-   * ElementIsGoodContainerForTheStyle() returns true if aElement is a
-   * good container for applying the style (aProperty/aAttribute/aValue)
-   * to a node.  I.e., if this returns true, moving nodes into aElement
-   * is enough to apply the style to them.  Otherwise, you need to create
-   * new element for the style.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<bool, nsresult>
-  ElementIsGoodContainerForTheStyle(Element& aElement, nsAtom* aProperty,
-                                    nsAtom* aAttribute,
-                                    const nsAString* aValue);
-
-  /**
-   * @return            A suggest point to put caret.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  SetInlinePropertyOnNodeImpl(nsIContent& aContent, nsAtom& aProperty,
-                              nsAtom* aAttribute, const nsAString& aValue);
 
   typedef enum { eInserted, eAppended } InsertedOrAppended;
   MOZ_CAN_RUN_SCRIPT void DoContentInserted(

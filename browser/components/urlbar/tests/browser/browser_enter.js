@@ -10,17 +10,11 @@ add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.quickactions", false]],
   });
-  const engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  engine.alias = "@default";
-
-  const defaultEngine = Services.search.defaultEngine;
-  Services.search.defaultEngine = engine;
-
-  registerCleanupFunction(async function() {
-    Services.search.defaultEngine = defaultEngine;
+  const engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
   });
+  engine.alias = "@default";
 });
 
 add_task(async function returnKeypress() {
@@ -99,6 +93,12 @@ add_task(async function altGrReturnKeypress() {
 
 add_task(async function searchOnEnterNoPick() {
   info("Search on Enter without picking a urlbar result");
+  await SpecialPowers.pushPrefEnv({
+    // The test checks that the untrimmed value is equal to the spec.
+    // When using showSearchTerms, the untrimmed value becomes
+    // the search terms.
+    set: [["browser.urlbar.showSearchTerms.featureGate", false]],
+  });
 
   // Why is BrowserTestUtils.openNewForegroundTab not causing the bug?
   let promiseTabOpened = BrowserTestUtils.waitForEvent(
@@ -132,6 +132,7 @@ add_task(async function searchOnEnterNoPick() {
 
   // Cleanup.
   BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function searchOnEnterSoon() {

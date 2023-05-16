@@ -1,0 +1,174 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Core :: Privacy: Anti-Tracking'
+
+cookie.banners:
+  normal_window_service_mode:
+    type: labeled_boolean
+    description: >
+      The pref value of the cookie banner service mode for normal windows.
+    bugs:
+      - https://bugzilla.mozilla.org/1797081
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797081#c3
+    notification_emails:
+      - tihuang@mozilla.com
+      - pbz@mozilla.com
+    expires: never
+    labels:
+      - disabled
+      - reject
+      - reject_or_accept
+      - detect_only
+      - invalid
+  private_window_service_mode:
+    type: labeled_boolean
+    description: >
+      The pref value of the cookie banner service mode for private windows.
+    bugs:
+      - https://bugzilla.mozilla.org/1797081
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797081#c3
+    notification_emails:
+      - tihuang@mozilla.com
+      - pbz@mozilla.com
+    expires: never
+    labels:
+      - disabled
+      - reject
+      - reject_or_accept
+      - invalid
+  rule_lookup_by_load:
+    type: labeled_counter
+    description: >
+      Counts the number of hit/miss of cookie banner rule lookups for every
+      load. We collect three types of counters, including counters for overall
+      rule lookup, counters for cookie rule lookup and counters for click rule
+      lookup. We also divide the counter by top-level loads and iframe loads.
+    bugs:
+      - https://bugzilla.mozilla.org/1797073
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797073#c6
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - tihuang@mozilla.com
+      - pbz@mozilla.com
+    expires: 115
+    labels:
+      - top_hit
+      - top_hit_opt_in
+      - top_hit_opt_out
+      - top_miss
+      - iframe_hit
+      - iframe_hit_opt_in
+      - iframe_hit_opt_out
+      - iframe_miss
+      - top_cookie_hit
+      - top_cookie_hit_opt_in
+      - top_cookie_hit_opt_out
+      - top_cookie_miss
+      - iframe_cookie_hit
+      - iframe_cookie_hit_opt_in
+      - iframe_cookie_hit_opt_out
+      - iframe_cookie_miss
+      - top_click_hit
+      - top_click_hit_opt_in
+      - top_click_hit_opt_out
+      - top_click_miss
+      - iframe_click_hit
+      - iframe_click_hit_opt_in
+      - iframe_click_hit_opt_out
+      - iframe_click_miss
+  rule_lookup_by_domain:
+    type: labeled_counter
+    description: >
+      Counts the number of hit/miss of cookie banner rule lookups for domain.
+      We collect three types of counters, including counters for overall
+      rule lookup, counters for cookie rule lookup and counters for click rule
+      lookup. We also divide the counter by top-level loads and iframe loads.
+      For each domain, we will only collect once.
+    bugs:
+      - https://bugzilla.mozilla.org/1797073
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797073#c6
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - tihuang@mozilla.com
+      - pbz@mozilla.com
+    expires: 115
+    labels:
+      - top_hit
+      - top_hit_opt_in
+      - top_hit_opt_out
+      - top_miss
+      - iframe_hit
+      - iframe_hit_opt_in
+      - iframe_hit_opt_out
+      - iframe_miss
+      - top_cookie_hit
+      - top_cookie_hit_opt_in
+      - top_cookie_hit_opt_out
+      - top_cookie_miss
+      - iframe_cookie_hit
+      - iframe_cookie_hit_opt_in
+      - iframe_cookie_hit_opt_out
+      - iframe_cookie_miss
+      - top_click_hit
+      - top_click_hit_opt_in
+      - top_click_hit_opt_out
+      - top_click_miss
+      - iframe_click_hit
+      - iframe_click_hit_opt_in
+      - iframe_click_hit_opt_out
+      - iframe_click_miss
+cookie.banners.click:
+  handle_duration:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Counts how long it takes to handle cookie banners successfully from
+      DOMContentLoaded until click.
+    bugs:
+      - https://bugzilla.mozilla.org/1797078
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797078#c6
+    notification_emails:
+      - pbz@mozilla.com
+      - tihuang@mozilla.com
+    expires: 115
+  result:
+    type: labeled_counter
+    description: >
+      Given a matching cookie banner click rule, how often do we handle or fail
+      to handle cookie banners, labelled by reason. The 'success' and 'fail'
+      counters count the total numbers independently of the reason counters.
+      Counters are incremented after the content window has been destroyed.
+    bugs:
+      - https://bugzilla.mozilla.org/1797078
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797078#c6
+    notification_emails:
+      - pbz@mozilla.com
+      - tihuang@mozilla.com
+    expires: 115
+    labels:
+      - success
+      - success_dom_content_loaded
+      - success_mutation_pre_load
+      - success_mutation_post_load
+      - fail
+      - fail_banner_not_found
+      - fail_banner_not_visible
+      - fail_button_not_found
+      - fail_no_rule_for_mode
+      - fail_actor_destroyed

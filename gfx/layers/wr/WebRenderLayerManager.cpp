@@ -6,8 +6,6 @@
 
 #include "WebRenderLayerManager.h"
 
-#include "Layers.h"
-
 #include "GeckoProfiler.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layers.h"
@@ -494,6 +492,10 @@ void WebRenderLayerManager::SetFocusTarget(const FocusTarget& aFocusTarget) {
 
 bool WebRenderLayerManager::AsyncPanZoomEnabled() const {
   return mWidget->AsyncPanZoomEnabled();
+}
+
+IntRect ToOutsideIntRect(const gfxRect& aRect) {
+  return IntRect::RoundOut(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
 }
 
 void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {

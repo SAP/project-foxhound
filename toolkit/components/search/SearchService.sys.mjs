@@ -98,12 +98,10 @@ const REASON_CHANGE_MAP = new Map([
  * @implements {nsIParseSubmissionResult}
  */
 class ParseSubmissionResult {
-  constructor(engine, terms, termsParameterName, termsOffset, termsLength) {
+  constructor(engine, terms, termsParameterName) {
     this.#engine = engine;
     this.#terms = terms;
     this.#termsParameterName = termsParameterName;
-    this.#termsOffset = termsOffset;
-    this.#termsLength = termsLength;
   }
 
   get engine() {
@@ -116,14 +114,6 @@ class ParseSubmissionResult {
 
   get termsParameterName() {
     return this.#termsParameterName;
-  }
-
-  get termsOffset() {
-    return this.#termsOffset;
-  }
-
-  get termsLength() {
-    return this.#termsLength;
   }
 
   /**
@@ -150,29 +140,11 @@ class ParseSubmissionResult {
    */
   #termsParameterName;
 
-  /**
-   * The offset of the string #terms in the URL passed in to
-   * nsISearchEngine::parseSubmissionURL, or -1 if the URL does not represent
-   * a search submission.
-   *
-   * @type {number}
-   */
-  #termsOffset;
-
-  /**
-   * The length of the #terms in the original encoding of the URL passed in to
-   * nsISearchEngine::parseSubmissionURL. If the search term in the original
-   * URL is encoded then this will be bigger than #terms.length
-   *
-   * @type {number}
-   */
-  #termsLength;
-
   QueryInterface = ChromeUtils.generateQI(["nsISearchParseSubmissionResult"]);
 }
 
 const gEmptyParseSubmissionResult = Object.freeze(
-  new ParseSubmissionResult(null, "", "", -1, 0)
+  new ParseSubmissionResult(null, "", "")
 );
 
 /**
@@ -570,8 +542,11 @@ export class SearchService {
    * Adds a search engine that is specified by the user.
    *
    * @param {string} name
+   *   The name of the search engine
    * @param {string} url
+   *   The url that the search engine uses for searches
    * @param {string} alias
+   *   An alias for the search engine
    */
   async addUserEngine(name, url, alias) {
     await this.init();
@@ -864,10 +839,10 @@ export class SearchService {
     // Extract the elements of the provided URL first.
     let soughtKey, soughtQuery;
     try {
-      let soughtUrl = Services.io.newURI(url).QueryInterface(Ci.nsIURL);
+      let soughtUrl = Services.io.newURI(url);
 
       // Exclude any URL that is not HTTP or HTTPS from the beginning.
-      if (soughtUrl.scheme != "http" && soughtUrl.scheme != "https") {
+      if (soughtUrl.schemeIs("http") && soughtUrl.schemeIs("https")) {
         return gEmptyParseSubmissionResult;
       }
 
@@ -887,6 +862,8 @@ export class SearchService {
 
     // Extract the search terms from the parameter, for example "caff%C3%A8"
     // from the URL "https://www.google.com/search?q=caff%C3%A8&client=firefox".
+    // We cannot use `URLSearchParams` here as the terms might not be
+    // encoded in UTF-8.
     let encodedTerms = null;
     for (let param of soughtQuery.split("&")) {
       let equalPos = param.indexOf("=");
@@ -903,25 +880,6 @@ export class SearchService {
       return gEmptyParseSubmissionResult;
     }
 
-    let length = 0;
-    let offset = url.indexOf("?") + 1;
-    let query = url.slice(offset);
-    // Iterate a second time over the original input string to determine the
-    // correct search term offset and length in the original encoding.
-    for (let param of query.split("&")) {
-      let equalPos = param.indexOf("=");
-      if (
-        equalPos != -1 &&
-        param.substr(0, equalPos) == mapEntry.termsParameterName
-      ) {
-        // This is the parameter we are looking for.
-        offset += equalPos + 1;
-        length = param.length - equalPos - 1;
-        break;
-      }
-      offset += param.length + 1;
-    }
-
     // Decode the terms using the charset defined in the search engine.
     let terms;
     try {
@@ -934,14 +892,11 @@ export class SearchService {
       return gEmptyParseSubmissionResult;
     }
 
-    let submission = new ParseSubmissionResult(
+    return new ParseSubmissionResult(
       mapEntry.engine,
       terms,
-      mapEntry.termsParameterName,
-      offset,
-      length
+      mapEntry.termsParameterName
     );
-    return submission;
   }
 
   // nsITimerCallbactk
@@ -1052,7 +1007,7 @@ export class SearchService {
    * Various search engines may be ignored if their submission urls contain a
    * string that is in the list. The list is controlled via remote settings.
    *
-   * @type {array}
+   * @type {Array}
    */
   #submissionURLIgnoreList = [];
 
@@ -1060,7 +1015,7 @@ export class SearchService {
    * Various search engines may be ignored if their load path is contained
    * in this list. The list is controlled via remote settings.
    *
-   * @type {array}
+   * @type {Array}
    */
   #loadPathIgnoreList = [];
 
@@ -1074,7 +1029,7 @@ export class SearchService {
   /**
    * An array of engine short names sorted into display order.
    *
-   * @type {array}
+   * @type {Array}
    */
   _cachedSortedEngines = null;
 
@@ -1188,6 +1143,7 @@ export class SearchService {
    * Returns the engine associated with the WebExtension details.
    *
    * @param {object} details
+   *   Details of the WebExtension.
    * @param {string} details.id
    *   The WebExtension ID
    * @param {string} details.locale
@@ -1340,7 +1296,7 @@ export class SearchService {
       // See if we have a settings file so we don't have to parse a bunch of XML.
       let settings = await this._settings.get();
 
-      this.#setupRemoteSettings().catch(Cu.reportError);
+      this.#setupRemoteSettings().catch(console.error);
 
       await this.#loadEngines(settings);
 
@@ -1462,7 +1418,7 @@ export class SearchService {
     // reload the engines - it is possible the settings just had one engine in it,
     // and that is now empty, so we need to load from our main list.
     if (engineRemoved && !this._engines.size) {
-      this._maybeReloadEngines().catch(Cu.reportError);
+      this._maybeReloadEngines().catch(console.error);
     }
   }
 
@@ -1695,9 +1651,9 @@ export class SearchService {
    * Loads engines as specified by the configuration. We only expect
    * configured engines here, user engines should not be listed.
    *
-   * @param {array} engineConfigs
+   * @param {Array} engineConfigs
    *   An array of engines configurations based on the schema.
-   * @returns {array.<nsISearchEngine>}
+   * @returns {Array.<nsISearchEngine>}
    *   Returns an array of the loaded search engines. This may be
    *   smaller than the original list if not all engines can be loaded.
    */
@@ -1744,7 +1700,7 @@ export class SearchService {
           return;
         }
         this.#maybeReloadDebounce = false;
-        this._maybeReloadEngines(changeReason).catch(Cu.reportError);
+        this._maybeReloadEngines(changeReason).catch(console.error);
       }, 10000);
       lazy.logConsole.debug(
         "Post-poning maybeReloadEngines() as we're currently initializing."
@@ -2454,6 +2410,7 @@ export class SearchService {
 
   /**
    * Get a sorted array of the visible engines.
+   *
    * @returns {Array<SearchEngine>}
    */
 
@@ -2638,6 +2595,7 @@ export class SearchService {
    * Note: this is currently used for enterprise policy engines as well.
    *
    * @param {object} options
+   *   Options for the engine.
    * @param {string} options.extensionID
    *   The extension ID being added for the engine.
    * @param {nsIURI} [options.extensionBaseURI]
@@ -3083,7 +3041,7 @@ export class SearchService {
       // The defaultEngine getter will throw if there's no engine at all,
       // which shouldn't happen unless an add-on or a test deleted all of them.
       // Our preferences UI doesn't let users do that.
-      Cu.reportError("getDefaultEngineInfo: No default engine");
+      console.error("getDefaultEngineInfo: No default engine");
       return ["NONE", { name: "NONE" }];
     }
 
@@ -3530,7 +3488,7 @@ export class SearchService {
         );
         this._maybeReloadEngines(
           Ci.nsISearchService.CHANGE_REASON_CONFIG
-        ).catch(Cu.reportError);
+        ).catch(console.error);
         break;
       }
 
@@ -3553,7 +3511,7 @@ export class SearchService {
           if (!Services.startup.shuttingDown) {
             this._maybeReloadEngines(
               Ci.nsISearchService.CHANGE_REASON_LOCALE
-            ).catch(Cu.reportError);
+            ).catch(console.error);
           }
         });
         break;
@@ -3561,7 +3519,7 @@ export class SearchService {
         lazy.logConsole.debug("Region updated:", lazy.Region.home);
         this._maybeReloadEngines(
           Ci.nsISearchService.CHANGE_REASON_REGION
-        ).catch(Cu.reportError);
+        ).catch(console.error);
         break;
     }
   }
@@ -3602,6 +3560,7 @@ export class SearchService {
 
   /**
    * @param {object} metaData
+   *    The metadata object that defines the details of the engine.
    * @returns {boolean}
    *    Returns true if metaData has different property values than
    *    the cached _metaData.
@@ -3739,7 +3698,7 @@ XPCOMUtils.defineLazyServiceGetter(
  */
 class SearchDefaultOverrideAllowlistHandler {
   /**
-   * @param {function} listener
+   * @param {Function} listener
    *   A listener for configuration update changes.
    */
   constructor(listener) {
@@ -3795,7 +3754,7 @@ class SearchDefaultOverrideAllowlistHandler {
    * Note that this may cause a network check of the certificate, but that
    * should generally be quick.
    *
-   * @returns {array}
+   * @returns {Array}
    *   An array of objects in the database, or an empty array if none
    *   could be obtained.
    */
@@ -3806,7 +3765,7 @@ class SearchDefaultOverrideAllowlistHandler {
     } catch (ex) {
       // Don't throw an error just log it, just continue with no data, and hopefully
       // a sync will fix things later on.
-      Cu.reportError(ex);
+      console.error(ex);
     }
     lazy.logConsole.debug("Allow list is:", result);
     return result;

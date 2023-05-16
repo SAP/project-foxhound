@@ -40,15 +40,13 @@ async function clickTestSetup() {
     ],
   });
 
+  // Reset GLEAN (FOG) telemetry to avoid data bleeding over from other tests.
+  Services.fog.testResetFOG();
+
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("cookiebanners.service.mode");
     Services.prefs.clearUserPref("cookiebanners.service.mode.privateBrowsing");
-    if (
-      Services.prefs.getIntPref("cookiebanners.service.mode") !=
-        Ci.nsICookieBannerService.MODE_DISABLED ||
-      Services.prefs.getIntPref("cookiebanners.service.mode.privateBrowsing") !=
-        Ci.nsICookieBannerService.MODE_DISABLED
-    ) {
+    if (Services.cookieBanners.isEnabled) {
       // Restore original rules.
       Services.cookieBanners.resetRules(true);
     }
@@ -119,6 +117,8 @@ async function verifyBannerState(bc, visible, expected, bannerId = "banner") {
  * @param {boolean} visible - if the banner should be visible.
  * @param {boolean} expected - the expected banner click state.
  * @param {string} [bannerId] - id of the cookie banner element.
+ * @param {boolean} [keepTabOpen] - whether to leave the tab open after the test
+ * function completed.
  */
 async function openPageAndVerify({
   win = window,
@@ -127,6 +127,7 @@ async function openPageAndVerify({
   visible,
   expected,
   bannerId = "banner",
+  keepTabOpen = false,
 }) {
   info(`Opening ${testURL}`);
 
@@ -138,7 +139,9 @@ async function openPageAndVerify({
 
   await verifyBannerState(tab.linkedBrowser, visible, expected, bannerId);
 
-  BrowserTestUtils.removeTab(tab);
+  if (!keepTabOpen) {
+    BrowserTestUtils.removeTab(tab);
+  }
 }
 
 /**
@@ -198,11 +201,12 @@ function insertTestClickRules() {
     Ci.nsICookieBannerRule
   );
   ruleA.id = genUUID();
-  ruleA.domain = TEST_DOMAIN_A;
+  ruleA.domains = [TEST_DOMAIN_A];
 
   ruleA.addClickRule(
     "div#banner",
     false,
+    Ci.nsIClickRule.RUN_ALL,
     null,
     "button#optOut",
     "button#optIn"
@@ -214,9 +218,16 @@ function insertTestClickRules() {
     Ci.nsICookieBannerRule
   );
   ruleB.id = genUUID();
-  ruleB.domain = TEST_DOMAIN_B;
+  ruleB.domains = [TEST_DOMAIN_B];
 
-  ruleB.addClickRule("div#banner", false, null, null, "button#optIn");
+  ruleB.addClickRule(
+    "div#banner",
+    false,
+    Ci.nsIClickRule.RUN_ALL,
+    null,
+    null,
+    "button#optIn"
+  );
   Services.cookieBanners.insertRule(ruleB);
 
   info("Add global ruleC which targets a non-existing banner (presence).");
@@ -224,10 +235,11 @@ function insertTestClickRules() {
     Ci.nsICookieBannerRule
   );
   ruleC.id = genUUID();
-  ruleC.domain = "*";
+  ruleC.domains = [];
   ruleC.addClickRule(
     "div#nonExistingBanner",
     false,
+    Ci.nsIClickRule.RUN_ALL,
     null,
     null,
     "button#optIn"
@@ -239,13 +251,82 @@ function insertTestClickRules() {
     Ci.nsICookieBannerRule
   );
   ruleD.id = genUUID();
-  ruleD.domain = "*";
+  ruleD.domains = [];
   ruleD.addClickRule(
     "div#nonExistingBanner2",
     false,
+    Ci.nsIClickRule.RUN_ALL,
     null,
     "button#optOut",
     "button#optIn"
   );
   Services.cookieBanners.insertRule(ruleD);
+}
+
+/**
+ * Test the Glean.cookieBannersClick.result metric.
+ * @param {*} expected - Object mapping labels to counters. Omitted labels are
+ * asserted to be in initial state (undefined =^ 0)
+ * @param {boolean} [resetFOG] - Whether to reset all FOG telemetry after the
+ * method has finished.
+ */
+async function testClickResultTelemetry(expected, resetFOG = true) {
+  // TODO: Bug 1805653: Enable tests for Linux.
+  if (AppConstants.platform == "linux") {
+    ok(true, "Skip click telemetry tests on linux.");
+    return;
+  }
+
+  // Ensure we have all data from the content process.
+  await Services.fog.testFlushAllChildren();
+
+  let labels = [
+    "success",
+    "success_dom_content_loaded",
+    "success_mutation_pre_load",
+    "success_mutation_post_load",
+    "fail",
+    "fail_banner_not_found",
+    "fail_banner_not_visible",
+    "fail_button_not_found",
+    "fail_no_rule_for_mode",
+    "fail_actor_destroyed",
+  ];
+
+  let testMetricState = doAssert => {
+    for (let label of labels) {
+      if (doAssert) {
+        is(
+          Glean.cookieBannersClick.result[label].testGetValue(),
+          expected[label],
+          `Counter for label '${label}' has correct state.`
+        );
+      } else if (
+        Glean.cookieBannersClick.result[label].testGetValue() !==
+        expected[label]
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Wait for the labeled counter to match the expected state. Returns greedy on
+  // mismatch.
+  try {
+    await TestUtils.waitForCondition(
+      testMetricState,
+      "Waiting for cookieBannersClick.result metric to match."
+    );
+  } finally {
+    // Test again but this time with assertions and test all labels.
+    testMetricState(true);
+
+    // Reset telemetry, even if the test condition above throws. This is to
+    // avoid failing subsequent tests in case of a test failure.
+    if (resetFOG) {
+      Services.fog.testResetFOG();
+    }
+  }
 }

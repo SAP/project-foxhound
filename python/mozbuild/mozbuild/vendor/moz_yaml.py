@@ -19,14 +19,14 @@ from voluptuous import (
     All,
     Boolean,
     FqdnUrl,
+    In,
+    Invalid,
     Length,
     Match,
     Msg,
     Required,
     Schema,
     Unique,
-    In,
-    Invalid,
 )
 from yaml.error import MarkedYAMLError
 
@@ -103,6 +103,10 @@ origin:
   # this is the name of the file.
   # optional
   license-file: COPYING
+
+  # If there are any mozilla-specific notes you want to put
+  # about a library, they can be put here.
+  notes: Notes about the library
 
 # Configuration for the automated vendoring system.
 # optional
@@ -278,7 +282,7 @@ updatebot:
 
   # TODO: allow multiple users to be specified
   # Phabricator username for a maintainer of the library, used for assigning
-  # reviewers
+  # reviewers. For a review group, preface with #, such as "#build""
   maintainer-phab: tjr
 
   # Bugzilla email address for a maintainer of the library, used for needinfos
@@ -379,6 +383,7 @@ def _schema_1():
             "origin": {
                 Required("name"): All(str, Length(min=1)),
                 Required("description"): All(str, Length(min=1)),
+                "notes": All(str, Length(min=1)),
                 Required("url"): FqdnUrl(),
                 Required("license"): Msg(License(), msg="Unsupported License"),
                 "license-file": All(str, Length(min=1)),
@@ -445,6 +450,9 @@ def _schema_1():
                         Required("destination"): All(str, Length(min=1)),
                     }
                 ],
+                "individual-files-default-upstream": All(str, Length(min=1)),
+                "individual-files-default-destination": All(str, Length(min=1)),
+                "individual-files-list": Unique([str]),
                 "update-actions": All(
                     UpdateActions(),
                     [
@@ -523,26 +531,6 @@ def _schema_1_additional(filename, manifest, require_license_file=True):
             'If "vendoring" is present, "revision" must be present in "origin"'
         )
 
-    # If there are Updatebot tasks, then certain fields must be present and
-    # defaults need to be set.
-    if "updatebot" in manifest and "tasks" in manifest["updatebot"]:
-        if "vendoring" not in manifest or "url" not in manifest["vendoring"]:
-            raise ValueError(
-                "If Updatebot tasks are specified, a vendoring url must be included."
-            )
-
-    # Because the only way we can determine the latest tag is by doing a local clone,
-    # we don't want to do that for individual-files flavors because those flavors are
-    # usually on gigantic repos we don't want to clone for such a simple thing.
-    if (
-        "vendoring" in manifest
-        and manifest["vendoring"].get("flavor", "regular") == "individual-files"
-        and manifest["vendoring"].get("tracking", "commit") == "tag"
-    ):
-        raise ValueError(
-            "You cannot use tag tracking with the individual-files flavor. (Sorry.)"
-        )
-
     # The Rust and Individual Flavor type precludes a lot of options
     # individual-files could, in theory, use several of these, but until we have a use case let's
     # disallow them so we're not worrying about whether they work. When we need them we can make
@@ -557,26 +545,91 @@ def _schema_1_additional(filename, manifest, require_license_file=True):
             "exclude",
             "include",
             "generated",
-            "update-actions",
         ]:
             if i in manifest["vendoring"]:
                 raise ValueError("A non-regular flavor of update cannot use '%s'" % i)
 
+        if manifest["vendoring"].get("flavor", "regular") == "rust":
+            for i in [
+                "update-actions",
+            ]:
+                if i in manifest["vendoring"]:
+                    raise ValueError("A rust flavor of update cannot use '%s'" % i)
+
+    # Ensure that only individual-files flavor uses those options
     if (
         "vendoring" in manifest
         and manifest["vendoring"].get("flavor", "regular") != "individual-files"
     ):
-        if "individual-files" in manifest["vendoring"]:
+        if (
+            "individual-files" in manifest["vendoring"]
+            or "individual-files-list" in manifest["vendoring"]
+        ):
             raise ValueError(
                 "Only individual-files flavor of update can use 'individual-files'"
             )
-    elif "vendoring" in manifest:
-        if "individual-files" not in manifest["vendoring"]:
+
+    # Ensure that the individual-files flavor has all the correct options
+    if (
+        "vendoring" in manifest
+        and manifest["vendoring"].get("flavor", "regular") == "individual-files"
+    ):
+        # Because the only way we can determine the latest tag is by doing a local clone,
+        # we don't want to do that for individual-files flavors because those flavors are
+        # usually on gigantic repos we don't want to clone for such a simple thing.
+        if manifest["vendoring"].get("tracking", "commit") == "tag":
             raise ValueError(
-                "The individual-files flavor of update must include 'individual-files'"
+                "You cannot use tag tracking with the individual-files flavor. (Sorry.)"
             )
 
+        # We need either individual-files or individual-files-list
+        if (
+            "individual-files" not in manifest["vendoring"]
+            and "individual-files-list" not in manifest["vendoring"]
+        ):
+            raise ValueError(
+                "The individual-files flavor must include either "
+                + "'individual-files' or 'individual-files-list'"
+            )
+        # For whichever we have, make sure we don't have the other and we don't have
+        # options we shouldn't or lack ones we should.
+        if "individual-files" in manifest["vendoring"]:
+            if "individual-files-list" in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files-list is mutually exclusive with individual-files"
+                )
+            if "individual-files-default-upstream" in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files-default-upstream can only be used with individual-files-list"
+                )
+            if "individual-files-default-destination" in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files-default-destination can only be used "
+                    + "with individual-files-list"
+                )
+        if "individual-files-list" in manifest["vendoring"]:
+            if "individual-files" in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files is mutually exclusive with individual-files-list"
+                )
+            if "individual-files-default-upstream" not in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files-default-upstream must be used with individual-files-list"
+                )
+            if "individual-files-default-destination" not in manifest["vendoring"]:
+                raise ValueError(
+                    "individual-files-default-destination must be used with individual-files-list"
+                )
+
     if "updatebot" in manifest:
+        # If there are Updatebot tasks, then certain fields must be present and
+        # defaults need to be set.
+        if "tasks" in manifest["updatebot"]:
+            if "vendoring" not in manifest or "url" not in manifest["vendoring"]:
+                raise ValueError(
+                    "If Updatebot tasks are specified, a vendoring url must be included."
+                )
+
         if "try-preset" in manifest["updatebot"]:
             for f in ["fuzzy-query", "fuzzy-paths"]:
                 if f in manifest["updatebot"]:

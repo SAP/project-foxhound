@@ -231,6 +231,7 @@ var CustomizableUIInternal = {
     this.loadSavedState();
     this._updateForNewVersion();
     this._updateForNewProtonVersion();
+    this._updateForUnifiedExtensions();
     this._markObsoleteBuiltinButtonsSeen();
 
     this.registerArea(
@@ -692,6 +693,61 @@ var CustomizableUIInternal = {
     }
 
     Services.prefs.setIntPref(kPrefProtonToolbarVersion, VERSION);
+  },
+
+  _updateForUnifiedExtensions() {
+    if (!gSavedState?.placements) {
+      return;
+    }
+
+    let overflowPlacements =
+      gSavedState.placements[CustomizableUI.AREA_FIXED_OVERFLOW_PANEL] || [];
+    // The most likely case is that there are no AREA_ADDONS placements, in which case the
+    // array won't exist.
+    let addonsPlacements =
+      gSavedState.placements[CustomizableUI.AREA_ADDONS] || [];
+
+    if (lazy.gUnifiedExtensionsEnabled) {
+      // Migration algorithm for transitioning to Unified Extensions:
+      //
+      // 1. Create two arrays, one for extension widgets, one for built-in widgets.
+      // 2. Iterate all items in the overflow panel, and push them into the
+      //    appropriate array based on whether or not its an extension widget.
+      // 3. Overwrite the overflow panel placements with the built-in widgets array.
+      // 4. Prepend the extension widgets to the addonsPlacements array. Note that this
+      //    does not overwrite this array as a precaution because it's possible
+      //    (though pretty unlikely) that some widgets are already there.
+      //
+      // For extension widgets that were in the palette, they will be appended to the
+      // addons area when they're created within createWidget.
+      let extWidgets = [];
+      let builtInWidgets = [];
+      for (let widgetId of overflowPlacements) {
+        if (CustomizableUI.isWebExtensionWidget(widgetId)) {
+          extWidgets.push(widgetId);
+        } else {
+          builtInWidgets.push(widgetId);
+        }
+      }
+      gSavedState.placements[
+        CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+      ] = builtInWidgets;
+      gSavedState.placements[CustomizableUI.AREA_ADDONS] = [
+        ...extWidgets,
+        ...addonsPlacements,
+      ];
+    } else {
+      // This is an emergency backstop in case things go sideways and we need to
+      // temporarily flip back the Unified Extensions pref if it had already been
+      // enabled. We will do simplest thing and just empty the AREA_ADDONS placements,
+      // and append them to the bottom of the overflow panel, and then blow away
+      // the AREA_ADDONS placements.
+      gSavedState.placements[CustomizableUI.AREA_FIXED_OVERFLOW_PANEL] = [
+        ...overflowPlacements,
+        ...addonsPlacements,
+      ];
+      delete gSavedState.placements[CustomizableUI.AREA_ADDONS];
+    }
   },
 
   /**
@@ -1234,10 +1290,21 @@ var CustomizableUIInternal = {
 
     let currentContextMenu =
       aNode.getAttribute("context") || aNode.getAttribute("contextmenu");
-    let contextMenuForPlace =
-      forcePanel || "panel" == CustomizableUI.getPlaceForItem(aAreaNode)
-        ? kPanelItemContextMenu
-        : null;
+    let contextMenuForPlace;
+
+    if (
+      lazy.gUnifiedExtensionsEnabled &&
+      CustomizableUI.isWebExtensionWidget(aNode.id) &&
+      (aAreaNode?.id == CustomizableUI.AREA_ADDONS ||
+        aNode.getAttribute("overflowedItem") == "true")
+    ) {
+      contextMenuForPlace = null;
+    } else {
+      contextMenuForPlace =
+        forcePanel || "panel" == CustomizableUI.getPlaceForItem(aAreaNode)
+          ? kPanelItemContextMenu
+          : null;
+    }
     if (contextMenuForPlace && !currentContextMenu) {
       aNode.setAttribute("context", contextMenuForPlace);
     } else if (
@@ -2362,6 +2429,12 @@ var CustomizableUIInternal = {
   },
 
   addWidgetToArea(aWidgetId, aArea, aPosition, aInitialAdd) {
+    if (aArea == CustomizableUI.AREA_NO_AREA) {
+      throw new Error(
+        "AREA_NO_AREA is only used as an argument for " +
+          "canWidgetMoveToArea. Use removeWidgetFromArea instead."
+      );
+    }
     if (!gAreas.has(aArea)) {
       throw new Error("Unknown customization area: " + aArea);
     }
@@ -2842,6 +2915,17 @@ var CustomizableUIInternal = {
             }
           }
         }
+
+        // Extension widgets cannot enter the customization palette, so if
+        // at this point, we haven't found an area for them, move them into
+        // AREA_ADDONS.
+        if (
+          lazy.gUnifiedExtensionsEnabled &&
+          !widget.currentArea &&
+          CustomizableUI.isWebExtensionWidget(widget.id)
+        ) {
+          this.addWidgetToArea(widget.id, CustomizableUI.AREA_ADDONS);
+        }
       }
     } finally {
       // Ensure we always have this widget in gSeenWidgets, and save
@@ -3216,6 +3300,12 @@ var CustomizableUIInternal = {
     gNewElementCount = 0;
     lazy.log.debug("State reset");
 
+    // Later in the function, we're going to add any area-less extension
+    // buttons to the AREA_ADDONS area. We'll remember the old placements
+    // for that area so that we don't need to re-add widgets that are already
+    // in there in the DOM.
+    let oldAddonPlacements = gPlacements[CustomizableUI.AREA_ADDONS] || [];
+
     // Reset placements to make restoring default placements possible.
     gPlacements = new Map();
     gDirtyAreaCache = new Set();
@@ -3224,7 +3314,28 @@ var CustomizableUIInternal = {
     gSavedState = null;
     // Restore the state for each area to its defaults
     for (let [areaId] of gAreas) {
-      this.restoreStateForArea(areaId);
+      // If the Unified Extensions UI is enabled, we'll be adding any
+      // extension buttons that aren't already in AREA_ADDONS there,
+      // so we can skip restoring the state for it.
+      if (areaId != CustomizableUI.AREA_ADDONS) {
+        this.restoreStateForArea(areaId);
+      }
+    }
+
+    // restoreStateForArea will have normally set an array for the placements
+    // for each area, but since we skip AREA_ADDONS intentionally, that array
+    // doesn't get set, so we do that manually here.
+    gPlacements.set(CustomizableUI.AREA_ADDONS, []);
+
+    if (lazy.gUnifiedExtensionsEnabled) {
+      for (let [widgetId] of gPalette) {
+        if (
+          CustomizableUI.isWebExtensionWidget(widgetId) &&
+          !oldAddonPlacements.includes(widgetId)
+        ) {
+          this.addWidgetToArea(widgetId, CustomizableUI.AREA_ADDONS);
+        }
+      }
     }
   },
 
@@ -3387,6 +3498,25 @@ var CustomizableUIInternal = {
       !CustomizableUI.isWebExtensionWidget(aWidgetId)
     ) {
       return false;
+    }
+
+    if (
+      lazy.gUnifiedExtensionsEnabled &&
+      CustomizableUI.isWebExtensionWidget(aWidgetId)
+    ) {
+      // Extension widgets cannot move to the customization palette.
+      if (aArea == CustomizableUI.AREA_NO_AREA) {
+        return false;
+      }
+
+      // Extension widgets cannot move to panels, with the exception of the
+      // AREA_ADDONS area.
+      if (
+        gAreas.get(aArea).get("type") == CustomizableUI.TYPE_PANEL &&
+        aArea != CustomizableUI.AREA_ADDONS
+      ) {
+        return false;
+      }
     }
 
     let placement = this.getPlacementOfWidget(aWidgetId);
@@ -3625,6 +3755,15 @@ var CustomizableUI = {
    * Constant reference to the ID of the addons area.
    */
   AREA_ADDONS: "unified-extensions-area",
+  /**
+   * Constant reference to the ID of the customization palette, which is
+   * where widgets go when they're not assigned to an area. Note that this
+   * area is "virtual" in that it's never set as a value for a widgets
+   * currentArea or defaultArea. It's only used for the `canWidgetMoveToArea`
+   * function to check if widgets can be moved to the palette. Callers who
+   * wish to move items to the palette should use `removeWidgetFromArea`.
+   */
+  AREA_NO_AREA: "customization-palette",
   /**
    * Constant indicating the area is a panel.
    */
@@ -4388,7 +4527,9 @@ var CustomizableUI = {
    * is already in the right area.
    *
    * @param aWidgetId the widget ID or DOM node you want to move somewhere
-   * @param aArea     the area ID you want to move it to.
+   * @param aArea     the area ID you want to move it to. This can also be
+   *                  AREA_NO_AREA to see if the widget can move to the
+   *                  customization palette, whether it's removable or not.
    * @return true if this is possible, false if it is not. The same caveats as
    *              for isWidgetRemovable apply, however, if no windows are open.
    */
@@ -4493,10 +4634,7 @@ var CustomizableUI = {
    */
   isWebExtensionWidget(aWidgetId) {
     let widget = this.getWidget(aWidgetId);
-    if (widget) {
-      return widget.webExtension;
-    }
-    return aWidgetId.endsWith("-browser-action");
+    return widget?.webExtension || aWidgetId.endsWith("-browser-action");
   },
   /**
    * Add listeners to a panel that will close it. For use from the menu panel
@@ -5130,6 +5268,11 @@ class OverflowableToolbar {
   #overflowedInfo = new Map();
 
   /**
+   * The set of overflowed DOM nodes that were hidden at the time of overflowing.
+   */
+  #hiddenOverflowedNodes = new WeakSet();
+
+  /**
    * True if the overflowable toolbar is actively handling overflows and
    * underflows. This value is set internally by the private #enable() and
    * #disable() methods.
@@ -5165,11 +5308,12 @@ class OverflowableToolbar {
   /**
    * A reference to the the element that overflowed extension browser action
    * toolbar items will be appended to as children upon overflow if the
-   * Unified Extension UI is enabled.
+   * Unified Extension UI is enabled. This is created lazily and might be null,
+   * so you should use the #webExtList memoizing getter instead to get this.
    *
-   * @type {Element}
+   * @type {Element|null}
    */
-  #webExtList = null;
+  #webExtListRef = null;
 
   /**
    * An empty object that is created in #checkOverflow to identify individual
@@ -5467,16 +5611,21 @@ class OverflowableToolbar {
       }
     }
 
+    let overflowList = CustomizableUI.isWebExtensionWidget(aNode.id)
+      ? this.#webExtList
+      : this.#defaultList;
+
     let containerForAppending =
       this.#overflowedInfo.size && newNodeCanOverflow
-        ? this.#defaultList
+        ? overflowList
         : this.#target;
     return [containerForAppending, null];
   }
 
   /**
    * Allows callers to query for the current parent of a toolbar item that may
-   * or may not be overflowed. That parent will either be #defaultList or #target.
+   * or may not be overflowed. That parent will either be #defaultList,
+   * #webExtList (if it's an extension button) or #target.
    *
    * Note: It is assumed that the caller has verified that aNode is placed
    * within the toolbar customizable area according to CustomizableUI.
@@ -5487,7 +5636,9 @@ class OverflowableToolbar {
    */
   getContainerFor(aNode) {
     if (aNode.getAttribute("overflowedItem") == "true") {
-      return this.#defaultList;
+      return CustomizableUI.isWebExtensionWidget(aNode.id)
+        ? this.#webExtList
+        : this.#defaultList;
     }
     return this.#target;
   }
@@ -5519,7 +5670,7 @@ class OverflowableToolbar {
       return;
     }
 
-    let webExtList = this.#getWebExtList();
+    let webExtList = this.#webExtList;
 
     let child = this.#target.lastElementChild;
     while (child && isOverflowing) {
@@ -5527,6 +5678,13 @@ class OverflowableToolbar {
 
       if (child.getAttribute("overflows") != "false") {
         this.#overflowedInfo.set(child.id, targetContentWidth);
+        let { width: childWidth } = win.windowUtils.getBoundsWithoutFlushing(
+          child
+        );
+        if (!childWidth) {
+          this.#hiddenOverflowedNodes.add(child);
+        }
+
         child.setAttribute("overflowedItem", true);
         CustomizableUIInternal.ensureButtonContextMenu(
           child,
@@ -5552,7 +5710,7 @@ class OverflowableToolbar {
             child,
             this.#defaultList.firstElementChild
           );
-          if (!CustomizableUI.isSpecialWidget(child.id)) {
+          if (!CustomizableUI.isSpecialWidget(child.id) && childWidth) {
             this.#toolbar.setAttribute("overflowing", "true");
           }
         }
@@ -5748,8 +5906,13 @@ class OverflowableToolbar {
     win.UpdateUrlbarSearchSplitterState();
 
     let defaultListItems = Array.from(this.#defaultList.children);
-    let collapsedWidgetIds = defaultListItems.map(item => item.id);
-    if (collapsedWidgetIds.every(w => CustomizableUI.isSpecialWidget(w))) {
+    if (
+      defaultListItems.every(
+        item =>
+          CustomizableUI.isSpecialWidget(item.id) ||
+          this.#hiddenOverflowedNodes.has(item)
+      )
+    ) {
       this.#toolbar.removeAttribute("overflowing");
     }
   }
@@ -5853,16 +6016,31 @@ class OverflowableToolbar {
    *   buttons should go to if the Unified Extensions UI is enabled, or null
    *   if no such list exists.
    */
-  #getWebExtList() {
-    if (!this.#webExtList) {
+  get #webExtList() {
+    if (!this.#webExtListRef) {
       let targetID = this.#toolbar.getAttribute("addon-webext-overflowtarget");
-      if (targetID) {
-        let win = this.#toolbar.ownerGlobal;
-        let { panel } = win.gUnifiedExtensions;
-        this.#webExtList = panel.querySelector(`#${targetID}`);
+      if (!targetID) {
+        throw new Error(
+          "addon-webext-overflowtarget was not defined on the " +
+            `overflowable toolbar with id: ${this.#toolbar.id}`
+        );
       }
+      let win = this.#toolbar.ownerGlobal;
+      let { panel } = win.gUnifiedExtensions;
+      this.#webExtListRef = panel.querySelector(`#${targetID}`);
     }
-    return this.#webExtList;
+    return this.#webExtListRef;
+  }
+
+  /**
+   * Returns true if aNode is not null and is one of either this.#webExtList or
+   * this.#defaultList.
+   *
+   * @param {DOMElement} aNode The node to test.
+   * @returns {boolean}
+   */
+  #isOverflowList(aNode) {
+    return aNode == this.#defaultList || aNode == this.#webExtList;
   }
 
   /**
@@ -5937,30 +6115,25 @@ class OverflowableToolbar {
     // moved or removed from an area via the CustomizableUI API while
     // overflowed. It reorganizes the internal state of this OverflowableToolbar
     // to handle that change.
-    if (
-      !this.#enabled ||
-      (aContainer != this.#target && aContainer != this.#defaultList)
-    ) {
+    if (!this.#enabled || !this.#isOverflowList(aContainer)) {
       return;
     }
     // When we (re)move an item, update all the items that come after it in the list
     // with the minsize *of the item before the to-be-removed node*. This way, we
     // ensure that we try to move items back as soon as that's possible.
-    if (aNode.parentNode == this.#defaultList) {
-      let updatedMinSize;
-      if (aNode.previousElementSibling) {
-        updatedMinSize = this.#overflowedInfo.get(
-          aNode.previousElementSibling.id
-        );
-      } else {
-        // Force (these) items to try to flow back into the bar:
-        updatedMinSize = 1;
-      }
-      let nextItem = aNode.nextElementSibling;
-      while (nextItem) {
-        this.#overflowedInfo.set(nextItem.id, updatedMinSize);
-        nextItem = nextItem.nextElementSibling;
-      }
+    let updatedMinSize;
+    if (aNode.previousElementSibling) {
+      updatedMinSize = this.#overflowedInfo.get(
+        aNode.previousElementSibling.id
+      );
+    } else {
+      // Force (these) items to try to flow back into the bar:
+      updatedMinSize = 1;
+    }
+    let nextItem = aNode.nextElementSibling;
+    while (nextItem) {
+      this.#overflowedInfo.set(nextItem.id, updatedMinSize);
+      nextItem = nextItem.nextElementSibling;
     }
   }
 
@@ -5971,12 +6144,12 @@ class OverflowableToolbar {
     // causes overflow or underflow of the toolbar.
     if (
       !this.#enabled ||
-      (aContainer != this.#target && aContainer != this.#defaultList)
+      (aContainer != this.#target && !this.#isOverflowList(aContainer))
     ) {
       return;
     }
 
-    let nowOverflowed = aNode.parentNode == this.#defaultList;
+    let nowOverflowed = this.#isOverflowList(aNode.parentNode);
     let wasOverflowed = this.#overflowedInfo.has(aNode.id);
 
     // If this wasn't overflowed before...

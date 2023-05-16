@@ -117,7 +117,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme, nscolor
   nscolor color = 0;
   switch (aID) {
     case ColorID::Infobackground:
-      color = NS_RGB(0xdd, 0xdd, 0xdd);
+      color = aScheme == ColorScheme::Light ? NS_RGB(0xdd, 0xdd, 0xdd)
+                                            : GetColorFromNSColor(NSColor.windowBackgroundColor);
       break;
     case ColorID::Highlight:
       color = ProcessSelectionBackground(GetColorFromNSColor(NSColor.selectedTextBackgroundColor),
@@ -161,9 +162,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme, nscolor
     case ColorID::IMESelectedRawTextUnderline:
     case ColorID::IMESelectedConvertedTextUnderline:
       color = NS_SAME_AS_FOREGROUND_COLOR;
-      break;
-    case ColorID::SpellCheckerUnderline:
-      color = NS_RGB(0xff, 0, 0);
       break;
 
       //
@@ -240,6 +238,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme, nscolor
       color = aScheme == ColorScheme::Dark ? *GenericDarkColor(aID) : NS_RGB(0xF0, 0xF0, 0xF0);
       break;
     case ColorID::Threedlightshadow:
+    case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
       color = aScheme == ColorScheme::Dark ? *GenericDarkColor(aID) : NS_RGB(0xDA, 0xDA, 0xDA);
       break;
@@ -346,6 +345,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme, nscolor
     case ColorID::Accentcolor:
       color = GetColorFromNSColor(ControlAccentColor());
       break;
+    case ColorID::Marktext:
+    case ColorID::Mark:
+    case ColorID::SpellCheckerUnderline:
+      aColor = GetStandinForNativeColor(aID, aScheme);
+      return NS_OK;
     default:
       aColor = NS_RGB(0xff, 0xff, 0xff);
       return NS_ERROR_FAILURE;
@@ -484,13 +488,13 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::UseAccessibilityTheme:
       aResult = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast;
       break;
-    case IntID::VideoDynamicRange:
-#ifdef EARLY_BETA_OR_EARLIER
-      aResult = nsCocoaFeatures::OnCatalinaOrLater();
-#else
-      aResult = nsCocoaFeatures::OnBigSurOrLater();
-#endif
+    case IntID::VideoDynamicRange: {
+      // If the platform says it supports HDR, then we claim to support video-dynamic-range.
+      gfxPlatform* platform = gfxPlatform::GetPlatform();
+      MOZ_ASSERT(platform);
+      aResult = platform->SupportsHDR();
       break;
+    }
     case IntID::PanelAnimations:
       aResult = 1;
       break;
@@ -556,20 +560,6 @@ bool nsLookAndFeel::IsSystemOrientationRTL() {
 
 bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName, gfxFontStyle& aFontStyle) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  // hack for now
-  if (aID == FontID::MozWindow || aID == FontID::MozDocument) {
-    aFontStyle.style = mozilla::FontSlantStyle::NORMAL;
-    aFontStyle.weight = mozilla::FontWeight::NORMAL;
-    aFontStyle.stretch = mozilla::FontStretch::NORMAL;
-    aFontStyle.size = 14;
-    aFontStyle.systemFont = true;
-
-    aFontName.AssignLiteral("sans-serif");
-    return true;
-  }
-
-  // TODO: Add caching? Note that it needs to be thread-safe for stylo use.
 
   nsAutoCString name;
   gfxPlatformMac::LookupSystemFont(aID, name, aFontStyle);
@@ -687,8 +677,8 @@ void nsLookAndFeel::RecordAccessibilityTelemetry() {
 }
 
 - (void)cachedValuesChanged {
-  // We only need to re-cache (and broadcast) updated LookAndFeel values, so that they're up-to-date
-  // the next time they're queried. No further change handling is needed.
+  // We only need to re-cache (and broadcast) updated LookAndFeel values, so that they're
+  // up-to-date the next time they're queried. No further change handling is needed.
   // TODO: Add a change hint for this which avoids the unnecessary media query invalidation.
   LookAndFeel::NotifyChangedAllWindows(widget::ThemeChangeKind::MediaQueriesOnly);
 }

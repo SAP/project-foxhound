@@ -92,10 +92,9 @@ class MFMediaEngineStream
 
   virtual MFMediaEngineVideoStream* AsVideoStream() { return nullptr; }
 
-  // Overwrite this method to support returning decoded data.
-  virtual already_AddRefed<MediaData> OutputData(MediaRawData* aSample) {
-    return nullptr;
-  }
+  RefPtr<MediaDataDecoder::DecodePromise> OutputData();
+
+  virtual RefPtr<MediaDataDecoder::DecodePromise> Drain();
 
   virtual MediaDataDecoder::ConversionRequired NeedsConversion() const {
     return MediaDataDecoder::ConversionRequired::kNeedNone;
@@ -119,7 +118,17 @@ class MFMediaEngineStream
 
   void NotifyEndOfStreamInternal();
 
-  bool IsEnded() const;
+  virtual bool IsEnded() const;
+
+  // Overwrite this method if inherited class needs to perform clean up on the
+  // task queue when the stream gets shutdowned.
+  virtual void ShutdownCleanUpOnTaskQueue(){};
+
+  // Inherited class must implement this method to return decoded data. it
+  // should uses `mRawDataQueueForGeneratingOutput` to generate output.
+  virtual already_AddRefed<MediaData> OutputDataInternal() = 0;
+
+  void SendRequestSampleEvent(bool aIsEnough);
 
   void AssertOnTaskQueue() const;
   void AssertOnMFThreadPool() const;
@@ -138,9 +147,9 @@ class MFMediaEngineStream
 
   RefPtr<TaskQueue> mTaskQueue;
 
-  // This class would be run on two threads, MF thread pool and the source's
-  // task queue. Following members would be used across both threads so they
-  // need to be thread-safe.
+  // This class would be run on three threads, MF thread pool, the source's
+  // task queue and MediaPDecoder (wrapper thread). Following members would be
+  // used across both threads so they need to be thread-safe.
 
   // Modify on the MF thread pool, access from any threads.
   Atomic<bool> mIsShutdown;
@@ -149,8 +158,13 @@ class MFMediaEngineStream
   // Modify on MF thread pool, access from any threads.
   Atomic<bool> mIsSelected;
 
-  // A thread-safe queue storing input sample.
-  MediaQueue<MediaRawData> mRawDataQueue;
+  // A thread-safe queue storing input samples, which provides samples to the
+  // media engine.
+  MediaQueue<MediaRawData> mRawDataQueueForFeedingEngine;
+
+  // A thread-safe queue storing input samples, which would be used to generate
+  // decoded data.
+  MediaQueue<MediaRawData> mRawDataQueueForGeneratingOutput;
 
   // Thread-safe members END
 
@@ -176,12 +190,9 @@ class MFMediaEngineStreamWrapper : public MediaDataDecoder {
   MFMediaEngineStreamWrapper(MFMediaEngineStream* aStream,
                              TaskQueue* aTaskQueue,
                              const CreateDecoderParams& aParams)
-      : mStream(aStream),
-        mTaskQueue(aTaskQueue),
-        mFakeDataCreator(new FakeDecodedDataCreator(aParams)) {
+      : mStream(aStream), mTaskQueue(aTaskQueue) {
     MOZ_ASSERT(mStream);
     MOZ_ASSERT(mTaskQueue);
-    MOZ_ASSERT(mFakeDataCreator);
   }
 
   // Methods for MediaDataDecoder, they are all called on the remote
@@ -196,25 +207,7 @@ class MFMediaEngineStreamWrapper : public MediaDataDecoder {
 
  private:
   Microsoft::WRL::ComPtr<MFMediaEngineStream> mStream;
-  // We use this to generate fake decoded outputs, as the real data is handled
-  // inside the media engine. Audio output is not possible to get, the video
-  // output would be output via DCOMP.
-  class FakeDecodedDataCreator final {
-   public:
-    explicit FakeDecodedDataCreator(const CreateDecoderParams& aParams);
-    RefPtr<MediaDataDecoder::DecodePromise> Decode(MediaRawData* aSample) {
-      return mDummyDecoder->Decode(aSample);
-    }
-    void Flush() { Unused << mDummyDecoder->Flush(); }
-
-    TrackInfo::TrackType Type() const { return mType; }
-
-   private:
-    RefPtr<MediaDataDecoder> mDummyDecoder;
-    TrackInfo::TrackType mType;
-  };
   RefPtr<TaskQueue> mTaskQueue;
-  UniquePtr<FakeDecodedDataCreator> mFakeDataCreator;
 };
 
 }  // namespace mozilla

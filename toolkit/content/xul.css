@@ -139,7 +139,81 @@ label html|span.accesskey {
   text-decoration-skip-ink: none;
 }
 
+description:where([value]) {
+  /* Preserves legacy behavior, maybe could be removed */
+  display: -moz-box;
+}
+
+label:where([value]) {
+  /* Preserves legacy behavior, maybe could be removed */
+  display: -moz-inline-box;
+}
+
+label[value],
+description[value] {
+  white-space: nowrap;
+}
+
+label[value][crop],
+description[value][crop] {
+  min-width: 0;
+}
+
+label[value]::before,
+description[value]::before {
+  /* This displays the value attribute, along with the underlined
+   * accesskey if needed */
+  content: -moz-label-content;
+  display: block;
+}
+
+label[value=""]::before {
+  content: "\200B"; /* zwsp */
+}
+
+label[value][crop]::before,
+description[value][crop]::before {
+  min-width: 0;
+  max-width: 100%;
+  /* This implements crop=end/right */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Invert the direction to clip at the start rather than end */
+label[value]:is([crop="left"], [crop="start"])::before,
+description[value]:is([crop="left"], [crop="start"])::before {
+  direction: rtl;
+}
+label[value]:is([crop="left"], [crop="start"]):-moz-locale-dir(rtl)::before,
+description[value]:is([crop="left"], [crop="start"]):-moz-locale-dir(rtl)::before {
+  direction: ltr;
+}
+
+.checkbox-label-box,
+.radio-label-box {
+  min-width: 0;
+}
+
 /********** toolbarbutton **********/
+
+toolbarbutton {
+  -moz-box-align: center;
+  -moz-box-pack: center;
+}
+
+toolbarbutton.tabbable {
+  -moz-user-focus: normal !important;
+}
+
+toolbarbutton[crop] {
+  min-width: 0;
+}
+
+.toolbarbutton-text {
+  display: block;
+  text-align: center;
+}
 
 toolbar[mode="icons"] .toolbarbutton-text,
 toolbar[mode="text"] .toolbarbutton-icon,

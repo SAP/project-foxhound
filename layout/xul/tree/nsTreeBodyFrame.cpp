@@ -401,8 +401,7 @@ nsresult nsTreeBodyFrame::SetView(nsITreeView* aView) {
   RefPtr<XULTreeElement> treeContent = GetBaseElement();
   if (treeContent) {
 #ifdef ACCESSIBILITY
-    if (nsAccessibilityService* accService =
-            PresShell::GetAccessibilityService()) {
+    if (nsAccessibilityService* accService = GetAccService()) {
       accService->TreeViewChanged(PresContext()->GetPresShell(), treeContent,
                                   mView);
     }
@@ -534,7 +533,7 @@ nsresult nsTreeBodyFrame::InvalidateColumn(nsTreeColumn* aCol) {
   if (!aCol) return NS_ERROR_INVALID_ARG;
 
 #ifdef ACCESSIBILITY
-  if (PresShell::IsAccessibilityActive()) {
+  if (GetAccService()) {
     FireInvalidateEvent(-1, -1, aCol, aCol);
   }
 #endif  // #ifdef ACCESSIBILITY
@@ -554,7 +553,7 @@ nsresult nsTreeBodyFrame::InvalidateRow(int32_t aIndex) {
   if (mUpdateBatchNest) return NS_OK;
 
 #ifdef ACCESSIBILITY
-  if (PresShell::IsAccessibilityActive()) {
+  if (GetAccService()) {
     FireInvalidateEvent(aIndex, aIndex, nullptr, nullptr);
   }
 #endif  // #ifdef ACCESSIBILITY
@@ -573,7 +572,7 @@ nsresult nsTreeBodyFrame::InvalidateCell(int32_t aIndex, nsTreeColumn* aCol) {
   if (mUpdateBatchNest) return NS_OK;
 
 #ifdef ACCESSIBILITY
-  if (PresShell::IsAccessibilityActive()) {
+  if (GetAccService()) {
     FireInvalidateEvent(aIndex, aIndex, aCol, aCol);
   }
 #endif  // #ifdef ACCESSIBILITY
@@ -606,7 +605,7 @@ nsresult nsTreeBodyFrame::InvalidateRange(int32_t aStart, int32_t aEnd) {
   if (aEnd > last) aEnd = last;
 
 #ifdef ACCESSIBILITY
-  if (PresShell::IsAccessibilityActive()) {
+  if (GetAccService()) {
     int32_t end =
         mRowCount > 0 ? ((mRowCount <= aEnd) ? mRowCount - 1 : aEnd) : 0;
     FireInvalidateEvent(aStart, end, nullptr, nullptr);
@@ -1523,7 +1522,7 @@ nsresult nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount) {
   if (aCount == 0 || !mView) return NS_OK;  // Nothing to do.
 
 #ifdef ACCESSIBILITY
-  if (PresShell::IsAccessibilityActive()) {
+  if (GetAccService()) {
     FireRowCountChangedEvent(aIndex, aCount);
   }
 #endif  // #ifdef ACCESSIBILITY
@@ -2562,7 +2561,7 @@ ImgDrawResult nsTreeBodyFrame::PaintTreeBody(gfxContext& aRenderingContext,
   if (oldPageCount != mPageLength ||
       mHorzWidth != CalcHorzWidth(GetScrollParts())) {
     // Schedule a ResizeReflow that will update our info properly.
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::Resize,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::None,
                                   NS_FRAME_IS_DIRTY);
   }
 #ifdef DEBUG

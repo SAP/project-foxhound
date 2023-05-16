@@ -10,8 +10,8 @@ const FIREFOX_VIEW_PREF = "browser.firefox-view.feature-tour";
 const PDFJS_PREF = "browser.pdfjs.feature-tour";
 // Empty screens are included as placeholders to ensure step
 // indicator shows the correct number of total steps in the tour
+const PDF_SOURCE = `(source || "") | regExpMatch('(?<!q\=.+)\.pdf') | length > 0`;
 const EMPTY_SCREEN = { content: {} };
-
 const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 // Generate a JEXL targeting string based on the current screen
@@ -147,78 +147,6 @@ const MESSAGES = () => {
        )}`,
     },
     {
-      id: "FIREFOX_VIEW_FEATURE_TOUR_1",
-      template: "feature_callout",
-      content: {
-        id: "FIREFOX_VIEW_FEATURE_TOUR",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          {
-            id: "FEATURE_CALLOUT_1",
-            parent_selector: "#tab-pickup-container",
-            content: {
-              position: "callout",
-              arrow_position: "top",
-              title: {
-                string_id: "callout-firefox-view-tab-pickup-title",
-              },
-              subtitle: {
-                string_id: "callout-firefox-view-tab-pickup-subtitle",
-              },
-              logo: {
-                imageURL: "chrome://browser/content/callout-tab-pickup.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/callout-tab-pickup-dark.svg",
-                height: "128px",
-              },
-              primary_button: {
-                label: {
-                  string_id: "callout-primary-advance-button-label",
-                },
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "FEATURE_CALLOUT_2",
-                        complete: false,
-                      }),
-                    },
-                  },
-                },
-              },
-              dismiss_button: {
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "",
-                        complete: true,
-                      }),
-                    },
-                  },
-                },
-              },
-            },
-          },
-          EMPTY_SCREEN,
-          EMPTY_SCREEN,
-        ],
-      },
-      priority: 3,
-      targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
-        FIREFOX_VIEW_PREF,
-        "FEATURE_CALLOUT_1"
-      )}`,
-      trigger: { id: "featureCalloutCheck" },
-    },
-    {
       id: "FIREFOX_VIEW_FEATURE_TOUR_1_NO_CWS",
       template: "feature_callout",
       content: {
@@ -283,76 +211,9 @@ const MESSAGES = () => {
         ],
       },
       priority: 3,
-      targeting: `!inMr2022Holdback && source == "firefoxview" && !colorwaysActive && ${matchCurrentScreenTargeting(
+      targeting: `!inMr2022Holdback && source == "firefoxview" && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_1"
-      )}`,
-      trigger: { id: "featureCalloutCheck" },
-    },
-    {
-      id: "FIREFOX_VIEW_FEATURE_TOUR_2",
-      template: "feature_callout",
-      content: {
-        id: "FIREFOX_VIEW_FEATURE_TOUR",
-        startScreen: 1,
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          EMPTY_SCREEN,
-          {
-            id: "FEATURE_CALLOUT_2",
-            parent_selector: "#recently-closed-tabs-container",
-            content: {
-              position: "callout",
-              arrow_position: "bottom",
-              title: {
-                string_id: "callout-firefox-view-recently-closed-title",
-              },
-              subtitle: {
-                string_id: "callout-firefox-view-recently-closed-subtitle",
-              },
-              primary_button: {
-                label: {
-                  string_id: "callout-primary-advance-button-label",
-                },
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "FEATURE_CALLOUT_3",
-                        complete: false,
-                      }),
-                    },
-                  },
-                },
-              },
-              dismiss_button: {
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "",
-                        complete: true,
-                      }),
-                    },
-                  },
-                },
-              },
-            },
-          },
-          EMPTY_SCREEN,
-        ],
-      },
-      priority: 3,
-      targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
-        FIREFOX_VIEW_PREF,
-        "FEATURE_CALLOUT_2"
       )}`,
       trigger: { id: "featureCalloutCheck" },
     },
@@ -390,8 +251,8 @@ const MESSAGES = () => {
                     pref: {
                       name: FIREFOX_VIEW_PREF,
                       value: JSON.stringify({
-                        screen: "FEATURE_CALLOUT_3",
-                        complete: false,
+                        screen: "",
+                        complete: true,
                       }),
                     },
                   },
@@ -416,82 +277,9 @@ const MESSAGES = () => {
         ],
       },
       priority: 3,
-      targeting: `!inMr2022Holdback && source == "firefoxview" && !colorwaysActive && ${matchCurrentScreenTargeting(
+      targeting: `!inMr2022Holdback && source == "firefoxview" && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_2"
-      )}`,
-      trigger: { id: "featureCalloutCheck" },
-    },
-    {
-      id: "FIREFOX_VIEW_FEATURE_TOUR_3",
-      template: "feature_callout",
-      content: {
-        id: "FIREFOX_VIEW_FEATURE_TOUR",
-        startScreen: 2,
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          EMPTY_SCREEN,
-          EMPTY_SCREEN,
-          {
-            id: "FEATURE_CALLOUT_3",
-            parent_selector: "#colorways.content-container",
-            content: {
-              position: "callout",
-              arrow_position: "end",
-              title: {
-                string_id: "callout-firefox-view-colorways-title",
-              },
-              subtitle: {
-                string_id: "callout-firefox-view-colorways-subtitle",
-              },
-              logo: {
-                imageURL: "chrome://browser/content/callout-colorways.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/callout-colorways-dark.svg",
-                height: "128px",
-              },
-              primary_button: {
-                label: {
-                  string_id: "callout-primary-complete-button-label",
-                },
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "",
-                        complete: true,
-                      }),
-                    },
-                  },
-                },
-              },
-              dismiss_button: {
-                action: {
-                  type: "SET_PREF",
-                  data: {
-                    pref: {
-                      name: FIREFOX_VIEW_PREF,
-                      value: JSON.stringify({
-                        screen: "",
-                        complete: true,
-                      }),
-                    },
-                  },
-                },
-              },
-            },
-          },
-        ],
-      },
-      priority: 3,
-      targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
-        FIREFOX_VIEW_PREF,
-        "FEATURE_CALLOUT_3"
       )}`,
       trigger: { id: "featureCalloutCheck" },
     },
@@ -604,7 +392,7 @@ const MESSAGES = () => {
       trigger: { id: "featureCalloutCheck" },
     },
     {
-      id: "PDFJS_FEATURE_TOUR_1",
+      id: "PDFJS_FEATURE_TOUR_1_A",
       template: "feature_callout",
       content: {
         id: "PDFJS_FEATURE_TOUR",
@@ -614,10 +402,14 @@ const MESSAGES = () => {
         disableHistoryUpdates: true,
         screens: [
           {
-            id: "FEATURE_CALLOUT_1",
-            parent_selector: "#editorFreeText",
+            id: "FEATURE_CALLOUT_1_A",
+            parent_selector: "hbox#browser",
             content: {
               position: "callout",
+              callout_position_override: {
+                top: "45px",
+                right: "55px",
+              },
               arrow_position: "top-end",
               title: {
                 string_id: "callout-pdfjs-edit-title",
@@ -635,7 +427,7 @@ const MESSAGES = () => {
                     pref: {
                       name: PDFJS_PREF,
                       value: JSON.stringify({
-                        screen: "FEATURE_CALLOUT_2",
+                        screen: "FEATURE_CALLOUT_2_A",
                         complete: false,
                       }),
                     },
@@ -659,16 +451,17 @@ const MESSAGES = () => {
             },
           },
           EMPTY_SCREEN,
-          EMPTY_SCREEN,
         ],
       },
       priority: 1,
-      // Targeting to be updated in Bug 1797368
-      targeting: "false",
+      targeting: `${PDF_SOURCE} && ${matchCurrentScreenTargeting(
+        PDFJS_PREF,
+        "FEATURE_CALLOUT_1_A"
+      )}`,
       trigger: { id: "featureCalloutCheck" },
     },
     {
-      id: "PDFJS_FEATURE_TOUR_2",
+      id: "PDFJS_FEATURE_TOUR_2_A",
       template: "feature_callout",
       content: {
         id: "PDFJS_FEATURE_TOUR",
@@ -680,10 +473,14 @@ const MESSAGES = () => {
         screens: [
           EMPTY_SCREEN,
           {
-            id: "FEATURE_CALLOUT_2",
-            parent_selector: "#editorInk",
+            id: "FEATURE_CALLOUT_2_A",
+            parent_selector: "hbox#browser",
             content: {
               position: "callout",
+              callout_position_override: {
+                top: "45px",
+                right: "25px",
+              },
               arrow_position: "top-end",
               title: {
                 string_id: "callout-pdfjs-draw-title",
@@ -724,12 +521,152 @@ const MESSAGES = () => {
               },
             },
           },
+        ],
+      },
+      priority: 1,
+      targeting: `${PDF_SOURCE} && ${matchCurrentScreenTargeting(
+        PDFJS_PREF,
+        "FEATURE_CALLOUT_2_A"
+      )}`,
+      trigger: { id: "featureCalloutCheck" },
+    },
+    {
+      id: "PDFJS_FEATURE_TOUR_1_B",
+      template: "feature_callout",
+      content: {
+        id: "PDFJS_FEATURE_TOUR",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "FEATURE_CALLOUT_1_B",
+            parent_selector: "hbox#browser",
+            content: {
+              position: "callout",
+              callout_position_override: {
+                top: "45px",
+                right: "55px",
+              },
+              arrow_position: "top-end",
+              title: {
+                string_id: "callout-pdfjs-edit-title",
+              },
+              subtitle: {
+                string_id: "callout-pdfjs-edit-body-b",
+              },
+              primary_button: {
+                label: {
+                  string_id: "callout-pdfjs-edit-button",
+                },
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "FEATURE_CALLOUT_2_B",
+                        complete: false,
+                      }),
+                    },
+                  },
+                },
+              },
+              dismiss_button: {
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+            },
+          },
           EMPTY_SCREEN,
         ],
       },
       priority: 1,
-      // Targeting to be updated in Bug 1797368 https://bugzilla.mozilla.org/show_bug.cgi?id=1797368
-      targeting: "false",
+      targeting: `${PDF_SOURCE} && ${matchCurrentScreenTargeting(
+        PDFJS_PREF,
+        "FEATURE_CALLOUT_1_B"
+      )}`,
+      trigger: { id: "featureCalloutCheck" },
+    },
+    {
+      id: "PDFJS_FEATURE_TOUR_2_B",
+      template: "feature_callout",
+      content: {
+        id: "PDFJS_FEATURE_TOUR",
+        startScreen: 1,
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          EMPTY_SCREEN,
+          {
+            id: "FEATURE_CALLOUT_2_B",
+            parent_selector: "hbox#browser",
+            content: {
+              position: "callout",
+              callout_position_override: {
+                top: "45px",
+                right: "25px",
+              },
+              arrow_position: "top-end",
+              title: {
+                string_id: "callout-pdfjs-draw-title",
+              },
+              subtitle: {
+                string_id: "callout-pdfjs-draw-body-b",
+              },
+              primary_button: {
+                label: {
+                  string_id: "callout-pdfjs-draw-button",
+                },
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+              dismiss_button: {
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      priority: 1,
+      targeting: `${PDF_SOURCE} && ${matchCurrentScreenTargeting(
+        PDFJS_PREF,
+        "FEATURE_CALLOUT_2_B"
+      )}`,
       trigger: { id: "featureCalloutCheck" },
     },
   ];

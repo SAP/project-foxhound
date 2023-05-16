@@ -80,8 +80,8 @@ GetSharedArrayBufferData(
 }
 
 /*
- * The following are utilities to convert between VideoFrame values to gfx's
- * values.
+ * The following are utilities to convert between VideoColorSpace values to
+ * gfx's values.
  */
 
 static gfx::YUVColorSpace ToColorSpace(VideoMatrixCoefficients aMatrix) {
@@ -93,6 +93,8 @@ static gfx::YUVColorSpace ToColorSpace(VideoMatrixCoefficients aMatrix) {
       return gfx::YUVColorSpace::BT709;
     case VideoMatrixCoefficients::Smpte170m:
       return gfx::YUVColorSpace::BT601;
+    case VideoMatrixCoefficients::Bt2020_ncl:
+      return gfx::YUVColorSpace::BT2020;
     case VideoMatrixCoefficients::EndGuard_:
       break;
   }
@@ -108,11 +110,35 @@ static gfx::TransferFunction ToTransferFunction(
       return gfx::TransferFunction::BT709;
     case VideoTransferCharacteristics::Iec61966_2_1:
       return gfx::TransferFunction::SRGB;
+    case VideoTransferCharacteristics::Pq:
+      return gfx::TransferFunction::PQ;
+    case VideoTransferCharacteristics::Hlg:
+      return gfx::TransferFunction::HLG;
+    case VideoTransferCharacteristics::Linear:
     case VideoTransferCharacteristics::EndGuard_:
       break;
   }
   MOZ_ASSERT_UNREACHABLE("unsupported VideoTransferCharacteristics");
   return gfx::TransferFunction::Default;
+}
+
+static gfx::ColorSpace2 ToPrimaries(VideoColorPrimaries aPrimaries) {
+  switch (aPrimaries) {
+    case VideoColorPrimaries::Bt709:
+      return gfx::ColorSpace2::BT709;
+    case VideoColorPrimaries::Bt470bg:
+      return gfx::ColorSpace2::BT601_625;
+    case VideoColorPrimaries::Smpte170m:
+      return gfx::ColorSpace2::BT601_525;
+    case VideoColorPrimaries::Bt2020:
+      return gfx::ColorSpace2::BT2020;
+    case VideoColorPrimaries::Smpte432:
+      return gfx::ColorSpace2::DISPLAY_P3;
+    case VideoColorPrimaries::EndGuard_:
+      break;
+  }
+  MOZ_ASSERT_UNREACHABLE("unsupported VideoTransferCharacteristics");
+  return gfx::ColorSpace2::UNKNOWN;
 }
 
 static Maybe<VideoPixelFormat> ToVideoPixelFormat(gfx::SurfaceFormat aFormat) {
@@ -864,7 +890,9 @@ static Result<RefPtr<layers::Image>, nsCString> CreateYUVImageFromBuffer(
       data.mTransferFunction =
           ToTransferFunction(aColorSpace.mTransfer.Value());
     }
-    // TODO: take care of aColorSpace.mPrimaries.
+    if (aColorSpace.mPrimaries.WasPassed()) {
+      data.mColorPrimaries = ToPrimaries(aColorSpace.mPrimaries.Value());
+    }
 
     RefPtr<layers::PlanarYCbCrImage> image =
         new layers::RecyclingPlanarYCbCrImage(new layers::BufferRecycleBin());
@@ -906,7 +934,9 @@ static Result<RefPtr<layers::Image>, nsCString> CreateYUVImageFromBuffer(
       data.mTransferFunction =
           ToTransferFunction(aColorSpace.mTransfer.Value());
     }
-    // TODO: take care of aColorSpace.mPrimaries.
+    if (aColorSpace.mPrimaries.WasPassed()) {
+      data.mColorPrimaries = ToPrimaries(aColorSpace.mPrimaries.Value());
+    }
 
     RefPtr<layers::NVImage> image = new layers::NVImage();
     if (!image->SetData(data)) {
@@ -947,6 +977,13 @@ template <class T>
 static Result<RefPtr<VideoFrame>, nsCString> CreateVideoFrameFromBuffer(
     nsIGlobalObject* aGlobal, const T& aBuffer,
     const VideoFrameBufferInit& aInit) {
+  if (aInit.mColorSpace.WasPassed() &&
+      aInit.mColorSpace.Value().mTransfer.WasPassed() &&
+      aInit.mColorSpace.Value().mTransfer.Value() ==
+          VideoTransferCharacteristics::Linear) {
+    return Err(nsCString("linear RGB is not supported"));
+  }
+
   Tuple<gfx::IntSize, Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init;
   MOZ_TRY_VAR(init, ValidateVideoFrameBufferInit(aInit));
   gfx::IntSize codedSize = Get<0>(init);
@@ -1017,7 +1054,7 @@ static Result<RefPtr<VideoFrame>, nsCString> CreateVideoFrameFromBuffer(
   return MakeRefPtr<VideoFrame>(
       aGlobal, data, aInit.mFormat, codedSize, parsedRect,
       displaySize ? *displaySize : parsedRect.Size(), std::move(duration),
-      Some(aInit.mTimestamp), colorSpace);
+      aInit.mTimestamp, colorSpace);
 }
 
 template <class T>
@@ -1101,14 +1138,14 @@ InitializeFrameWithResourceAndSize(
   return MakeAndAddRef<VideoFrame>(aGlobal, image, format->PixelFormat(),
                                    image->GetSize(), visibleRect.value(),
                                    displaySize.value(), std::move(duration),
-                                   Some(aInit.mTimestamp.Value()), colorSpace);
+                                   aInit.mTimestamp.Value(), colorSpace);
 }
 
 // https://w3c.github.io/webcodecs/#videoframe-initialize-frame-from-other-frame
 struct VideoFrameData {
   VideoFrameData(layers::Image* aImage, const VideoPixelFormat& aFormat,
                  gfx::IntRect aVisibleRect, gfx::IntSize aDisplaySize,
-                 Maybe<uint64_t> aDuration, Maybe<int64_t> aTimestamp,
+                 Maybe<uint64_t> aDuration, int64_t aTimestamp,
                  const VideoColorSpaceInit& aColorSpace)
       : mImage(aImage),
         mFormat(aFormat),
@@ -1123,7 +1160,7 @@ struct VideoFrameData {
   const gfx::IntRect mVisibleRect;
   const gfx::IntSize mDisplaySize;
   const Maybe<uint64_t> mDuration;
-  const Maybe<int64_t> mTimestamp;
+  const int64_t mTimestamp;
   const VideoColorSpaceInit mColorSpace;
 };
 static Result<already_AddRefed<VideoFrame>, nsCString>
@@ -1149,14 +1186,13 @@ InitializeFrameFromOtherFrame(nsIGlobalObject* aGlobal, VideoFrameData&& aData,
   Maybe<uint64_t> duration = aInit.mDuration.WasPassed()
                                  ? Some(aInit.mDuration.Value())
                                  : aData.mDuration;
-  Maybe<int64_t> timestamp = aInit.mTimestamp.WasPassed()
-                                 ? Some(aInit.mTimestamp.Value())
-                                 : aData.mTimestamp;
+  int64_t timestamp = aInit.mTimestamp.WasPassed() ? aInit.mTimestamp.Value()
+                                                   : aData.mTimestamp;
 
   return MakeAndAddRef<VideoFrame>(
       aGlobal, aData.mImage, aData.mFormat.PixelFormat(),
       aData.mImage->GetSize(), *visibleRect, *displaySize, std::move(duration),
-      std::move(timestamp), aData.mColorSpace);
+      timestamp, aData.mColorSpace);
 }
 
 /*
@@ -1167,7 +1203,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
                        const RefPtr<layers::Image>& aImage,
                        const VideoPixelFormat& aFormat, gfx::IntSize aCodedSize,
                        gfx::IntRect aVisibleRect, gfx::IntSize aDisplaySize,
-                       Maybe<uint64_t>&& aDuration, Maybe<int64_t>&& aTimestamp,
+                       Maybe<uint64_t>&& aDuration, int64_t aTimestamp,
                        const VideoColorSpaceInit& aColorSpace)
     : mParent(aParent),
       mResource(Some(Resource(aImage, VideoFrame::Format(aFormat)))),
@@ -1175,7 +1211,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mVisibleRect(aVisibleRect),
       mDisplaySize(aDisplaySize),
       mDuration(std::move(aDuration)),
-      mTimestamp(std::move(aTimestamp)),
+      mTimestamp(aTimestamp),
       mColorSpace(aColorSpace) {
   MOZ_ASSERT(mParent);
 }
@@ -1414,11 +1450,12 @@ already_AddRefed<VideoFrame> VideoFrame::Constructor(
     return nullptr;
   }
 
-  // TODO: Retrive/infer the duration, timestamp, and colorspace.
+  // TODO: Retrive/infer the duration, and colorspace.
   auto r = InitializeFrameFromOtherFrame(
       global.get(),
       VideoFrameData(image.get(), format.ref(), image->GetPictureRect(),
-                     image->GetSize(), Nothing(), Nothing(), {}),
+                     image->GetSize(), Nothing(),
+                     static_cast<int64_t>(aVideoElement.CurrentTime()), {}),
       aInit);
   if (r.isErr()) {
     aRv.ThrowTypeError(r.unwrapErr());
@@ -1612,10 +1649,13 @@ uint32_t VideoFrame::CodedHeight() const {
 already_AddRefed<DOMRectReadOnly> VideoFrame::GetCodedRect() const {
   AssertIsOnOwningThread();
 
-  // TODO: Return nullptr if this is _detached_ (bug 1774306).
-  return MakeAndAddRef<DOMRectReadOnly>(
-      mParent, 0.0f, 0.0f, static_cast<double>(mCodedSize.Width()),
-      static_cast<double>(mCodedSize.Height()));
+  // TODO: Return nullptr if this is _detached_ instead of checking resource
+  // (bug 1774306).
+  return mResource
+             ? MakeAndAddRef<DOMRectReadOnly>(
+                   mParent, 0.0f, 0.0f, static_cast<double>(mCodedSize.Width()),
+                   static_cast<double>(mCodedSize.Height()))
+             : nullptr;
 }
 
 // https://w3c.github.io/webcodecs/#dom-videoframe-visiblerect
@@ -1654,10 +1694,10 @@ Nullable<uint64_t> VideoFrame::GetDuration() const {
 }
 
 // https://w3c.github.io/webcodecs/#dom-videoframe-timestamp
-Nullable<int64_t> VideoFrame::GetTimestamp() const {
+int64_t VideoFrame::Timestamp() const {
   AssertIsOnOwningThread();
 
-  return mTimestamp ? Nullable<int64_t>(*mTimestamp) : Nullable<int64_t>();
+  return mTimestamp;
 }
 
 // https://w3c.github.io/webcodecs/#dom-videoframe-colorspace
@@ -1803,7 +1843,6 @@ void VideoFrame::Close() {
   mVisibleRect = gfx::IntRect();
   mDisplaySize = gfx::IntSize();
   mDuration.reset();
-  mTimestamp.reset();
 }
 
 // https://w3c.github.io/webcodecs/#ref-for-deserialization-steps%E2%91%A0
@@ -1853,16 +1892,12 @@ JSObject* VideoFrame::ReadStructuredClone(JSContext* aCx,
       hasDuration ? Some(uint64_t(durationHigh) << 32 | durationLow)
                   : Nothing();
 
-  uint8_t hasTimestamp = 0;
   uint32_t timestampLow = 0;
   uint32_t timestampHigh = 0;
-  if (NS_WARN_IF(!JS_ReadBytes(aReader, &hasTimestamp, 1)) ||
-      NS_WARN_IF(!JS_ReadUint32Pair(aReader, &timestampLow, &timestampHigh))) {
+  if (NS_WARN_IF(!JS_ReadUint32Pair(aReader, &timestampLow, &timestampHigh))) {
     return nullptr;
   }
-  Maybe<uint64_t> timestamp =
-      hasTimestamp ? Some(uint64_t(timestampHigh) << 32 | timestampLow)
-                   : Nothing();
+  int64_t timestamp = int64_t(timestampHigh) << 32 | timestampLow;
 
   uint8_t colorSpaceFullRange = 0;
   uint8_t colorSpaceMatrix = 0;
@@ -1905,7 +1940,7 @@ JSObject* VideoFrame::ReadStructuredClone(JSContext* aCx,
         aGlobal, aData.mImage, format, gfx::IntSize(codedWidth, codedHeight),
         gfx::IntRect(visibleX, visibleY, visibleWidth, visibleHeight),
         gfx::IntSize(displayWidth, displayHeight), std::move(duration),
-        std::move(timestamp), colorSpace);
+        timestamp, colorSpace);
     if (!GetOrCreateDOMReflector(aCx, frame, &value) || !value.isObject()) {
       return nullptr;
     }
@@ -1941,9 +1976,8 @@ bool VideoFrame::WriteStructuredClone(JSStructuredCloneWriter* aWriter,
   const uint32_t durationLow = mDuration ? uint32_t(*mDuration) : 0;
   const uint32_t durationHigh = mDuration ? uint32_t(*mDuration >> 32) : 0;
 
-  const uint8_t hasTimestamp = mTimestamp ? 1 : 0;
-  const uint32_t timestampLow = mTimestamp ? uint32_t(*mTimestamp) : 0;
-  const uint32_t timestampHigh = mTimestamp ? uint32_t(*mTimestamp >> 32) : 0;
+  const uint32_t timestampLow = uint32_t(mTimestamp);
+  const uint32_t timestampHigh = uint32_t(mTimestamp >> 32);
 
   const uint8_t colorSpaceFullRange =
       mColorSpace.mFullRange.WasPassed() ? mColorSpace.mFullRange.Value() : 2;
@@ -1977,7 +2011,6 @@ bool VideoFrame::WriteStructuredClone(JSStructuredCloneWriter* aWriter,
       NS_WARN_IF(!JS_WriteUint32Pair(aWriter, displayWidth, displayHeight)) ||
       NS_WARN_IF(!JS_WriteBytes(aWriter, &hasDuration, 1)) ||
       NS_WARN_IF(!JS_WriteUint32Pair(aWriter, durationLow, durationHigh)) ||
-      NS_WARN_IF(!JS_WriteBytes(aWriter, &hasTimestamp, 1)) ||
       NS_WARN_IF(!JS_WriteUint32Pair(aWriter, timestampLow, timestampHigh)) ||
       NS_WARN_IF(!JS_WriteBytes(aWriter, &colorSpaceFullRange, 1)) ||
       NS_WARN_IF(!JS_WriteBytes(aWriter, &colorSpaceMatrix, 1)) ||

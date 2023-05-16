@@ -169,7 +169,8 @@ class RenderThread final {
   /// Automatically forwarded to the render thread. Will trigger a render for
   /// the current pending frame once one call per document in that pending
   /// frame has been received.
-  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender);
+  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
+                         bool aTrackedFrame);
 
   /// Automatically forwarded to the render thread.
   void SetClearColor(wr::WindowId aWindowId, wr::ColorF aColor);
@@ -232,6 +233,7 @@ class RenderThread final {
                             const TimeStamp& aStartTime);
   /// Can be called from any thread.
   void DecPendingFrameBuildCount(wr::WindowId aWindowId);
+  void DecPendingFrameCount(wr::WindowId aWindowId);
 
   /// Can be called from any thread.
   WebRenderThreadPool& ThreadPool() { return mThreadPool; }
@@ -305,6 +307,9 @@ class RenderThread final {
 
   explicit RenderThread(RefPtr<nsIThread> aThread);
 
+  void HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
+                              bool aTrackedFrame);
+
   void DeferredRenderTextureHostDestroy();
   void ShutDownTask();
   void InitDeviceTask();
@@ -346,8 +351,6 @@ class RenderThread final {
 
   struct WindowInfo {
     int64_t PendingCount() { return mPendingFrames.size(); }
-    // If mIsRendering is true, mPendingFrames.front() is currently being
-    // rendered.
     std::queue<PendingFrameInfo> mPendingFrames;
     uint8_t mPendingFrameBuild = 0;
     bool mIsDestroyed = false;

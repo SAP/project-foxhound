@@ -9,13 +9,13 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   HttpServer: "resource://testing-common/httpd.js",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
 });
 
 var profileDir = do_get_profile();
@@ -94,7 +94,13 @@ async function addTestEngines() {
   // This is a hack, ideally we should be setting up a configuration with
   // built-in engines, but the `chrome_settings_overrides` section that
   // WebExtensions need is only defined for browser/
-  await SearchTestUtils.promiseNewSearchEngine(`${gDataUrl}/engine.xml`);
-  await SearchTestUtils.promiseNewSearchEngine(`${gDataUrl}/enginePrivate.xml`);
-  await SearchTestUtils.promiseNewSearchEngine(`${gDataUrl}/enginePost.xml`);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}/engine.xml`,
+  });
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}/enginePrivate.xml`,
+  });
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}/enginePost.xml`,
+  });
 }

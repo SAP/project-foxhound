@@ -172,10 +172,6 @@
   -moz-default-appearance: toolbox;
 }
 
-#browser-bottombox:not(:-moz-lwtheme) {
-  background-color: -moz-dialog;
-}
-
 /* Titlebar */
 
 :root[tabsintitlebar][sizemode="normal"] #titlebar {
@@ -285,10 +281,6 @@ menuitem.bookmark-item {
   margin-block: 0;
 }
 
-.bookmark-item > .menu-iconic-left > .menu-iconic-icon {
-  padding-inline-start: 0;
-}
-
 .bookmark-item[cutting] > .toolbarbutton-icon,
 .bookmark-item[cutting] > .menu-iconic-left > .menu-iconic-icon {
   opacity: 0.5;
@@ -395,10 +387,6 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
   -moz-image-region: auto;
 }
 
-#PlacesToolbar menu menupopup {
-  margin-top: -13px;
-}
-
 /* Status panel */
 
 #statuspanel-label {
@@ -470,18 +458,26 @@ menupopup[touchmode] {
   --arrowpanel-menuitem-padding: var(--arrowpanel-menuitem-padding-block) var(--arrowpanel-menuitem-padding-inline);
 }
 
+menupopup[touchmode] :is(menu, menuitem, menucaption) {
+  /* Use the var set in the rule above to increase menu items height in menupopups when
+   * they are opened through touch.
+   * Panel menu items already have their padding set in panelUI-shared.css with the same var. */
+  padding-block: var(--arrowpanel-menuitem-padding-block);
+}
+
 #contentAreaContextMenu[touchmode] > #context-navigation > menuitem {
-  padding-block: 7px;
+  /* The navigation menuitems are bigger to begin with because of their inner padding,
+   * so calculate the padding-block to match normal menuitems height when in touchmode.
+   * 3.5em is the desired menuitem height (~42px), minus the menuitem actual height devided by 2. */
+  padding-block: calc((3.5em - 32px) / 2);
 }
 
 #context-navigation {
   background-color: menu;
-  padding-bottom: 4px;
 }
 
 #context-sep-navigation {
   margin-inline-start: -28px;
-  margin-top: -4px;
 }
 
 @media (-moz-windows-non-native-menus) {
@@ -490,7 +486,8 @@ menupopup[touchmode] {
     /* The Windows 10 version of the navigation area needs the scrollbox's
        background color, not the builtin "menu" color. */
     background-color: inherit;
-    padding: 0 0 4px;
+    /* Match the inner top padding of the menupopup to center the icons visually. */
+    padding-bottom: 4px;
     /* Use modern flex box so we can use percentage widths to redistribute
      * spacing manually. */
     display: flex;

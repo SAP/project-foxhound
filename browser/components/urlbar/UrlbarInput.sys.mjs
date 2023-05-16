@@ -10,8 +10,11 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  CONTEXTUAL_SERVICES_PING_TYPES:
+    "resource:///modules/PartnerLinkAttribution.sys.mjs",
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
+  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
@@ -30,11 +33,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
-  CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   ReaderMode: "resource://gre/modules/ReaderMode.jsm",
-  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -84,6 +84,9 @@ export class UrlbarInput {
                         role="listbox"/>
             </html:div>
           </html:div>
+          <menupopup class="urlbarView-result-menu">
+            <menuitem label="test" data-command="test"/>
+          </menupopup>
           <hbox class="search-one-offs"
                 includecurrentengine="true"
                 disabletab="true"/>
@@ -766,6 +769,7 @@ export class UrlbarInput {
    *
    */
   handoff(searchString, searchEngine, newtabSessionId) {
+    this._isHandoffSession = true;
     this._handoffSession = newtabSessionId;
     if (lazy.UrlbarPrefs.get("shouldHandOffToSearchMode") && searchEngine) {
       this.search(searchString, {
@@ -799,6 +803,7 @@ export class UrlbarInput {
    * @param {DOMElement} element the picked view element, if available.
    * @param {object} browser The browser to use for the load.
    */
+  // eslint-disable-next-line complexity
   pickResult(
     result,
     event,
@@ -821,16 +826,17 @@ export class UrlbarInput {
       return;
     }
 
-    if (element?.classList.contains("urlbarView-button-block")) {
-      this.controller.handleDeleteEntry(result);
+    if (element?.classList.contains("urlbarView-button-menu")) {
+      this.view.openResultMenu(result, element);
       return;
     }
 
-    let urlOverride;
-    if (element?.classList.contains("urlbarView-button-help")) {
-      urlOverride = result.payload.helpUrl;
+    if (element?.classList.contains("urlbarView-button-block")) {
+      this.controller.handleDeleteEntry(event, result);
+      return;
     }
 
+    let urlOverride = element?.dataset.url;
     let originalUntrimmedValue = this.untrimmedValue;
     let isCanonized = this.setValueFromResult({ result, event, urlOverride });
     let where = this._whereToOpen(event);
@@ -861,6 +867,14 @@ export class UrlbarInput {
     }
 
     this.controller.recordSelectedResult(event, result);
+
+    if (result.providerName === "TabToSearch") {
+      this.controller.engagementEvent.record(event, {
+        searchString: this._lastSearchString,
+        selIndex: result.rowIndex,
+        provider: result.providerName,
+      });
+    }
 
     if (isCanonized) {
       this.controller.engagementEvent.record(event, {
@@ -1017,67 +1031,57 @@ export class UrlbarInput {
         break;
       }
       case lazy.UrlbarUtils.RESULT_TYPE.TIP: {
-        let scalarName;
-        if (element.classList.contains("urlbarView-button-help")) {
-          url = result.payload.helpUrl;
-          if (!url) {
-            Cu.reportError("helpUrl not specified");
-            return;
-          }
-          scalarName = `${result.payload.type}-help`;
-        } else {
-          scalarName = `${result.payload.type}-picked`;
-        }
+        let scalarName =
+          element.dataset.name == "help"
+            ? `${result.payload.type}-help`
+            : `${result.payload.type}-picked`;
         Services.telemetry.keyedScalarAdd("urlbar.tips", scalarName, 1);
-        if (!url) {
-          this.handleRevert();
-          this.controller.engagementEvent.record(event, {
-            searchString: this._lastSearchString,
-            selIndex,
-            selType: "tip",
-            provider: result.providerName,
-          });
-          let provider = lazy.UrlbarProvidersManager.getProvider(
-            result.providerName
-          );
-          if (!provider) {
-            Cu.reportError(`Provider not found: ${result.providerName}`);
-            return;
-          }
-          provider.tryMethod("pickResult", result, element);
-          return;
+        if (url) {
+          break;
         }
-        break;
+        this.handleRevert();
+        this.controller.engagementEvent.record(event, {
+          searchString: this._lastSearchString,
+          selIndex,
+          selType: "tip",
+          provider: result.providerName,
+        });
+        let provider = lazy.UrlbarProvidersManager.getProvider(
+          result.providerName
+        );
+        provider?.tryMethod("pickResult", result, element);
+        return;
       }
       case lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC: {
-        if (element.classList.contains("urlbarView-button-help")) {
-          url = result.payload.helpUrl;
-        } else {
-          url = result.payload.url;
-          // Do not revert the Urlbar if we're going to navigate. We want the URL
-          // populated so we can navigate to it.
-          if (!url || !result.payload.shouldNavigate) {
-            this.handleRevert();
-          }
-          let provider = lazy.UrlbarProvidersManager.getProvider(
-            result.providerName
-          );
-          if (!provider) {
-            Cu.reportError(`Provider not found: ${result.providerName}`);
-            return;
-          }
-          provider.tryMethod("pickResult", result, element);
+        if (url) {
+          break;
+        }
+        url = result.payload.url;
+        // Do not revert the Urlbar if we're going to navigate. We want the URL
+        // populated so we can navigate to it.
+        if (!url || !result.payload.shouldNavigate) {
+          this.handleRevert();
+        }
+        let provider = lazy.UrlbarProvidersManager.getProvider(
+          result.providerName
+        );
 
-          // If we won't be navigating, this is the end of the engagement.
-          if (!url || !result.payload.shouldNavigate) {
-            this.controller.engagementEvent.record(event, {
-              selIndex,
-              searchString: this._lastSearchString,
-              selType: this.controller.engagementEvent.typeFromElement(element),
-              provider: result.providerName,
-            });
-            return;
-          }
+        // Keep startEventInfo since the startEventInfo state might be changed
+        // if the URL Bar loses focus on pickResult.
+        const startEventInfo = this.controller.engagementEvent._startEventInfo;
+        provider?.tryMethod("pickResult", result, element);
+
+        // If we won't be navigating, this is the end of the engagement.
+        if (!url || !result.payload.shouldNavigate) {
+          this.controller.engagementEvent.record(event, {
+            selIndex,
+            searchString: this._lastSearchString,
+            selType: this.controller.engagementEvent.typeFromElement(element),
+            provider: result.providerName,
+            element,
+            startEventInfo,
+          });
+          return;
         }
         break;
       }
@@ -1132,6 +1136,7 @@ export class UrlbarInput {
       selIndex,
       selType: this.controller.engagementEvent.typeFromElement(element),
       provider: result.providerName,
+      searchSource: this.getSearchSource(event),
     });
 
     if (result.payload.sendAttributionRequest) {
@@ -1990,6 +1995,36 @@ export class UrlbarInput {
     }
   }
 
+  /**
+   * Get search source.
+   *
+   * @param {Event} event
+   *   The event that triggered this query.
+   * @returns {string}
+   *   The source name.
+   */
+  getSearchSource(event) {
+    if (this._isHandoffSession) {
+      return "urlbar-handoff";
+    }
+
+    const isOneOff = this.view.oneOffSearchButtons.eventTargetIsAOneOff(event);
+    if (this.searchMode && !isOneOff) {
+      // Without checking !isOneOff, we might record the string
+      // oneoff_urlbar-searchmode in the SEARCH_COUNTS probe (in addition to
+      // oneoff_urlbar and oneoff_searchbar). The extra information is not
+      // necessary; the intent is the same regardless of whether the user is
+      // in search mode when they do a key-modified click/enter on a one-off.
+      return "urlbar-searchmode";
+    }
+
+    if (this.window.gBrowser.selectedBrowser.showingSearchTerms && !isOneOff) {
+      return "urlbar-persisted";
+    }
+
+    return "urlbar";
+  }
+
   // Private methods below.
 
   _addObservers() {
@@ -2222,14 +2257,14 @@ export class UrlbarInput {
    * related to the input text directionality. Overflow fade masks use these
    * attributes to appear at the proper side of the urlbar.
    */
-  _updateTextOverflow() {
+  updateTextOverflow() {
     if (!this._overflowing) {
       this.removeAttribute("textoverflow");
       return;
     }
 
     let isRTL =
-      this.getAttribute("domaindir") != "ltr" &&
+      this.getAttribute("domaindir") === "rtl" &&
       this._checkForRtlText(this.value);
 
     this.window.promiseDocumentFlushed(() => {
@@ -2419,27 +2454,10 @@ export class UrlbarInput {
   _recordSearch(engine, event, searchActionDetails = {}) {
     const isOneOff = this.view.oneOffSearchButtons.eventTargetIsAOneOff(event);
 
-    let source = "urlbar";
-    if (this._handoffSession) {
-      source = "urlbar-handoff";
-    } else if (this.searchMode && !isOneOff) {
-      // Without checking !isOneOff, we might record the string
-      // oneoff_urlbar-searchmode in the SEARCH_COUNTS probe (in addition to
-      // oneoff_urlbar and oneoff_searchbar). The extra information is not
-      // necessary; the intent is the same regardless of whether the user is
-      // in search mode when they do a key-modified click/enter on a one-off.
-      source = "urlbar-searchmode";
-    } else if (
-      this.window.gBrowser.selectedBrowser.showingSearchTerms &&
-      !isOneOff
-    ) {
-      source = "urlbar-persisted";
-    }
-
     lazy.BrowserSearchTelemetry.recordSearch(
       this.window.gBrowser.selectedBrowser,
       engine,
-      source,
+      this.getSearchSource(event),
       {
         ...searchActionDetails,
         isOneOff,
@@ -2977,9 +2995,6 @@ export class UrlbarInput {
   }
 
   _on_blur(event) {
-    this.focusedViaMousedown = false;
-    this._handoffSession = undefined;
-
     // We cannot count every blur events after a missed engagement as abandoment
     // because the user may have clicked on some view element that executes
     // a command causing a focus change. For example opening preferences from
@@ -2988,8 +3003,12 @@ export class UrlbarInput {
     // may want to figure out a more robust way to detect abandonment.
     this.controller.engagementEvent.record(event, {
       searchString: this._lastSearchString,
+      searchSource: this.getSearchSource(event),
     });
 
+    this.focusedViaMousedown = false;
+    this._handoffSession = undefined;
+    this._isHandoffSession = false;
     this.removeAttribute("focused");
 
     if (this._autofillPlaceholder && this.window.gBrowser.userTypedValue) {
@@ -3324,7 +3343,7 @@ export class UrlbarInput {
       return;
     }
     this._overflowing = true;
-    this._updateTextOverflow();
+    this.updateTextOverflow();
   }
 
   _on_underflow(event) {
@@ -3337,7 +3356,7 @@ export class UrlbarInput {
     }
     this._overflowing = false;
 
-    this._updateTextOverflow();
+    this.updateTextOverflow();
 
     this._updateUrlTooltip();
   }
@@ -3401,7 +3420,7 @@ export class UrlbarInput {
   }
 
   _on_scrollend(event) {
-    this._updateTextOverflow();
+    this.updateTextOverflow();
   }
 
   _on_TabSelect(event) {

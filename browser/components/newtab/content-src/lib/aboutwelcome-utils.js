@@ -34,6 +34,13 @@ export const AboutWelcomeUtils = {
     };
     window.AWSendEventTelemetry?.(ping);
   },
+  sendDismissTelemetry(messageId, elementId) {
+    // Don't send DISMISS telemetry in spotlight modals since they already send
+    // their own equivalent telemetry.
+    if (page !== "spotlight") {
+      this.sendActionTelemetry(messageId, elementId, "DISMISS");
+    }
+  },
   async fetchFlowParams(metricsFlowUri) {
     let flowParams;
     try {
@@ -65,20 +72,19 @@ export const DEFAULT_RTAMO_CONTENT = {
   template: "return_to_amo",
   utm_term: "rtamo",
   content: {
-    position: "corner",
-    hero_text: { string_id: "mr1-welcome-screen-hero-text" },
-    title: { string_id: "return-to-amo-subtitle" },
-    has_noodles: true,
+    position: "split",
+    title: { string_id: "mr1-return-to-amo-subtitle" },
+    has_noodles: false,
     subtitle: {
-      string_id: "return-to-amo-addon-title",
-    },
-    help_text: {
-      string_id: "mr1-onboarding-welcome-image-caption",
+      string_id: "mr1-return-to-amo-addon-title",
     },
     backdrop:
-      "#212121 url(chrome://activity-stream/content/data/content/assets/proton-bkg.avif) center/cover no-repeat fixed",
+      "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
+    background:
+      "url('chrome://activity-stream/content/data/content/assets/mr-rtamo-background-image.svg') no-repeat center",
+    progress_bar: true,
     primary_button: {
-      label: { string_id: "return-to-amo-add-extension-label" },
+      label: { string_id: "mr1-return-to-amo-add-extension-label" },
       source_id: "ADD_EXTENSION_BUTTON",
       action: {
         type: "INSTALL_ADDON_FROM_URL",
@@ -102,6 +108,7 @@ export const DEFAULT_RTAMO_CONTENT = {
       action: {
         data: {
           entrypoint: "activity-stream-firstrun",
+          where: "tab",
         },
         type: "SHOW_FIREFOX_ACCOUNTS",
         addFlowParams: true,

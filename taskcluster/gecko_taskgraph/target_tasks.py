@@ -4,23 +4,21 @@
 
 
 import copy
-from datetime import datetime, timedelta
 import os
 import re
+from datetime import datetime, timedelta
 
+from gecko_taskgraph import GECKO, try_option_syntax
+from gecko_taskgraph.util.attributes import (
+    match_run_on_hg_branches,
+    match_run_on_projects,
+)
+from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
+from gecko_taskgraph.util.platforms import platform_family
 from redo import retry
 from taskgraph.parameters import Parameters
 from taskgraph.target_tasks import _target_task, get_method
 from taskgraph.util.taskcluster import find_task_id
-
-from gecko_taskgraph import try_option_syntax, GECKO
-from gecko_taskgraph.util.attributes import (
-    match_run_on_projects,
-    match_run_on_hg_branches,
-)
-from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
-
 
 # Some tasks show up in the target task set, but are possibly special cases,
 # uncommon tasks, or tasks running against limited hardware set that they
@@ -45,7 +43,7 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"-profiling-",  # talos/raptor profiling jobs are run too often
     # Hide shippable versions of tests we have opt versions of because the non-shippable
     # versions are faster to run. This is mostly perf tests.
-    r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
+    r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|msix|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
 ]
 
 
@@ -764,6 +762,8 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 if "linux" in platform:
                     if "speedometer" in try_name:
                         return True
+                if "safari" and "benchmark" in try_name:
+                    return True
             else:
                 # Don't run tp6 raptor tests
                 if "tp6" in try_name:
@@ -1256,10 +1256,7 @@ def target_tasks_backfill_all_browsertime(full_task_graph, parameters, graph_con
     and landed the day before the cron is running. Trigger backfill-all-browsertime action
     task on each of them.
     """
-    from gecko_taskgraph.actions.util import (
-        get_decision_task_id,
-        get_pushes,
-    )
+    from gecko_taskgraph.actions.util import get_decision_task_id, get_pushes
 
     def date_is_yesterday(date):
         yesterday = datetime.today() - timedelta(days=1)
@@ -1389,3 +1386,14 @@ def target_tasks_are_we_esmified_yet(full_task_graph, parameters, graph_config):
     return [
         l for l, t in full_task_graph.tasks.items() if t.kind == "are-we-esmified-yet"
     ]
+
+
+@_target_task("eslint-build")
+def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
+    """Select the task to run additional ESLint rules which require a build."""
+
+    for name, task in full_task_graph.tasks.items():
+        if task.kind != "source-test":
+            continue
+        if "eslint-build" in name:
+            yield name

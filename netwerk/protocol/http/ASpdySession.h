@@ -24,7 +24,7 @@ class ASpdySession : public nsAHttpTransaction {
   ASpdySession() = default;
   virtual ~ASpdySession() = default;
 
-  [[nodiscard]] virtual bool AddStream(nsAHttpTransaction*, int32_t, bool,
+  [[nodiscard]] virtual bool AddStream(nsAHttpTransaction*, int32_t,
                                        nsIInterfaceRequestor*) = 0;
   virtual bool CanReuse() = 0;
   virtual bool RoomForMoreStreams() = 0;
@@ -82,14 +82,14 @@ class ASpdySession : public nsAHttpTransaction {
   }
 
   virtual void SetCleanShutdown(bool) = 0;
-  virtual bool CanAcceptWebsocket() = 0;
+  virtual WebSocketSupport GetWebSocketSupport() = 0;
 
   virtual already_AddRefed<mozilla::net::nsHttpConnection> CreateTunnelStream(
       nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
       PRIntervalTime aRtt) = 0;
 };
 
-using ALPNCallback = bool (*)(nsISSLSocketControl*);
+using ALPNCallback = bool (*)(nsITLSSocketControl*);
 
 // this is essentially a single instantiation as a member of nsHttpHandler.
 // It could be all static except using static ctors of XPCOM objects is a

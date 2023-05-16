@@ -8,6 +8,7 @@
 #include "DocumentChannelChild.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/RemoteType.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/HttpBaseChannel.h"
@@ -109,7 +110,7 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
 
   DocumentChannelCreationArgs args;
 
-  args.loadState() = mLoadState->Serialize();
+  args.loadState() = mLoadState;
   args.cacheKey() = mCacheKey;
   args.channelId() = mChannelId;
   args.asyncOpenTime() = TimeStamp::Now();
@@ -249,8 +250,9 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
     cspToInheritLoadingDocument = do_QueryReferent(ctx);
   }
   nsCOMPtr<nsILoadInfo> loadInfo;
-  MOZ_ALWAYS_SUCCEEDS(LoadInfoArgsToLoadInfo(
-      aArgs.loadInfo(), cspToInheritLoadingDocument, getter_AddRefs(loadInfo)));
+  MOZ_ALWAYS_SUCCEEDS(LoadInfoArgsToLoadInfo(aArgs.loadInfo(), NOT_REMOTE_TYPE,
+                                             cspToInheritLoadingDocument,
+                                             getter_AddRefs(loadInfo)));
 
   mRedirectResolver = std::move(aResolve);
 
@@ -263,6 +265,10 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
       aArgs.newLoadFlags(), aArgs.srcdocData(), aArgs.baseUri());
   if (newChannel) {
     newChannel->SetLoadGroup(mLoadGroup);
+  }
+
+  if (RefPtr<HttpBaseChannel> httpChannel = do_QueryObject(newChannel)) {
+    httpChannel->SetEarlyHints(std::move(aArgs.earlyHints()));
   }
 
   // This is used to report any errors back to the parent by calling

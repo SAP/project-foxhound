@@ -764,7 +764,7 @@ class TelemetryFeed {
       if (ONBOARDING_ALLOWED_PAGE_VALUES.includes(session.page)) {
         event_context.page = session.page;
       } else {
-        Cu.reportError(`Invalid 'page' for Onboarding event: ${session.page}`);
+        console.error(`Invalid 'page' for Onboarding event: ${session.page}`);
       }
       ping.event_context = JSON.stringify(event_context);
     }
@@ -895,7 +895,7 @@ class TelemetryFeed {
         });
       }
     } else {
-      Cu.reportError("Unknown ping type for TopSites impression");
+      console.error("Unknown ping type for TopSites impression");
       return;
     }
 
@@ -960,7 +960,7 @@ class TelemetryFeed {
   async handleASRouterUserEvent(action) {
     const { ping, pingType } = await this.createASRouterEvent(action);
     if (!pingType) {
-      Cu.reportError("Unknown ping type for ASRouter telemetry");
+      console.error("Unknown ping type for ASRouter telemetry");
       return;
     }
     this.sendStructuredIngestionEvent(
@@ -1059,6 +1059,9 @@ class TelemetryFeed {
       }
       Glean.newtab.newtabCategory.set(newtabCategory);
       Glean.newtab.homepageCategory.set(homePageCategory);
+      if (lazy.NimbusFeatures.glean.getVariable("newtabPingEnabled") ?? true) {
+        GleanPings.newtab.submit("component_init");
+      }
     }
   }
 
@@ -1275,12 +1278,6 @@ class TelemetryFeed {
     }
     setNewtabPrefMetrics();
     Glean.pocket.isSignedIn.set(lazy.pktApi.isUserLoggedIn());
-    if (
-      this.telemetryEnabled &&
-      (lazy.NimbusFeatures.glean.getVariable("newtabPingEnabled") ?? true)
-    ) {
-      GleanPings.newtab.submit("component_init");
-    }
   }
 
   uninit() {
