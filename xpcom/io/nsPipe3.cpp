@@ -355,7 +355,7 @@ class nsPipe final {
 
   // public constructor
   friend void NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**, bool,
-                          bool, uint32_t, uint32_t, uint32_t, StringTaint**);
+                          bool, uint32_t, uint32_t, StringTaint**);
 
  private:
   nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount);

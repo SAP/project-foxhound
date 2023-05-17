@@ -1476,7 +1476,7 @@ bool AutoStableStringChars::copyTwoByteChars(
 
 template <>
 bool JS::SourceText<char16_t>::initMaybeBorrowed(
-    JSContext* cx, JS::AutoStableStringChars& linearChars) {
+    JSContext* cx, JS::AutoStableStringChars& linearChars, const StringTaint& taint) {
   MOZ_ASSERT(linearChars.isTwoByte(),
              "AutoStableStringChars must be initialized with char16_t");
 
@@ -1485,7 +1485,7 @@ bool JS::SourceText<char16_t>::initMaybeBorrowed(
   JS::SourceOwnership ownership = linearChars.maybeGiveOwnershipToCaller()
                                       ? JS::SourceOwnership::TakeOwnership
                                       : JS::SourceOwnership::Borrowed;
-  return init(cx, chars, length, ownership);
+  return init(cx, chars, length, taint, ownership);
 }
 
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)

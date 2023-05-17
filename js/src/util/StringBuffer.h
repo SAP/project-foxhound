@@ -189,7 +189,7 @@ class StringBuffer : public TaintableString {
   explicit StringBuffer(JSContext* cx, ErrorContext* ec,
                         const arena_id_t& arenaId = js::MallocArena)
       : TaintableString(), cx_(cx), ec_(ec), arenaId_(arenaId), reserved_(0) {
-    cb.construct<Latin1CharBuffer>(StringBufferAllocPolicy{cx_, arenaId_});
+    cb.construct<Latin1CharBuffer>(StringBufferAllocPolicy{ec_, arenaId_});
   }
 
   void clear() {

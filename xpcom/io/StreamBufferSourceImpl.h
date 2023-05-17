@@ -15,8 +15,8 @@ namespace mozilla {
 
 class nsTArraySource final : public StreamBufferSource {
  public:
-  explicit nsTArraySource(nsTArray<uint8_t>&& aArray)
-      : mArray(std::move(aArray)) {}
+  explicit nsTArraySource(nsTArray<uint8_t>&& aArray, const StringTaint& aTaint)
+      : mArray(std::move(aArray)), mTaint(aTaint) {}
 
   Span<const char> Data() override {
     return Span{reinterpret_cast<const char*>(mArray.Elements()),
@@ -25,12 +25,17 @@ class nsTArraySource final : public StreamBufferSource {
 
   bool Owning() override { return true; }
 
+  const StringTaint& Taint() override { return mTaint; }
+
+  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
+
   size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
     return mArray.ShallowSizeOfExcludingThis(aMallocSizeOf);
   }
 
  private:
   const nsTArray<uint8_t> mArray;
+  SafeStringTaint mTaint;
 };
 
 class nsCStringSource final : public StreamBufferSource {
@@ -49,6 +54,10 @@ class nsCStringSource final : public StreamBufferSource {
 
   bool Owning() override { return true; }
 
+  const StringTaint& Taint() override { return mString.Taint(); }
+
+  void setTaint(const StringTaint& aTaint) override { mString.AssignTaint(aTaint); }
+
   size_t SizeOfExcludingThisIfUnshared(MallocSizeOf aMallocSizeOf) override {
     return mString.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   }
@@ -58,16 +67,21 @@ class nsCStringSource final : public StreamBufferSource {
   }
 
  private:
-  const nsCString mString;
+  nsCString mString;
 };
 
 class nsBorrowedSource final : public StreamBufferSource {
  public:
-  explicit nsBorrowedSource(Span<const char> aBuffer) : mBuffer(aBuffer) {}
+  explicit nsBorrowedSource(Span<const char> aBuffer, const StringTaint& aTaint)
+    : mBuffer(aBuffer), mTaint(aTaint) {}
 
   Span<const char> Data() override { return mBuffer; }
 
   bool Owning() override { return false; }
+
+  const StringTaint& Taint() override { return mTaint; }
+
+  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
 
   size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
     return 0;
@@ -75,6 +89,7 @@ class nsBorrowedSource final : public StreamBufferSource {
 
  private:
   const Span<const char> mBuffer;
+  SafeStringTaint mTaint;
 };
 
 }  // namespace mozilla
