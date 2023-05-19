@@ -4022,10 +4022,10 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
       if (!sub) {
         return nullptr;
       }
-      splits->initDenseElement(splitsIndex++, StringValue(sub));
-
       // TaintFox: extend taint flow
       sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg_char(cx, patCh), taintarg(cx, count++) }));
+
+      splits->initDenseElement(splitsIndex++, StringValue(sub));
 
       lastEndIndex = index + 1;
     }

@@ -451,7 +451,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   void setTaint(JSContext* cx, const StringTaint& taint) {
     if (isAtom()) {
 #if defined(DEBUG)
-      JS::TaintFoxReport(cx, "Warning: cannot taint atomized string!");
+      //JS::TaintFoxReport(cx, "Warning: cannot taint atomized string!");
 #endif
       return;
     }
