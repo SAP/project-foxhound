@@ -819,7 +819,8 @@ function String_repeat(count) {
   }
 
   // Step 2.
-  var S = ToString(this);
+  // Taintfox: copy string to prevent tainting "this"
+  var S = CopyString(this);
 
   // Step 3.
   var n = ToInteger(count);
