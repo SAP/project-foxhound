@@ -4012,6 +4012,8 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
   }
   splits->ensureDenseInitializedLength(0, count + 1);
 
+  TaintOperation op = TaintOperationFromContext(cx, "split", true);
+
   // Add substrings.
   uint32_t splitsIndex = 0;
   size_t lastEndIndex = 0;
@@ -4023,7 +4025,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
         return nullptr;
       }
       // TaintFox: extend taint flow
-      sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg_char(cx, patCh), taintarg(cx, count++) }));
+      sub->taint().extend(op);
 
       splits->initDenseElement(splitsIndex++, StringValue(sub));
 
@@ -4038,7 +4040,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
     return nullptr;
   }
   // TaintFox: extend taint flow
-  sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg_char(cx, patCh), taintarg(cx, count++) }));
+  sub->taint().extend(op);
 
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
@@ -4592,7 +4594,6 @@ static inline bool TransferBufferToString(JSContext* cx, JSStringBuilder& sb, JS
   str->setTaint(cx, taint);
   sb.ok();
   rval.setString(str);
-
   return true;
 }
 

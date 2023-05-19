@@ -1357,7 +1357,6 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
-
   masm.boundsCheck32PowerOfTwo(scratch1, StaticStrings::UNIT_STATIC_LIMIT,
                                &vmCall);
   masm.movePtr(ImmPtr(&cx_->staticStrings().unitStaticTable), scratch2);
