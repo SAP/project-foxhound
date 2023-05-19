@@ -9435,6 +9435,8 @@ void CodeGenerator::visitBigIntRsh(LBigIntRsh* ins) {
   {
     masm.movePtr(temp1, temp3);
 
+    masm.rshiftPtr(temp2, temp1);
+
     // For negative numbers, round down if any bit was shifted out.
     masm.branchIfBigIntIsNonNegative(lhs, &create);
 
