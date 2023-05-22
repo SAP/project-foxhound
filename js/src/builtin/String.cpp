@@ -691,6 +691,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   newtaint.extend(op);
   result->setTaint(cx, newtaint);
 
+  args.rval().setString(result);
   return true;
 }
 
