@@ -3545,8 +3545,8 @@ static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
     // Step 14.c.
     // Append the substring before the current match.
 
-      // Taintfox - first append taint for the substring before the current match
-      result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, position), result.length());
+    // Taintfox - first append taint for the substring before the current match
+    result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, position), result.length());
 
     if (!result.append(strChars + endOfLastMatch, position - endOfLastMatch)) {
       return false;
@@ -3558,11 +3558,11 @@ static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
       size_t matchLimit = position + searchLength;
       if (!AppendDollarReplacement(result, dollarIndex, position, matchLimit,
                                    string, repChars, replaceLength,
-                                     replaceString->taint())) {
+                                   replaceString->taint())) {
         return false;
       }
     } else {
-        result.taint().concat(replaceString->taint(), result.length());
+      result.taint().concat(replaceString->taint(), result.length());
       if (!result.append(repChars, replaceLength)) {
         return false;
       }
