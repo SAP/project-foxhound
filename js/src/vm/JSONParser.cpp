@@ -187,6 +187,7 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
 
       // TaintFox: Add taint operation.
       str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
+      return stringToken(str);
     }
 
     if (c != '\\') {

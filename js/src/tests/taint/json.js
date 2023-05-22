@@ -14,6 +14,12 @@ function JSONTaintTest() {
     var stringifiedTaint = JSON.stringify({ "name": t });
     assertEq(stringifiedTaint, "{\"name\":\"hello\"}");
     assertRangeTainted(stringifiedTaint, [9, 14]);
+
+    parsedStr = JSON.parse(stringifiedTaint);
+    var hello = parsedStr.name;
+    assertEq(hello, "hello");
+    assertFullTainted(hello);
+    assertLastTaintOperationEquals(parsedStr, 'JSON.parse');
 }
 
 runTaintTest(JSONTaintTest);
