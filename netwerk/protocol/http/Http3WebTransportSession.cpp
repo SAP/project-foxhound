@@ -28,6 +28,11 @@ Http3WebTransportSession::~Http3WebTransportSession() = default;
 nsresult Http3WebTransportSession::ReadSegments() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
+  if (mSendState == WRITING_DATAGRAM) {
+    mSendState = WAITING_DATAGRAM;
+    return NS_OK;
+  }
+
   if ((mRecvState == RECV_DONE) || (mRecvState == ACTIVE) ||
       (mRecvState == CLOSE_PENDING)) {
     // Don't transmit any request frames if the peer cannot respond or respone
@@ -97,7 +102,7 @@ nsresult Http3WebTransportSession::ReadSegments() {
     } else if (!transactionBytes) {
       mTransaction->OnTransportStatus(nullptr, NS_NET_STATUS_WAITING_FOR, 0);
 
-      mSendState = SEND_DONE;
+      mSendState = WAITING_DATAGRAM;
       rv = NS_OK;
       again = false;
     }
@@ -189,7 +194,7 @@ nsresult Http3WebTransportSession::OnReadSegment(const char* buf,
       // Successfully activated.
       mTransaction->OnTransportStatus(nullptr, NS_NET_STATUS_SENDING_TO, 0);
 
-      mSendState = SEND_DONE;
+      mSendState = WAITING_DATAGRAM;
       break;
     default:
       MOZ_ASSERT(false, "We are done sending this request!");
@@ -323,20 +328,27 @@ void Http3WebTransportSession::Close(nsresult aResult) {
     mTransaction = nullptr;
   }
   mRecvState = RECV_DONE;
+
+  mSession->CloseWebTransportConn();
 }
 
 void Http3WebTransportSession::OnSessionClosed(uint32_t aStatus,
-                                               nsACString& aReason) {
-  MOZ_ASSERT(!mTransaction);
+                                               const nsACString& aReason) {
+  if (mTransaction) {
+    mTransaction->Close(NS_BASE_STREAM_CLOSED);
+    mTransaction = nullptr;
+  }
   if (mListener) {
     mListener->OnSessionClosed(aStatus, aReason);
     mListener = nullptr;
   }
   mRecvState = RECV_DONE;
+
+  mSession->CloseWebTransportConn();
 }
 
 void Http3WebTransportSession::CloseSession(uint32_t aStatus,
-                                            nsACString& aReason) {
+                                            const nsACString& aReason) {
   if ((mRecvState != CLOSE_PENDING) && (mRecvState != RECV_DONE)) {
     mStatus = aStatus;
     mReason = aReason;
@@ -430,6 +442,52 @@ Http3WebTransportSession::OnIncomingWebTransportStream(
 
   mListener->OnIncomingStreamAvailableInternal(stream);
   return stream.forget();
+}
+
+void Http3WebTransportSession::SendDatagram(nsTArray<uint8_t>&& aData,
+                                            uint64_t aTrackingId) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("Http3WebTransportSession::SendDatagram this=%p", this));
+  if (mRecvState != ACTIVE) {
+    return;
+  }
+
+  mSendState = WRITING_DATAGRAM;
+  mSession->SendDatagram(this, aData, aTrackingId);
+  mSession->StreamHasDataToWrite(this);
+}
+
+void Http3WebTransportSession::OnDatagramReceived(nsTArray<uint8_t>&& aData) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("Http3WebTransportSession::OnDatagramReceived this=%p", this));
+  if (mRecvState != ACTIVE || !mListener) {
+    return;
+  }
+
+  mListener->OnDatagramReceivedInternal(std::move(aData));
+}
+
+void Http3WebTransportSession::GetMaxDatagramSize() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  if (mRecvState != ACTIVE || !mListener) {
+    return;
+  }
+
+  uint64_t size = mSession->MaxDatagramSize(mStreamId);
+  mListener->OnMaxDatagramSize(size);
+}
+
+void Http3WebTransportSession::OnOutgoingDatagramOutCome(
+    uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("Http3WebTransportSession::OnOutgoingDatagramOutCome this=%p id=%" PRIx64
+       ", outCome=%d",
+       this, aId, static_cast<uint32_t>(aOutCome)));
+  if (mRecvState != ACTIVE || !mListener || !aId) {
+    return;
+  }
+
+  mListener->OnOutgoingDatagramOutCome(aId, aOutCome);
 }
 
 }  // namespace mozilla::net

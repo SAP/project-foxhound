@@ -335,7 +335,7 @@ RTCLocalIceCandidateStats::RTCLocalIceCandidateStats(std::string&& id,
     : RTCIceCandidateStats(std::move(id), timestamp_us, false) {}
 
 std::unique_ptr<RTCStats> RTCLocalIceCandidateStats::copy() const {
-  return std::unique_ptr<RTCStats>(new RTCLocalIceCandidateStats(*this));
+  return std::make_unique<RTCLocalIceCandidateStats>(*this);
 }
 
 const char* RTCLocalIceCandidateStats::type() const {
@@ -353,7 +353,7 @@ RTCRemoteIceCandidateStats::RTCRemoteIceCandidateStats(std::string&& id,
     : RTCIceCandidateStats(std::move(id), timestamp_us, true) {}
 
 std::unique_ptr<RTCStats> RTCRemoteIceCandidateStats::copy() const {
-  return std::unique_ptr<RTCStats>(new RTCRemoteIceCandidateStats(*this));
+  return std::make_unique<RTCRemoteIceCandidateStats>(*this);
 }
 
 const char* RTCRemoteIceCandidateStats::type() const {
@@ -816,7 +816,8 @@ WEBRTC_RTCSTATS_IMPL(
     &fir_count,
     &pli_count,
     &nack_count,
-    &qp_sum)
+    &qp_sum,
+    &active)
 // clang-format on
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(const std::string& id,
@@ -855,7 +856,8 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(std::string&& id,
       fir_count("firCount"),
       pli_count("pliCount"),
       nack_count("nackCount"),
-      qp_sum("qpSum") {}
+      qp_sum("qpSum"),
+      active("active") {}
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
     const RTCOutboundRTPStreamStats& other)
@@ -889,7 +891,8 @@ RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(
       fir_count(other.fir_count),
       pli_count(other.pli_count),
       nack_count(other.nack_count),
-      qp_sum(other.qp_sum) {}
+      qp_sum(other.qp_sum),
+      active(other.active) {}
 
 RTCOutboundRTPStreamStats::~RTCOutboundRTPStreamStats() {}
 

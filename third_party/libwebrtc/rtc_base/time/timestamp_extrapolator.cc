@@ -15,6 +15,10 @@
 #include "absl/types/optional.h"
 #include "modules/include/module_common_types_public.h"
 
+#ifdef DEBUG
+#  include <iostream>
+#endif
+
 namespace webrtc {
 
 namespace {
@@ -125,6 +129,7 @@ void TimestampExtrapolator::Update(Timestamp now, uint32_t ts90khz) {
 absl::optional<Timestamp> TimestampExtrapolator::ExtrapolateLocalTime(
     uint32_t timestamp90khz) const {
   int64_t unwrapped_ts90khz = unwrapper_.UnwrapWithoutUpdate(timestamp90khz);
+  RTC_DCHECK_GE(unwrapped_ts90khz, 0);
 
   if (!first_unwrapped_timestamp_) {
     return absl::nullopt;
@@ -132,12 +137,24 @@ absl::optional<Timestamp> TimestampExtrapolator::ExtrapolateLocalTime(
     constexpr double kRtpTicksPerMs = 90;
     TimeDelta diff = TimeDelta::Millis(
         (unwrapped_ts90khz - *prev_unwrapped_timestamp_) / kRtpTicksPerMs);
+    if (diff.ms() < 0) {
+      RTC_DCHECK_GE(prev_.ms(), -diff.ms());
+    }
     return prev_ + diff;
   } else if (w_[0] < 1e-3) {
     return start_;
   } else {
     double timestampDiff = unwrapped_ts90khz - *first_unwrapped_timestamp_;
     auto diff_ms = static_cast<int64_t>((timestampDiff - w_[1]) / w_[0] + 0.5);
+#if defined(DEBUG) && defined(NIGHTLY_BUILD)
+    std::cout << "##### TimestampExtrapolator " << this << " DEBUG start_ = "
+              << start_.ms() << "ms; diff_ms = (" << unwrapped_ts90khz << " - "
+              << *first_unwrapped_timestamp_ << " - " << w_[1] << ") / "
+              << w_[0] << " + 0.5 = " << diff_ms << "ms" << std::endl;
+#endif
+    if (diff_ms < 0) {
+      RTC_DCHECK_GE(start_.ms(), -diff_ms);
+    }
     return start_ + TimeDelta::Millis(diff_ms);
   }
 }

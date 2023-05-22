@@ -52,7 +52,7 @@ var gExceptionPaths = [
   "resource://gre/modules/services-automation/",
   "resource://services-automation/ServicesAutomation.jsm",
 
-  // Paths from this folder are constructed in NetErrorParent.jsm based on
+  // Paths from this folder are constructed in NetErrorParent.sys.mjs based on
   // the type of cert or net error the user is encountering.
   "chrome://global/content/neterror/supportpages/",
 
@@ -223,11 +223,6 @@ var whitelist = [
     file: "chrome://browser/locale/taskbar.properties",
     platforms: ["linux", "macosx"],
   },
-  // Bug 1619090 to clean up platform-specific crypto
-  {
-    file: "resource://gre/modules/OSCrypto.jsm",
-    platforms: ["linux", "macosx"],
-  },
   // Bug 1344267
   { file: "chrome://remote/content/marionette/test_dialog.properties" },
   { file: "chrome://remote/content/marionette/test_dialog.xhtml" },
@@ -289,8 +284,6 @@ var whitelist = [
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
   { file: "chrome://browser/content/screenshots/copied-notification.svg" },
-
-  { file: "resource://app/modules/SnapshotSelector.sys.mjs" },
 
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },

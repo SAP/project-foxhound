@@ -26,7 +26,6 @@ class GfxInfo final : public GfxInfoBase {
   NS_IMETHOD GetHasBattery(bool* aHasBattery) override;
   NS_IMETHOD GetCleartypeParameters(nsAString& aCleartypeParams) override;
   NS_IMETHOD GetWindowProtocol(nsAString& aWindowProtocol) override;
-  NS_IMETHOD GetDesktopEnvironment(nsAString& aDesktopEnvironment) override;
   NS_IMETHOD GetTestType(nsAString& aTestType) override;
   NS_IMETHOD GetAdapterDescription(nsAString& aAdapterDescription) override;
   NS_IMETHOD GetAdapterDriver(nsAString& aAdapterDriver) override;
@@ -89,7 +88,6 @@ class GfxInfo final : public GfxInfoBase {
   uint32_t mAdapterRAM;
   nsCString mOS;
   nsCString mOSRelease;
-  nsAutoCStringN<16> mDesktopEnvironment;
   nsCString mTestType;
 
   nsCString mSecondaryVendorId;

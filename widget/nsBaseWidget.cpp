@@ -105,8 +105,6 @@ static int32_t gNumWidgets;
 #  include "nsCocoaFeatures.h"
 #endif
 
-nsIRollupListener* nsBaseWidget::gRollupListener = nullptr;
-
 using namespace mozilla::dom;
 using namespace mozilla::layers;
 using namespace mozilla::ipc;
@@ -137,9 +135,9 @@ NS_IMPL_ISUPPORTS(nsBaseWidget, nsIWidget, nsISupportsWeakReference)
 //
 //-------------------------------------------------------------------------
 
-nsBaseWidget::nsBaseWidget() : nsBaseWidget(eBorderStyle_none) {}
+nsBaseWidget::nsBaseWidget() : nsBaseWidget(BorderStyle::None) {}
 
-nsBaseWidget::nsBaseWidget(nsBorderStyle aBorderStyle)
+nsBaseWidget::nsBaseWidget(BorderStyle aBorderStyle)
     : mWidgetListener(nullptr),
       mAttachedWidgetListener(nullptr),
       mPreviouslyAttachedWidgetListener(nullptr),
@@ -147,8 +145,8 @@ nsBaseWidget::nsBaseWidget(nsBorderStyle aBorderStyle)
       mBorderStyle(aBorderStyle),
       mBounds(0, 0, 0, 0),
       mIsTiled(false),
-      mPopupLevel(ePopupLevelTop),
-      mPopupType(ePopupTypeAny),
+      mPopupLevel(PopupLevel::Top),
+      mPopupType(PopupType::Any),
       mHasRemoteContent(false),
       mUpdateCursor(true),
       mUseAttachedEvents(false),
@@ -414,7 +412,7 @@ nsBaseWidget::~nsBaseWidget() {
 // Basic create.
 //
 //-------------------------------------------------------------------------
-void nsBaseWidget::BaseCreate(nsIWidget* aParent, nsWidgetInitData* aInitData) {
+void nsBaseWidget::BaseCreate(nsIWidget* aParent, widget::InitData* aInitData) {
   if (aInitData) {
     mWindowType = aInitData->mWindowType;
     mBorderStyle = aInitData->mBorderStyle;
@@ -443,7 +441,7 @@ void nsBaseWidget::SetWidgetListener(nsIWidgetListener* aWidgetListener) {
 }
 
 already_AddRefed<nsIWidget> nsBaseWidget::CreateChild(
-    const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData,
+    const LayoutDeviceIntRect& aRect, widget::InitData* aInitData,
     bool aForceUseIWidgetParent) {
   nsIWidget* parent = this;
   nsNativeWidget nativeParent = nullptr;
@@ -458,7 +456,7 @@ already_AddRefed<nsIWidget> nsBaseWidget::CreateChild(
   }
 
   nsCOMPtr<nsIWidget> widget;
-  if (aInitData && aInitData->mWindowType == eWindowType_popup) {
+  if (aInitData && aInitData->mWindowType == WindowType::Popup) {
     widget = AllocateChildPopupWidget();
   } else {
     widget = nsIWidget::CreateChildWindow();
@@ -478,10 +476,10 @@ already_AddRefed<nsIWidget> nsBaseWidget::CreateChild(
 
 // Attach a view to our widget which we'll send events to.
 void nsBaseWidget::AttachViewToTopLevel(bool aUseAttachedEvents) {
-  NS_ASSERTION((mWindowType == eWindowType_toplevel ||
-                mWindowType == eWindowType_dialog ||
-                mWindowType == eWindowType_invisible ||
-                mWindowType == eWindowType_child),
+  NS_ASSERTION((mWindowType == WindowType::TopLevel ||
+                mWindowType == WindowType::Dialog ||
+                mWindowType == WindowType::Invisible ||
+                mWindowType == WindowType::Child),
                "Can't attach to window of that type");
 
   mUseAttachedEvents = aUseAttachedEvents;
@@ -510,6 +508,8 @@ void nsBaseWidget::SetAttachedWidgetListener(nsIWidgetListener* aListener) {
 //
 //-------------------------------------------------------------------------
 void nsBaseWidget::Destroy() {
+  DestroyCompositor();
+
   // Just in case our parent is the only ref to us
   nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
   // disconnect from the parent
@@ -567,6 +567,15 @@ nsIntSize nsIWidget::CustomCursorSize(const Cursor& aCursor) {
   aCursor.mContainer->GetHeight(&height);
   aCursor.mResolution.ApplyTo(width, height);
   return {width, height};
+}
+
+LayoutDeviceIntSize nsIWidget::ClientToWindowSizeDifference() {
+  auto margin = ClientToWindowMargin();
+  MOZ_ASSERT(margin.top >= 0, "Window should be bigger than client area");
+  MOZ_ASSERT(margin.left >= 0, "Window should be bigger than client area");
+  MOZ_ASSERT(margin.right >= 0, "Window should be bigger than client area");
+  MOZ_ASSERT(margin.bottom >= 0, "Window should be bigger than client area");
+  return {margin.LeftRight(), margin.TopBottom()};
 }
 
 RefPtr<mozilla::VsyncDispatcher> nsIWidget::GetVsyncDispatcher() {
@@ -700,10 +709,10 @@ void nsBaseWidget::SetCursor(const Cursor& aCursor) { mCursor = aCursor; }
 //
 //-------------------------------------------------------------------------
 
-void nsBaseWidget::SetTransparencyMode(nsTransparencyMode aMode) {}
+void nsBaseWidget::SetTransparencyMode(TransparencyMode aMode) {}
 
-nsTransparencyMode nsBaseWidget::GetTransparencyMode() {
-  return eTransparencyOpaque;
+TransparencyMode nsBaseWidget::GetTransparencyMode() {
+  return TransparencyMode::Opaque;
 }
 
 /* virtual */
@@ -956,7 +965,7 @@ nsBaseWidget::AutoLayerManagerSetup::~AutoLayerManagerSetup() {
 }
 
 bool nsBaseWidget::IsSmallPopup() const {
-  return mWindowType == eWindowType_popup && mPopupType != ePopupTypePanel;
+  return mWindowType == WindowType::Popup && mPopupType != PopupType::Panel;
 }
 
 bool nsBaseWidget::ComputeShouldAccelerate() {
@@ -967,10 +976,10 @@ bool nsBaseWidget::ComputeShouldAccelerate() {
 
 bool nsBaseWidget::UseAPZ() {
   return (gfxPlatform::AsyncPanZoomEnabled() &&
-          (WindowType() == eWindowType_toplevel ||
-           WindowType() == eWindowType_child ||
-           ((WindowType() == eWindowType_popup ||
-             WindowType() == eWindowType_dialog) &&
+          (mWindowType == WindowType::TopLevel ||
+           mWindowType == WindowType::Child ||
+           ((mWindowType == WindowType::Popup ||
+             mWindowType == WindowType::Dialog) &&
             HasRemoteContent() && StaticPrefs::apz_popups_enabled())));
 }
 
@@ -1496,7 +1505,7 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight) {
 #if defined(XP_MACOSX)
   bool getCompositorFromThisWindow = true;
 #else
-  bool getCompositorFromThisWindow = (mWindowType == eWindowType_toplevel);
+  bool getCompositorFromThisWindow = mWindowType == WindowType::TopLevel;
 #endif
 
   if (getCompositorFromThisWindow) {
@@ -1693,7 +1702,7 @@ LayoutDeviceIntPoint nsBaseWidget::GetClientOffset() {
   return LayoutDeviceIntPoint(0, 0);
 }
 
-nsresult nsBaseWidget::SetNonClientMargins(LayoutDeviceIntMargin& margins) {
+nsresult nsBaseWidget::SetNonClientMargins(const LayoutDeviceIntMargin&) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -1775,7 +1784,7 @@ void nsBaseWidget::SetSizeConstraints(const SizeConstraints& aConstraints) {
   //
   // The right fix here is probably making constraint changes go through the
   // view manager and such.
-  if (mWindowType == eWindowType_popup) {
+  if (mWindowType == WindowType::Popup) {
     return;
   }
 
@@ -1805,9 +1814,7 @@ const widget::SizeConstraints nsBaseWidget::GetSizeConstraints() {
 
 // static
 nsIRollupListener* nsBaseWidget::GetActiveRollupListener() {
-  // If set, then this is likely an <html:select> dropdown.
-  if (gRollupListener) return gRollupListener;
-
+  // TODO: Simplify this.
   return nsXULPopupManager::GetInstance();
 }
 
@@ -1843,14 +1850,6 @@ void nsBaseWidget::NotifySizeMoveDone() {
 
 void nsBaseWidget::NotifyThemeChanged(ThemeChangeKind aKind) {
   LookAndFeel::NotifyChangedAllWindows(aKind);
-}
-
-void nsBaseWidget::NotifyUIStateChanged(UIStateChangeType aShowFocusRings) {
-  if (Document* doc = GetDocument()) {
-    if (nsPIDOMWindowOuter* win = doc->GetWindow()) {
-      win->SetKeyboardIndicators(aShowFocusRings);
-    }
-  }
 }
 
 nsresult nsBaseWidget::NotifyIME(const IMENotification& aIMENotification) {
@@ -2001,20 +2000,11 @@ LayersId nsBaseWidget::GetRootLayerTreeId() {
                             : LayersId{0};
 }
 
-already_AddRefed<nsIScreen> nsBaseWidget::GetWidgetScreen() {
-  nsCOMPtr<nsIScreenManager> screenManager;
-  screenManager = do_GetService("@mozilla.org/gfx/screenmanager;1");
-  if (!screenManager) {
-    return nullptr;
-  }
-
+already_AddRefed<widget::Screen> nsBaseWidget::GetWidgetScreen() {
+  ScreenManager& screenManager = ScreenManager::GetSingleton();
   LayoutDeviceIntRect bounds = GetScreenBounds();
   DesktopIntRect deskBounds = RoundedToInt(bounds / GetDesktopToDeviceScale());
-  nsCOMPtr<nsIScreen> screen;
-  screenManager->ScreenForRect(deskBounds.X(), deskBounds.Y(),
-                               deskBounds.Width(), deskBounds.Height(),
-                               getter_AddRefs(screen));
-  return screen.forget();
+  return screenManager.ScreenForRect(deskBounds);
 }
 
 mozilla::DesktopToLayoutDeviceScale
@@ -2135,10 +2125,9 @@ nsresult nsIWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
 }
 
 MultiTouchInput nsBaseWidget::UpdateSynthesizedTouchState(
-    MultiTouchInput* aState, uint32_t aTime, mozilla::TimeStamp aTimeStamp,
-    uint32_t aPointerId, TouchPointerState aPointerState,
-    LayoutDeviceIntPoint aPoint, double aPointerPressure,
-    uint32_t aPointerOrientation) {
+    MultiTouchInput* aState, mozilla::TimeStamp aTimeStamp, uint32_t aPointerId,
+    TouchPointerState aPointerState, LayoutDeviceIntPoint aPoint,
+    double aPointerPressure, uint32_t aPointerOrientation) {
   ScreenIntPoint pointerScreenPoint = ViewAs<ScreenPixel>(
       aPoint, PixelCastJustification::LayoutDeviceIsScreenForBounds);
 
@@ -2149,7 +2138,6 @@ MultiTouchInput nsBaseWidget::UpdateSynthesizedTouchState(
   // touch(es). We use |inputToDispatch| for this purpose.
   MultiTouchInput inputToDispatch;
   inputToDispatch.mInputType = MULTITOUCH_INPUT;
-  inputToDispatch.mTime = aTime;
   inputToDispatch.mTimeStamp = aTimeStamp;
 
   int32_t index = aState->IndexOfTouch((int32_t)aPointerId);

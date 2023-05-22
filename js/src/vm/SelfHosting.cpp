@@ -26,7 +26,6 @@
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
-#include "vm/ErrorContext.h"  // AutoReportFrontendContext
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/Collator.h"
 #  include "builtin/intl/DateTimeFormat.h"
@@ -50,6 +49,7 @@
 #endif
 #include "frontend/BytecodeCompilation.h"  // CompileGlobalScriptToStencil
 #include "frontend/CompilationStencil.h"   // js::frontend::CompilationStencil
+#include "frontend/FrontendContext.h"      // AutoReportFrontendContext
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
 #include "js/CompilationAndEvaluation.h"
@@ -2469,12 +2469,12 @@ void js::FillSelfHostingCompileOptions(CompileOptions& options) {
 // startup process for any other error reporting to be used, and we don't want
 // errors in self-hosted code to be silently swallowed.
 class MOZ_STACK_CLASS AutoPrintSelfHostingFrontendContext
-    : public OffThreadErrorContext {
+    : public FrontendContext {
   JSContext* cx_;
 
  public:
   explicit AutoPrintSelfHostingFrontendContext(JSContext* cx)
-      : OffThreadErrorContext(), cx_(cx) {
+      : FrontendContext(), cx_(cx) {
     setCurrentJSContext(cx_);
   }
   ~AutoPrintSelfHostingFrontendContext() {
@@ -2485,11 +2485,11 @@ class MOZ_STACK_CLASS AutoPrintSelfHostingFrontendContext
       fprintf(stderr, "Out of memory\n");
     }
 
-    for (const UniquePtr<CompileError>& error : errors()) {
-      JS::PrintError(stderr, const_cast<CompileError*>(error.get()), true);
+    if (maybeError()) {
+      JS::PrintError(stderr, &*maybeError(), true);
     }
-    for (const UniquePtr<CompileError>& error : warnings()) {
-      JS::PrintError(stderr, const_cast<CompileError*>(error.get()), true);
+    for (CompileError& error : warnings()) {
+      JS::PrintError(stderr, &error, true);
     }
     if (hadOverRecursed()) {
       fprintf(stderr, "Over recursed\n");
@@ -2584,7 +2584,7 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
 
   // Try initializing from Stencil XDR.
   bool decodeOk = false;
-  AutoPrintSelfHostingFrontendContext ec(cx);
+  AutoPrintSelfHostingFrontendContext fc(cx);
   if (xdrCache.Length() > 0) {
     // Allow the VM to directly use bytecode from the XDR buffer without
     // copying it. The buffer must outlive all runtimes (including workers).
@@ -2596,8 +2596,11 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
     if (!input) {
       return false;
     }
-    if (!input->initForSelfHostingGlobal(cx)) {
-      return false;
+    {
+      AutoReportFrontendContext fc(cx);
+      if (!input->initForSelfHostingGlobal(&fc)) {
+        return false;
+      }
     }
 
     RefPtr<frontend::CompilationStencil> stencil(
@@ -2605,7 +2608,7 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
     if (!stencil) {
       return false;
     }
-    if (!stencil->deserializeStencils(cx, &ec, *input, xdrCache, &decodeOk)) {
+    if (!stencil->deserializeStencils(cx, &fc, *input, xdrCache, &decodeOk)) {
       return false;
     }
 
@@ -2648,7 +2651,7 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
   frontend::NoScopeBindingCache scopeCache;
   RefPtr<frontend::CompilationStencil> stencil =
       frontend::CompileGlobalScriptToStencil(
-          cx, &ec, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
+          cx, &fc, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
           *input, &scopeCache, srcBuf, ScopeKind::Global);
   if (!stencil) {
     return false;
@@ -2657,7 +2660,12 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
   // Serialize the stencil to XDR.
   if (xdrWriter) {
     JS::TranscodeBuffer xdrBuffer;
-    if (!stencil->serializeStencils(cx, *input, xdrBuffer)) {
+    bool succeeded = false;
+    if (!stencil->serializeStencils(cx, *input, xdrBuffer, &succeeded)) {
+      return false;
+    }
+    if (!succeeded) {
+      JS_ReportErrorASCII(cx, "Encoding failure");
       return false;
     }
 
@@ -2756,8 +2764,8 @@ ScriptSourceObject* GlobalObject::getOrCreateSelfHostingScriptSourceObject(
 
   Rooted<ScriptSourceObject*> sourceObject(cx);
   {
-    AutoReportFrontendContext ec(cx);
-    if (!source->initFromOptions(cx, &ec, options)) {
+    AutoReportFrontendContext fc(cx);
+    if (!source->initFromOptions(&fc, options)) {
       return nullptr;
     }
 

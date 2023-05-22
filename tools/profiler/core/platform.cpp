@@ -284,6 +284,9 @@ class GeckoJavaSampler
           result->Complete(jni::ByteArray::New(
               reinterpret_cast<const int8_t*>(compressedProfile.Elements()),
               compressedProfile.Length()));
+
+          // Done with capturing a profile. Stop the profiler.
+          profiler_stop();
         },
         [result](nsresult aRv) {
           char errorString[9];
@@ -291,6 +294,9 @@ class GeckoJavaSampler
           result->CompleteExceptionally(
               mozilla::java::sdk::IllegalStateException::New(errorString)
                   .Cast<jni::Throwable>());
+
+          // Failed to capture a profile. Stop the profiler.
+          profiler_stop();
         });
   }
 };
@@ -2766,7 +2772,10 @@ static PreRecordedMetaInformation PreRecordMetaInformation() {
       Unused << http->GetOscpu(info.mHttpOscpu);
     }
 
-    Unused << http->GetMisc(info.mHttpMisc);
+    // Firefox version is capped to 109.0 in the http "misc" field due to some
+    // webcompat issues (Bug 1805967). We need to put the real version instead.
+    info.mHttpMisc.AssignLiteral("rv:");
+    info.mHttpMisc.AppendLiteral(MOZILLA_UAVERSION);
   }
 
   if (nsCOMPtr<nsIXULRuntime> runtime =
@@ -2804,7 +2813,7 @@ static void StreamMetaJSCustomObject(
     const PreRecordedMetaInformation& aPreRecordedMetaInformation) {
   MOZ_RELEASE_ASSERT(CorePS::Exists() && ActivePS::Exists(aLock));
 
-  aWriter.IntProperty("version", 25);
+  aWriter.IntProperty("version", 27);
 
   // The "startTime" field holds the number of milliseconds since midnight
   // January 1, 1970 GMT. This grotty code computes (Now - (Now -
@@ -3055,7 +3064,8 @@ struct JavaMarkerWithDetails {
     schema.SetTooltipLabel("{marker.name}");
     schema.SetChartLabel("{marker.data.name}");
     schema.SetTableLabel("{marker.name} - {marker.data.name}");
-    schema.AddKeyLabelFormat("name", "Details", MS::Format::String);
+    schema.AddKeyLabelFormatSearchable("name", "Details", MS::Format::String,
+                                       MS::Searchable::Searchable);
     return schema;
   }
 };

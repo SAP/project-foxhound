@@ -13,7 +13,6 @@ const { Log } = ChromeUtils.importESModule(
   "resource://gre/modules/Log.sys.mjs"
 );
 const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
 /**
  * Represents a pair of keys.
@@ -132,8 +131,6 @@ BulkKeyBundle.fromJWK = function(jwk) {
 };
 
 BulkKeyBundle.prototype = {
-  __proto__: KeyBundle.prototype,
-
   get collection() {
     return this._collection;
   },
@@ -171,3 +168,5 @@ BulkKeyBundle.prototype = {
     this.hmacKey = CommonUtils.safeAtoB(value[1]);
   },
 };
+
+Object.setPrototypeOf(BulkKeyBundle.prototype, KeyBundle.prototype);

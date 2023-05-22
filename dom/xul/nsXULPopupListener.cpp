@@ -9,6 +9,7 @@
  */
 
 #include "nsXULPopupListener.h"
+#include "XULButtonElement.h"
 #include "nsCOMPtr.h"
 #include "nsGkAtoms.h"
 #include "nsContentCID.h"
@@ -37,7 +38,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsViewManager.h"
 #include "nsError.h"
-#include "nsMenuFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -170,7 +170,9 @@ void nsXULPopupListener::ClosePopup() {
     // popup is hidden. Use asynchronous hiding just to be safe so we don't
     // fire events during destruction.
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-    if (pm) pm->HidePopup(mPopupContent, false, true, true, false);
+    if (pm)
+      pm->HidePopup(mPopupContent,
+                    {HidePopupOption::DeselectMenu, HidePopupOption::Async});
     mPopupContent = nullptr;  // release the popup
   }
 }  // ClosePopup
@@ -248,14 +250,16 @@ nsresult nsXULPopupListener::LaunchPopup(MouseEvent* aEvent) {
   }
 
   // return if no popup was found or the popup is the element itself.
-  if (!popup || popup == mElement) return NS_OK;
+  if (!popup || popup == mElement) {
+    return NS_OK;
+  }
 
   // Submenus can't be used as context menus or popups, bug 288763.
   // Similar code also in nsXULTooltipListener::GetTooltipFor.
-  nsIContent* parent = popup->GetParent();
-  if (parent) {
-    nsMenuFrame* menu = do_QueryFrame(parent->GetPrimaryFrame());
-    if (menu) return NS_OK;
+  if (auto* button = XULButtonElement::FromNodeOrNull(popup->GetParent())) {
+    if (button->IsMenu()) {
+      return NS_OK;
+    }
   }
 
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();

@@ -145,15 +145,6 @@ export function isPrettyURL(url) {
   return url ? url.endsWith(":formatted") : false;
 }
 
-export function isThirdParty(source) {
-  const { url } = source;
-  if (!source || !url) {
-    return false;
-  }
-
-  return url.includes("node_modules") || url.includes("bower_components");
-}
-
 /**
  * @memberof utils/source
  * @static
@@ -189,9 +180,7 @@ function resolveFileURL(
 }
 
 export function getFormattedSourceId(id) {
-  const firstIndex = id.indexOf("/");
-  const secondIndex = id.indexOf("/", firstIndex);
-  return `SOURCE${id.slice(firstIndex, secondIndex)}`;
+  return id.substring(id.lastIndexOf("/") + 1);
 }
 
 /**

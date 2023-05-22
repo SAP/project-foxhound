@@ -67,8 +67,6 @@ class GeneralPattern;
 #define SVG_HIT_TEST_STROKE 0x02
 #define SVG_HIT_TEST_CHECK_MRECT 0x04
 
-bool NS_SVGDisplayListHitTestingEnabled();
-bool NS_SVGDisplayListPaintingEnabled();
 bool NS_SVGNewGetBBoxEnabled();
 
 namespace mozilla {
@@ -477,7 +475,8 @@ class SVGUtils final {
   }
 
   static nscolor GetFallbackOrPaintColor(
-      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke);
+      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+      nscolor aDefaultContextFallbackColor);
 
   static void MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
                                  GeneralPattern* aOutPattern,

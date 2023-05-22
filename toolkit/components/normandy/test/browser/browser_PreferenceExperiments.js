@@ -1,8 +1,5 @@
 "use strict";
 
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
-);
 const { PreferenceExperiments } = ChromeUtils.import(
   "resource://normandy/lib/PreferenceExperiments.jsm"
 );

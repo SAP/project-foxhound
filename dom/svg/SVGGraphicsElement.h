@@ -24,6 +24,8 @@ class SVGGraphicsElement : public SVGGraphicsElementBase, public SVGTests {
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
+  NS_IMPL_FROMNODE_HELPER(SVGGraphicsElement, IsSVGGraphicsElement())
+
   // WebIDL
   SVGElement* GetNearestViewportElement();
   SVGElement* GetFarthestViewportElement();
@@ -31,15 +33,11 @@ class SVGGraphicsElement : public SVGGraphicsElementBase, public SVGTests {
   already_AddRefed<SVGRect> GetBBox(const SVGBoundingBoxOptions&);
   already_AddRefed<SVGMatrix> GetCTM();
   already_AddRefed<SVGMatrix> GetScreenCTM();
-  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
-  void SetAutofocus(bool aAutofocus) {
-    SetBoolAttr(nsGkAtoms::autofocus, aAutofocus);
-  }
 
   bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
   bool IsSVGGraphicsElement() const final { return true; }
-  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
+  using nsINode::Clone;
   // Overrides SVGTests.
   SVGElement* AsSVGElement() final { return this; }
 

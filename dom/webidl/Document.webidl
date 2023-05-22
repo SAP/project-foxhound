@@ -452,7 +452,7 @@ partial interface Document {
   Promise<any> blockParsing(Promise<any> promise,
                             optional BlockParsingOptions options = {});
 
-  [Func="nsContentUtils::IsPDFJS", BinaryName="blockUnblockOnloadForPDFJS"]
+  [Func="nsContentUtils::IsSystemOrPDFJS", BinaryName="blockUnblockOnloadForSystemOrPDFJS"]
   undefined blockUnblockOnload(boolean block);
 
   // like documentURI, except that for error pages, it returns the URI we were
@@ -559,18 +559,6 @@ partial interface Document {
   Promise<undefined> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
 };
 
-enum DocumentAutoplayPolicy {
-  "allowed",       // autoplay is currently allowed
-  "allowed-muted", // muted video autoplay is currently allowed
-  "disallowed"     // autoplay is not current allowed
-};
-
-// https://github.com/WICG/autoplay/issues/1
-partial interface Document {
-  [Pref="dom.media.autoplay.autoplay-policy-api"]
-  readonly attribute DocumentAutoplayPolicy autoplayPolicy;
-};
-
 // Extension to give chrome JS the ability to determine whether
 // the user has interacted with the document or not.
 partial interface Document {
@@ -617,7 +605,6 @@ partial interface Document {
 
 Document includes XPathEvaluatorMixin;
 Document includes GlobalEventHandlers;
-Document includes DocumentAndElementEventHandlers;
 Document includes TouchEventHandlers;
 Document includes ParentNode;
 Document includes OnErrorEventHandlerForNodes;

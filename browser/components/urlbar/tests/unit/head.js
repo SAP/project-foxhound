@@ -34,21 +34,29 @@ ChromeUtils.defineESModuleGetters(this, {
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   HttpServer: "resource://testing-common/httpd.js",
+  sinon: "resource://testing-common/Sinon.jsm",
 });
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
-  const { QuickSuggestTestUtils: Utils } = ChromeUtils.importESModule(
+  const { QuickSuggestTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/QuickSuggestTestUtils.sys.mjs"
   );
-  return new Utils(this);
+  module.init(this);
+  return module;
 });
 
 XPCOMUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
-  const { MerinoTestUtils: Utils } = ChromeUtils.importESModule(
+  const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
   );
-  return new Utils(this);
+  module.init(this);
+  return module;
+});
+
+XPCOMUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
 });
 
 SearchTestUtils.init(this);
@@ -504,17 +512,22 @@ function makeOmniboxResult(
   queryContext,
   { content, description, keyword, heuristic = false }
 ) {
+  let payload = {
+    title: [description, UrlbarUtils.HIGHLIGHT.TYPED],
+    content: [content, UrlbarUtils.HIGHLIGHT.TYPED],
+    keyword: [keyword, UrlbarUtils.HIGHLIGHT.TYPED],
+    icon: [UrlbarUtils.ICON.EXTENSION],
+  };
+  if (!heuristic) {
+    payload.blockL10n = { id: "urlbar-result-menu-dismiss-firefox-suggest" };
+  }
   let result = new UrlbarResult(
     UrlbarUtils.RESULT_TYPE.OMNIBOX,
-    UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-      title: [description, UrlbarUtils.HIGHLIGHT.TYPED],
-      content: [content, UrlbarUtils.HIGHLIGHT.TYPED],
-      keyword: [keyword, UrlbarUtils.HIGHLIGHT.TYPED],
-      icon: [UrlbarUtils.ICON.EXTENSION],
-    })
+    UrlbarUtils.RESULT_SOURCE.ADDON,
+    ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
   );
   result.heuristic = heuristic;
+
   return result;
 }
 
@@ -819,6 +832,9 @@ function makeSearchResult(
  * @param {object} options Options for the result.
  * @param {string} options.title
  *   The page title.
+ * @param {string} [options.fallbackTitle]
+ *   The provider has capability to use the actual page title though,
+ *   when the provider can’t get the page title, use this value as the fallback.
  * @param {string} options.uri
  *   The page URI.
  * @param {Array} [options.tags]
@@ -838,6 +854,7 @@ function makeVisitResult(
   queryContext,
   {
     title,
+    fallbackTitle,
     uri,
     iconUri,
     providerName,
@@ -848,8 +865,15 @@ function makeVisitResult(
 ) {
   let payload = {
     url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
-    title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
   };
+
+  if (title) {
+    payload.title = [title, UrlbarUtils.HIGHLIGHT.TYPED];
+  }
+
+  if (fallbackTitle) {
+    payload.fallbackTitle = [fallbackTitle, UrlbarUtils.HIGHLIGHT.TYPED];
+  }
 
   if (iconUri) {
     payload.icon = iconUri;
@@ -893,8 +917,6 @@ function makeVisitResult(
  * @param {string} [options.completed]
  *   The value that would be filled if the autofill result was confirmed.
  *   Has no effect if `autofilled` is not specified.
- * @param {boolean} [options.hasAutofillTitle]
- *   The expected value of the `autofill.hasTitle` property of the first result.
  * @param {Array} options.matches
  *   An array of UrlbarResults.
  */
@@ -903,7 +925,6 @@ async function check_results({
   incompleteSearch,
   autofilled,
   completed,
-  hasAutofillTitle,
   matches = [],
 } = {}) {
   if (!context) {
@@ -959,11 +980,6 @@ async function check_results({
         "The completed autofill value is correct."
       );
     }
-    Assert.equal(
-      context.results[0].autofill.hasTitle,
-      hasAutofillTitle,
-      "The hasTitle flag is correct."
-    );
   }
   if (context.results.length != matches.length) {
     info("Actual results: " + JSON.stringify(context.results));
@@ -1019,6 +1035,13 @@ async function check_results({
         actual.providerName,
         expected.providerName,
         `result.providerName at result index ${i}`
+      );
+    }
+    if (expected.hasOwnProperty("suggestedIndex")) {
+      Assert.equal(
+        actual.suggestedIndex,
+        expected.suggestedIndex,
+        `result.suggestedIndex at result index ${i}`
       );
     }
 

@@ -27,6 +27,7 @@ const { FormAutofillUtils } = ChromeUtils.import(
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
@@ -80,12 +81,6 @@ FormAutofillPreferences.prototype = {
    * @param  {HTMLDocument} document
    */
   createPreferenceGroup(document) {
-    let addressLearnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "autofill-card-address";
-    let creditCardLearnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "credit-card-autofill";
     let formAutofillFragment = document.createDocumentFragment();
     let formAutofillGroupBoxLabel = document.createXULElement("label");
     let formAutofillGroupBoxLabelHeading = document.createElementNS(
@@ -105,9 +100,7 @@ FormAutofillPreferences.prototype = {
     formAutofillFragment.appendChild(formAutofillGroup);
 
     let showAddressUI = FormAutofill.isAutofillAddressesAvailable;
-    let showCreditCardUI =
-      FormAutofill.isAutofillCreditCardsAvailable &&
-      !FormAutofill.isAutofillCreditCardsHideUI;
+    let showCreditCardUI = FormAutofill.isAutofillCreditCardsAvailable;
 
     if (!showAddressUI && !showCreditCardUI) {
       return;
@@ -122,15 +115,14 @@ FormAutofillPreferences.prototype = {
       let addressAutofill = document.createXULElement("hbox");
       let addressAutofillCheckboxGroup = document.createXULElement("hbox");
       let addressAutofillCheckbox = document.createXULElement("checkbox");
-      let addressAutofillLearnMore = document.createXULElement("label", {
-        is: "text-link",
+      let addressAutofillLearnMore = document.createElement("a", {
+        is: "moz-support-link",
       });
       let savedAddressesBtn = document.createXULElement("button", {
         is: "highlightable-button",
       });
       savedAddressesBtn.className = "accessory-button";
       addressAutofillCheckbox.className = "tail-with-learn-more";
-      addressAutofillLearnMore.className = "learnMore";
 
       formAutofillGroup.id = "formAutofillGroup";
       addressAutofill.id = "addressAutofill";
@@ -141,9 +133,6 @@ FormAutofillPreferences.prototype = {
         "label",
         this.bundle.GetStringFromName("autofillAddressesCheckbox")
       );
-      addressAutofillLearnMore.textContent = this.bundle.GetStringFromName(
-        "learnMoreLabel"
-      );
       savedAddressesBtn.setAttribute(
         "label",
         this.bundle.GetStringFromName("savedAddressesBtnLabel")
@@ -152,7 +141,10 @@ FormAutofillPreferences.prototype = {
       // when addressAutofillCheckboxGroup's height is changed by a longer l10n string
       savedAddressesBtnWrapper.setAttribute("align", "start");
 
-      addressAutofillLearnMore.setAttribute("href", addressLearnMoreURL);
+      addressAutofillLearnMore.setAttribute(
+        "support-page",
+        "autofill-card-address"
+      );
 
       // Add preferences search support
       savedAddressesBtn.setAttribute(
@@ -188,15 +180,14 @@ FormAutofillPreferences.prototype = {
       let creditCardAutofill = document.createXULElement("hbox");
       let creditCardAutofillCheckboxGroup = document.createXULElement("hbox");
       let creditCardAutofillCheckbox = document.createXULElement("checkbox");
-      let creditCardAutofillLearnMore = document.createXULElement("label", {
-        is: "text-link",
+      let creditCardAutofillLearnMore = document.createElement("a", {
+        is: "moz-support-link",
       });
       let savedCreditCardsBtn = document.createXULElement("button", {
         is: "highlightable-button",
       });
       savedCreditCardsBtn.className = "accessory-button";
       creditCardAutofillCheckbox.className = "tail-with-learn-more";
-      creditCardAutofillLearnMore.className = "learnMore";
 
       creditCardAutofill.id = "creditCardAutofill";
       creditCardAutofillLearnMore.id = "creditCardAutofillLearnMore";
@@ -209,9 +200,7 @@ FormAutofillPreferences.prototype = {
         "label",
         this.bundle.GetStringFromName("autofillCreditCardsCheckbox")
       );
-      creditCardAutofillLearnMore.textContent = this.bundle.GetStringFromName(
-        "learnMoreLabel"
-      );
+
       savedCreditCardsBtn.setAttribute(
         "label",
         this.bundle.GetStringFromName("savedCreditCardsBtnLabel")
@@ -220,7 +209,10 @@ FormAutofillPreferences.prototype = {
       // when creditCardAutofillCheckboxGroup's height is changed by a longer l10n string
       savedCreditCardsBtnWrapper.setAttribute("align", "start");
 
-      creditCardAutofillLearnMore.setAttribute("href", creditCardLearnMoreURL);
+      creditCardAutofillLearnMore.setAttribute(
+        "support-page",
+        "credit-card-autofill"
+      );
 
       // Add preferences search support
       savedCreditCardsBtn.setAttribute(
@@ -250,16 +242,14 @@ FormAutofillPreferences.prototype = {
       this.refs.savedCreditCardsBtn = savedCreditCardsBtn;
 
       if (lazy.OSKeyStore.canReauth()) {
-        let reauthLearnMoreURL = `${creditCardLearnMoreURL}#w_require-authentication-for-autofill`;
         let reauth = document.createXULElement("hbox");
         let reauthCheckboxGroup = document.createXULElement("hbox");
         let reauthCheckbox = document.createXULElement("checkbox");
-        let reauthLearnMore = document.createXULElement("label", {
-          is: "text-link",
+        let reauthLearnMore = document.createElement("a", {
+          is: "moz-support-link",
         });
 
         reauthCheckboxGroup.classList.add("indent");
-        reauthLearnMore.classList.add("learnMore");
         reauthCheckbox.classList.add("tail-with-learn-more");
         reauthCheckbox.setAttribute("flex", "1");
         reauthCheckbox.disabled = !FormAutofill.isAutofillCreditCardsEnabled;
@@ -283,11 +273,11 @@ FormAutofillPreferences.prototype = {
           "label",
           this.bundle.GetStringFromName(autofillReauthCheckboxLabel)
         );
-        reauthLearnMore.textContent = this.bundle.GetStringFromName(
-          "learnMoreLabel"
-        );
 
-        reauthLearnMore.setAttribute("href", reauthLearnMoreURL);
+        reauthLearnMore.setAttribute(
+          "support-page",
+          "credit-card-autofill#w_require-authentication-for-autofill"
+        );
 
         // Manually set the checked state
         if (FormAutofillUtils._reauthEnabledByUser) {

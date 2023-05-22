@@ -31,6 +31,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Variant.h"
@@ -1092,6 +1093,13 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
             (" > reporting [%s]",
              nsContentUtils::TruncatedURLForDisplay(mDocumentURI).get()));
 
+    Maybe<nsCString> urlForLogging;
+    const bool dumpCounters = StaticPrefs::dom_use_counters_dump_page();
+    if (dumpCounters) {
+      urlForLogging.emplace(
+          nsContentUtils::TruncatedURLForDisplay(mDocumentURI));
+    }
+
     Telemetry::Accumulate(Telemetry::TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED, 1);
 
     for (int32_t c = 0; c < eUseCounter_Count; ++c) {
@@ -1102,8 +1110,10 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
 
       auto id = static_cast<Telemetry::HistogramID>(
           Telemetry::HistogramFirstUseCounter + uc * 2 + 1);
-      MOZ_LOG(gUseCountersLog, LogLevel::Debug,
-              (" > %s\n", Telemetry::GetHistogramName(id)));
+      if (dumpCounters) {
+        printf_stderr("USE_COUNTER_PAGE: %s - %s\n",
+                      Telemetry::GetHistogramName(id), urlForLogging->get());
+      }
       Telemetry::Accumulate(id, 1);
     }
   } else {
@@ -1443,7 +1453,6 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
 
         if (mDocumentURI && (net::SchemeIsHTTP(mDocumentURI) ||
                              net::SchemeIsHTTPS(mDocumentURI))) {
-          GetContentBlockingLog()->ReportOrigins();
           GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
         }
       }
@@ -1486,6 +1495,10 @@ void WindowGlobalParent::DidBecomeCurrentWindowGlobal(bool aCurrent) {
   if (top && top->mOriginCounter) {
     top->mOriginCounter->UpdateSiteOriginsFrom(this,
                                                /* aIncrease = */ aCurrent);
+  }
+
+  if (!aCurrent && Fullscreen()) {
+    ExitTopChromeDocumentFullscreen();
   }
 }
 
@@ -1533,6 +1546,19 @@ bool WindowGlobalParent::HasActivePeerConnections() {
              "mNumOfProcessesWithActivePeerConnections is set only "
              "in the top window context");
   return mNumOfProcessesWithActivePeerConnections > 0;
+}
+
+void WindowGlobalParent::ExitTopChromeDocumentFullscreen() {
+  RefPtr<CanonicalBrowsingContext> chromeTop =
+      BrowsingContext()->TopCrossChromeBoundary();
+  if (Document* chromeDoc = chromeTop->GetDocument()) {
+    Document::ClearPendingFullscreenRequests(chromeDoc);
+    if (chromeDoc->Fullscreen()) {
+      // This only clears the DOM fullscreen, will not exit from browser UI
+      // fullscreen mode.
+      Document::AsyncExitFullscreen(chromeDoc);
+    }
+  }
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(WindowGlobalParent, WindowContext,

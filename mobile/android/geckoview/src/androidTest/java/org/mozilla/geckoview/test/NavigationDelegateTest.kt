@@ -2768,7 +2768,7 @@ class NavigationDelegateTest : BaseSessionTest() {
         assumeThat(sessionRule.env.isFission, equalTo(false))
 
         mainSession.loadUri("$TEST_ENDPOINT$HELLO_HTML_PATH")
-        sessionRule.waitUntilCalled(object : NavigationDelegate {
+        sessionRule.waitUntilCalled(object : HistoryDelegate, NavigationDelegate {
             @AssertCalled(count = 1)
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
                 assertThat("Session should not be null", session, notNullValue())
@@ -2779,6 +2779,11 @@ class NavigationDelegateTest : BaseSessionTest() {
             override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
                 assertThat("Session should not be null", session, notNullValue())
                 assertThat("Cannot go forward", canGoForward, equalTo(false))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onHistoryStateChange(session: GeckoSession, state: HistoryDelegate.HistoryList) {
+                assertThat("History should have one entry", state.size, equalTo(1))
             }
         })
         mainSession.loadUri("$TEST_ENDPOINT$HELLO2_HTML_PATH")
@@ -2934,6 +2939,28 @@ class NavigationDelegateTest : BaseSessionTest() {
         mainSession.waitUntilCalled(object : ProgressDelegate {
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 assertThat("Page loaded successfully", success, equalTo(true))
+            }
+        })
+    }
+
+    @Test
+    fun invalidScheme() {
+        val invalidUri = "tel:#12345678"
+        mainSession.loadUri(invalidUri)
+        mainSession.waitUntilCalled(object : NavigationDelegate {
+            override fun onLoadError(session: GeckoSession, uri: String?, error: WebRequestError): GeckoResult<String>? {
+                assertThat("Uri should match", uri, equalTo(invalidUri))
+                assertThat(
+                    "error should match",
+                    error.code,
+                    equalTo(WebRequestError.ERROR_MALFORMED_URI)
+                )
+                assertThat(
+                    "error should match",
+                    error.category,
+                    equalTo(WebRequestError.ERROR_CATEGORY_URI)
+                )
+                return null
             }
         })
     }

@@ -72,12 +72,13 @@ pub use self::list::ListStyleType;
 pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
-pub use self::page::{PageName, PageSize, PageSizeOrientation, PaperSize};
+pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AspectRatio;
 pub use self::position::{
-    GridAutoFlow, GridTemplateAreas, MasonryAutoFlow, Position, PositionOrAuto,
+    GridAutoFlow, GridTemplateAreas, Position, PositionOrAuto,
 };
+pub use self::position::{MasonryAutoFlow, MasonryPlacement, MasonryItemOrder};
 pub use self::position::{PositionComponent, ZIndex};
 pub use self::ratio::Ratio;
 pub use self::rect::NonNegativeLengthOrNumberRect;
@@ -99,7 +100,7 @@ pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
-pub use self::ui::{BoolInteger, Cursor, UserSelect};
+pub use self::ui::{BoolInteger, Cursor, UserSelect, ViewTimelineInset};
 pub use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
 
 #[cfg(feature = "gecko")]
@@ -318,7 +319,7 @@ impl ToCss for Number {
         }
         self.value.to_css(dest)?;
         if self.calc_clamping_mode.is_some() {
-            dest.write_str(")")?;
+            dest.write_char(')')?;
         }
         Ok(())
     }
@@ -701,7 +702,7 @@ impl ToCss for Integer {
         }
         self.value.to_css(dest)?;
         if self.was_calc {
-            dest.write_str(")")?;
+            dest.write_char(')')?;
         }
         Ok(())
     }
@@ -949,9 +950,9 @@ impl ToCss for Attr {
         dest.write_str("attr(")?;
         if !self.namespace_prefix.is_empty() {
             serialize_atom_identifier(&self.namespace_prefix, dest)?;
-            dest.write_str("|")?;
+            dest.write_char('|')?;
         }
         serialize_atom_identifier(&self.attribute, dest)?;
-        dest.write_str(")")
+        dest.write_char(')')
     }
 }

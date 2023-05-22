@@ -482,7 +482,10 @@ void MacroAssembler::mul32(Imm32 imm, Register srcDest) {
 }
 
 void MacroAssembler::mulHighUnsigned32(Imm32 imm, Register src, Register dest) {
-  MOZ_CRASH("NYI");
+  ScratchRegisterScope scratch(asMasm());
+  MOZ_ASSERT(src != scratch);
+  move32(imm, scratch);
+  as_mulh_wu(dest, src, scratch);
 }
 
 void MacroAssembler::mulFloat32(FloatRegister src, FloatRegister dest) {
@@ -1218,7 +1221,18 @@ void MacroAssembler::branchTruncateDoubleMaybeModUint32(FloatRegister src,
 
 void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
                                                  Register dest, Label* fail) {
-  convertDoubleToInt32(src, dest, fail, false);
+  ScratchRegisterScope scratch(asMasm());
+  ScratchDoubleScope fpscratch(asMasm());
+
+  // Convert scalar to signed 64-bit fixed-point, rounding toward zero.
+  // In the case of overflow, the output is saturated.
+  // In the case of NaN and -0, the output is zero.
+  as_ftintrz_l_d(fpscratch, src);
+  moveFromDouble(fpscratch, dest);
+
+  // Fail on overflow cases.
+  as_slli_w(scratch, dest, 0);
+  ma_b(dest, scratch, fail, Assembler::NotEqual);
 }
 
 template <typename T>

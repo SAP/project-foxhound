@@ -21,6 +21,7 @@
 #include "mozilla/AppUnits.h"         // for AppUnits
 #include "nsFontMetrics.h"            // for nsFontMetrics::Params
 #include "mozilla/gfx/PrintTarget.h"  // for PrintTarget::PageDoneCallback
+#include "mozilla/gfx/PrintPromise.h"
 
 class gfxContext;
 class gfxTextPerfMetrics;
@@ -33,6 +34,15 @@ class nsIScreenManager;
 class nsIWidget;
 struct nsRect;
 
+namespace mozilla {
+namespace dom {
+enum class ScreenColorGamut : uint8_t;
+}  // namespace dom
+namespace widget {
+class Screen;
+}  // namespace widget
+}  // namespace mozilla
+
 class nsDeviceContext final {
  public:
   typedef mozilla::gfx::PrintTarget PrintTarget;
@@ -44,9 +54,8 @@ class nsDeviceContext final {
   /**
    * Initialize the device context from a widget
    * @param aWidget a widget to initialize the device context from
-   * @return error status
    */
-  nsresult Init(nsIWidget* aWidget);
+  void Init(nsIWidget* aWidget);
 
   /**
    * Initialize the device context from a device context spec
@@ -119,6 +128,11 @@ class nsDeviceContext final {
   uint32_t GetDepth();
 
   /**
+   * Return the color gamut of the device.
+   */
+  mozilla::dom::ScreenColorGamut GetColorGamut();
+
+  /**
    * Get the size of the displayable area of the output device
    * in app units.
    * @param aWidth out parameter for width
@@ -179,9 +193,9 @@ class nsDeviceContext final {
    * Inform the output device that output of a document is ending.
    * Used for print related device contexts. Must be matched 1:1 with
    * BeginDocument()
-   * @return error status
+   * @return Promise that can be chained once the operation is complete.
    */
-  nsresult EndDocument();
+  RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument();
 
   /**
    * Inform the output device that output of a document is being aborted.
@@ -247,7 +261,7 @@ class nsDeviceContext final {
   void SetDPI();
   void ComputeClientRectUsingScreen(nsRect* outRect);
   void ComputeFullAreaUsingScreen(nsRect* outRect);
-  void FindScreen(nsIScreen** outScreen);
+  already_AddRefed<mozilla::widget::Screen> FindScreen();
 
   // Return false if the surface is not right
   bool CalcPrintingSize();
@@ -263,13 +277,10 @@ class nsDeviceContext final {
   gfxPoint mPrintingTranslate;
 
   nsCOMPtr<nsIWidget> mWidget;
-  nsCOMPtr<nsIScreenManager> mScreenManager;
   nsCOMPtr<nsIDeviceContextSpec> mDeviceContextSpec;
   RefPtr<PrintTarget> mPrintTarget;
   bool mIsCurrentlyPrintingDoc;
-#ifdef DEBUG
-  bool mIsInitialized;
-#endif
+  bool mIsInitialized = false;
 };
 
 #endif /* _NS_DEVICECONTEXT_H_ */

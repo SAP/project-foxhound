@@ -2,7 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { MigrationWizard } from "chrome://browser/content/migration/migration-wizard.mjs";
+import { MigrationWizardConstants } from "chrome://browser/content/migration/migration-wizard-constants.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
+const lazy = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "SHOW_IMPORT_ALL_PREF",
+  "browser.migrate.content-modal.import-all.enabled",
+  false
+);
 
 /**
  * This class is responsible for updating the state of a <migration-wizard>
@@ -21,12 +30,49 @@ export class MigrationWizardChild extends JSWindowActorChild {
    * @returns {Promise}
    */
   async handleEvent(event) {
-    if (event.type == "MigrationWizard:Init") {
-      this.#wizardEl = event.target;
-      let migrators = await this.sendQuery("GetAvailableMigrators");
+    switch (event.type) {
+      case "MigrationWizard:Init": {
+        this.#wizardEl = event.target;
+        let migrators = await this.sendQuery("GetAvailableMigrators");
+        this.setComponentState({
+          migrators,
+          page: MigrationWizardConstants.PAGES.SELECTION,
+          showImportAll: lazy.SHOW_IMPORT_ALL_PREF,
+        });
+
+        this.#wizardEl.dispatchEvent(
+          new this.contentWindow.CustomEvent("MigrationWizard:Ready", {
+            bubbles: true,
+          })
+        );
+        break;
+      }
+
+      case "MigrationWizard:BeginMigration": {
+        await this.sendQuery("Migrate", event.detail);
+        this.#wizardEl.dispatchEvent(
+          new this.contentWindow.CustomEvent("MigrationWizard:DoneMigration", {
+            bubbles: true,
+          })
+        );
+        break;
+      }
+    }
+  }
+
+  /**
+   * General message handler function for messages received from the
+   * associated MigrationWizardParent JSWindowActor.
+   *
+   * @param {ReceiveMessageArgument} message
+   *   The message received from the MigrationWizardParent.
+   */
+  receiveMessage(message) {
+    if (message.name == "UpdateProgress") {
+      let progress = message.data;
       this.setComponentState({
-        migrators,
-        page: MigrationWizard.PAGES.SELECTION,
+        page: MigrationWizardConstants.PAGES.PROGRESS,
+        progress,
       });
     }
   }

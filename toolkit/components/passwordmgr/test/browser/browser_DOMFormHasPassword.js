@@ -12,7 +12,7 @@ function task(contentIds) {
   });
 
   function unexpectedContentEvent(evt) {
-    ok(false, "Received a " + evt.type + " event on content");
+    Assert.ok(false, "Received a " + evt.type + " event on content");
   }
 
   var gDoc = null;
@@ -41,7 +41,7 @@ function task(contentIds) {
 
   function test_inputAddHandler(evt) {
     removeEventListener(evt.type, test_inputAddHandler, false);
-    is(
+    Assert.equal(
       evt.target.id,
       contentIds.FORM1_ID,
       evt.type + " event targets correct form element (added password element)"
@@ -57,7 +57,7 @@ function task(contentIds) {
 
   function test_inputChangeFormHandler(evt) {
     removeEventListener(evt.type, test_inputChangeFormHandler, false);
-    is(
+    Assert.equal(
       evt.target.id,
       contentIds.FORM2_ID,
       evt.type + " event targets correct form element (changed form)"
@@ -73,7 +73,7 @@ function task(contentIds) {
 
   function test_inputChangesTypeHandler(evt) {
     removeEventListener(evt.type, test_inputChangesTypeHandler, false);
-    is(
+    Assert.equal(
       evt.target.id,
       contentIds.FORM1_ID,
       evt.type + " event targets correct form element (changed type)"
@@ -93,7 +93,7 @@ add_task(async function() {
   let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
 
   let promise = ContentTask.spawn(tab.linkedBrowser, ids, task);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     tab.linkedBrowser,
     "data:text/html;charset=utf-8," +
       "<html><body>" +
@@ -110,6 +110,6 @@ add_task(async function() {
   );
   await promise;
 
-  ok(true, "Test completed");
+  Assert.ok(true, "Test completed");
   gBrowser.removeCurrentTab();
 });

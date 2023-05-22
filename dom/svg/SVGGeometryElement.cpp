@@ -54,7 +54,7 @@ nsresult SVGGeometryElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
 }
 
 bool SVGGeometryElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~(eSHAPE | eUSE_TARGET));
+  return !(aFlags & ~eSHAPE);
 }
 
 bool SVGGeometryElement::AttributeDefinesGeometry(const nsAtom* aName) {
@@ -253,7 +253,7 @@ float SVGGeometryElement::GetPathLengthScale(PathLengthScaleForType aFor) {
   MOZ_ASSERT(aFor == eForTextPath || aFor == eForStroking, "Unknown enum");
   if (mPathLength.IsExplicitlySet()) {
     float authorsPathLengthEstimate = mPathLength.GetAnimValue();
-    if (authorsPathLengthEstimate > 0) {
+    if (authorsPathLengthEstimate >= 0) {
       RefPtr<Path> path = GetOrBuildPathForMeasuring();
       if (!path) {
         // The path is empty or invalid so its length must be zero and

@@ -914,10 +914,10 @@ ContentPrefService2.prototype = {
         try {
           callbacks.onError(e);
         } catch (e) {
-          Cu.reportError(e);
+          console.error(e);
         }
       } else {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
 
@@ -926,7 +926,7 @@ ContentPrefService2.prototype = {
         try {
           callbacks.onRow(row);
         } catch (e) {
-          Cu.reportError(e);
+          console.error(e);
         }
       }
     }
@@ -940,7 +940,7 @@ ContentPrefService2.prototype = {
         rows && !!rows.length
       );
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   },
 
@@ -1034,7 +1034,7 @@ ContentPrefService2.prototype = {
       try {
         observer.onContentPrefRemoved(aGroup, aName, aIsPrivate);
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   },
@@ -1052,7 +1052,7 @@ ContentPrefService2.prototype = {
       try {
         observer.onContentPrefSet(aGroup, aName, aValue, aIsPrivate);
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   },
@@ -1159,6 +1159,13 @@ ContentPrefService2.prototype = {
   },
 
   async _getConnection(aAttemptNum = 0) {
+    if (
+      Services.startup.isInOrBeyondShutdownPhase(
+        Ci.nsIAppStartup.SHUTDOWN_PHASE_APPSHUTDOWN
+      )
+    ) {
+      throw new Error("Can't open content prefs, we're in shutdown.");
+    }
     let path = PathUtils.join(PathUtils.profileDir, "content-prefs.sqlite");
     let conn;
     let resetAndRetry = async e => {
@@ -1177,26 +1184,37 @@ ContentPrefService2.prototype = {
       try {
         await this._failover(conn, path);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
         throw e;
       }
       return this._getConnection(++aAttemptNum);
     };
     try {
       conn = await lazy.Sqlite.openConnection({ path });
-      lazy.Sqlite.shutdown.addBlocker(
-        "Closing ContentPrefService2 connection.",
-        () => conn.close()
-      );
+      try {
+        lazy.Sqlite.shutdown.addBlocker(
+          "Closing ContentPrefService2 connection.",
+          () => conn.close()
+        );
+      } catch (ex) {
+        // Uh oh, we failed to add a shutdown blocker. Close the connection
+        // anyway, but make sure that doesn't throw.
+        try {
+          await conn?.close();
+        } catch (ex) {
+          console.error(ex);
+        }
+        return null;
+      }
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return resetAndRetry(e);
     }
 
     try {
       await this._dbMaybeInit(conn);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return resetAndRetry(e);
     }
 

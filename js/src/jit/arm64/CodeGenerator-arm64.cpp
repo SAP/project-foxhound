@@ -205,15 +205,13 @@ void CodeGenerator::visitMinMaxF(LMinMaxF* ins) {
   }
 }
 
-// FIXME: Uh, is this a static function? It looks like it is...
 template <typename T>
-ARMRegister toWRegister(const T* a) {
+static ARMRegister toWRegister(const T* a) {
   return ARMRegister(ToRegister(a), 32);
 }
 
-// FIXME: Uh, is this a static function? It looks like it is...
 template <typename T>
-ARMRegister toXRegister(const T* a) {
+static ARMRegister toXRegister(const T* a) {
   return ARMRegister(ToRegister(a), 64);
 }
 
@@ -345,6 +343,10 @@ void CodeGenerator::visitMulI(LMulI* ins) {
         }
         return;  // Avoid overflow check.
       case 2:
+        if (!mul->canOverflow()) {
+          masm.Add(destreg32, lhsreg32, Operand(lhsreg32));
+          return;  // Avoid overflow check.
+        }
         masm.Adds(destreg32, lhsreg32, Operand(lhsreg32));
         break;  // Go to overflow check.
       default:
@@ -1107,8 +1109,8 @@ MoveOperand CodeGeneratorARM64::toMoveOperand(const LAllocation a) const {
   if (a.isFloatReg()) {
     return MoveOperand(ToFloatRegister(a));
   }
-  MoveOperand::Kind kind =
-      a.isStackArea() ? MoveOperand::EFFECTIVE_ADDRESS : MoveOperand::MEMORY;
+  MoveOperand::Kind kind = a.isStackArea() ? MoveOperand::Kind::EffectiveAddress
+                                           : MoveOperand::Kind::Memory;
   return MoveOperand(ToAddress(a), kind);
 }
 

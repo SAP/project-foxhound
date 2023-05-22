@@ -10,6 +10,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   clearInterval: "resource://gre/modules/Timer.sys.mjs",
   MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   setInterval: "resource://gre/modules/Timer.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
@@ -17,6 +18,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const FETCH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const MERINO_PROVIDER = "accuweather";
 const MERINO_TIMEOUT_MS = 5000; // 5s
+
+const HISTOGRAM_LATENCY = "FX_URLBAR_MERINO_LATENCY_WEATHER_MS";
+const HISTOGRAM_RESPONSE = "FX_URLBAR_MERINO_RESPONSE_WEATHER";
 
 /**
  * A feature that periodically fetches weather suggestions from Merino.
@@ -42,6 +46,17 @@ export class Weather extends BaseFeature {
     return this.#suggestion;
   }
 
+  /**
+   * @returns {Set}
+   *   The set of keywords that should trigger weather suggestions. This just
+   *   reflects the keywords array stored in the remote settings config, so it
+   *   may be non-empty even if `browser.urlbar.weather.zeroPrefix` is true.
+   *   Check the pref before allowing keyword-based suggestions.
+   */
+  get keywords() {
+    return this.#keywords;
+  }
+
   enable(enabled) {
     if (enabled) {
       this.#init();
@@ -65,6 +80,12 @@ export class Weather extends BaseFeature {
   }
 
   #init() {
+    this.#onConfigSet = () => this.#updateKeywords();
+    lazy.QuickSuggest.remoteSettings.emitter.on(
+      "config-set",
+      this.#onConfigSet
+    );
+
     this.#merino = new lazy.MerinoClient(this.constructor.name);
 
     this.#fetchInterval = lazy.setInterval(
@@ -77,10 +98,17 @@ export class Weather extends BaseFeature {
   }
 
   #uninit() {
+    lazy.QuickSuggest.remoteSettings.emitter.off(
+      "config-set",
+      this.#onConfigSet
+    );
+    this.#onConfigSet = null;
+
     this.#merino = null;
     this.#suggestion = null;
     lazy.clearInterval(this.#fetchInterval);
     this.#fetchInterval = 0;
+    this.#keywords.clear();
   }
 
   async #fetch() {
@@ -98,7 +126,9 @@ export class Weather extends BaseFeature {
       suggestions = await merino.fetch({
         query: "",
         providers: [MERINO_PROVIDER],
-        timeoutMs: MERINO_TIMEOUT_MS,
+        timeoutMs: this.#timeoutMs,
+        extraLatencyHistogram: HISTOGRAM_LATENCY,
+        extraResponseHistogram: HISTOGRAM_RESPONSE,
       });
     } finally {
       this.#pendingFetchCount--;
@@ -132,6 +162,11 @@ export class Weather extends BaseFeature {
     }
   }
 
+  #updateKeywords() {
+    let { weather_keywords } = lazy.QuickSuggest.remoteSettings.config;
+    this.#keywords = new Set(weather_keywords || []);
+  }
+
   get _test_merino() {
     return this.#merino;
   }
@@ -152,10 +187,17 @@ export class Weather extends BaseFeature {
     this.#fetchIntervalMs = ms < 0 ? FETCH_INTERVAL_MS : ms;
   }
 
+  _test_setTimeoutMs(ms) {
+    this.#timeoutMs = ms < 0 ? MERINO_TIMEOUT_MS : ms;
+  }
+
   #merino = null;
   #suggestion = null;
   #fetchInterval = 0;
   #fetchIntervalMs = FETCH_INTERVAL_MS;
+  #timeoutMs = MERINO_TIMEOUT_MS;
   #waitForFetchesDeferred = null;
   #pendingFetchCount = 0;
+  #onConfigSet = null;
+  #keywords = new Set();
 }

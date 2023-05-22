@@ -8,12 +8,14 @@
 #define DOM_FS_PARENT_DATAMODEL_FILESYSTEMDATABASEMANAGERVERSION001_H_
 
 #include "FileSystemDatabaseManager.h"
+#include "mozilla/dom/quota/CommonMetadata.h"
 #include "nsString.h"
 
 namespace mozilla::dom::fs::data {
 
 class FileSystemDataManager;
 class FileSystemFileManager;
+using FileSystemConnection = fs::ResultConnection;
 
 /**
  * @brief Versioned implementation of database interface enables backwards
@@ -36,16 +38,19 @@ class FileSystemFileManager;
 class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
  public:
   FileSystemDatabaseManagerVersion001(
-      FileSystemDataManager* aDataManager,
-      fs::data::FileSystemConnection&& aConnection,
+      FileSystemDataManager* aDataManager, FileSystemConnection&& aConnection,
       UniquePtr<FileSystemFileManager>&& aFileManager,
-      const EntryId& aRootEntry)
-      : mDataManager(aDataManager),
-        mConnection(aConnection),
-        mFileManager(std::move(aFileManager)),
-        mRootEntry(aRootEntry) {}
+      const EntryId& aRootEntry);
 
-  virtual Result<int64_t, QMResult> GetUsage() const override;
+  /* Static to allow use by quota client without instantiation */
+  static nsresult RescanTrackedUsages(const FileSystemConnection& aConnection,
+                                      const Origin& aOrigin);
+
+  /* Static to allow use by quota client without instantiation */
+  static Result<Usage, QMResult> GetFileUsage(
+      const FileSystemConnection& aConnection);
+
+  virtual nsresult UpdateUsage(const EntryId& aEntry) override;
 
   virtual Result<EntryId, QMResult> GetOrCreateDirectory(
       const FileSystemChildMetadata& aHandle, bool aCreate) override;
@@ -78,10 +83,21 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
 
   virtual void Close() override;
 
+  virtual nsresult BeginUsageTracking(const EntryId& aEntryId) override;
+
+  virtual nsresult EndUsageTracking(const EntryId& aEntryId) override;
+
   virtual ~FileSystemDatabaseManagerVersion001() = default;
 
  private:
-  nsresult UpdateUsage(int64_t aDelta);
+  nsresult UpdateUsageInDatabase(const EntryId& aEntry, Usage aNewDiskUsage);
+
+  Result<Ok, QMResult> EnsureUsageIsKnown(const EntryId& aEntryId);
+
+  void DecreaseCachedQuotaUsage(int64_t aDelta);
+
+  nsresult UpdateCachedQuotaUsage(const EntryId& aEntryId, Usage aOldUsage,
+                                  Usage aNewUsage);
 
   // This is a raw pointer since we're owned by the FileSystemDataManager.
   FileSystemDataManager* MOZ_NON_OWNING_REF mDataManager;
@@ -91,6 +107,10 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
   UniquePtr<FileSystemFileManager> mFileManager;
 
   const EntryId mRootEntry;
+
+  const quota::ClientMetadata mClientMetadata;
+
+  int32_t mFilesOfUnknownUsage;
 };
 
 }  // namespace mozilla::dom::fs::data

@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const { FeatureCallout } = ChromeUtils.importESModule(
+  "resource:///modules/FeatureCallout.sys.mjs"
+);
+
 const MediaQueryDOMSorting = {
   init() {
     this.recentlyClosedTabs = document.getElementById(
@@ -28,6 +32,15 @@ const MediaQueryDOMSorting = {
   },
 };
 
+const launchFeatureTour = () => {
+  let callout = new FeatureCallout({
+    win: window,
+    prefName: "browser.firefox-view.feature-tour",
+    page: "about:firefoxview",
+  });
+  callout.showFeatureCallout();
+};
+
 window.addEventListener("DOMContentLoaded", async () => {
   Services.telemetry.setEventRecordingEnabled("firefoxview", true);
   Services.telemetry.recordEvent("firefoxview", "entered", "firefoxview", null);
@@ -43,6 +56,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   ) {
     await document.getElementById("tab-pickup-container").onReload();
   }
+  launchFeatureTour();
 });
 
 window.addEventListener("unload", () => {

@@ -6,11 +6,11 @@ Figures out the following properties:
   - expression reference counts
 !*/
 
-use super::{CallError, ExpressionError, FunctionError, ModuleInfo, ShaderStages, ValidationFlags};
+use super::{ExpressionError, FunctionError, ModuleInfo, ShaderStages, ValidationFlags};
 use crate::span::{AddSpan as _, WithSpan};
 use crate::{
     arena::{Arena, Handle},
-    proc::{ResolveContext, ResolveError, TypeResolution},
+    proc::{ResolveContext, TypeResolution},
 };
 use std::ops;
 
@@ -308,10 +308,7 @@ impl FunctionInfo {
         handle: Handle<crate::Expression>,
         global_use: GlobalUse,
     ) -> NonUniformResult {
-        //Note: if the expression doesn't exist, this function
-        // will return `None`, but the later validation of
-        // expressions should detect this and error properly.
-        let info = self.expressions.get_mut(handle.index())?;
+        let info = &mut self.expressions[handle.index()];
         info.ref_count += 1;
         // mark the used global as read
         if let Some(global) = info.assignable_global {
@@ -335,8 +332,7 @@ impl FunctionInfo {
         handle: Handle<crate::Expression>,
         assignable_global: &mut Option<Handle<crate::GlobalVariable>>,
     ) -> NonUniformResult {
-        //Note: similarly to `add_ref_impl`, this ignores invalid expressions.
-        let info = self.expressions.get_mut(handle.index())?;
+        let info = &mut self.expressions[handle.index()];
         info.ref_count += 1;
         // propagate the assignable global up the chain, till it either hits
         // a value-type expression, or the assignment statement.
@@ -365,8 +361,8 @@ impl FunctionInfo {
                 GlobalOrArgument::Argument(i) => {
                     let handle = arguments[i as usize];
                     GlobalOrArgument::from_expression(expression_arena, handle).map_err(
-                        |error| {
-                            FunctionError::Expression { handle, error }
+                        |source| {
+                            FunctionError::Expression { handle, source }
                                 .with_span_handle(handle, expression_arena)
                         },
                     )?
@@ -378,8 +374,8 @@ impl FunctionInfo {
                 GlobalOrArgument::Argument(i) => {
                     let handle = arguments[i as usize];
                     GlobalOrArgument::from_expression(expression_arena, handle).map_err(
-                        |error| {
-                            FunctionError::Expression { handle, error }
+                        |source| {
+                            FunctionError::Expression { handle, source }
                                 .with_span_handle(handle, expression_arena)
                         },
                     )?
@@ -689,13 +685,7 @@ impl FunctionInfo {
                 non_uniform_result: self.add_ref(expr),
                 requirements: UniformityRequirements::empty(),
             },
-            E::CallResult(function) => {
-                let info = other_functions
-                    .get(function.index())
-                    .ok_or(ExpressionError::CallToUndeclaredFunction(function))?;
-
-                info.uniformity.clone()
-            }
+            E::CallResult(function) => other_functions[function.index()].uniformity.clone(),
             E::AtomicResult { .. } => Uniformity {
                 non_uniform_result: Some(handle),
                 requirements: UniformityRequirements::empty(),
@@ -706,12 +696,7 @@ impl FunctionInfo {
             },
         };
 
-        let ty = resolve_context.resolve(expression, |h| {
-            self.expressions
-                .get(h.index())
-                .map(|ei| &ei.ty)
-                .ok_or(ResolveError::ExpressionForwardDependency(h))
-        })?;
+        let ty = resolve_context.resolve(expression, |h| Ok(&self[h].ty))?;
         self.expressions[handle.index()] = ExpressionInfo {
             uniformity,
             ref_count: 0,
@@ -741,15 +726,12 @@ impl FunctionInfo {
         use crate::Statement as S;
 
         let mut combined_uniformity = FunctionUniformity::new();
-        for (statement, &span) in statements.span_iter() {
+        for statement in statements {
             let uniformity = match *statement {
                 S::Emit(ref range) => {
                     let mut requirements = UniformityRequirements::empty();
                     for expr in range.clone() {
-                        let req = match self.expressions.get(expr.index()) {
-                            Some(expr) => expr.uniformity.requirements,
-                            None => UniformityRequirements::empty(),
-                        };
+                        let req = self.expressions[expr.index()].uniformity.requirements;
                         #[cfg(feature = "validate")]
                         if self
                             .flags
@@ -894,13 +876,7 @@ impl FunctionInfo {
                     for &argument in arguments {
                         let _ = self.add_ref(argument);
                     }
-                    let info = other_functions.get(function.index()).ok_or(
-                        FunctionError::InvalidCall {
-                            function,
-                            error: CallError::ForwardDeclaredFunction,
-                        }
-                        .with_span_static(span, "forward call"),
-                    )?;
+                    let info = &other_functions[function.index()];
                     //Note: the result is validated by the Validator, not here
                     self.process_call(info, arguments, expression_arena)?
                 }
@@ -956,7 +932,7 @@ impl ModuleInfo {
         };
 
         for (handle, expr) in fun.expressions.iter() {
-            if let Err(error) = info.process_expression(
+            if let Err(source) = info.process_expression(
                 handle,
                 expr,
                 &fun.expressions,
@@ -964,7 +940,7 @@ impl ModuleInfo {
                 &resolve_context,
                 capabilities,
             ) {
-                return Err(FunctionError::Expression { handle, error }
+                return Err(FunctionError::Expression { handle, source }
                     .with_span_handle(handle, &fun.expressions));
             }
         }

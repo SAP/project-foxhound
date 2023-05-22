@@ -23,72 +23,6 @@ const TEST_COOKIE_HEADER_URL =
   ) + "testCookieHeader.sjs";
 
 /**
- * Inserts cookie injection test rules for DOMAIN_A and DOMAIN_B.
- */
-function insertTestRules() {
-  info("Clearing existing rules");
-  Services.cookieBanners.resetRules(false);
-
-  info("Inserting test rules.");
-
-  let ruleA = Cc["@mozilla.org/cookie-banner-rule;1"].createInstance(
-    Ci.nsICookieBannerRule
-  );
-  ruleA.domains = [DOMAIN_A, DOMAIN_C];
-
-  Services.cookieBanners.insertRule(ruleA);
-  ruleA.addCookie(
-    true,
-    `cookieConsent_${DOMAIN_A}_1`,
-    "optOut1",
-    null, // empty host to fall back to .<domain>
-    "/",
-    3600,
-    "",
-    false,
-    false,
-    false,
-    0,
-    0
-  );
-  ruleA.addCookie(
-    true,
-    `cookieConsent_${DOMAIN_A}_2`,
-    "optOut2",
-    null,
-    "/",
-    3600,
-    "",
-    false,
-    false,
-    false,
-    0,
-    0
-  );
-
-  // An opt-in cookie rule for DOMAIN_B.
-  let ruleB = Cc["@mozilla.org/cookie-banner-rule;1"].createInstance(
-    Ci.nsICookieBannerRule
-  );
-  ruleB.domains = [DOMAIN_B];
-
-  Services.cookieBanners.insertRule(ruleB);
-  ruleB.addCookie(
-    false,
-    `cookieConsent_${DOMAIN_B}_1`,
-    "optIn1",
-    DOMAIN_B,
-    "/",
-    3600,
-    "UNSET",
-    false,
-    false,
-    true,
-    0,
-    0
-  );
-}
-/**
  * Tests that the test domains have no cookies set.
  */
 function assertNoCookies() {
@@ -114,28 +48,14 @@ async function visitTestSites(urls = [ORIGIN_A, ORIGIN_B, ORIGIN_C]) {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
 
   for (let url of urls) {
-    await BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    await BrowserTestUtils.loadURIString(tab.linkedBrowser, url);
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   }
 
   BrowserTestUtils.removeTab(tab);
 }
 
-add_setup(async function() {
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("cookiebanners.service.mode");
-    Services.prefs.clearUserPref("cookiebanners.service.mode.privateBrowsing");
-    if (
-      Services.prefs.getIntPref("cookiebanners.service.mode") !=
-        Ci.nsICookieBannerService.MODE_DISABLED ||
-      Services.prefs.getIntPref("cookiebanners.service.mode.privateBrowsing") !=
-        Ci.nsICookieBannerService.MODE_DISABLED
-    ) {
-      // Restore original rules.
-      Services.cookieBanners.resetRules(true);
-    }
-  });
-});
+add_setup(cookieInjectorTestSetup);
 
 /**
  * Tests that no cookies are set if the cookie injection component is disabled
@@ -149,7 +69,7 @@ add_task(async function test_cookie_injector_disabled() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   await visitTestSites();
   assertNoCookies();
@@ -162,14 +82,28 @@ add_task(async function test_cookie_injector_disabled() {
  * by pref, but the cookie banner service is disabled or in detect-only mode.
  */
 add_task(async function test_cookie_banner_service_disabled() {
-  for (let mode of [
-    Ci.nsICookieBannerService.MODE_DISABLED,
-    Ci.nsICookieBannerService.MODE_DETECT_ONLY,
+  // Enable in PBM so the service is always initialized.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
+    ],
+  });
+
+  for (let [serviceMode, detectOnly] of [
+    [Ci.nsICookieBannerService.MODE_DISABLED, false],
+    [Ci.nsICookieBannerService.MODE_DISABLED, true],
+    [Ci.nsICookieBannerService.MODE_REJECT, true],
+    [Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT, true],
   ]) {
+    info(`Testing with serviceMode=${serviceMode}; detectOnly=${detectOnly}`);
     await SpecialPowers.pushPrefEnv({
       set: [
-        ["cookiebanners.service.mode", mode],
+        ["cookiebanners.service.mode", serviceMode],
         ["cookiebanners.cookieInjector.enabled", true],
+        ["cookiebanners.service.detectOnly", detectOnly],
       ],
     });
 
@@ -177,6 +111,7 @@ add_task(async function test_cookie_banner_service_disabled() {
     assertNoCookies();
 
     await SiteDataTestUtils.clear();
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -211,7 +146,7 @@ add_task(async function test_mode_reject() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   await visitTestSites();
 
@@ -265,7 +200,7 @@ add_task(async function test_mode_reject_or_accept() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   await visitTestSites();
 
@@ -323,7 +258,7 @@ add_task(async function test_embedded_third_party() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   info("Loading example.com with an iframe for example.org.");
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
@@ -367,7 +302,7 @@ add_task(async function test_cookie_header_and_document() {
       ["cookiebanners.cookieInjector.enabled", true],
     ],
   });
-  insertTestRules();
+  insertTestCookieRules();
 
   await BrowserTestUtils.withNewTab(TEST_COOKIE_HEADER_URL, async browser => {
     await SpecialPowers.spawn(browser, [], async () => {
@@ -402,13 +337,13 @@ add_task(async function test_pbm() {
       ["cookiebanners.cookieInjector.enabled", true],
     ],
   });
-  insertTestRules();
+  insertTestCookieRules();
 
   let pbmWindow = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
   let tab = BrowserTestUtils.addTab(pbmWindow.gBrowser, "about:blank");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, ORIGIN_A);
+  await BrowserTestUtils.loadURIString(tab.linkedBrowser, ORIGIN_A);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   ok(
@@ -455,13 +390,13 @@ add_task(async function test_container_tab() {
       ["cookiebanners.cookieInjector.enabled", true],
     ],
   });
-  insertTestRules();
+  insertTestCookieRules();
 
   info("Loading ORIGIN_B in a container tab.");
   let tab = BrowserTestUtils.addTab(gBrowser, ORIGIN_B, {
     userContextId: 1,
   });
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, ORIGIN_B);
+  await BrowserTestUtils.loadURIString(tab.linkedBrowser, ORIGIN_B);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   ok(
@@ -502,7 +437,7 @@ add_task(async function test_no_overwrite() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   info("Pre-setting a cookie that should not be overwritten.");
   SiteDataTestUtils.addToCookies({
@@ -562,7 +497,7 @@ add_task(async function test_subdomain() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   await visitTestSites([ORIGIN_A_SUB, ORIGIN_B]);
 
@@ -595,7 +530,7 @@ add_task(async function test_site_preference() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   await visitTestSites();
 
@@ -638,13 +573,13 @@ add_task(async function test_site_preference_pbm() {
     ],
   });
 
-  insertTestRules();
+  insertTestCookieRules();
 
   let pbmWindow = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
   let tab = BrowserTestUtils.addTab(pbmWindow.gBrowser, "about:blank");
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, ORIGIN_B);
+  await BrowserTestUtils.loadURIString(tab.linkedBrowser, ORIGIN_B);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   ok(
@@ -666,7 +601,7 @@ add_task(async function test_site_preference_pbm() {
     true
   );
 
-  await BrowserTestUtils.loadURI(tab.linkedBrowser, ORIGIN_B);
+  await BrowserTestUtils.loadURIString(tab.linkedBrowser, ORIGIN_B);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   ok(

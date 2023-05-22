@@ -77,16 +77,33 @@ let JSWINDOWACTORS = {
 
   AboutHttpsOnlyError: {
     parent: {
-      moduleURI: "resource://gre/actors/AboutHttpsOnlyErrorParent.jsm",
+      esModuleURI: "resource://gre/actors/AboutHttpsOnlyErrorParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://gre/actors/AboutHttpsOnlyErrorChild.jsm",
+      esModuleURI: "resource://gre/actors/AboutHttpsOnlyErrorChild.sys.mjs",
       events: {
         DOMDocElementInserted: {},
       },
     },
     matches: ["about:httpsonlyerror?*"],
     allFrames: true,
+  },
+
+  AboutTranslations: {
+    parent: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsChild.sys.mjs",
+      events: {
+        // Run the actor before any content of the page appears to inject functions.
+        DOMDocElementInserted: {},
+        DOMContentLoaded: {},
+      },
+    },
+    matches: ["about:translations"],
+
+    enablePreference: "browser.translations.enable",
   },
 
   AudioPlayback: {
@@ -330,10 +347,10 @@ let JSWINDOWACTORS = {
 
   NetError: {
     parent: {
-      moduleURI: "resource://gre/actors/NetErrorParent.jsm",
+      esModuleURI: "resource://gre/actors/NetErrorParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://gre/actors/NetErrorChild.jsm",
+      esModuleURI: "resource://gre/actors/NetErrorChild.sys.mjs",
       events: {
         DOMDocElementInserted: {},
         click: {},
@@ -458,10 +475,10 @@ let JSWINDOWACTORS = {
 
   WebChannel: {
     parent: {
-      moduleURI: "resource://gre/actors/WebChannelParent.jsm",
+      esModuleURI: "resource://gre/actors/WebChannelParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://gre/actors/WebChannelChild.jsm",
+      esModuleURI: "resource://gre/actors/WebChannelChild.sys.mjs",
       events: {
         WebChannelMessageToChrome: { capture: true, wantUntrusted: true },
       },
@@ -474,6 +491,21 @@ let JSWINDOWACTORS = {
     child: {
       moduleURI: "resource://gre/actors/ThumbnailsChild.jsm",
     },
+  },
+
+  // The newer translations feature backed by local machine learning models.
+  // See Bug 971044.
+  Translations: {
+    parent: {
+      esModuleURI: "resource://gre/actors/TranslationsParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/TranslationsChild.sys.mjs",
+      events: {
+        pageshow: {},
+      },
+    },
+    enablePreference: "browser.translations.enable",
   },
 
   UAWidgets: {

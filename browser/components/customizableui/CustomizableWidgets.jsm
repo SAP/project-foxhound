@@ -154,9 +154,9 @@ const CustomizableWidgets = [
         "&maxResults=42&excludeQueries=1";
 
       this._panelMenuView = new window.PlacesPanelview(
+        query,
         document.getElementById("appMenu_historyMenu"),
-        panelview,
-        query
+        panelview
       );
       // When either of these sub-subviews show, populate them with recently closed
       // objects data.
@@ -572,7 +572,7 @@ if (Services.prefs.getBoolPref("privacy.panicButton.enabled")) {
       promise.then(function() {
         let otherWindow = Services.wm.getMostRecentWindow("navigator:browser");
         if (otherWindow.closed) {
-          Cu.reportError("Got a closed window!");
+          console.error("Got a closed window!");
         }
         if (otherWindow.PanicButtonNotifier) {
           otherWindow.PanicButtonNotifier.notify();
@@ -622,19 +622,6 @@ if (PrivateBrowsingUtils.enabled) {
     onCommand(e) {
       let win = e.target.ownerGlobal;
       win.OpenBrowserWindow({ private: true });
-    },
-  });
-}
-
-// If the pref is set to `true`, we don't register this widget.
-if (!Services.prefs.getBoolPref("extensions.unifiedExtensions.enabled")) {
-  CustomizableWidgets.push({
-    id: "add-ons-button",
-    shortcutId: "key_openAddons",
-    l10nId: "toolbar-addons-themes-button",
-    onCommand(aEvent) {
-      let win = aEvent.target.ownerGlobal;
-      win.BrowserOpenAddonsMgr();
     },
   });
 }

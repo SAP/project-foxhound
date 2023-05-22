@@ -1,6 +1,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  PerfTestHelpers: "resource://testing-common/PerfTestHelpers.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
@@ -8,7 +9,6 @@ ChromeUtils.defineESModuleGetters(this, {
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  PerfTestHelpers: "resource://testing-common/PerfTestHelpers.jsm",
 });
 
 /**
@@ -382,6 +382,7 @@ async function addDummyHistoryEntries(searchStr = "") {
 
   for (let i = 0; i < NUM_VISITS; ++i) {
     visits.push({
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       uri: `http://example.com/urlbar-reflows-${i}`,
       title: `Reflow test for URL bar entry #${i} - ${searchStr}`,
     });

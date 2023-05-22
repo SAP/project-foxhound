@@ -7,29 +7,56 @@
 #include "FileSystemManagerChild.h"
 
 #include "FileSystemAccessHandleChild.h"
+#include "FileSystemBackgroundRequestHandler.h"
 #include "FileSystemWritableFileStreamChild.h"
 #include "mozilla/dom/FileSystemSyncAccessHandle.h"
 #include "mozilla/dom/FileSystemWritableFileStream.h"
 
 namespace mozilla::dom {
 
-void FileSystemManagerChild::CloseAll() {
-  // NOTE: getFile() creates blobs that read the data from the child;
-  // we'll need to abort any reads and resolve this call only when all
-  // blobs are closed.
+void FileSystemManagerChild::SetBackgroundRequestHandler(
+    FileSystemBackgroundRequestHandler* aBackgroundRequestHandler) {
+  MOZ_ASSERT(aBackgroundRequestHandler);
+  MOZ_ASSERT(!mBackgroundRequestHandler);
 
+  mBackgroundRequestHandler = aBackgroundRequestHandler;
+}
+
+#ifdef DEBUG
+bool FileSystemManagerChild::AllSyncAccessHandlesClosed() const {
   for (const auto& item : ManagedPFileSystemAccessHandleChild()) {
     auto* child = static_cast<FileSystemAccessHandleChild*>(item);
+    auto* handle = child->MutableAccessHandlePtr();
 
-    child->MutableAccessHandlePtr()->Close();
+    if (!handle->IsClosed()) {
+      return false;
+    }
   }
 
-  for (const auto& item : ManagedPFileSystemWritableFileStreamChild()) {
-    auto* child = static_cast<FileSystemWritableFileStreamChild*>(item);
-
-    child->MutableWritableFileStreamPtr()->Close();
-  }
+  return true;
 }
+
+bool FileSystemManagerChild::AllWritableFileStreamsClosed() const {
+  for (const auto& item : ManagedPFileSystemWritableFileStreamChild()) {
+    auto* const child = static_cast<FileSystemWritableFileStreamChild*>(item);
+    if (!child) {
+      continue;
+    }
+
+    auto* const handle = child->MutableWritableFileStreamPtr();
+    if (!handle) {
+      continue;
+    }
+
+    if (!handle->IsClosed()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+#endif
 
 void FileSystemManagerChild::Shutdown() {
   if (!CanSend()) {
@@ -39,11 +66,6 @@ void FileSystemManagerChild::Shutdown() {
   Close();
 }
 
-already_AddRefed<PFileSystemAccessHandleChild>
-FileSystemManagerChild::AllocPFileSystemAccessHandleChild() {
-  return MakeAndAddRef<FileSystemAccessHandleChild>();
-}
-
 already_AddRefed<PFileSystemWritableFileStreamChild>
 FileSystemManagerChild::AllocPFileSystemWritableFileStreamChild() {
   return MakeAndAddRef<FileSystemWritableFileStreamChild>();
@@ -51,10 +73,49 @@ FileSystemManagerChild::AllocPFileSystemWritableFileStreamChild() {
 
 ::mozilla::ipc::IPCResult FileSystemManagerChild::RecvCloseAll(
     CloseAllResolver&& aResolver) {
-  CloseAll();
+  nsTArray<RefPtr<BoolPromise>> promises;
 
-  aResolver(NS_OK);
+  // NOTE: getFile() creates blobs that read the data from the child;
+  // we'll need to abort any reads and resolve this call only when all
+  // blobs are closed.
+
+  for (const auto& item : ManagedPFileSystemAccessHandleChild()) {
+    auto* child = static_cast<FileSystemAccessHandleChild*>(item);
+    auto* handle = child->MutableAccessHandlePtr();
+
+    if (handle->IsOpen()) {
+      promises.AppendElement(handle->BeginClose());
+    } else if (handle->IsClosing()) {
+      promises.AppendElement(handle->OnClose());
+    }
+  }
+
+  for (const auto& item : ManagedPFileSystemWritableFileStreamChild()) {
+    auto* const child = static_cast<FileSystemWritableFileStreamChild*>(item);
+    if (!child) {
+      continue;
+    }
+
+    auto* const handle = child->MutableWritableFileStreamPtr();
+    if (handle && !handle->IsClosed()) {
+      promises.AppendElement(handle->BeginClose());
+    }
+  }
+
+  BoolPromise::AllSettled(GetCurrentSerialEventTarget(), promises)
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [resolver = std::move(aResolver)](
+                 const BoolPromise::AllSettledPromiseType::ResolveOrRejectValue&
+                 /* aValues */) { resolver(NS_OK); });
+
   return IPC_OK();
+}
+
+void FileSystemManagerChild::ActorDestroy(ActorDestroyReason aWhy) {
+  if (mBackgroundRequestHandler) {
+    mBackgroundRequestHandler->ClearActor();
+    mBackgroundRequestHandler = nullptr;
+  }
 }
 
 }  // namespace mozilla::dom

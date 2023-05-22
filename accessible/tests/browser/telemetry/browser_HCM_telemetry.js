@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../../../browser/components/preferences/tests/head.js */
-
 "use strict";
 
 Services.scriptloader.loadSubScript(
@@ -11,8 +9,8 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 registerCleanupFunction(() => {

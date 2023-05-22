@@ -63,6 +63,7 @@ use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::stylist::CascadeData;
 use crate::values::{AtomIdent, AtomString};
+use crate::values::computed::Display;
 use crate::CaseSensitivityExt;
 use crate::LocalName;
 use app_units::Au;
@@ -857,7 +858,7 @@ impl<'le> GeckoElement<'le> {
     fn needs_transitions_update_per_property(
         &self,
         longhand_id: LonghandId,
-        combined_duration: f32,
+        combined_duration_seconds: f32,
         before_change_style: &ComputedValues,
         after_change_style: &ComputedValues,
         existing_transitions: &FxHashMap<LonghandId, Arc<AnimationValue>>,
@@ -883,7 +884,7 @@ impl<'le> GeckoElement<'le> {
 
         debug_assert_eq!(to.is_some(), from.is_some());
 
-        combined_duration > 0.0f32 &&
+        combined_duration_seconds > 0.0f32 &&
             from != to &&
             from.unwrap()
                 .animate(
@@ -1036,7 +1037,14 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn query_container_size(&self) -> Size2D<Option<Au>> {
+    fn query_container_size(&self, display: &Display) -> Size2D<Option<Au>> {
+        // If an element gets 'display: contents' and its nsIFrame has not been removed yet,
+        // Gecko_GetQueryContainerSize will not notice that it can't have size containment.
+        // Other cases like 'display: inline' will be handled once the new nsIFrame is created.
+        if display.is_contents() {
+            return Size2D::new(None, None);
+        }
+
         let mut width = -1;
         let mut height = -1;
         unsafe {
@@ -1525,7 +1533,7 @@ impl<'le> TElement for GeckoElement<'le> {
             transitions_to_keep.insert(physical_longhand);
             if self.needs_transitions_update_per_property(
                 physical_longhand,
-                after_change_ui_style.transition_combined_duration_at(transition_property.index),
+                after_change_ui_style.transition_combined_duration_at(transition_property.index).seconds(),
                 before_change_style,
                 after_change_style,
                 &existing_transitions,

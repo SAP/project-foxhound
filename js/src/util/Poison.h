@@ -69,7 +69,6 @@ const uint8_t JS_ALLOCATED_TENURED_PATTERN = 0x4D;
 const uint8_t JS_FREED_HEAP_PTR_PATTERN = 0x6B;
 const uint8_t JS_FREED_CHUNK_PATTERN = 0x8B;
 const uint8_t JS_FREED_ARENA_PATTERN = 0x9B;
-const uint8_t JS_SWEPT_TI_PATTERN = 0x6F;
 const uint8_t JS_FRESH_MARK_STACK_PATTERN = 0x9F;
 const uint8_t JS_RESET_VALUE_PATTERN = 0xBB;
 const uint8_t JS_POISONED_JSSCRIPT_DATA_PATTERN = 0xDB;
@@ -94,6 +93,9 @@ const uint8_t JS_SCOPE_DATA_TRAILING_NAMES_PATTERN = 0xCC;
 #  define JS_SWEPT_CODE_PATTERN 0x01  // undefined instruction
 #elif defined(JS_CODEGEN_LOONG64)
 #  define JS_SWEPT_CODE_PATTERN 0x01  // undefined instruction
+#elif defined(JS_CODEGEN_RISCV64)
+#  define JS_SWEPT_CODE_PATTERN \
+    0x29  // illegal sb instruction, crashes in user mode.
 #else
 #  error "JS_SWEPT_CODE_PATTERN not defined for this platform"
 #endif

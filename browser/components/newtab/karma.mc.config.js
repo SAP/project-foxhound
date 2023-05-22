@@ -4,6 +4,7 @@
 
 const path = require("path");
 const webpack = require("webpack");
+const { ResourceUriPlugin } = require("./tools/resourceUriPlugin");
 
 const PATHS = {
   // Where is the entry point for the unit tests?
@@ -237,6 +238,12 @@ module.exports = function(config) {
         },
       },
       plugins: [
+        // The ResourceUriPlugin handles translating resource URIs in import
+        // statements in .mjs files, in a similar way to what
+        // babel-jsm-to-commonjs does for jsm files.
+        new ResourceUriPlugin({
+          resourcePathRegEx: PATHS.resourcePathRegEx,
+        }),
         new webpack.DefinePlugin({
           "process.env.NODE_ENV": JSON.stringify("development"),
         }),
@@ -261,13 +268,13 @@ module.exports = function(config) {
                   plugins: [
                     // Converts .jsm files into common-js modules
                     [
-                      "jsm-to-commonjs",
+                      "./tools/babel-jsm-to-commonjs.js",
                       {
                         basePath: PATHS.resourcePathRegEx,
                         removeOtherImports: true,
                         replace: true,
                       },
-                    ], // require("babel-plugin-jsm-to-commonjs")
+                    ],
                     "@babel/plugin-proposal-nullish-coalescing-operator",
                     "@babel/plugin-proposal-optional-chaining",
                     "@babel/plugin-proposal-class-properties",

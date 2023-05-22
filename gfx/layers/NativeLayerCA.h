@@ -185,8 +185,6 @@ class NativeLayerRootCA : public NativeLayerRoot {
   // How many times have we committed since the last time we emitted
   // telemetry?
   unsigned int mTelemetryCommitCount = 0;
-  static const unsigned int TELEMETRY_COMMIT_PERIOD =
-      600;  // 10 seconds at 60fps
 };
 
 class RenderSourceNLRS;
@@ -468,6 +466,14 @@ class NativeLayerCA : public NativeLayer {
   bool mSpecializeVideo = false;
   bool mHasExtent = false;
   bool mIsDRM = false;
+
+#ifdef NIGHTLY_BUILD
+  // Track the consistency of our caller's API usage. Layers that are drawn
+  // should only ever be called with NotifySurfaceReady. Layers that are
+  // external should only ever be called with AttachExternalImage.
+  bool mHasEverAttachExternalImage = false;
+  bool mHasEverNotifySurfaceReady = false;
+#endif
 };
 
 }  // namespace layers

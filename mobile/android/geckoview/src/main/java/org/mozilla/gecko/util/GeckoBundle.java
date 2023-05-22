@@ -6,6 +6,7 @@
 package org.mozilla.gecko.util;
 
 import android.graphics.Point;
+import android.graphics.PointF;
 import android.graphics.RectF;
 import android.os.Build;
 import android.os.Bundle;
@@ -34,6 +35,7 @@ public final class GeckoBundle implements Parcelable {
   @WrapForJNI(calledFrom = "gecko")
   private static final boolean[] EMPTY_BOOLEAN_ARRAY = new boolean[0];
 
+  private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
   private static final int[] EMPTY_INT_ARRAY = new int[0];
   private static final long[] EMPTY_LONG_ARRAY = new long[0];
   private static final double[] EMPTY_DOUBLE_ARRAY = new double[0];
@@ -278,6 +280,17 @@ public final class GeckoBundle implements Parcelable {
   }
 
   /**
+   * Returns the value associated with an byte array mapping, or null if the mapping does not exist.
+   *
+   * @param key Key to look for.
+   * @return Byte array value
+   */
+  public byte[] getByteArray(final String key) {
+    final Object value = mMap.get(key);
+    return value == null ? null : Array.getLength(value) == 0 ? EMPTY_BYTE_ARRAY : (byte[]) value;
+  }
+
+  /**
    * Returns the value associated with an int/double mapping as a long value, or defaultValue if the
    * mapping does not exist.
    *
@@ -412,6 +425,21 @@ public final class GeckoBundle implements Parcelable {
     }
 
     return new Point(ptBundle.getInt("x"), ptBundle.getInt("y"));
+  }
+
+  /**
+   * Returns the value associated with a PointF mapping, or null if the mapping does not exist.
+   *
+   * @param key Key to look for.
+   * @return Point value
+   */
+  public PointF getPointF(final String key) {
+    final GeckoBundle ptBundle = getBundle(key);
+    if (ptBundle == null) {
+      return null;
+    }
+
+    return new PointF((float) ptBundle.getDouble("x"), (float) ptBundle.getDouble("y"));
   }
 
   /**

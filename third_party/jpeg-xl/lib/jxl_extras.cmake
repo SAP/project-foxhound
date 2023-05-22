@@ -18,10 +18,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/pgx.h
   extras/dec/pnm.cc
   extras/dec/pnm.h
-  extras/dec_group_jpeg.cc
-  extras/dec_group_jpeg.h
-  extras/decode_jpeg.cc
-  extras/decode_jpeg.h
   extras/enc/encode.cc
   extras/enc/encode.h
   extras/enc/jxl.cc
@@ -32,8 +28,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/enc/pgx.h
   extras/enc/pnm.cc
   extras/enc/pnm.h
-  extras/encode_jpeg.cc
-  extras/encode_jpeg.h
   extras/exif.cc
   extras/exif.h
   extras/hlg.cc
@@ -87,7 +81,7 @@ target_include_directories(jxl_extras_codec-obj PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}/include
-  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>
 )
 set(JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES)
 set(JXL_EXTRAS_CODEC_PUBLIC_COMPILE_DEFINITIONS)
@@ -140,6 +134,16 @@ if(JPEG_FOUND)
   target_include_directories(jxl_extras-static PRIVATE "${JPEG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PRIVATE ${JPEG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
+  if(JPEGXL_ENABLE_JPEGLI)
+    target_sources(jxl_extras-static PRIVATE
+      extras/dec/jpegli.cc
+      extras/dec/jpegli.h
+      extras/enc/jpegli.cc
+      extras/enc/jpegli.h
+    )
+    target_link_libraries(jxl_extras-static PRIVATE jpegli-static)
+    target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEGLI=1)
+  endif()
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libjpeg-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.libjpeg COPYONLY)

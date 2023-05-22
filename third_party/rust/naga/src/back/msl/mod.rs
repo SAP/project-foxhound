@@ -156,8 +156,10 @@ pub enum Error {
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub enum EntryPointError {
+    #[error("global '{0}' doesn't have a binding")]
+    MissingBinding(String),
     #[error("mapping of {0:?} is missing")]
-    MissingBinding(crate::ResourceBinding),
+    MissingBindTarget(crate::ResourceBinding),
     #[error("mapping for push constants is missing")]
     MissingPushConstants,
     #[error("mapping for sizes buffer is missing")]
@@ -207,6 +209,8 @@ pub struct Options {
     /// Bounds checking policies.
     #[cfg_attr(feature = "deserialize", serde(default))]
     pub bounds_check_policies: index::BoundsCheckPolicies,
+    /// Should workgroup variables be zero initialized (by polyfilling)?
+    pub zero_initialize_workgroup_memory: bool,
 }
 
 impl Default for Options {
@@ -218,6 +222,7 @@ impl Default for Options {
             spirv_cross_compatibility: false,
             fake_missing_bindings: true,
             bounds_check_policies: index::BoundsCheckPolicies::default(),
+            zero_initialize_workgroup_memory: true,
         }
     }
 }
@@ -303,7 +308,7 @@ impl Options {
                 index: 0,
                 interpolation: None,
             }),
-            None => Err(EntryPointError::MissingBinding(res_binding.clone())),
+            None => Err(EntryPointError::MissingBindTarget(res_binding.clone())),
         }
     }
 
@@ -391,6 +396,7 @@ impl ResolvedBinding {
                     Bi::VertexIndex => "vertex_id",
                     // fragment
                     Bi::FragDepth => "depth(any)",
+                    Bi::PointCoord => "point_coord",
                     Bi::FrontFacing => "front_facing",
                     Bi::PrimitiveIndex => "primitive_id",
                     Bi::SampleIndex => "sample_id",
@@ -406,16 +412,16 @@ impl ResolvedBinding {
                         return Err(Error::UnsupportedBuiltIn(built_in))
                     }
                 };
-                write!(out, "{}", name)?;
+                write!(out, "{name}")?;
             }
-            Self::Attribute(index) => write!(out, "attribute({})", index)?,
-            Self::Color(index) => write!(out, "color({})", index)?,
+            Self::Attribute(index) => write!(out, "attribute({index})")?,
+            Self::Color(index) => write!(out, "color({index})")?,
             Self::User {
                 prefix,
                 index,
                 interpolation,
             } => {
-                write!(out, "user({}{})", prefix, index)?;
+                write!(out, "user({prefix}{index})")?;
                 if let Some(interpolation) = interpolation {
                     write!(out, ", ")?;
                     interpolation.try_fmt(out)?;
@@ -423,11 +429,11 @@ impl ResolvedBinding {
             }
             Self::Resource(ref target) => {
                 if let Some(id) = target.buffer {
-                    write!(out, "buffer({})", id)?;
+                    write!(out, "buffer({id})")?;
                 } else if let Some(id) = target.texture {
-                    write!(out, "texture({})", id)?;
+                    write!(out, "texture({id})")?;
                 } else if let Some(BindSamplerTarget::Resource(id)) = target.sampler {
-                    write!(out, "sampler({})", id)?;
+                    write!(out, "sampler({id})")?;
                 } else {
                     return Err(Error::UnimplementedBindTarget(target.clone()));
                 }

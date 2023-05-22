@@ -6,14 +6,14 @@
 const { CrashManager } = ChromeUtils.import(
   "resource://gre/modules/CrashManager.jsm"
 );
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
+const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
 );
 const { configureLogging, getManager, sleep } = ChromeUtils.import(
   "resource://testing-common/CrashManagerTest.jsm"
 );
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+const { TelemetryEnvironment } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryEnvironment.sys.mjs"
 );
 
 const DUMMY_DATE = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
@@ -26,6 +26,8 @@ function run_test() {
   do_get_profile();
   configureLogging();
   TelemetryArchiveTesting.setup();
+  // Initialize FOG for glean tests
+  Services.fog.initializeFOG();
   run_next_test();
 }
 
@@ -71,16 +73,19 @@ add_task(async function test_process_ping() {
   Assert.ok(!m.isPingAllowed(42));
   Assert.ok(!m.isPingAllowed(null));
   Assert.ok(!m.isPingAllowed("default"));
-
-  Assert.ok(!m.isPingAllowed("main"));
   Assert.ok(!m.isPingAllowed("ipdlunittest"));
-  Assert.ok(!m.isPingAllowed("gmplugin"));
-  Assert.ok(!m.isPingAllowed("remotesandboxbroker"));
-  Assert.ok(!m.isPingAllowed("forkserver"));
+  Assert.ok(!m.isPingAllowed("tab"));
 
   Assert.ok(m.isPingAllowed("content"));
+  Assert.ok(m.isPingAllowed("forkserver"));
+  Assert.ok(m.isPingAllowed("gmplugin"));
   Assert.ok(m.isPingAllowed("gpu"));
+  Assert.ok(m.isPingAllowed("main"));
+  Assert.ok(m.isPingAllowed("rdd"));
+  Assert.ok(m.isPingAllowed("sandboxbroker"));
+  Assert.ok(m.isPingAllowed("socket"));
   Assert.ok(m.isPingAllowed("utility"));
+  Assert.ok(m.isPingAllowed("vr"));
 });
 
 // Unsubmitted dump files on disk are detected properly.
@@ -695,16 +700,20 @@ add_task(async function test_addCrash() {
 add_task(async function test_child_process_crash_ping() {
   let m = await getManager();
   const EXPECTED_PROCESSES = [
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_GMPLUGIN],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_GPU],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_VR],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_RDD],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_SOCKET],
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_REMOTESANDBOXBROKER],
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_FORKSERVER],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY],
   ];
 
   const UNEXPECTED_PROCESSES = [
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_GMPLUGIN],
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_IPDLUNITTEST],
     null,
     12, // non-string process type
   ];
@@ -782,6 +791,66 @@ add_task(async function test_child_process_crash_ping() {
       "No telemetry ping must be submitted for invalid process types"
     );
   }
+});
+
+add_task(async function test_glean_crash_ping() {
+  let m = await getManager();
+
+  let id = await m.createDummyDump();
+
+  // Test bare minumum (with missing optional fields)
+  let submitted = false;
+  GleanPings.crash.testBeforeNextSubmit(_ => {
+    submitted = true;
+    const MINUTES = new Date(DUMMY_DATE);
+    MINUTES.setSeconds(0);
+    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
+    Assert.equal(
+      Glean.crash.processType.testGetValue(),
+      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT]
+    );
+    Assert.equal(Glean.crash.startup.testGetValue(), false);
+  });
+
+  await m.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+    m.CRASH_TYPE_CRASH,
+    id,
+    DUMMY_DATE,
+    {}
+  );
+
+  Assert.ok(submitted);
+
+  // Test with additional fields
+  submitted = false;
+  GleanPings.crash.testBeforeNextSubmit(reason => {
+    submitted = true;
+    const MINUTES = new Date(DUMMY_DATE_2);
+    MINUTES.setSeconds(0);
+    Assert.equal(Glean.crash.uptime.testGetValue(), 600.1 * 1000);
+    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
+    Assert.equal(
+      Glean.crash.processType.testGetValue(),
+      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT]
+    );
+    Assert.equal(Glean.crash.startup.testGetValue(), true);
+  });
+
+  await m.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+    m.CRASH_TYPE_CRASH,
+    id,
+    DUMMY_DATE_2,
+    {
+      StackTraces: stackTraces,
+      MinidumpSha256Hash: sha256Hash,
+      UptimeTS: "600.1",
+      StartupCrash: "1",
+    }
+  );
+
+  Assert.ok(submitted);
 });
 
 add_task(async function test_generateSubmissionID() {

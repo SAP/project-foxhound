@@ -69,6 +69,7 @@ class DtlsIdentity;
 class MediaPipeline;
 class MediaPipelineReceive;
 class MediaPipelineTransmit;
+enum class PrincipalPrivacy : uint8_t;
 class SharedWebrtcState;
 
 namespace dom {
@@ -323,11 +324,8 @@ class PeerConnectionImpl final
 
   // this method checks to see if we've made a promise to protect media.
   bool PrivacyRequested() const {
-    return mPrivacyRequested.isSome() && *mPrivacyRequested;
-  }
-
-  bool PrivacyNeeded() const {
-    return mPrivacyRequested.isSome() && *mPrivacyRequested;
+    return mRequestedPrivacy.valueOr(PrincipalPrivacy::NonPrivate) ==
+           PrincipalPrivacy::Private;
   }
 
   NS_IMETHODIMP GetFingerprint(char** fingerprint);
@@ -467,6 +465,7 @@ class PeerConnectionImpl final
   void OnSetDescriptionError();
 
   bool IsClosed() const;
+
   // called when DTLS connects; we only need this once
   nsresult OnAlpnNegotiated(bool aPrivacyRequested);
 
@@ -511,6 +510,26 @@ class PeerConnectionImpl final
     return mPacketDumper;
   }
 
+  nsString GenerateUUID() const {
+    std::string result;
+    if (!mUuidGen->Generate(&result)) {
+      MOZ_CRASH();
+    }
+    return NS_ConvertUTF8toUTF16(result.c_str());
+  }
+
+  bool ShouldAllowOldSetParameters() const { return mAllowOldSetParameters; }
+
+  void SendWarningToConsole(const nsCString& aWarning);
+
+  const UniquePtr<dom::RTCStatsReportInternal>& GetFinalStats() const {
+    return mFinalStats;
+  }
+
+  void DisableLongTermStats() { mDisableLongTermStats = true; }
+
+  bool LongTermStatsIsDisabled() const { return mDisableLongTermStats; }
+
  private:
   virtual ~PeerConnectionImpl();
   PeerConnectionImpl(const PeerConnectionImpl& rhs);
@@ -527,6 +546,7 @@ class PeerConnectionImpl final
                                      uint32_t aMaxMessageSize, bool aMMSSet);
 
   nsresult CheckApiState(bool assert_ice_ready) const;
+  void StoreFinalStats(UniquePtr<dom::RTCStatsReportInternal>&& report);
   void CheckThread() const { MOZ_ASSERT(NS_IsMainThread(), "Wrong thread"); }
 
   // test-only: called from AddRIDExtension and AddRIDFilter
@@ -611,7 +631,7 @@ class PeerConnectionImpl final
   //
   // This can be false if mPeerIdentity is set, in the case where identity is
   // provided, but the media is not protected from the app on either side
-  Maybe<bool> mPrivacyRequested;
+  Maybe<PrincipalPrivacy> mRequestedPrivacy;
 
   // A handle to refer to this PC with
   std::string mHandle;
@@ -643,6 +663,13 @@ class PeerConnectionImpl final
   // The following are used for Telemetry:
   bool mCallTelemStarted = false;
   bool mCallTelemEnded = false;
+
+  // We _could_ make mFinalStatsQuery be an RTCStatsReportPromise, but that
+  // would require RTCStatsReportPromise to no longer be exclusive, which is
+  // a bit of a hassle, and not very performant.
+  RefPtr<GenericNonExclusivePromise> mFinalStatsQuery;
+  UniquePtr<dom::RTCStatsReportInternal> mFinalStats;
+  bool mDisableLongTermStats = false;
 
   // Start time of ICE.
   mozilla::TimeStamp mIceStartTime;
@@ -760,6 +787,9 @@ class PeerConnectionImpl final
 
   void BreakCycles();
 
+  bool HasPendingSetParameters() const;
+  void InvalidateLastReturnedParameters();
+
   RefPtr<WebrtcCallWrapper> mCall;
 
   // See Bug 1642419, this can be removed when all sites are working with RTX.
@@ -809,6 +839,9 @@ class PeerConnectionImpl final
 
   // Used to store the mDNS hostnames that we have registered
   std::set<std::string> mRegisteredMDNSHostnames;
+
+  // web-compat stopgap
+  bool mAllowOldSetParameters = false;
 
   // Used to store the mDNS hostnames that we have queried
   struct PendingIceCandidate {

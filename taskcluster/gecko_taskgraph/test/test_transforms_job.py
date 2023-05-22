@@ -17,12 +17,11 @@ from taskgraph.transforms.base import TransformConfig
 from taskgraph.util.schema import Schema, validate_schema
 
 from gecko_taskgraph import GECKO
+from gecko_taskgraph.test.conftest import FakeParameters
 from gecko_taskgraph.transforms import job
 from gecko_taskgraph.transforms.job import run_task  # noqa: F401
 from gecko_taskgraph.transforms.job.common import add_cache
 from gecko_taskgraph.transforms.task import payload_builders
-
-from conftest import FakeParameters
 
 here = os.path.abspath(os.path.dirname(__file__))
 

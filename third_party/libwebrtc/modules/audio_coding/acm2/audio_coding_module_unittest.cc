@@ -479,9 +479,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
     insert_packet_thread_.Finalize();
   }
 
-  bool RunTest() {
-    return test_complete_.Wait(10 * 60 * 1000);  // 10 minutes' timeout.
-  }
+  bool RunTest() { return test_complete_.Wait(TimeDelta::Minutes(10)); }
 
   virtual bool TestDone() {
     if (packet_cb_.num_calls() > kNumPackets) {
@@ -736,9 +734,7 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
     codec_registration_thread_.Finalize();
   }
 
-  bool RunTest() {
-    return test_complete_.Wait(10 * 60 * 1000);  // 10 minutes' timeout.
-  }
+  bool RunTest() { return test_complete_.Wait(TimeDelta::Minutes(10)); }
 
   bool CbReceiveImpl() {
     SleepMs(1);
@@ -1253,10 +1249,10 @@ TEST_F(AcmSenderBitExactnessNewApi, OpusFromFormat_stereo_20ms_voip) {
   ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(
       AudioEncoderOpus::MakeAudioEncoder(*config, 120), 120));
   const std::string audio_maybe_sse =
-      "058c03ca2c9bb5c0066d4c15ce50d772"
+      "1010e60ad34cee73c939edaf563d0593"
       "|ca54661b220cc35239c6864ab858d29a";
   const std::string payload_maybe_sse =
-      "f270ec7be7a5ed60c203c2317c4e1011"
+      "ea48d94e43217793af9b7e15ece94e54"
       "|eb0752ce1b6f2436fefc2e19bd084fb5";
   Run(audio_maybe_sse, payload_maybe_sse, /*expected_packets=*/50,
       /*expected_channels=*/test::AcmReceiveTestOldApi::kStereoOutput);

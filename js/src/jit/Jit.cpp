@@ -37,6 +37,11 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
     return EnterJitStatus::Error;
   }
 
+  // jit::Bailout(), jit::InvalidationBailout(), and jit::HandleException()
+  // reset the counter to zero, so assert here it's also zero when we enter
+  // JIT code.
+  MOZ_ASSERT(!cx->isInUnsafeRegion());
+
 #ifdef DEBUG
   // Assert we don't GC before entering JIT code. A GC could discard JIT code
   // or move the function stored in the CalleeToken (it won't be traced at
@@ -59,16 +64,8 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
     numActualArgs = args.length();
 
     if (TooManyActualArguments(numActualArgs)) {
-      // Too many arguments for Ion. Baseline supports more actual
-      // arguments, so in that case force Baseline code.
-      if (numActualArgs > BASELINE_MAX_ARGS_LENGTH) {
-        return EnterJitStatus::NotEntered;
-      }
-      if (script->hasBaselineScript()) {
-        code = script->baselineScript()->method()->raw();
-      } else {
-        code = cx->runtime()->jitRuntime()->baselineInterpreter().codeRaw();
-      }
+      // Fall back to the C++ interpreter to avoid running out of stack space.
+      return EnterJitStatus::NotEntered;
     }
 
     constructing = state.asInvoke()->constructing();
@@ -108,6 +105,9 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
                         calleeToken, envChain, /* osrNumStackValues = */ 0,
                         result.address());
   }
+
+  // Ensure the counter was reset to zero after exiting from JIT code.
+  MOZ_ASSERT(!cx->isInUnsafeRegion());
 
   // Release temporary buffer used for OSR into Ion.
   cx->runtime()->jitRuntime()->freeIonOsrTempData();

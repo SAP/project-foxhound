@@ -1,13 +1,11 @@
-from __future__ import absolute_import, print_function
-
 import gc
-from unittest import mock
 import os
 import re
 import shutil
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 PYWIN32 = False
 if os.name == "nt":
@@ -21,10 +19,9 @@ if os.name == "nt":
 
 import mozharness.base.errors as errors
 import mozharness.base.log as log
-from mozharness.base.log import DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL, IGNORE
 import mozharness.base.script as script
 from mozharness.base.config import parse_config_file
-
+from mozharness.base.log import CRITICAL, DEBUG, ERROR, FATAL, IGNORE, INFO, WARNING
 
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -229,7 +226,7 @@ class TestScript(unittest.TestCase):
             env={"GARBLE": "FARG"},
             error_list=errors.PythonErrorList,
         )
-        error_logsize = os.path.getsize("test_logs/test_error.log")
+        error_logsize = os.path.getsize("test_logs/test_info.log")
         self.assertTrue(error_logsize > 0, msg="command not found error not hit")
 
     def test_run_command_in_bad_dir(self):
@@ -323,6 +320,13 @@ class TestScript(unittest.TestCase):
                     extract_to=self.tmpdir,
                 )
 
+        for archive in ("archive-setuid.tar", "archive-escape.tar"):
+            with self.assertRaises(Exception):
+                self.s.download_unpack(
+                    url=os.path.join(archives_path, archive),
+                    extract_to=self.tmpdir,
+                )
+
     def test_unpack(self):
         self.s = get_debug_script_obj()
 
@@ -366,6 +370,10 @@ class TestScript(unittest.TestCase):
                     os.path.join(archives_path, "archive_invalid_filename.zip"),
                     self.tmpdir,
                 )
+
+        for archive in ("archive-setuid.tar", "archive-escape.tar"):
+            with self.assertRaises(Exception):
+                self.s.unpack(os.path.join(archives_path, archive), self.tmpdir)
 
 
 # TestHelperFunctions {{{1

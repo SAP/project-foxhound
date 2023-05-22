@@ -328,9 +328,9 @@ struct ParamTraits<nsID> {
 
 template <>
 struct ParamTraits<nsContentPolicyType>
-    : public ContiguousEnumSerializerInclusive<
-          nsContentPolicyType, nsIContentPolicy::TYPE_INVALID,
-          nsIContentPolicy::TYPE_WEB_IDENTITY> {};
+    : public ContiguousEnumSerializer<nsContentPolicyType,
+                                      nsIContentPolicy::TYPE_INVALID,
+                                      nsIContentPolicy::TYPE_END> {};
 
 template <>
 struct ParamTraits<mozilla::TimeDuration> {
@@ -416,11 +416,11 @@ struct ParamTraits<mozilla::Maybe<T>> {
       return false;
     }
     if (isSome) {
-      T tmp;
-      if (!ReadParam(reader, &tmp)) {
+      mozilla::Maybe<T> tmp = ReadParam<T>(reader);
+      if (!tmp) {
         return false;
       }
-      *result = mozilla::Some(std::move(tmp));
+      *result = std::move(tmp);
     } else {
       *result = mozilla::Nothing();
     }

@@ -202,9 +202,9 @@ impl Builder {
     }
 }
 
-#[cfg(feature = "termcolor")]
+#[cfg(feature = "color")]
 type SubtleStyle = StyledValue<'static, &'static str>;
-#[cfg(not(feature = "termcolor"))]
+#[cfg(not(feature = "color"))]
 type SubtleStyle = &'static str;
 
 /// The default format.
@@ -233,7 +233,7 @@ impl<'a> DefaultFormat<'a> {
     }
 
     fn subtle_style(&self, text: &'static str) -> SubtleStyle {
-        #[cfg(feature = "termcolor")]
+        #[cfg(feature = "color")]
         {
             self.buf
                 .style()
@@ -242,7 +242,7 @@ impl<'a> DefaultFormat<'a> {
                 .clone()
                 .into_value(text)
         }
-        #[cfg(not(feature = "termcolor"))]
+        #[cfg(not(feature = "color"))]
         {
             text
         }
@@ -268,11 +268,11 @@ impl<'a> DefaultFormat<'a> {
         }
 
         let level = {
-            #[cfg(feature = "termcolor")]
+            #[cfg(feature = "color")]
             {
                 self.buf.default_styled_level(record.level())
             }
-            #[cfg(not(feature = "termcolor"))]
+            #[cfg(not(feature = "color"))]
             {
                 record.level()
             }
@@ -406,7 +406,7 @@ mod tests {
         String::from_utf8(buf.bytes().to_vec()).expect("failed to read record")
     }
 
-    fn write_target<'a>(target: &'a str, fmt: DefaultFormat) -> String {
+    fn write_target(target: &str, fmt: DefaultFormat) -> String {
         write_record(
             Record::builder()
                 .args(format_args!("log\nmessage"))

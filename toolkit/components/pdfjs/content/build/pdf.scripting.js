@@ -2,7 +2,7 @@
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page
  *
- * Copyright 2022 Mozilla Foundation
+ * Copyright 2023 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -573,43 +573,68 @@ class Field extends _pdf_object.PDFObject {
     return this._value;
   }
   set value(value) {
+    if (this._isChoice) {
+      this._setChoiceValue(value);
+      return;
+    }
     if (value === "") {
       this._value = "";
     } else if (typeof value === "string") {
       switch (this._fieldType) {
         case _common.FieldType.none:
-          this._value = !isNaN(value) ? parseFloat(value) : value;
-          break;
+          {
+            this._originalValue = value;
+            const _value = value.trim().replace(",", ".");
+            this._value = !isNaN(_value) ? parseFloat(_value) : value;
+            break;
+          }
         case _common.FieldType.number:
         case _common.FieldType.percent:
-          const number = parseFloat(value);
-          this._value = !isNaN(number) ? number : 0;
-          break;
+          {
+            const _value = value.trim().replace(",", ".");
+            const number = parseFloat(_value);
+            this._value = !isNaN(number) ? number : 0;
+            break;
+          }
         default:
           this._value = value;
       }
     } else {
       this._value = value;
     }
-    if (this._isChoice) {
-      if (this.multipleSelection) {
-        const values = new Set(value);
-        if (Array.isArray(this._currentValueIndices)) {
-          this._currentValueIndices.length = 0;
-        } else {
-          this._currentValueIndices = [];
-        }
-        this._items.forEach(({
-          displayValue
-        }, i) => {
-          if (values.has(displayValue)) {
-            this._currentValueIndices.push(i);
-          }
-        });
+  }
+  _getValue() {
+    return this._originalValue ?? this.value;
+  }
+  _setChoiceValue(value) {
+    if (this.multipleSelection) {
+      if (!Array.isArray(value)) {
+        value = [value];
+      }
+      const values = new Set(value);
+      if (Array.isArray(this._currentValueIndices)) {
+        this._currentValueIndices.length = 0;
+        this._value.length = 0;
       } else {
-        this._currentValueIndices = this._items.findIndex(({
-          displayValue
-        }) => value === displayValue);
+        this._currentValueIndices = [];
+        this._value = [];
+      }
+      this._items.forEach((item, i) => {
+        if (values.has(item.exportValue)) {
+          this._currentValueIndices.push(i);
+          this._value.push(item.exportValue);
+        }
+      });
+    } else {
+      if (Array.isArray(value)) {
+        value = value[0];
+      }
+      const index = this._items.findIndex(({
+        exportValue
+      }) => value === exportValue);
+      if (index !== -1) {
+        this._currentValueIndices = index;
+        this._value = this._items[index].exportValue;
       }
     }
   }
@@ -2252,6 +2277,8 @@ class EventDispatcher {
       if (id === "doc") {
         const eventName = event.name;
         if (eventName === "Open") {
+          this.userActivation();
+          this._document.obj._initActions();
           this.formatAll();
         }
         if (!["DidPrint", "DidSave", "WillPrint", "WillSave"].includes(eventName)) {
@@ -2286,6 +2313,7 @@ class EventDispatcher {
       case "Keystroke":
         savedChange = {
           value: event.value,
+          changeEx: event.changeEx,
           change: event.change,
           selStart: event.selStart,
           selEnd: event.selEnd
@@ -2316,6 +2344,15 @@ class EventDispatcher {
       if (event.willCommit) {
         this.runValidation(source, event);
       } else {
+        if (source.obj._isChoice) {
+          source.obj.value = savedChange.changeEx;
+          source.obj._send({
+            id: source.obj._id,
+            siblings: source.obj._siblings,
+            value: source.obj.value
+          });
+          return;
+        }
         const value = source.obj.value = this.mergeChange(event);
         let selStart, selEnd;
         if (event.selStart !== savedChange.selStart || event.selEnd !== savedChange.selEnd) {
@@ -2366,7 +2403,8 @@ class EventDispatcher {
     if (event.rc) {
       source.obj.value = event.value;
       this.runCalculate(source, event);
-      const savedValue = event.value = source.obj.value;
+      const savedValue = source.obj._getValue();
+      event.value = source.obj.value;
       let formattedValue = null;
       if (this.runActions(source, source, event, "Format")) {
         formattedValue = event.value?.toString?.();
@@ -2384,7 +2422,8 @@ class EventDispatcher {
         siblings: source.obj._siblings,
         value: "",
         formattedValue: null,
-        selRange: [0, 0]
+        selRange: [0, 0],
+        focus: true
       });
     }
   }
@@ -2537,15 +2576,20 @@ class Doc extends _pdf_object.PDFObject {
     this._disablePrinting = false;
     this._disableSaving = false;
   }
+  _initActions() {
+    const dontRun = new Set(["WillClose", "WillSave", "DidSave", "WillPrint", "DidPrint", "OpenAction"]);
+    this._disableSaving = true;
+    for (const actionName of this._actions.keys()) {
+      if (!dontRun.has(actionName)) {
+        this._runActions(actionName);
+      }
+    }
+    this._runActions("OpenAction");
+    this._disableSaving = false;
+  }
   _dispatchDocEvent(name) {
     if (name === "Open") {
-      const dontRun = new Set(["WillClose", "WillSave", "DidSave", "WillPrint", "DidPrint", "OpenAction"]);
       this._disableSaving = true;
-      for (const actionName of this._actions.keys()) {
-        if (!dontRun.has(actionName)) {
-          this._runActions(actionName);
-        }
-      }
       this._runActions("OpenAction");
       this._disableSaving = false;
     } else if (name === "WillPrint") {
@@ -3624,7 +3668,7 @@ class ProxyHandler {
         const data = {
           id: obj._id
         };
-        data[prop] = obj[prop];
+        data[prop] = prop === "value" ? obj._getValue() : obj[prop];
         if (!obj._siblings) {
           obj._send(data);
         } else {
@@ -4214,8 +4258,8 @@ Object.defineProperty(exports, "initSandbox", ({
   }
 }));
 var _initialization = __w_pdfjs_require__(1);
-const pdfjsVersion = '3.2.47';
-const pdfjsBuild = 'feb6f5951';
+const pdfjsVersion = '3.4.62';
+const pdfjsBuild = '9cea76483';
 })();
 
 /******/ 	return __webpack_exports__;

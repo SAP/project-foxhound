@@ -6,8 +6,6 @@
 Runs the Mochitest test harness.
 """
 
-from __future__ import absolute_import, division, print_function, with_statement
-
 import os
 import sys
 
@@ -115,6 +113,15 @@ list of valid flavors.
 # Try run will then put a download link for a zip archive
 # of all the log files on treeherder.
 MOZ_LOG = ""
+
+########################################
+# Option for web server log            #
+########################################
+
+# If True, debug logging from the web server will be
+# written to mochitest-server-%d.txt artifacts on
+# treeherder.
+MOCHITEST_SERVER_LOGGING = False
 
 #####################
 # Test log handling #
@@ -463,6 +470,8 @@ class MochitestServer(object):
 
     "Web server used to serve Mochitests, for closer fidelity to the real web."
 
+    instance_count = 0
+
     def __init__(self, options, logger):
         if isinstance(options, Namespace):
             options = vars(options)
@@ -483,6 +492,10 @@ class MochitestServer(object):
             "server": shutdownServer,
             "port": self.httpPort,
         }
+        self.debugURL = "http://%(server)s:%(port)s/server/debug?2" % {
+            "server": shutdownServer,
+            "port": self.httpPort,
+        }
         self.testPrefix = "undefined"
 
         if options.get("httpdPath"):
@@ -490,6 +503,8 @@ class MochitestServer(object):
         else:
             self._httpdPath = SCRIPT_DIR
         self._httpdPath = os.path.abspath(self._httpdPath)
+
+        MochitestServer.instance_count += 1
 
     def start(self):
         "Run the Mochitest server, returning the process ID of the server."
@@ -543,11 +558,31 @@ class MochitestServer(object):
             self._utilityPath, "xpcshell" + mozinfo.info["bin_suffix"]
         )
         command = [xpcshell] + args
-        self._process = mozprocess.ProcessHandler(command, cwd=SCRIPT_DIR, env=env)
+        server_logfile = None
+        if MOCHITEST_SERVER_LOGGING and "MOZ_UPLOAD_DIR" in os.environ:
+            server_logfile = os.path.join(
+                os.environ["MOZ_UPLOAD_DIR"],
+                "mochitest-server-%d.txt" % MochitestServer.instance_count,
+            )
+        self._process = mozprocess.ProcessHandler(
+            command, cwd=SCRIPT_DIR, env=env, logfile=server_logfile
+        )
         self._process.run()
         self._log.info("%s : launching %s" % (self.__class__.__name__, command))
         pid = self._process.pid
         self._log.info("runtests.py | Server pid: %d" % pid)
+        if MOCHITEST_SERVER_LOGGING and "MOZ_UPLOAD_DIR" in os.environ:
+            self._log.info("runtests.py enabling server debugging...")
+            i = 0
+            while i < 5:
+                try:
+                    with closing(urlopen(self.debugURL)) as c:
+                        self._log.info(six.ensure_text(c.read()))
+                    break
+                except Exception as e:
+                    self._log.info("exception when enabling debugging: %s" % str(e))
+                    time.sleep(1)
+                    i += 1
 
     def ensureReady(self, timeout):
         assert timeout >= 0
@@ -843,7 +878,7 @@ def findTestMediaDevices(log):
         gst = gst010
     else:
         gst = gst10
-    subprocess.check_call(
+    process = mozprocess.ProcessHandler(
         [
             gst,
             "--no-fault",
@@ -855,7 +890,8 @@ def findTestMediaDevices(log):
             "device=%s" % device,
         ]
     )
-    info["video"] = name
+    process.run()
+    info["video"] = {"name": name, "process": process}
 
     # check if PulseAudio module-null-sink is loaded
     pactl = spawn.find_executable("pactl")
@@ -880,7 +916,7 @@ def findTestMediaDevices(log):
             return None
 
     # Hardcode the name since it's always the same.
-    info["audio"] = "Monitor of Null Output"
+    info["audio"] = {"name": "Monitor of Null Output"}
     return info
 
 
@@ -1397,6 +1433,14 @@ class MochitestDesktop(object):
                 self.log.info("Stopping websocket/process bridge")
             except Exception:
                 self.log.critical("Exception stopping websocket/process bridge")
+
+        if hasattr(self, "gstForV4l2loopbackProcess"):
+            try:
+                self.gstForV4l2loopbackProcess.kill()
+                self.gstForV4l2loopbackProcess.wait()
+                self.log.info("Stopping gst for v4l2loopback")
+            except Exception:
+                self.log.critical("Exception stopping gst for v4l2loopback")
 
     def copyExtraFilesToProfile(self, options):
         "Copy extra files or dirs specified on the command line to the testing profile."
@@ -2341,10 +2385,11 @@ toolbar#nav-bar {
 
         # See if we should use fake media devices.
         if options.useTestMediaDevices:
-            prefs["media.audio_loopback_dev"] = self.mediaDevices["audio"]
-            prefs["media.video_loopback_dev"] = self.mediaDevices["video"]
+            prefs["media.audio_loopback_dev"] = self.mediaDevices["audio"]["name"]
+            prefs["media.video_loopback_dev"] = self.mediaDevices["video"]["name"]
             prefs["media.cubeb.output_device"] = "Null Output"
             prefs["media.volume_scale"] = "1.0"
+            self.gstForV4l2loopbackProcess = self.mediaDevices["video"]["process"]
 
         self.profile.set_preferences(prefs)
 
@@ -3171,6 +3216,7 @@ toolbar#nav-bar {
                 ),
                 "xorigin": options.xOriginTests,
                 "condprof": options.conditionedProfile,
+                "msix": "WindowsApps" in options.app,
             }
         )
 
@@ -3566,6 +3612,12 @@ toolbar#nav-bar {
         if options.crashAsPass:
             ignoreMissingLeaks.append("tab")
             ignoreMissingLeaks.append("socket")
+
+        # Provide a floor for Windows chrome leak detection, because we know
+        # we have some Windows-specific shutdown hangs that we avoid by timing
+        # out and leaking memory.
+        if options.flavor == "chrome" and mozinfo.isWin:
+            leakThresholds["default"] += 1296
 
         # Stop leak detection if m-bc code coverage is enabled
         # by maxing out the leak threshold for all processes.

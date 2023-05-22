@@ -67,13 +67,14 @@ RefPtr<GLContext> ClaimSnapshotGLContext() {
     nsCString discardFailureId;
     sSnapshotContext = GLContextProvider::CreateHeadless({}, &discardFailureId);
     if (!sSnapshotContext) {
-      LOGDMABUF(("GetAsSourceSurface: Failed to create snapshot GLContext."));
+      LOGDMABUF(
+          ("ClaimSnapshotGLContext: Failed to create snapshot GLContext."));
       return nullptr;
     }
     sSnapshotContext->mOwningThreadId = Nothing();  // No singular owner.
   }
   if (!sSnapshotContext->MakeCurrent()) {
-    LOGDMABUF(("GetAsSourceSurface: Failed to make GLContext current."));
+    LOGDMABUF(("ClaimSnapshotGLContext: Failed to make GLContext current."));
     return nullptr;
   }
   return sSnapshotContext;
@@ -84,6 +85,7 @@ void ReturnSnapshotGLContext(RefPtr<GLContext> aGLContext) {
   // it's not used.
   MOZ_ASSERT(!aGLContext->mUseTLSIsCurrent);
   if (!aGLContext->IsCurrent()) {
+    LOGDMABUF(("ReturnSnapshotGLContext() failed, is not current!"));
     return;
   }
   const auto& gle = gl::GLContextEGL::Cast(aGLContext);
@@ -140,14 +142,10 @@ void DMABufSurface::GlobalRefCountCreate() {
 void DMABufSurface::GlobalRefCountImport(int aFd) {
   MOZ_ASSERT(!mGlobalRefCountFd);
   mGlobalRefCountFd = aFd;
-  MOZ_DIAGNOSTIC_ASSERT(IsGlobalRefSet(),
-                        "We're importing unreferenced surface!");
 }
 
 int DMABufSurface::GlobalRefCountExport() {
   if (mGlobalRefCountFd) {
-    MOZ_DIAGNOSTIC_ASSERT(IsGlobalRefSet(),
-                          "We're exporting unreferenced surface!");
     GlobalRefAdd();
   }
   return mGlobalRefCountFd;
@@ -342,12 +340,19 @@ bool DMABufSurfaceRGBA::OpenFileDescriptorForPlane(
   if (mDmabufFds[aPlane] >= 0) {
     return true;
   }
+  gbm_bo* bo = mGbmBufferObject[0];
+  if (NS_WARN_IF(!bo)) {
+    LOGDMABUF(
+        ("DMABufSurfaceRGBA::OpenFileDescriptorForPlane: Missing "
+         "mGbmBufferObject object!"));
+    return false;
+  }
+
   if (mBufferPlaneCount == 1) {
     MOZ_ASSERT(aPlane == 0, "DMABuf: wrong surface plane!");
-    mDmabufFds[0] = nsGbmLib::GetFd(mGbmBufferObject[0]);
+    mDmabufFds[0] = nsGbmLib::GetFd(bo);
   } else {
-    uint32_t handle =
-        nsGbmLib::GetHandleForPlane(mGbmBufferObject[0], aPlane).u32;
+    uint32_t handle = nsGbmLib::GetHandleForPlane(bo, aPlane).u32;
     int ret = nsGbmLib::DrmPrimeHandleToFD(GetDMABufDevice()->GetDRMFd(),
                                            handle, 0, &mDmabufFds[aPlane]);
     if (ret < 0) {
@@ -467,6 +472,17 @@ bool DMABufSurfaceRGBA::Create(mozilla::gl::GLContext* aGLContext,
   if (!egl->fExportDMABUFImage(mEGLImage, mDmabufFds, mStrides, mOffsets)) {
     LOGDMABUF(("  ExportDMABUFImageMESA failed, quit\n"));
     return false;
+  }
+
+  // A broken driver can return dmabuf without valid file descriptors
+  // which leads to fails later so quit now.
+  for (int i = 0; i < mBufferPlaneCount; i++) {
+    if (mDmabufFds[i] < 0) {
+      LOGDMABUF(
+          ("  ExportDMABUFImageMESA failed, mDmabufFds[%d] is invalid, quit",
+           i));
+      return false;
+    }
   }
 
   LOGDMABUF(("  imported size %d x %d format %x planes %d modifiers %" PRIx64,
@@ -911,7 +927,18 @@ already_AddRefed<DMABufSurfaceYUV> DMABufSurfaceYUV::CreateYUVSurface(
   RefPtr<DMABufSurfaceYUV> surf = new DMABufSurfaceYUV();
   LOGDMABUF(("DMABufSurfaceYUV::CreateYUVSurface() UID %d from desc\n",
              surf->GetUID()));
-  if (!surf->UpdateYUVData(aDesc, aWidth, aHeight)) {
+  if (!surf->UpdateYUVData(aDesc, aWidth, aHeight, /* aCopy */ false)) {
+    return nullptr;
+  }
+  return surf.forget();
+}
+
+already_AddRefed<DMABufSurfaceYUV> DMABufSurfaceYUV::CopyYUVSurface(
+    const VADRMPRIMESurfaceDescriptor& aDesc, int aWidth, int aHeight) {
+  RefPtr<DMABufSurfaceYUV> surf = new DMABufSurfaceYUV();
+  LOGDMABUF(("DMABufSurfaceYUV::CreateYUVSurfaceCopy() UID %d from desc\n",
+             surf->GetUID()));
+  if (!surf->UpdateYUVData(aDesc, aWidth, aHeight, /* aCopy */ true)) {
     return nullptr;
   }
   return surf.forget();
@@ -975,16 +1002,16 @@ void DMABufSurfaceYUV::CloseFileDescriptorForPlane(
   }
 }
 
-bool DMABufSurfaceYUV::UpdateYUVData(const VADRMPRIMESurfaceDescriptor& aDesc,
-                                     int aWidth, int aHeight) {
+bool DMABufSurfaceYUV::ImportPRIMESurfaceDescriptor(
+    const VADRMPRIMESurfaceDescriptor& aDesc, int aWidth, int aHeight) {
+  LOGDMABUF(("DMABufSurfaceYUV::ImportPRIMESurfaceDescriptor() UID %d", mUID));
+  // Already exists?
+  MOZ_DIAGNOSTIC_ASSERT(mDmabufFds[0] < 0);
+
   if (aDesc.num_layers > DMABUF_BUFFER_PLANES ||
       aDesc.num_objects > DMABUF_BUFFER_PLANES) {
-    return false;
-  }
-
-  LOGDMABUF(("DMABufSurfaceYUV::UpdateYUVData() UID %d", mUID));
-  if (mDmabufFds[0] >= 0) {
-    LOGDMABUF(("    Already created!"));
+    LOGDMABUF(("  Can't import, wrong layers/objects number (%d, %d)",
+               aDesc.num_layers, aDesc.num_objects));
     return false;
   }
   if (aDesc.fourcc == VA_FOURCC_NV12) {
@@ -994,8 +1021,7 @@ bool DMABufSurfaceYUV::UpdateYUVData(const VADRMPRIMESurfaceDescriptor& aDesc,
   } else if (aDesc.fourcc == VA_FOURCC_YV12) {
     mSurfaceType = SURFACE_YUV420;
   } else {
-    LOGDMABUF(("UpdateYUVData(): Can't import surface data of 0x%x format",
-               aDesc.fourcc));
+    LOGDMABUF(("  Can't import surface data of 0x%x format", aDesc.fourcc));
     return false;
   }
 
@@ -1003,12 +1029,6 @@ bool DMABufSurfaceYUV::UpdateYUVData(const VADRMPRIMESurfaceDescriptor& aDesc,
 
   for (unsigned int i = 0; i < aDesc.num_layers; i++) {
     unsigned int object = aDesc.layers[i].object_index[0];
-    // Intel exports VA-API surfaces in one object,planes have the same FD.
-    // AMD exports surfaces in two objects with different FDs.
-    int fd = aDesc.objects[object].fd;
-    bool dupFD = (object != i);
-    mDmabufFds[i] = dupFD ? dup(fd) : fd;
-
     mBufferModifiers[i] = aDesc.objects[object].drm_format_modifier;
     mDrmFormats[i] = aDesc.layers[i].drm_format;
     mOffsets[i] = aDesc.layers[i].offset[0];
@@ -1017,18 +1037,118 @@ bool DMABufSurfaceYUV::UpdateYUVData(const VADRMPRIMESurfaceDescriptor& aDesc,
     mHeightAligned[i] = aDesc.height >> i;
     mWidth[i] = aWidth >> i;
     mHeight[i] = aHeight >> i;
-
     LOGDMABUF(("    plane %d size %d x %d format %x", i, mWidth[i], mHeight[i],
                mDrmFormats[i]));
   }
-
   return true;
 }
 
-bool DMABufSurfaceYUV::CreateYUVPlane(int aPlane, int aWidth, int aHeight,
-                                      int aDrmFormat) {
+bool DMABufSurfaceYUV::MoveYUVDataImpl(const VADRMPRIMESurfaceDescriptor& aDesc,
+                                       int aWidth, int aHeight) {
+  if (!ImportPRIMESurfaceDescriptor(aDesc, aWidth, aHeight)) {
+    return false;
+  }
+  for (unsigned int i = 0; i < aDesc.num_layers; i++) {
+    unsigned int object = aDesc.layers[i].object_index[0];
+    // Keep VADRMPRIMESurfaceDescriptor untouched and dup() dmabuf
+    // file descriptors.
+    mDmabufFds[i] = dup(aDesc.objects[object].fd);
+  }
+  return true;
+}
+
+void DMABufSurfaceYUV::ReleaseVADRMPRIMESurfaceDescriptor(
+    VADRMPRIMESurfaceDescriptor& aDesc) {
+  for (unsigned int i = 0; i < aDesc.num_layers; i++) {
+    unsigned int object = aDesc.layers[i].object_index[0];
+    if (aDesc.objects[object].fd != -1) {
+      close(aDesc.objects[object].fd);
+      aDesc.objects[object].fd = -1;
+    }
+  }
+}
+
+bool DMABufSurfaceYUV::CreateYUVPlane(int aPlane) {
   LOGDMABUF(("DMABufSurfaceYUV::CreateYUVPlane() UID %d size %d x %d", mUID,
-             aWidth, aHeight));
+             mWidth[aPlane], mHeight[aPlane]));
+
+  if (!GetAndConfigureDMABufDevice()->GetGbmDevice()) {
+    LOGDMABUF(("    Missing GbmDevice!"));
+    return false;
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(mGbmBufferObject[aPlane] == nullptr);
+  bool useModifiers = (mBufferModifiers[aPlane] != DRM_FORMAT_MOD_INVALID);
+  if (useModifiers) {
+    LOGDMABUF(("    Creating with modifiers"));
+    mGbmBufferObject[aPlane] = nsGbmLib::CreateWithModifiers(
+        GetDMABufDevice()->GetGbmDevice(), mWidth[aPlane], mHeight[aPlane],
+        mDrmFormats[aPlane], mBufferModifiers + aPlane, 1);
+  }
+  if (!mGbmBufferObject[aPlane]) {
+    LOGDMABUF(("    Creating without modifiers"));
+    mGbmBufferObject[aPlane] = nsGbmLib::Create(
+        GetDMABufDevice()->GetGbmDevice(), mWidth[aPlane], mHeight[aPlane],
+        mDrmFormats[aPlane], GBM_BO_USE_RENDERING);
+    mBufferModifiers[aPlane] = DRM_FORMAT_MOD_INVALID;
+  }
+  if (!mGbmBufferObject[aPlane]) {
+    LOGDMABUF(("    Failed to create GbmBufferObject: %s", strerror(errno)));
+    return false;
+  }
+
+  mStrides[aPlane] = nsGbmLib::GetStride(mGbmBufferObject[aPlane]);
+  mOffsets[aPlane] = nsGbmLib::GetOffset(mGbmBufferObject[aPlane], 0);
+  mWidthAligned[aPlane] = mWidth[aPlane];
+  mHeightAligned[aPlane] = mHeight[aPlane];
+  return true;
+}
+
+bool DMABufSurfaceYUV::CopyYUVDataImpl(const VADRMPRIMESurfaceDescriptor& aDesc,
+                                       int aWidth, int aHeight) {
+  RefPtr<DMABufSurfaceYUV> tmpSurf = CreateYUVSurface(aDesc, aWidth, aHeight);
+  if (!tmpSurf) {
+    return false;
+  }
+
+  if (!ImportPRIMESurfaceDescriptor(aDesc, aWidth, aHeight)) {
+    return false;
+  }
+
+  StaticMutexAutoLock lock(sSnapshotContextMutex);
+  RefPtr<GLContext> context = ClaimSnapshotGLContext();
+  auto releaseTextures = MakeScopeExit([&] {
+    tmpSurf->ReleaseTextures();
+    ReleaseTextures();
+    ReturnSnapshotGLContext(context);
+  });
+
+  for (int i = 0; i < mBufferPlaneCount; i++) {
+    if (!tmpSurf->CreateTexture(context, i)) {
+      return false;
+    }
+    if (!CreateYUVPlane(i) || !CreateTexture(context, i)) {
+      return false;
+    }
+    gfx::IntSize size(GetWidth(i), GetHeight(i));
+    context->BlitHelper()->BlitTextureToTexture(
+        tmpSurf->GetTexture(i), GetTexture(i), size, size, LOCAL_GL_TEXTURE_2D,
+        LOCAL_GL_TEXTURE_2D);
+  }
+  return true;
+}
+
+bool DMABufSurfaceYUV::UpdateYUVData(const VADRMPRIMESurfaceDescriptor& aDesc,
+                                     int aWidth, int aHeight, bool aCopy) {
+  LOGDMABUF(("DMABufSurfaceYUV::UpdateYUVData() UID %d copy %d", mUID, aCopy));
+  return aCopy ? CopyYUVDataImpl(aDesc, aWidth, aHeight)
+               : MoveYUVDataImpl(aDesc, aWidth, aHeight);
+}
+
+bool DMABufSurfaceYUV::CreateLinearYUVPlane(int aPlane, int aWidth, int aHeight,
+                                            int aDrmFormat) {
+  LOGDMABUF(("DMABufSurfaceYUV::CreateLinearYUVPlane() UID %d size %d x %d",
+             mUID, aWidth, aHeight));
 
   if (!GetDMABufDevice()->GetGbmDevice()) {
     LOGDMABUF(("    Missing GbmDevice!"));
@@ -1118,13 +1238,13 @@ bool DMABufSurfaceYUV::Create(int aWidth, int aHeight, void** aPixelData,
   mSurfaceType = SURFACE_YUV420;
   mBufferPlaneCount = 3;
 
-  if (!CreateYUVPlane(0, aWidth, aHeight, GBM_FORMAT_R8)) {
+  if (!CreateLinearYUVPlane(0, aWidth, aHeight, GBM_FORMAT_R8)) {
     return false;
   }
-  if (!CreateYUVPlane(1, aWidth >> 1, aHeight >> 1, GBM_FORMAT_R8)) {
+  if (!CreateLinearYUVPlane(1, aWidth >> 1, aHeight >> 1, GBM_FORMAT_R8)) {
     return false;
   }
-  if (!CreateYUVPlane(2, aWidth >> 1, aHeight >> 1, GBM_FORMAT_R8)) {
+  if (!CreateLinearYUVPlane(2, aWidth >> 1, aHeight >> 1, GBM_FORMAT_R8)) {
     return false;
   }
   if (!aPixelData || !aLineSizes) {

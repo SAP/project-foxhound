@@ -8,6 +8,7 @@
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/JSOracleChild.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/Endpoint.h"
@@ -27,6 +28,7 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/WinDllServices.h"
+#  include "mozilla/dom/WindowsUtilsChild.h"
 #endif
 
 #include "nsDebugImpl.h"
@@ -236,6 +238,31 @@ UtilityProcessChild::RecvStartUtilityAudioDecoderService(
   mUtilityAudioDecoderInstance->Start(std::move(aEndpoint));
   return IPC_OK();
 }
+
+mozilla::ipc::IPCResult UtilityProcessChild::RecvStartJSOracleService(
+    Endpoint<PJSOracleChild>&& aEndpoint) {
+  mJSOracleInstance = new mozilla::dom::JSOracleChild();
+  if (!mJSOracleInstance) {
+    return IPC_FAIL(this, "Failing to create JSOracleParent");
+  }
+
+  mJSOracleInstance->Start(std::move(aEndpoint));
+  return IPC_OK();
+}
+
+#ifdef XP_WIN
+mozilla::ipc::IPCResult UtilityProcessChild::RecvStartWindowsUtilsService(
+    Endpoint<dom::PWindowsUtilsChild>&& aEndpoint) {
+  mWindowsUtilsInstance = new dom::WindowsUtilsChild();
+  if (!mWindowsUtilsInstance) {
+    return IPC_FAIL(this, "Failed to create WindowsUtilsChild");
+  }
+
+  [[maybe_unused]] bool ok = std::move(aEndpoint).Bind(mWindowsUtilsInstance);
+  MOZ_ASSERT(ok);
+  return IPC_OK();
+}
+#endif
 
 void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {

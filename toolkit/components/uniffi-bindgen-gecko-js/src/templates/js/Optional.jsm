@@ -1,7 +1,7 @@
 class {{ ffi_converter }} extends FfiConverterArrayBuffer {
-    static checkType(name, value) {
+    static checkType(value) {
         if (value !== undefined && value !== null) {
-            {{ inner.ffi_converter() }}.checkType(name, value)
+            {{ inner.ffi_converter() }}.checkType(value)
         }
     }
 
@@ -33,4 +33,3 @@ class {{ ffi_converter }} extends FfiConverterArrayBuffer {
         return 1 + {{ inner.ffi_converter() }}.computeSize(value)
     }
 }
-

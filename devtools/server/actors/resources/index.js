@@ -12,21 +12,25 @@ const TYPES = {
   CSS_MESSAGE: "css-message",
   DOCUMENT_EVENT: "document-event",
   ERROR_MESSAGE: "error-message",
-  PLATFORM_MESSAGE: "platform-message",
+  LAST_PRIVATE_CONTEXT_EXIT: "last-private-context-exit",
   NETWORK_EVENT: "network-event",
-  STYLESHEET: "stylesheet",
   NETWORK_EVENT_STACKTRACE: "network-event-stacktrace",
+  PLATFORM_MESSAGE: "platform-message",
   REFLOW: "reflow",
-  SOURCE: "source",
-  THREAD_STATE: "thread-state",
   SERVER_SENT_EVENT: "server-sent-event",
+  SOURCE: "source",
+  STYLESHEET: "stylesheet",
+  THREAD_STATE: "thread-state",
   WEBSOCKET: "websocket",
+
   // storage types
   CACHE_STORAGE: "Cache",
   COOKIE: "cookies",
+  EXTENSION_STORAGE: "extension-storage",
   INDEXED_DB: "indexed-db",
   LOCAL_STORAGE: "local-storage",
   SESSION_STORAGE: "session-storage",
+
   // root types
   EXTENSIONS_BGSCRIPT_STATUS: "extensions-backgroundscript-status",
 };
@@ -157,11 +161,17 @@ const ParentProcessResources = augmentResourceDictionary({
   [TYPES.COOKIE]: {
     path: "devtools/server/actors/resources/storage-cookie",
   },
+  [TYPES.EXTENSION_STORAGE]: {
+    path: "devtools/server/actors/resources/storage-extension",
+  },
   [TYPES.INDEXED_DB]: {
     path: "devtools/server/actors/resources/storage-indexed-db",
   },
   [TYPES.DOCUMENT_EVENT]: {
     path: "devtools/server/actors/resources/parent-process-document-event",
+  },
+  [TYPES.LAST_PRIVATE_CONTEXT_EXIT]: {
+    path: "devtools/server/actors/resources/last-private-context-exit",
   },
 });
 

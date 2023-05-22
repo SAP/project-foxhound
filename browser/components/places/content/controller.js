@@ -17,9 +17,7 @@ ChromeUtils.defineESModuleGetters(this, {
  * items.
  *
  * @param {object} options an object containing the following properties:
- * @param {number} options.parentId
- *     The identifier of the parent container
- * @param {*} options.parentGuid
+ * @param {string} options.parentGuid
  *     The unique identifier of the parent container
  * @param {number} [options.index]
  *     The index within the container where to insert, defaults to appending
@@ -34,14 +32,12 @@ ChromeUtils.defineESModuleGetters(this, {
  *     When defined index will be calculated based on this node
  */
 function PlacesInsertionPoint({
-  parentId,
   parentGuid,
   index = PlacesUtils.bookmarks.DEFAULT_INDEX,
   orientation = Ci.nsITreeView.DROP_ON,
   tagName = null,
   dropNearNode = null,
 }) {
-  this.itemId = parentId;
   this.guid = parentGuid;
   this._index = index;
   this.orientation = orientation;
@@ -172,7 +168,7 @@ PlacesController.prototype = {
       case "cmd_paste":
       case "placesCmd_paste":
         // If the clipboard contains a Places flavor it is definitely pasteable,
-        // otherwise we also allow pasting "text/unicode" and "text/x-moz-url" data.
+        // otherwise we also allow pasting "text/plain" and "text/x-moz-url" data.
         // We don't check if the data is valid here, because the clipboard may
         // contain very large blobs that would largely slowdown commands updating.
         // Of course later paste() should ignore any invalid data.
@@ -182,7 +178,7 @@ PlacesController.prototype = {
             [
               ...PlacesUIUtils.PLACES_FLAVORS,
               PlacesUtils.TYPE_X_MOZ_URL,
-              PlacesUtils.TYPE_UNICODE,
+              PlacesUtils.TYPE_PLAINTEXT,
             ],
             Ci.nsIClipboard.kGlobalClipboard
           )
@@ -250,10 +246,10 @@ PlacesController.prototype = {
   doCommand: function PC_doCommand(aCommand) {
     switch (aCommand) {
       case "cmd_undo":
-        PlacesTransactions.undo().catch(Cu.reportError);
+        PlacesTransactions.undo().catch(console.error);
         break;
       case "cmd_redo":
-        PlacesTransactions.redo().catch(Cu.reportError);
+        PlacesTransactions.redo().catch(console.error);
         break;
       case "cmd_cut":
       case "placesCmd_cut":
@@ -265,14 +261,14 @@ PlacesController.prototype = {
         break;
       case "cmd_paste":
       case "placesCmd_paste":
-        this.paste().catch(Cu.reportError);
+        this.paste().catch(console.error);
         break;
       case "cmd_delete":
       case "placesCmd_delete":
-        this.remove("Remove Selection").catch(Cu.reportError);
+        this.remove("Remove Selection").catch(console.error);
         break;
       case "placesCmd_deleteDataHost":
-        this.forgetAboutThisSite().catch(Cu.reportError);
+        this.forgetAboutThisSite().catch(console.error);
         break;
       case "cmd_selectAll":
         this.selectAll();
@@ -299,19 +295,19 @@ PlacesController.prototype = {
         PlacesUIUtils.openNodeIn(this._view.selectedNode, "tab", this._view);
         break;
       case "placesCmd_new:folder":
-        this.newItem("folder").catch(Cu.reportError);
+        this.newItem("folder").catch(console.error);
         break;
       case "placesCmd_new:bookmark":
-        this.newItem("bookmark").catch(Cu.reportError);
+        this.newItem("bookmark").catch(console.error);
         break;
       case "placesCmd_new:separator":
-        this.newSeparator().catch(Cu.reportError);
+        this.newSeparator().catch(console.error);
         break;
       case "placesCmd_show:info":
         this.showBookmarkPropertiesForSelection();
         break;
       case "placesCmd_sortBy:name":
-        this.sortFolderByName().catch(Cu.reportError);
+        this.sortFolderByName().catch(console.error);
         break;
       case "placesCmd_createBookmark": {
         const nodes = this._view.selectedNodes.map(node => {
@@ -878,7 +874,7 @@ PlacesController.prototype = {
           Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY
       ) {
         // This is a uri node inside an history query.
-        await PlacesUtils.history.remove(node.uri).catch(Cu.reportError);
+        await PlacesUtils.history.remove(node.uri).catch(console.error);
         // History deletes are not undoable, so we don't have a transaction.
       } else if (
         node.itemId == -1 &&
@@ -889,7 +885,7 @@ PlacesController.prototype = {
         // This is a dynamically generated history query, like queries
         // grouped by site, time or both.  Dynamically generated queries don't
         // have an itemId even if they are descendants of a bookmark.
-        await this._removeHistoryContainer(node).catch(Cu.reportError);
+        await this._removeHistoryContainer(node).catch(console.error);
         // History deletes are not undoable, so we don't have a transaction.
       } else {
         // This is a common bookmark item.
@@ -948,7 +944,7 @@ PlacesController.prototype = {
         PlacesUtils.asQuery(node).queryOptions.queryType ==
           Ci.nsINavHistoryQueryOptions.QUERY_TYPE_HISTORY
       ) {
-        await this._removeHistoryContainer(node).catch(Cu.reportError);
+        await this._removeHistoryContainer(node).catch(console.error);
       }
     }
 
@@ -1053,7 +1049,7 @@ PlacesController.prototype = {
 
     function addURIData(index) {
       addData(PlacesUtils.TYPE_X_MOZ_URL, index);
-      addData(PlacesUtils.TYPE_UNICODE, index);
+      addData(PlacesUtils.TYPE_PLAINTEXT, index);
       addData(PlacesUtils.TYPE_HTML, index);
     }
 
@@ -1135,7 +1131,7 @@ PlacesController.prototype = {
       { type: PlacesUtils.TYPE_X_MOZ_PLACE, entries: [] },
       { type: PlacesUtils.TYPE_X_MOZ_URL, entries: [] },
       { type: PlacesUtils.TYPE_HTML, entries: [] },
-      { type: PlacesUtils.TYPE_UNICODE, entries: [] },
+      { type: PlacesUtils.TYPE_PLAINTEXT, entries: [] },
     ];
 
     // Avoid handling descendants of a copied node, the transactions take care
@@ -1268,7 +1264,7 @@ PlacesController.prototype = {
     [
       PlacesUtils.TYPE_X_MOZ_PLACE,
       PlacesUtils.TYPE_X_MOZ_URL,
-      PlacesUtils.TYPE_UNICODE,
+      PlacesUtils.TYPE_PLAINTEXT,
     ].forEach(type => xferable.addDataFlavor(type));
 
     Services.clipboard.getData(xferable, Ci.nsIClipboard.kGlobalClipboard);
@@ -1372,7 +1368,7 @@ PlacesController.prototype = {
     const [title, body, forget] = await document.l10n.formatValues([
       { id: "places-forget-about-this-site-confirmation-title" },
       {
-        id: "places-forget-about-this-site-confirmation-message",
+        id: "places-forget-about-this-site-confirmation-msg",
         args: { hostOrBaseDomain: baseDomain ?? host },
       },
       { id: "places-forget-about-this-site-forget" },
@@ -1408,21 +1404,16 @@ PlacesController.prototype = {
 
   showInFolder(aBookmarkGuid) {
     // Open containing folder in left pane/sidebar bookmark tree
-    if (
-      this._view._rootElt &&
-      this._view._rootElt.id.includes("bookmarksMenu")
-    ) {
-      // We're in the toolbar bookmarks menu
+    let documentUrl = document.documentURI.toLowerCase();
+    if (documentUrl.endsWith("browser.xhtml")) {
+      // We're in a menu or a panel.
       window.SidebarUI._show("viewBookmarksSidebar").then(() => {
         let theSidebar = document.getElementById("sidebar");
         theSidebar.contentDocument
           .getElementById("bookmarks-view")
           .selectItems([aBookmarkGuid]);
       });
-    } else if (
-      this._view.parentElement &&
-      this._view.parentElement.id.includes("Panel")
-    ) {
+    } else if (documentUrl.includes("sidebar")) {
       // We're in the sidebar - clear the search box first
       let searchBox = document.getElementById("search-box");
       searchBox.value = "";
@@ -1455,7 +1446,9 @@ PlacesController.prototype = {
  */
 var PlacesControllerDragHelper = {
   /**
-   * DOM Element currently being dragged over
+   * For views using DOM nodes like toolbars, menus and panels, this is the DOM
+   * element currently being dragged over. For other views not handling DOM
+   * nodes, like trees, it is a Places result node instead.
    */
   currentDropTarget: null,
 
@@ -1499,13 +1492,6 @@ var PlacesControllerDragHelper = {
       if (PlacesUIUtils.SUPPORTED_FLAVORS.includes(aFlavors[i])) {
         return aFlavors[i];
       }
-    }
-
-    // If no supported flavor is found, check if data includes text/plain
-    // contents.  If so, request them as text/unicode, a conversion will happen
-    // automatically.
-    if (aFlavors.contains("text/plain")) {
-      return PlacesUtils.TYPE_UNICODE;
     }
 
     return null;
@@ -1564,18 +1550,39 @@ var PlacesControllerDragHelper = {
           return false;
         }
 
-        // The following loop disallows the dropping of a folder on itself or
-        // on any of its descendants.
+        // Disallow dropping of a folder on itself or any of its descendants.
+        // This check is done to show an appropriate drop indicator, a stricter
+        // check is done later by the bookmarks API.
         if (
           dragged.type == PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER ||
           (dragged.uri && dragged.uri.startsWith("place:"))
         ) {
-          let parentId = ip.itemId;
-          while (parentId != PlacesUtils.placesRootId) {
-            if (dragged.concreteId == parentId || dragged.id == parentId) {
+          let dragOverPlacesNode = this.currentDropTarget;
+          if (!(dragOverPlacesNode instanceof Ci.nsINavHistoryResultNode)) {
+            // If it's a DOM node, it should have a _placesNode expando, or it
+            // may be a static element in a places container, like the [empty]
+            // menuitem.
+            dragOverPlacesNode =
+              dragOverPlacesNode._placesNode ??
+              dragOverPlacesNode.parentNode?._placesNode;
+          }
+
+          // If we couldn't get a target Places result node then we can't check
+          // whether the drag is allowed, just let it go through.
+          if (dragOverPlacesNode) {
+            let guid = dragged.concreteGuid ?? dragged.itemGuid;
+            // Dragging over itself.
+            if (PlacesUtils.getConcreteItemGuid(dragOverPlacesNode) == guid) {
               return false;
             }
-            parentId = PlacesUtils.bookmarks.getFolderIdForItem(parentId);
+            // Dragging over a descendant.
+            for (let ancestor of PlacesUtils.nodeAncestors(
+              dragOverPlacesNode
+            )) {
+              if (PlacesUtils.getConcreteItemGuid(ancestor) == guid) {
+                return false;
+              }
+            }
           }
         }
 
@@ -1609,7 +1616,7 @@ var PlacesControllerDragHelper = {
 
     // Following flavors may contain duplicated data.
     let duplicable = new Map();
-    duplicable.set(PlacesUtils.TYPE_UNICODE, new Set());
+    duplicable.set(PlacesUtils.TYPE_PLAINTEXT, new Set());
     duplicable.set(PlacesUtils.TYPE_X_MOZ_URL, new Set());
 
     // Collect all data from the DataTransfer before processing it, as the

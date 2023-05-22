@@ -93,6 +93,12 @@ nsresult BackgroundEventTarget::Init() {
   nsCOMPtr<nsIThreadPool> ioPool(new nsThreadPool());
   NS_ENSURE_TRUE(pool, NS_ERROR_FAILURE);
 
+  // The io pool spends a lot of its time blocking on io, so we want to offload
+  // these jobs on a lower priority if available.
+  rv = ioPool->SetQoSForThreads(nsIThread::QOS_PRIORITY_LOW);
+  NS_ENSURE_SUCCESS(
+      rv, rv);  // note: currently infallible, keeping this for brevity.
+
   rv = ioPool->SetName("BgIOThreadPool"_ns);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -218,6 +224,7 @@ void NS_SetMainThread() {
   // needs to be initialized around the same time you would initialize
   // sTLSIsMainThread.
   SerialEventTargetGuard::InitTLS();
+  nsThreadPool::InitTLS();
 }
 
 #ifdef DEBUG
@@ -298,8 +305,8 @@ nsresult nsThreadManager::Init() {
   RefPtr<ThreadEventQueue> synchronizedQueue =
       new ThreadEventQueue(std::move(queue), true);
 
-  mMainThread =
-      new nsThread(WrapNotNull(synchronizedQueue), nsThread::MAIN_THREAD, 0);
+  mMainThread = new nsThread(WrapNotNull(synchronizedQueue),
+                             nsThread::MAIN_THREAD, {.stackSize = 0});
 
   nsresult rv = mMainThread->InitCurrentThread();
   if (NS_FAILED(rv)) {
@@ -421,6 +428,12 @@ void nsThreadManager::ShutdownMainThread() {
   mMainThread->SetObserver(nullptr);
 
   mBackgroundEventTarget = nullptr;
+}
+
+void nsThreadManager::ReleaseMainThread() {
+  MOZ_ASSERT(!mInitialized, "Must have called BeginShutdown");
+  MOZ_ASSERT(!mBackgroundEventTarget, "Must have called ShutdownMainThread");
+  MOZ_ASSERT(mMainThread);
 
   // Release main thread object.
   mMainThread = nullptr;
@@ -452,7 +465,8 @@ nsThread* nsThreadManager::CreateCurrentThread(
     return nullptr;
   }
 
-  RefPtr<nsThread> thread = new nsThread(WrapNotNull(aQueue), aMainThread, 0);
+  RefPtr<nsThread> thread =
+      new nsThread(WrapNotNull(aQueue), aMainThread, {.stackSize = 0});
   if (!thread || NS_FAILED(thread->InitCurrentThread())) {
     return nullptr;
   }
@@ -514,8 +528,9 @@ bool nsThreadManager::IsNSThread() const {
 }
 
 NS_IMETHODIMP
-nsThreadManager::NewNamedThread(const nsACString& aName, uint32_t aStackSize,
-                                nsIThread** aResult) {
+nsThreadManager::NewNamedThread(
+    const nsACString& aName, nsIThreadManager::ThreadCreationOptions aOptions,
+    nsIThread** aResult) {
   // Note: can be called from arbitrary threads
 
   // No new threads during Shutdown
@@ -528,7 +543,7 @@ nsThreadManager::NewNamedThread(const nsACString& aName, uint32_t aStackSize,
   RefPtr<ThreadEventQueue> queue =
       new ThreadEventQueue(MakeUnique<EventQueue>());
   RefPtr<nsThread> thr =
-      new nsThread(WrapNotNull(queue), nsThread::NOT_MAIN_THREAD, aStackSize);
+      new nsThread(WrapNotNull(queue), nsThread::NOT_MAIN_THREAD, aOptions);
   nsresult rv =
       thr->Init(aName);  // Note: blocks until the new thread has been set up
   if (NS_FAILED(rv)) {
@@ -773,4 +788,11 @@ nsThreadManager::IdleDispatchToMainThread(nsIRunnable* aEvent,
 
   return NS_DispatchToThreadQueue(event.forget(), mMainThread,
                                   EventQueuePriority::Idle);
+}
+
+NS_IMETHODIMP
+nsThreadManager::DispatchDirectTaskToCurrentThread(nsIRunnable* aEvent) {
+  NS_ENSURE_STATE(aEvent);
+  nsCOMPtr<nsIRunnable> runnable = aEvent;
+  return GetCurrentThread()->DispatchDirectTask(runnable.forget());
 }

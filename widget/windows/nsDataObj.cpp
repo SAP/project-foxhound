@@ -1097,51 +1097,45 @@ static void ValidateFilename(nsString& aFilename) {
 }
 
 //
-// Given a unicode string, convert it down to a valid local charset filename
-// with the supplied extension. This ensures that we do not cut MBCS characters
-// in the middle.
+// Given a unicode string, convert it to a valid local charset filename
+// and append the .url extension to be used for a shortcut file.
+// This ensures that we do not cut MBCS characters in the middle.
 //
 // It would seem that this is more functionality suited to being in nsIFile.
 //
-static bool CreateFilenameFromTextA(nsString& aText, const char* aExtension,
-                                    char* aFilename, uint32_t aFilenameLen) {
-  ValidateFilename(aText);
-  if (aText.IsEmpty()) return false;
-
-  // repeatably call WideCharToMultiByte as long as the title doesn't fit in the
-  // buffer available to us. Continually reduce the length of the source title
-  // until the MBCS version will fit in the buffer with room for the supplied
-  // extension. Doing it this way ensures that even in MBCS environments there
-  // will be a valid MBCS filename of the correct length.
-  int maxUsableFilenameLen =
-      aFilenameLen - strlen(aExtension) - 1;  // space for ext + null byte
-  int currLen, textLen = (int)std::min<uint32_t>(aText.Length(), aFilenameLen);
-  char defaultChar = '_';
-  do {
-    currLen = WideCharToMultiByte(CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,
-                                  aText.get(), textLen--, aFilename,
-                                  maxUsableFilenameLen, &defaultChar, nullptr);
-  } while (currLen == 0 && textLen > 0 &&
-           GetLastError() == ERROR_INSUFFICIENT_BUFFER);
-  if (currLen > 0 && textLen > 0) {
-    strcpy(&aFilename[currLen], aExtension);
-    return true;
-  } else {
-    // empty names aren't permitted
+static bool CreateURLFilenameFromTextA(nsAutoString& aText, char* aFilename) {
+  if (aText.IsEmpty()) {
     return false;
   }
+  aText.AppendLiteral(".url");
+  ValidateFilename(aText);
+  if (aText.IsEmpty()) {
+    return false;
+  }
+
+  // ValidateFilename should already be checking the filename length, but do
+  // an extra check to verify for the local code page that the converted text
+  // doesn't go over MAX_PATH and just return false if it does.
+  char defaultChar = '_';
+  int currLen = WideCharToMultiByte(CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,
+                                    aText.get(), -1, aFilename, MAX_PATH,
+                                    &defaultChar, nullptr);
+  return currLen != 0;
 }
 
-static bool CreateFilenameFromTextW(nsString& aText, const wchar_t* aExtension,
-                                    wchar_t* aFilename, uint32_t aFilenameLen) {
+// Wide character version of CreateURLFilenameFromTextA
+static bool CreateURLFilenameFromTextW(nsAutoString& aText,
+                                       wchar_t* aFilename) {
+  if (aText.IsEmpty()) {
+    return false;
+  }
+  aText.AppendLiteral(".url");
   ValidateFilename(aText);
-  if (aText.IsEmpty()) return false;
+  if (aText.IsEmpty() || aText.Length() >= MAX_PATH) {
+    return false;
+  }
 
-  const int extensionLen = wcslen(aExtension);
-  if (aText.Length() + extensionLen + 1 > aFilenameLen)
-    aText.Truncate(aFilenameLen - extensionLen - 1);
   wcscpy(&aFilename[0], aText.get());
-  wcscpy(&aFilename[aText.Length()], aExtension);
   return true;
 }
 
@@ -1187,14 +1181,13 @@ nsDataObj ::GetFileDescriptorInternetShortcutA(FORMATETC& aFE,
   }
 
   // get a valid filename in the following order: 1) from the page title,
-  // 2) localized string for an untitled page, 3) just use "Untitled.URL"
-  if (!CreateFilenameFromTextA(title, ".URL", fileGroupDescA->fgd[0].cFileName,
-                               MAX_PATH)) {
+  // 2) localized string for an untitled page, 3) just use "Untitled.url"
+  if (!CreateURLFilenameFromTextA(title, fileGroupDescA->fgd[0].cFileName)) {
     nsAutoString untitled;
     if (!GetLocalizedString("noPageTitle", untitled) ||
-        !CreateFilenameFromTextA(untitled, ".URL",
-                                 fileGroupDescA->fgd[0].cFileName, MAX_PATH)) {
-      strcpy(fileGroupDescA->fgd[0].cFileName, "Untitled.URL");
+        !CreateURLFilenameFromTextA(untitled,
+                                    fileGroupDescA->fgd[0].cFileName)) {
+      strcpy(fileGroupDescA->fgd[0].cFileName, "Untitled.url");
     }
   }
 
@@ -1229,14 +1222,13 @@ nsDataObj ::GetFileDescriptorInternetShortcutW(FORMATETC& aFE,
   }
 
   // get a valid filename in the following order: 1) from the page title,
-  // 2) localized string for an untitled page, 3) just use "Untitled.URL"
-  if (!CreateFilenameFromTextW(title, L".URL", fileGroupDescW->fgd[0].cFileName,
-                               MAX_PATH)) {
+  // 2) localized string for an untitled page, 3) just use "Untitled.url"
+  if (!CreateURLFilenameFromTextW(title, fileGroupDescW->fgd[0].cFileName)) {
     nsAutoString untitled;
     if (!GetLocalizedString("noPageTitle", untitled) ||
-        !CreateFilenameFromTextW(untitled, L".URL",
-                                 fileGroupDescW->fgd[0].cFileName, MAX_PATH)) {
-      wcscpy(fileGroupDescW->fgd[0].cFileName, L"Untitled.URL");
+        !CreateURLFilenameFromTextW(untitled,
+                                    fileGroupDescW->fgd[0].cFileName)) {
+      wcscpy(fileGroupDescW->fgd[0].cFileName, L"Untitled.url");
     }
   }
 
@@ -1436,26 +1428,19 @@ HRESULT nsDataObj::GetText(const nsACString& aDataFlavor, FORMATETC& aFE,
                            STGMEDIUM& aSTG) {
   void* data = nullptr;
 
-  // if someone asks for text/plain, look up text/unicode instead in the
-  // transferable.
-  const char* flavorStr;
-  const nsPromiseFlatCString& flat = PromiseFlatCString(aDataFlavor);
-  if (aDataFlavor.EqualsLiteral("text/plain"))
-    flavorStr = kUnicodeMime;
-  else
-    flavorStr = flat.get();
+  const nsPromiseFlatCString& flavorStr = PromiseFlatCString(aDataFlavor);
 
   // NOTE: CreateDataFromPrimitive creates new memory, that needs to be deleted
   nsCOMPtr<nsISupports> genericDataWrapper;
   nsresult rv = mTransferable->GetTransferData(
-      flavorStr, getter_AddRefs(genericDataWrapper));
+      flavorStr.get(), getter_AddRefs(genericDataWrapper));
   if (NS_FAILED(rv) || !genericDataWrapper) {
     return E_FAIL;
   }
 
   uint32_t len;
-  nsPrimitiveHelpers::CreateDataFromPrimitive(nsDependentCString(flavorStr),
-                                              genericDataWrapper, &data, &len);
+  nsPrimitiveHelpers::CreateDataFromPrimitive(
+      nsDependentCString(flavorStr.get()), genericDataWrapper, &data, &len);
   if (!data) return E_FAIL;
 
   HGLOBAL hGlobalMemory = nullptr;

@@ -6,10 +6,7 @@
 
 "use strict";
 
-const {
-  ActorClassWithSpec,
-  Actor,
-} = require("resource://devtools/shared/protocol.js");
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   webconsoleSpec,
 } = require("resource://devtools/shared/specs/webconsole.js");
@@ -31,23 +28,10 @@ const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const ErrorDocs = require("resource://devtools/server/actors/errordocs.js");
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  NetworkUtils:
-    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
-});
-
 loader.lazyRequireGetter(
   this,
   "evalWithDebugger",
   "resource://devtools/server/actors/webconsole/eval-with-debugger.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "NetworkMonitorActor",
-  "resource://devtools/server/actors/network-monitor/network-monitor.js",
   true
 );
 loader.lazyRequireGetter(
@@ -58,31 +42,14 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "StackTraceCollector",
-  "resource://devtools/server/actors/network-monitor/stack-trace-collector.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "JSPropertyProvider",
   "resource://devtools/shared/webconsole/js-property-provider.js",
   true
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
 );
 loader.lazyRequireGetter(
   this,
   ["isCommand", "validCommands"],
   "resource://devtools/server/actors/webconsole/commands.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "createMessageManagerMocks",
-  "resource://devtools/server/actors/webconsole/message-manager-mock.js",
   true
 );
 loader.lazyRequireGetter(
@@ -146,12 +113,6 @@ if (isWorker) {
   );
   loader.lazyRequireGetter(
     this,
-    "ContentProcessListener",
-    "resource://devtools/server/actors/webconsole/listeners/content-process.js",
-    true
-  );
-  loader.lazyRequireGetter(
-    this,
     "DocumentEventsListener",
     "resource://devtools/server/actors/webconsole/listeners/document-events.js",
     true
@@ -177,13 +138,12 @@ function isObject(value) {
  * @param object [parentActor]
  *        Optional, the parent actor.
  */
-const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
-  initialize(connection, parentActor) {
-    Actor.prototype.initialize.call(this, connection);
-    this.conn = connection;
+class WebConsoleActor extends Actor {
+  constructor(connection, parentActor) {
+    super(connection, webconsoleSpec);
+
     this.parentActor = parentActor;
 
-    this._prefs = {};
     this.dbg = this.parentActor.dbg;
 
     this._gripDepth = 0;
@@ -212,27 +172,21 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         "last-pb-context-exited"
       );
     }
-  },
+  }
+
   /**
    * Debugger instance.
    *
    * @see jsdebugger.sys.mjs
    */
-  dbg: null,
+  dbg = null;
 
   /**
    * This is used by the ObjectActor to keep track of the depth of grip() calls.
    * @private
    * @type number
    */
-  _gripDepth: null,
-
-  /**
-   * Web Console-related preferences.
-   * @private
-   * @type object
-   */
-  _prefs: null,
+  _gripDepth = null;
 
   /**
    * Holds a set of all currently registered listeners.
@@ -240,13 +194,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @private
    * @type Set
    */
-  _listeners: null,
-
-  /**
-   * The devtools server connection instance.
-   * @type object
-   */
-  conn: null,
+  _listeners = null;
 
   /**
    * The global we work with (this can be a Window, a Worker global or even a Sandbox
@@ -259,7 +207,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       return this._getWindowForBrowserConsole();
     }
     return this.parentActor.window || this.parentActor.workerGlobal;
-  },
+  }
 
   /**
    * Get a window to use for the browser console.
@@ -296,7 +244,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     return window;
-  },
+  }
 
   /**
    * Store a newly found window on the actor to be used in the future.
@@ -315,7 +263,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     } else {
       this._lastChromeWindow = null;
     }
-  },
+  }
 
   /**
    * Whether we've been using a window before.
@@ -323,7 +271,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @private
    * @type boolean
    */
-  _hadChromeWindow: false,
+  _hadChromeWindow = false;
 
   /**
    * A weak reference to the last chrome window we used to work with.
@@ -331,13 +279,13 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @private
    * @type nsIWeakReference
    */
-  _lastChromeWindow: null,
+  _lastChromeWindow = null;
 
   // The evalGlobal is used at the scope for JS evaluation.
-  _evalGlobal: null,
+  _evalGlobal = null;
   get evalGlobal() {
     return this._evalGlobal || this.global;
-  },
+  }
 
   set evalGlobal(global) {
     this._evalGlobal = global;
@@ -346,7 +294,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       EventEmitter.on(this.parentActor, "will-navigate", this._onWillNavigate);
       this._progressListenerActive = true;
     }
-  },
+  }
 
   /**
    * Flag used to track if we are listening for events from the progress
@@ -356,49 +304,49 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @private
    * @type boolean
    */
-  _progressListenerActive: false,
+  _progressListenerActive = false;
 
   /**
    * The ConsoleServiceListener instance.
    * @type object
    */
-  consoleServiceListener: null,
+  consoleServiceListener = null;
 
   /**
    * The ConsoleAPIListener instance.
    */
-  consoleAPIListener: null,
+  consoleAPIListener = null;
 
   /**
    * The ConsoleFileActivityListener instance.
    */
-  consoleFileActivityListener: null,
+  consoleFileActivityListener = null;
 
   /**
    * The ConsoleReflowListener instance.
    */
-  consoleReflowListener: null,
+  consoleReflowListener = null;
 
   /**
    * The Web Console Commands names cache.
    * @private
    * @type array
    */
-  _webConsoleCommandsCache: null,
+  _webConsoleCommandsCache = null;
 
   grip() {
     return { actor: this.actorID };
-  },
+  }
 
-  _findProtoChain: ThreadActor.prototype._findProtoChain,
-  _removeFromProtoChain: ThreadActor.prototype._removeFromProtoChain,
+  _findProtoChain = ThreadActor.prototype._findProtoChain;
+  _removeFromProtoChain = ThreadActor.prototype._removeFromProtoChain;
 
   /**
    * Destroy the current WebConsoleActor instance.
    */
   destroy() {
     this.stopListeners();
-    Actor.prototype.destroy.call(this);
+    super.destroy();
 
     EventEmitter.off(
       this.parentActor,
@@ -417,8 +365,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this._lastConsoleInputEvaluation = null;
     this._evalGlobal = null;
     this.dbg = null;
-    this.conn = null;
-  },
+  }
 
   /**
    * Create and return an environment actor that corresponds to the provided
@@ -445,7 +392,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     environment.actor = actor;
 
     return actor;
-  },
+  }
 
   /**
    * Create a grip for the given value.
@@ -455,7 +402,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    */
   createValueGrip(value) {
     return createValueGrip(value, this, this.objectGrip);
-  },
+  }
 
   /**
    * Make a debuggee value for the given value.
@@ -481,7 +428,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
     const dbgGlobal = this.dbg.makeGlobalObjectReference(this.global);
     return dbgGlobal.makeDebuggeeValue(value);
-  },
+  }
 
   /**
    * Create a grip for the given object.
@@ -508,7 +455,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     );
     pool.manage(actor);
     return actor.form();
-  },
+  }
 
   /**
    * Create a grip for the given string.
@@ -524,7 +471,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     const actor = new LongStringActor(this.conn, string);
     pool.manage(actor);
     return actor.form();
-  },
+  }
 
   /**
    * Create a long string grip if needed for the given string.
@@ -541,7 +488,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       return this.longStringGrip(string, this);
     }
     return string;
-  },
+  }
 
   /**
    * Returns the latest web console input evaluation.
@@ -551,7 +498,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    */
   getLastConsoleInputEvaluation() {
     return this._lastConsoleInputEvaluation;
-  },
+  }
 
   /**
    * Preprocess a debugger object (e.g. return the `boundTargetFunction`
@@ -568,7 +515,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     return dbgObj;
-  },
+  }
 
   /**
    * This helper is used by the WebExtensionInspectedWindowActor to
@@ -585,7 +532,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       objectActor: this.createValueGrip(dbgObj),
       inspectFromAnnotation,
     });
-  },
+  }
 
   // Request handlers for known packet types.
 
@@ -644,80 +591,12 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           if (isWorker) {
             break;
           }
-          if (!this.netmonitors) {
-            // Instanciate fake message managers used for service worker's netmonitor
-            // when running in the content process, and for netmonitor running in the
-            // same process when running in the parent process.
-            // `createMessageManagerMocks` returns a couple of connected messages
-            // managers that pass messages to each other to simulate the process
-            // boundary. We will use the first one for the webconsole-actor and the
-            // second one will be used by the netmonitor-actor.
-            const [mmMockParent, mmMockChild] = createMessageManagerMocks();
-
-            // Maintain the list of message manager we should message to/listen from
-            // to support the netmonitor instances, also records actorID of each
-            // NetworkMonitorActor.
-            // Array of `{ messageManager, parentProcess }`.
-            // Where `parentProcess` is true for the netmonitor actor instanciated in the
-            // parent process.
-            this.netmonitors = [];
-
-            // Check if the actor is running in a content process
-            const isInContentProcess =
-              Services.appinfo.processType !=
-                Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT &&
-              this.parentActor.messageManager;
-            if (isInContentProcess) {
-              // Start a network monitor in the parent process to listen to
-              // most requests that happen in parent. This one will communicate through
-              // `messageManager`.
-              await this.conn.spawnActorInParentProcess(this.actorID, {
-                module:
-                  "devtools/server/actors/network-monitor/network-monitor",
-                constructor: "NetworkMonitorActor",
-                args: [{ browserId: this.parentActor.browserId }, this.actorID],
-              });
-              this.netmonitors.push({
-                messageManager: this.parentActor.messageManager,
-                parentProcess: true,
-              });
-            }
-
-            // When the console actor runs in the parent process, Netmonitor can be ran
-            // in the process and communicate through `messageManagerMock`.
-            // And while it runs in the content process, we also spawn one in the content
-            // to listen to requests that happen in the content process (for instance
-            // service workers requests)
-            new NetworkMonitorActor(
-              this.conn,
-              {
-                window: global,
-                matchExactWindow: this.parentActor.ignoreSubFrames,
-              },
-              this.actorID,
-              mmMockParent
-            );
-
-            this.netmonitors.push({
-              messageManager: mmMockChild,
-              parentProcess: !isInContentProcess,
-            });
-
-            // Create a StackTraceCollector that's going to be shared both by
-            // the NetworkMonitorActor running in the same process for service worker
-            // requests, as well with the NetworkMonitorActor running in the parent
-            // process. It will communicate via message manager for this one.
-            this.stackTraceCollector = new StackTraceCollector(
-              {
-                window: global,
-                matchExactWindow: this.parentActor.ignoreSubFrames,
-              },
-              this.netmonitors
-            );
-            this.stackTraceCollector.init();
-          }
-          startedListeners.push(event);
-          break;
+          // Bug 1807650 removed this in favor of the new Watcher/Resources APIs
+          const errorMessage =
+            "NetworkActivity is no longer supported. " +
+            "Instead use Watcher actor's watchResources and listen to NETWORK_EVENT resource";
+          dump(errorMessage + "\n");
+          throw new Error(errorMessage);
         case "FileActivity":
           // Workers don't support this message type
           if (isWorker) {
@@ -743,18 +622,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
             this.consoleReflowListener = new ConsoleReflowListener(
               this.global,
               this
-            );
-          }
-          startedListeners.push(event);
-          break;
-        case "ContentProcessMessages":
-          // Workers don't support this message type
-          if (isWorker) {
-            break;
-          }
-          if (!this.contentProcessListener) {
-            this.contentProcessListener = new ContentProcessListener(message =>
-              this.onConsoleAPICall(message, { clonedFromContentProcess: true })
             );
           }
           startedListeners.push(event);
@@ -792,7 +659,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     return {
       startedListeners,
     };
-  },
+  }
 
   /**
    * Handler for the "stopListeners" request.
@@ -811,10 +678,8 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     const eventsToDetach = listeners || [
       "PageError",
       "ConsoleAPI",
-      "NetworkActivity",
       "FileActivity",
       "ReflowActivity",
-      "ContentProcessMessages",
       "DocumentEvents",
     ];
 
@@ -834,21 +699,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           }
           stoppedListeners.push(event);
           break;
-        case "NetworkActivity":
-          if (this.netmonitors) {
-            for (const { messageManager } of this.netmonitors) {
-              messageManager.sendAsyncMessage("debug:destroy-network-monitor", {
-                actorID: this.actorID,
-              });
-            }
-            this.netmonitors = null;
-          }
-          if (this.stackTraceCollector) {
-            this.stackTraceCollector.destroy();
-            this.stackTraceCollector = null;
-          }
-          stoppedListeners.push(event);
-          break;
         case "FileActivity":
           if (this.consoleFileActivityListener) {
             this.consoleFileActivityListener.stopMonitor();
@@ -860,13 +710,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           if (this.consoleReflowListener) {
             this.consoleReflowListener.destroy();
             this.consoleReflowListener = null;
-          }
-          stoppedListeners.push(event);
-          break;
-        case "ContentProcessMessages":
-          if (this.contentProcessListener) {
-            this.contentProcessListener.destroy();
-            this.contentProcessListener = null;
           }
           stoppedListeners.push(event);
           break;
@@ -884,7 +727,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     stoppedListeners.forEach(this._listeners.delete, this._listeners);
 
     return { stoppedListeners };
-  },
+  }
 
   /**
    * Handler for the "getCachedMessages" request. This method sends the cached
@@ -988,7 +831,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     return {
       messages,
     };
-  },
+  }
 
   /**
    * Handler for the "evaluateJSAsync" request. This method evaluates a given
@@ -1043,7 +886,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       }
     });
     return { resultID };
-  },
+  }
 
   /**
    * In order to have asynchronous commands (e.g. screenshot, top-level await, …) ,
@@ -1097,7 +940,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     return response;
-  },
+  }
 
   /**
    * Handler for the "evaluateJS" request. This method evaluates the given
@@ -1155,7 +998,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         }
       });
     });
-  },
+  }
 
   // eslint-disable-next-line complexity
   prepareEvaluationResult(evalInfo, input, eager, mapped) {
@@ -1341,7 +1184,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       helperResult,
       notes: errorNotes,
     };
-  },
+  }
 
   /**
    * The Autocomplete request handler.
@@ -1484,7 +1327,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       matchProp,
       isElementAccess: isElementAccess === true,
     };
-  },
+  }
 
   /**
    * The "clearMessagesCacheAsync" request handler.
@@ -1520,52 +1363,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         Services.console.resetWindow(id)
       );
     }
-  },
-
-  /**
-   * The "getPreferences" request handler.
-   *
-   * @param array preferences
-   *        The preferences that need to be retrieved.
-   * @return object
-   *         The response message - a { key: value } object map.
-   */
-  getPreferences(preferences) {
-    const prefs = Object.create(null);
-    for (const key of preferences) {
-      prefs[key] = this._prefs[key];
-    }
-    return { preferences: prefs };
-  },
-
-  /**
-   * The "setPreferences" request handler.
-   *
-   * @param object preferences
-   *        The preferences that need to be updated.
-   */
-  setPreferences(preferences) {
-    for (const key in preferences) {
-      this._prefs[key] = preferences[key];
-
-      if (this.netmonitors) {
-        if (key == "NetworkMonitor.saveRequestAndResponseBodies") {
-          for (const { messageManager } of this.netmonitors) {
-            messageManager.sendAsyncMessage("debug:netmonitor-preference", {
-              saveRequestAndResponseBodies: this._prefs[key],
-            });
-          }
-        } else if (key == "NetworkMonitor.throttleData") {
-          for (const { messageManager } of this.netmonitors) {
-            messageManager.sendAsyncMessage("debug:netmonitor-preference", {
-              throttleData: this._prefs[key],
-            });
-          }
-        }
-      }
-    }
-    return { updated: Object.keys(preferences) };
-  },
+  }
 
   // End of request handlers.
 
@@ -1627,7 +1425,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       Object.defineProperty(helpers.sandbox, name, desc);
     }
     return helpers;
-  },
+  }
 
   _getWebConsoleCommandsCache() {
     if (!this._webConsoleCommandsCache) {
@@ -1640,7 +1438,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       );
     }
     return this._webConsoleCommandsCache;
-  },
+  }
 
   // Event handlers for various listeners.
 
@@ -1662,14 +1460,14 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         timeStamp: message.microSecondTimeStamp / 1000,
       });
     }
-  },
+  }
 
   getActorIdForInternalSourceId(id) {
     const actor = this.parentActor.sourcesManager.getSourceActorByInternalSourceId(
       id
     );
     return actor ? actor.actorID : null;
-  },
+  }
 
   /**
    * Prepare a SavedFrame stack to be sent to the client.
@@ -1700,7 +1498,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       s = s.parent || s.asyncParent;
     }
     return stack;
-  },
+  }
 
   /**
    * Prepare an nsIScriptError to be sent to the client.
@@ -1790,7 +1588,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     return result;
-  },
+  }
 
   /**
    * Handler for window.console API calls received from the ConsoleAPIListener.
@@ -1807,7 +1605,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       message: this.prepareConsoleMessageForRemote(message),
       ...extraProperties,
     });
-  },
+  }
 
   /**
    * Handler for the DocumentEventsListener.
@@ -1830,212 +1628,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       time,
       hasNativeConsoleAPI,
     });
-  },
-
-  /**
-   * Send a new HTTP request from the target's window.
-   *
-   * @param object request
-   *        The details of the HTTP request.
-   */
-  async sendHTTPRequest(request) {
-    const { url, method, headers, body, cause } = request;
-    // Set the loadingNode and loadGroup to the target document - otherwise the
-    // request won't show up in the opened netmonitor.
-    const doc = this.global.document;
-
-    const channel = lazy.NetUtil.newChannel({
-      uri: lazy.NetUtil.newURI(url),
-      loadingNode: doc,
-      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-      contentPolicyType:
-        lazy.NetworkUtils.stringToCauseType(cause.type) ||
-        Ci.nsIContentPolicy.TYPE_OTHER,
-    });
-
-    channel.QueryInterface(Ci.nsIHttpChannel);
-
-    channel.loadGroup = doc.documentLoadGroup;
-    channel.loadFlags |=
-      Ci.nsIRequest.LOAD_BYPASS_CACHE |
-      Ci.nsIRequest.INHIBIT_CACHING |
-      Ci.nsIRequest.LOAD_ANONYMOUS;
-
-    channel.requestMethod = method;
-    if (headers) {
-      for (const { name, value } of headers) {
-        if (name.toLowerCase() == "referer") {
-          // The referer header and referrerInfo object should always match. So
-          // if we want to set the header from privileged context, we should set
-          // referrerInfo. The referrer header will get set internally.
-          channel.setNewReferrerInfo(
-            value,
-            Ci.nsIReferrerInfo.UNSAFE_URL,
-            true
-          );
-        } else {
-          channel.setRequestHeader(name, value, false);
-        }
-      }
-    }
-
-    if (body) {
-      channel.QueryInterface(Ci.nsIUploadChannel2);
-      const bodyStream = Cc[
-        "@mozilla.org/io/string-input-stream;1"
-      ].createInstance(Ci.nsIStringInputStream);
-      bodyStream.setData(body, body.length);
-      channel.explicitSetUploadStream(bodyStream, null, -1, method, false);
-    }
-
-    lazy.NetUtil.asyncFetch(channel, () => {});
-
-    if (!this.netmonitors) {
-      return null;
-    }
-    const { channelId } = channel;
-    // Only query the NetworkMonitorActor running in the parent process, where the
-    // request will be done. There always is one listener running in the parent process,
-    // see startListeners.
-    const netmonitor = this.netmonitors.filter(
-      ({ parentProcess }) => parentProcess
-    )[0];
-    const { messageManager } = netmonitor;
-    return new Promise(resolve => {
-      const onMessage = ({ data }) => {
-        if (data.channelId == channelId) {
-          messageManager.removeMessageListener(
-            "debug:get-network-event-actor:response",
-            onMessage
-          );
-          resolve({
-            eventActor: data.actor,
-          });
-        }
-      };
-      messageManager.addMessageListener(
-        "debug:get-network-event-actor:response",
-        onMessage
-      );
-      messageManager.sendAsyncMessage("debug:get-network-event-actor:request", {
-        channelId,
-      });
-    });
-  },
-
-  /**
-   * Send a message to all the netmonitor message managers, and resolve when
-   * all of them replied with the expected responseName message.
-   *
-   * @param {String} messageName
-   *        Name of the message to send via the netmonitor message managers.
-   * @param {String} responseName
-   *        Name of the message that should be received when the message has
-   *        been processed by the netmonitor instance.
-   * @param {Object} args
-   *        argument object passed with the initial message.
-   */
-  async _sendMessageToNetmonitors(messageName, responseName, args) {
-    if (!this.netmonitors) {
-      return null;
-    }
-    const results = await Promise.all(
-      this.netmonitors.map(({ messageManager }) => {
-        const onResponseReceived = new Promise(resolve => {
-          messageManager.addMessageListener(responseName, function onResponse(
-            response
-          ) {
-            messageManager.removeMessageListener(responseName, onResponse);
-            resolve(response);
-          });
-        });
-        messageManager.sendAsyncMessage(messageName, args);
-        return onResponseReceived;
-      })
-    );
-
-    return results;
-  },
-
-  /**
-   * Block a request based on certain filtering options.
-   *
-   * Currently, an exact URL match is the only supported filter type.
-   * In the future, there may be other types of filters, such as domain.
-   * For now, ignore anything other than URL.
-   *
-   * @param object filter
-   *   An object containing a `url` key with a URL to block.
-   */
-  async blockRequest(filter) {
-    await this._sendMessageToNetmonitors(
-      "debug:block-request",
-      "debug:block-request:response",
-      { filter }
-    );
-
-    return {};
-  },
-
-  /**
-   * Unblock a request based on certain filtering options.
-   *
-   * Currently, an exact URL match is the only supported filter type.
-   * In the future, there may be other types of filters, such as domain.
-   * For now, ignore anything other than URL.
-   *
-   * @param object filter
-   *   An object containing a `url` key with a URL to unblock.
-   */
-  async unblockRequest(filter) {
-    await this._sendMessageToNetmonitors(
-      "debug:unblock-request",
-      "debug:unblock-request:response",
-      { filter }
-    );
-
-    return {};
-  },
-
-  /*
-   * Gets the list of blocked request urls as per the backend
-   */
-  async getBlockedUrls() {
-    const responses =
-      (await this._sendMessageToNetmonitors(
-        "debug:get-blocked-urls",
-        "debug:get-blocked-urls:response"
-      )) || [];
-    if (!responses || !responses.length) {
-      return [];
-    }
-
-    return Array.from(
-      new Set(
-        responses
-          .filter(response => response.data)
-          .map(response => response.data)
-      )
-    );
-  },
-
-  /**
-   * Sets the list of blocked request URLs as provided by the netmonitor frontend
-   *
-   * This match will be a (String).includes match, not an exact URL match
-   *
-   * @param object filter
-   *   An object containing a `url` key with a URL to unblock.
-   */
-  async setBlockedUrls(urls) {
-    await this._sendMessageToNetmonitors(
-      "debug:set-blocked-urls",
-      "debug:set-blocked-urls:response",
-      { urls }
-    );
-
-    return {};
-  },
+  }
 
   /**
    * Handler for file activity. This method sends the file request information
@@ -2049,7 +1642,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this.emit("fileActivity", {
       uri: fileURI,
     });
-  },
+  }
 
   // End of event handlers for various listeners.
 
@@ -2130,7 +1723,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     return result;
-  },
+  }
 
   /**
    * Return the properties needed to display the appropriate table for a given
@@ -2201,7 +1794,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     });
 
     return ownProperties;
-  },
+  }
 
   /**
    * Notification observer for the "last-pb-context-exited" topic.
@@ -2217,7 +1810,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     if (topic === "last-pb-context-exited") {
       this.emit("lastPrivateContextExited");
     }
-  },
+  }
 
   /**
    * The "will-navigate" progress listener. This is used to clear the current
@@ -2229,7 +1822,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       EventEmitter.off(this.parentActor, "will-navigate", this._onWillNavigate);
       this._progressListenerActive = false;
     }
-  },
+  }
 
   /**
    * This listener is called when we switch to another frame,
@@ -2249,7 +1842,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
     // Also reset the cached top level chrome window being targeted
     this._lastChromeWindow = null;
-  },
-});
+  }
+}
 
 exports.WebConsoleActor = WebConsoleActor;

@@ -434,19 +434,30 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         properties::adjust_border_width(self.style);
     }
 
-    /// The initial value of outline-width may be changed at computed value time.
-    fn adjust_for_outline(&mut self) {
-        if self
-            .style
-            .get_outline()
-            .clone_outline_style()
-            .none_or_hidden() &&
-            self.style.get_outline().outline_has_nonzero_width()
-        {
-            self.style
-                .mutate_outline()
-                .set_outline_width(crate::Zero::zero());
+    /// column-rule-style: none causes a computed column-rule-width of zero
+    /// at computed value time.
+    fn adjust_for_column_rule_width(&mut self) {
+        let column_style = self.style.get_column();
+        if !column_style.clone_column_rule_style().none_or_hidden() {
+            return;
         }
+        if !column_style.column_rule_has_nonzero_width() {
+            return;
+        }
+        self.style.mutate_column().set_column_rule_width(crate::Zero::zero());
+    }
+
+    /// outline-style: none causes a computed outline-width of zero at computed
+    /// value time.
+    fn adjust_for_outline_width(&mut self) {
+        let outline = self.style.get_outline();
+        if !outline.clone_outline_style().none_or_hidden() {
+            return;
+        }
+        if !outline.outline_has_nonzero_width() {
+            return;
+        }
+        self.style.mutate_outline().set_outline_width(crate::Zero::zero());
     }
 
     /// CSS overflow-x and overflow-y require some fixup as well in some cases.
@@ -854,12 +865,8 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         if !is_legacy_marker {
             return;
         }
-        if !self
-            .style
-            .flags
-            .get()
-            .contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY)
-        {
+        let flags = self.style.flags.get();
+        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY) {
             self.style
                 .mutate_font()
                 .set_font_family(FontFamily::moz_bullet().clone());
@@ -867,33 +874,23 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             // FIXME(mats): We can remove this if support for font-synthesis is added to @font-face rules.
             // Then we can add it to the @font-face rule in html.css instead.
             // https://github.com/w3c/csswg-drafts/issues/6081
-            if !self
-                .style
-                .flags
-                .get()
-                .contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS)
-            {
+            if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_WEIGHT) {
                 self.style
                     .mutate_font()
-                    .set_font_synthesis(FontSynthesis::none());
+                    .set_font_synthesis_weight(FontSynthesis::None);
+            }
+            if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_STYLE) {
+                self.style
+                    .mutate_font()
+                    .set_font_synthesis_style(FontSynthesis::None);
             }
         }
-        if !self
-            .style
-            .flags
-            .get()
-            .contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_LETTER_SPACING)
-        {
+        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_LETTER_SPACING) {
             self.style
                 .mutate_inherited_text()
                 .set_letter_spacing(LetterSpacing::normal());
         }
-        if !self
-            .style
-            .flags
-            .get()
-            .contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_WORD_SPACING)
-        {
+        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_WORD_SPACING) {
             self.style
                 .mutate_inherited_text()
                 .set_word_spacing(WordSpacing::normal());
@@ -952,7 +949,8 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             self.adjust_for_alignment(layout_parent_style);
         }
         self.adjust_for_border_width();
-        self.adjust_for_outline();
+        self.adjust_for_column_rule_width();
+        self.adjust_for_outline_width();
         self.adjust_for_writing_mode(layout_parent_style);
         #[cfg(feature = "gecko")]
         {

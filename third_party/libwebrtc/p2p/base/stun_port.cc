@@ -21,12 +21,33 @@
 #include "p2p/base/port_allocator.h"
 #include "rtc_base/async_resolver_interface.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 
 namespace cricket {
+
+namespace {
+
+bool ResolveStunHostnameForFamily(const webrtc::FieldTrialsView& field_trials) {
+  // Bug fix for STUN hostname resolution on IPv6.
+  // Field trial key reserved in bugs.webrtc.org/14334
+  static constexpr char field_trial_name[] =
+      "WebRTC-IPv6NetworkResolutionFixes";
+  if (!field_trials.IsEnabled(field_trial_name)) {
+    return false;
+  }
+
+  webrtc::FieldTrialParameter<bool> resolve_stun_hostname_for_family(
+      "ResolveStunHostnameForFamily", /*default_value=*/false);
+  webrtc::ParseFieldTrial({&resolve_stun_hostname_for_family},
+                          field_trials.Lookup(field_trial_name));
+  return resolve_stun_hostname_for_family;
+}
+
+}  // namespace
 
 // TODO(?): Move these to a common place (used in relayport too)
 const int RETRY_TIMEOUT = 50 * 1000;  // 50 seconds
@@ -122,7 +143,10 @@ UDPPort::AddressResolver::AddressResolver(
     std::function<void(const rtc::SocketAddress&, int)> done_callback)
     : socket_factory_(factory), done_(std::move(done_callback)) {}
 
-void UDPPort::AddressResolver::Resolve(const rtc::SocketAddress& address) {
+void UDPPort::AddressResolver::Resolve(
+    const rtc::SocketAddress& address,
+    int family,
+    const webrtc::FieldTrialsView& field_trials) {
   if (resolvers_.find(address) != resolvers_.end())
     return;
 
@@ -133,12 +157,17 @@ void UDPPort::AddressResolver::Resolve(const rtc::SocketAddress& address) {
       pair = std::make_pair(address, std::move(resolver));
 
   resolvers_.insert(std::move(pair));
-  resolver_ptr->Start(address, [this, address] {
+  auto callback = [this, address] {
     ResolverMap::const_iterator it = resolvers_.find(address);
     if (it != resolvers_.end()) {
       done_(it->first, it->second->result().GetError());
     }
-  });
+  };
+  if (ResolveStunHostnameForFamily(field_trials)) {
+    resolver_ptr->Start(address, family, std::move(callback));
+  } else {
+    resolver_ptr->Start(address, std::move(callback));
+  }
 }
 
 bool UDPPort::AddressResolver::GetResolvedAddress(
@@ -424,8 +453,13 @@ void UDPPort::SendStunBindingRequests() {
   RTC_DCHECK(request_manager_.empty());
 
   for (ServerAddresses::const_iterator it = server_addresses_.begin();
-       it != server_addresses_.end(); ++it) {
-    SendStunBindingRequest(*it);
+       it != server_addresses_.end();) {
+    // sending a STUN binding request may cause the current SocketAddress to be
+    // erased from the set, invalidating the loop iterator before it is
+    // incremented (even if the SocketAddress itself still exists). So make a
+    // copy of the loop iterator, which may be safely invalidated.
+    ServerAddresses::const_iterator addr = it++;
+    SendStunBindingRequest(*addr);
   }
 }
 
@@ -439,7 +473,7 @@ void UDPPort::ResolveStunAddress(const rtc::SocketAddress& stun_addr) {
 
   RTC_LOG(LS_INFO) << ToString() << ": Starting STUN host lookup for "
                    << stun_addr.ToSensitiveString();
-  resolver_->Resolve(stun_addr);
+  resolver_->Resolve(stun_addr, Network()->family(), field_trials());
 }
 
 void UDPPort::OnResolveResult(const rtc::SocketAddress& input, int error) {

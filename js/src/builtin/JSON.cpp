@@ -751,11 +751,6 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
   /* Step 11 must be handled by the caller. */
   MOZ_ASSERT(!IsFilteredValue(v));
 
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   /*
    * This method implements the Str algorithm in ES5 15.12.3, but:
    *
@@ -802,6 +797,11 @@ static bool Str(JSContext* cx, const Value& v, StringifyContext* scx) {
   if (v.isBigInt()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_BIGINT_NOT_SERIALIZABLE);
+    return false;
+  }
+
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
     return false;
   }
 
@@ -959,8 +959,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
     }
   }
 
-  AutoReportFrontendContext ec(cx);
-  StringBuffer gap(cx, &ec);
+  StringBuffer gap(cx);
 
   if (space.isNumber()) {
     /* Step 6. */
@@ -1392,7 +1391,6 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
 
   JSStringBuilder sb(cx);
   if (!Stringify(cx, &value, replacer, space, sb, StringifyBehavior::Normal)) {
-    sb.failure();
     return false;
   }
 
@@ -1402,7 +1400,6 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
   if (!sb.empty()) {
     JSString* str = sb.finishString();
     if (!str) {
-      sb.failure();
       return false;
     }
 
@@ -1411,11 +1408,9 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
 
     args.rval().setString(str);
   } else {
-    sb.failure();
     args.rval().setUndefined();
   }
 
-  sb.ok();
   return true;
 }
 

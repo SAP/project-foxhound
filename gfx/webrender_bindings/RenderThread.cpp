@@ -18,7 +18,6 @@
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/glean/GleanMetrics.h"
-#include "mozilla/layers/CompositableInProcessManager.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorManagerParent.h"
@@ -131,7 +130,6 @@ void RenderThread::Start(uint32_t aNamespace) {
 #ifdef XP_WIN
   widget::WinCompositorWindowThread::Start();
 #endif
-  layers::CompositableInProcessManager::Initialize(aNamespace);
   layers::SharedSurfacesParent::Initialize();
 
   RefPtr<Runnable> runnable = WrapRunnable(
@@ -159,7 +157,6 @@ void RenderThread::ShutDown() {
   oldThread->Shutdown();
 
   layers::SharedSurfacesParent::Shutdown();
-  layers::CompositableInProcessManager::Shutdown();
 
 #ifdef XP_WIN
   if (widget::WinCompositorWindowThread::Get()) {
@@ -1270,9 +1267,7 @@ static already_AddRefed<gl::GLContext> CreateGLContextANGLE(
   // Create GLContext with dummy EGLSurface, the EGLSurface is not used.
   // Instread we override it with EGLSurface of SwapChain's back buffer.
 
-  const auto dummySize = mozilla::gfx::IntSize(16, 16);
-  auto gl = gl::GLContextEGL::CreateEGLPBufferOffscreenContext(
-      egl, {flags}, dummySize, &failureId);
+  auto gl = gl::GLContextEGL::CreateWithoutSurface(egl, {flags}, &failureId);
   if (!gl || !gl->IsANGLE()) {
     aError.Assign(nsPrintfCString("RcANGLE(create GL context failed: %p, %s)",
                                   gl.get(), failureId.get()));

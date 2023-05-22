@@ -341,7 +341,7 @@ function makeUrlbarResult(tokens, info) {
           })
         );
       default:
-        Cu.reportError(`Unexpected action type: ${action.type}`);
+        console.error(`Unexpected action type: ${action.type}`);
         return null;
     }
   }
@@ -1058,7 +1058,7 @@ Search.prototype = {
     let index = 0;
     if (!this._groups) {
       this._groups = [];
-      this._makeGroups(lazy.UrlbarPrefs.get("resultGroups"), this._maxResults);
+      this._makeGroups(lazy.UrlbarPrefs.resultGroups, this._maxResults);
     }
 
     let replace = 0;

@@ -18,10 +18,6 @@ ChromeUtils.defineESModuleGetters(globalThis, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
 
-const { TabsSetupFlowManager } = ChromeUtils.importESModule(
-  "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
-);
-
 const RECENTLY_CLOSED_EVENT = [
   ["firefoxview", "entered", "firefoxview", undefined],
   ["firefoxview", "recently_closed", "tabs", undefined],
@@ -457,7 +453,7 @@ add_task(async function test_switch_before_closing() {
       null,
       FINAL_URL
     );
-    BrowserTestUtils.loadURI(newTab.linkedBrowser, FINAL_URL);
+    BrowserTestUtils.loadURIString(newTab.linkedBrowser, FINAL_URL);
     await loadPromise;
 
     // Close the added tab
@@ -570,6 +566,90 @@ add_task(async function test_restore_recently_closed_tabs() {
 
   await tabRestored;
   ok(true, "Tab was restored by using the Space bar");
+
+  // clean up extra tabs
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
+});
+
+/**
+ * Asserts that tabs are removed from Recently Closed tabs in
+ * Fx View when tabs are removed from latest closed tab data.
+ * Ex: Selecting "Reopen Closed Tab" from the tabs toolbar
+ * context menu
+ */
+add_task(async function test_reopen_recently_closed_tabs() {
+  clearHistory();
+
+  await open_then_close(URLs[0]);
+  await open_then_close(URLs[1]);
+  await open_then_close(URLs[2]);
+
+  await EventUtils.synthesizeMouseAtCenter(
+    gBrowser.ownerDocument.getElementById("firefox-view-button"),
+    { type: "mousedown" },
+    window
+  );
+  // Wait for Firefox View to be loaded before interacting
+  // with the page.
+  await BrowserTestUtils.browserLoaded(
+    window.FirefoxViewHandler.tab.linkedBrowser
+  );
+
+  let { document } = gBrowser.contentWindow;
+
+  let tabReopened = BrowserTestUtils.waitForNewTab(gBrowser, URLs[2]);
+  SessionStore.undoCloseTab(window);
+  await tabReopened;
+
+  const tabsList = document.querySelector("ol.closed-tabs-list");
+
+  await EventUtils.synthesizeMouseAtCenter(
+    gBrowser.ownerDocument.getElementById("firefox-view-button"),
+    { type: "mousedown" },
+    window
+  );
+
+  await BrowserTestUtils.waitForMutationCondition(
+    tabsList,
+    { childList: true },
+    () => tabsList.children.length === 2
+  );
+
+  Assert.equal(
+    tabsList.children[0].dataset.targetURI,
+    URLs[1],
+    `First recently closed item should be ${URLs[1]}`
+  );
+
+  await close_tab(gBrowser.visibleTabs[gBrowser.visibleTabs.length - 1]);
+
+  await BrowserTestUtils.waitForMutationCondition(
+    tabsList,
+    { childList: true },
+    () => tabsList.children.length === 3
+  );
+
+  Assert.equal(
+    tabsList.children[0].dataset.targetURI,
+    URLs[2],
+    `First recently closed item should be ${URLs[2]}`
+  );
+
+  await dismiss_tab(tabsList.children[0], content);
+
+  await BrowserTestUtils.waitForMutationCondition(
+    tabsList,
+    { childList: true },
+    () => tabsList.children.length === 2
+  );
+
+  Assert.equal(
+    tabsList.children[0].dataset.targetURI,
+    URLs[1],
+    `First recently closed item should be ${URLs[1]}`
+  );
 
   // clean up extra tabs
   while (gBrowser.tabs.length > 1) {

@@ -7,9 +7,6 @@
  * Test the keyboard behavior of PanelViews.
  */
 
-const { PanelMultiView } = ChromeUtils.import(
-  "resource:///modules/PanelMultiView.jsm"
-);
 const kEmbeddedDocUrl =
   'data:text/html,<textarea id="docTextarea">value</textarea><button id="docButton"></button>';
 
@@ -290,14 +287,11 @@ add_task(async function testTabOpenMenulist() {
   await shown;
   ok(gMainMenulist.open, "menulist open");
   let menuHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-  let panelHidden = BrowserTestUtils.waitForEvent(gPanel, "popuphidden");
   EventUtils.synthesizeKey("KEY_Tab");
   await menuHidden;
   ok(!gMainMenulist.open, "menulist closed after Tab");
-  // Tab in an open menulist closes the menulist, but also dismisses the panel
-  // above it (bug 1566673). So, we just wait for the panel to hide rather than
-  // using hidePopup().
-  await panelHidden;
+  is(gPanel.state, "open", "Panel should be open");
+  await hidePopup();
 });
 
 if (AppConstants.platform == "macosx") {
@@ -327,14 +321,11 @@ if (AppConstants.platform == "macosx") {
     );
 
     let menuHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-    let panelHidden = BrowserTestUtils.waitForEvent(gPanel, "popuphidden");
     EventUtils.synthesizeKey("KEY_Tab");
     await menuHidden;
     ok(!gMainMenulist.open, "menulist closed after Tab");
-    // Tab in an open menulist closes the menulist, but also dismisses the panel
-    // above it (bug 1566673). So, we just wait for the panel to hide rather than
-    // using hidePopup().
-    await panelHidden;
+    is(gPanel.state, "open", "Panel should be open");
+    await hidePopup();
   });
 }
 

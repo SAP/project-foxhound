@@ -158,7 +158,6 @@ add_task(async function() {
       ...qsResult,
       block_id: qsResult.id,
       is_sponsored: isSponsored,
-      is_top_pick: false,
       score:
         typeof score == "number"
           ? score
@@ -166,7 +165,6 @@ add_task(async function() {
       source: "remote-settings",
       icon: null,
       position: undefined,
-      _test_is_best_match: undefined,
     };
     delete qsSuggestion.keywords;
     delete qsSuggestion.id;
@@ -190,15 +188,25 @@ add_task(async function() {
         sponsoredIabCategory: qsResult.iab_category,
         icon: null,
         helpUrl: QuickSuggest.HELP_URL,
-        helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+        helpL10n: {
+          id: UrlbarPrefs.get("resultMenu")
+            ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+            : "firefox-suggest-urlbar-learn-more",
+        },
         isBlockable: false,
-        blockL10n: { id: "firefox-suggest-urlbar-block" },
+        blockL10n: {
+          id: UrlbarPrefs.get("resultMenu")
+            ? "urlbar-result-menu-dismiss-firefox-suggest"
+            : "firefox-suggest-urlbar-block",
+        },
         source: "remote-settings",
       },
     });
   }
 
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(qsResults);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults: qsResults,
+  });
 
   // Run a test for each keyword.
   for (let [keyword, test] of Object.entries(TESTS)) {

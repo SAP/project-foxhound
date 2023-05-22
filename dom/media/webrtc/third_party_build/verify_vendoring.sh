@@ -1,14 +1,21 @@
 #!/bin/bash
 
+function show_error_msg()
+{
+  echo "*** ERROR *** $? line $1 $0 did not complete successfully!"
+  echo "$ERROR_HELP"
+}
+ERROR_HELP=""
+
 # Print an Error message if `set -eE` causes the script to exit due to a failed command
-trap 'echo "*** ERROR *** $? $LINENO $0 did not complete successfully!"' ERR
+trap 'show_error_msg $LINENO' ERR
 
 source dom/media/webrtc/third_party_build/use_config_env.sh
 
 echo "MOZ_LIBWEBRTC_SRC: $MOZ_LIBWEBRTC_SRC"
-echo "MOZ_LIBWEBRTC_COMMIT: $MOZ_LIBWEBRTC_COMMIT"
+echo "MOZ_LIBWEBRTC_BRANCH: $MOZ_LIBWEBRTC_BRANCH"
 echo "MOZ_FASTFORWARD_BUG: $MOZ_FASTFORWARD_BUG"
-echo "MOZ_PRIOR_GIT_BRANCH: $MOZ_PRIOR_GIT_BRANCH"
+echo "MOZ_PRIOR_LIBWEBRTC_BRANCH: $MOZ_PRIOR_LIBWEBRTC_BRANCH"
 
 # After this point:
 # * eE: All commands should succeed.
@@ -18,7 +25,7 @@ set -eEuo pipefail
 
 ./mach python $SCRIPT_DIR/vendor-libwebrtc.py \
         --from-local $MOZ_LIBWEBRTC_SRC \
-        --commit $MOZ_LIBWEBRTC_COMMIT \
+        --commit $MOZ_LIBWEBRTC_BRANCH \
         libwebrtc
 
 hg revert -q \

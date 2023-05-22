@@ -44,7 +44,6 @@ const { FormAutofillUtils } = ChromeUtils.import(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
@@ -114,6 +113,7 @@ let FormAutofillStatus = {
     Services.wm.addListener(this);
 
     Services.telemetry.setEventRecordingEnabled("creditcard", true);
+    Services.telemetry.setEventRecordingEnabled("address", true);
   },
 
   /**
@@ -402,7 +402,7 @@ class FormAutofillParent extends JSWindowActorParent {
           );
         }
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
   }
@@ -476,8 +476,11 @@ class FormAutofillParent extends JSWindowActorParent {
     return records;
   }
 
-  async _onAddressSubmit(address, browser, timeStartedFillingMS) {
+  async _onAddressSubmit(address, browser) {
     let showDoorhanger = null;
+
+    // Bug 1808176 - We should always ecord used count in this function regardless
+    // whether capture is enabled or not.
     if (!FormAutofill.isAutofillAddressesCaptureEnabled) {
       return showDoorhanger;
     }
@@ -499,19 +502,15 @@ class FormAutofillParent extends JSWindowActorParent {
           true
         ))
       ) {
-        this._recordFormFillingTime(
-          "address",
-          "autofill-update",
-          timeStartedFillingMS
-        );
-
         showDoorhanger = async () => {
           const description = FormAutofillUtils.getAddressLabel(address.record);
           const state = await lazy.FormAutofillPrompter.promptToSaveAddress(
             browser,
-            "updateAddress",
+            address,
             description
           );
+
+          // Bug 1808176 : We should sync how we run the following code with Credit Card
           let changedGUIDs = await lazy.gFormAutofillStorage.addresses.mergeToStorage(
             address.record,
             true
@@ -541,23 +540,8 @@ class FormAutofillParent extends JSWindowActorParent {
             lazy.gFormAutofillStorage.addresses.notifyUsed(guid)
           );
         };
-        // Address should be updated
-        Services.telemetry.scalarAdd(
-          "formautofill.addresses.fill_type_autofill_update",
-          1
-        );
       } else {
-        this._recordFormFillingTime(
-          "address",
-          "autofill",
-          timeStartedFillingMS
-        );
         lazy.gFormAutofillStorage.addresses.notifyUsed(address.guid);
-        // Address is merged successfully
-        Services.telemetry.scalarAdd(
-          "formautofill.addresses.fill_type_autofill",
-          1
-        );
       }
     } else {
       let changedGUIDs = await lazy.gFormAutofillStorage.addresses.mergeToStorage(
@@ -571,7 +555,6 @@ class FormAutofillParent extends JSWindowActorParent {
       changedGUIDs.forEach(guid =>
         lazy.gFormAutofillStorage.addresses.notifyUsed(guid)
       );
-      this._recordFormFillingTime("address", "manual", timeStartedFillingMS);
 
       // Show first time use doorhanger
       if (FormAutofill.isAutofillAddressesFirstTimeUse) {
@@ -583,7 +566,7 @@ class FormAutofillParent extends JSWindowActorParent {
           const description = FormAutofillUtils.getAddressLabel(address.record);
           const state = await lazy.FormAutofillPrompter.promptToSaveAddress(
             browser,
-            "firstTimeUse",
+            address,
             description
           );
           if (state !== "open-pref") {
@@ -592,131 +575,44 @@ class FormAutofillParent extends JSWindowActorParent {
 
           browser.ownerGlobal.openPreferences("privacy-address-autofill");
         };
-      } else {
-        // We want to exclude the first time form filling.
-        Services.telemetry.scalarAdd(
-          "formautofill.addresses.fill_type_manual",
-          1
-        );
       }
     }
     return showDoorhanger;
   }
 
-  async _onCreditCardSubmit(creditCard, browser, timeStartedFillingMS) {
-    if (FormAutofill.isAutofillCreditCardsHideUI) {
+  async _onCreditCardSubmit(creditCard, browser) {
+    // Let's reset the credit card to empty, and then network auto-detect will
+    // pick it up.
+    delete creditCard.record["cc-type"];
+
+    // Make sure record is normalized before comparing with records in the storage
+    lazy.gFormAutofillStorage.creditCards._normalizeRecord(creditCard.record);
+
+    // If the record alreay exists in the storage, don't bother showing the prompt
+    const getMatchRecord = lazy.gFormAutofillStorage.creditCards.getMatchRecord(
+      creditCard.record
+    );
+    const matchRecord = (await getMatchRecord.next()).value;
+    if (matchRecord) {
+      lazy.gFormAutofillStorage.creditCards.notifyUsed(matchRecord.guid);
       return false;
     }
 
-    // Updates the used status for shield/heartbeat to recognize users who have
-    // used Credit Card Autofill.
-    let setUsedStatus = status => {
-      if (FormAutofill.AutofillCreditCardsUsedStatus < status) {
-        Services.prefs.setIntPref(
-          FormAutofill.CREDITCARDS_USED_STATUS_PREF,
-          status
-        );
-      }
-    };
-
-    // Remove invalid cc-type values
-    if (
-      creditCard.record["cc-type"] &&
-      !lazy.CreditCard.isValidNetwork(creditCard.record["cc-type"])
-    ) {
-      // Let's reset the credit card to empty, and then network auto-detect will
-      // pick it up.
-      creditCard.record["cc-type"] = "";
+    // Suppress the pending doorhanger from showing up if user disabled credit card in previous doorhanger.
+    if (!FormAutofill.isAutofillCreditCardsEnabled) {
+      return false;
     }
 
-    // If `guid` is present, the form has been autofilled.
-    if (creditCard.guid) {
-      // Indicate that the user has used Credit Card Autofill to fill in a form.
-      setUsedStatus(3);
-
-      let originalCCData = await lazy.gFormAutofillStorage.creditCards.get(
-        creditCard.guid
-      );
-      let recordUnchanged = true;
-      for (let field in creditCard.record) {
-        if (creditCard.record[field] === "" && !originalCCData[field]) {
-          continue;
-        }
-        // Avoid updating the fields that users don't modify, but skip number field
-        // because we don't want to trigger decryption here.
-        let untouched = creditCard.untouchedFields.includes(field);
-        if (untouched && field !== "cc-number") {
-          creditCard.record[field] = originalCCData[field];
-        }
-        // recordUnchanged will be false if one of the field is changed.
-        recordUnchanged &= untouched;
-      }
-
-      if (recordUnchanged) {
-        lazy.gFormAutofillStorage.creditCards.notifyUsed(creditCard.guid);
-        this._recordFormFillingTime(
-          "creditCard",
-          "autofill",
-          timeStartedFillingMS
-        );
-        return false;
-      }
-      this._recordFormFillingTime(
-        "creditCard",
-        "autofill-update",
-        timeStartedFillingMS
-      );
-    } else {
-      this._recordFormFillingTime("creditCard", "manual", timeStartedFillingMS);
-
-      let existingGuid = await lazy.gFormAutofillStorage.creditCards.getDuplicateGuid(
-        creditCard.record
-      );
-
-      if (existingGuid) {
-        creditCard.guid = existingGuid;
-
-        let originalCCData = await lazy.gFormAutofillStorage.creditCards.get(
-          creditCard.guid
-        );
-
-        lazy.gFormAutofillStorage.creditCards._normalizeRecord(
-          creditCard.record
-        );
-
-        // If the credit card record is a duplicate, check if the fields match the
-        // record.
-        let recordUnchanged = true;
-        for (let field in creditCard.record) {
-          if (field == "cc-number") {
-            continue;
-          }
-          if (creditCard.record[field] != originalCCData[field]) {
-            recordUnchanged = false;
-            break;
-          }
-        }
-
-        if (recordUnchanged) {
-          // Indicate that the user neither sees the doorhanger nor uses Autofill
-          // but somehow has a duplicate record in the storage. Will be reset to 2
-          // if the doorhanger actually shows below.
-          setUsedStatus(1);
-          lazy.gFormAutofillStorage.creditCards.notifyUsed(creditCard.guid);
-          return false;
-        }
-      }
+    // Overwrite the guid if there is a duplicate
+    const getDuplicateRecord = lazy.gFormAutofillStorage.creditCards.getDuplicateRecord(
+      creditCard.record
+    );
+    let existingRecord = (await getDuplicateRecord.next()).value;
+    if (existingRecord) {
+      creditCard.guid = existingRecord.guid;
     }
-
-    // Indicate that the user has seen the doorhanger.
-    setUsedStatus(2);
 
     return async () => {
-      // Suppress the pending doorhanger from showing up if user disabled credit card in previous doorhanger.
-      if (!FormAutofill.isAutofillCreditCardsEnabled) {
-        return;
-      }
-
       await lazy.FormAutofillPrompter.promptToSaveCreditCard(
         browser,
         creditCard,
@@ -726,19 +622,7 @@ class FormAutofillParent extends JSWindowActorParent {
   }
 
   async _onFormSubmit(data) {
-    let {
-      profile: { address, creditCard },
-      timeStartedFillingMS,
-    } = data;
-
-    // Don't record filling time if any type of records has more than one section being
-    // populated. We've been recording the filling time, so the other cases that aren't
-    // recorded on the same basis should be out of the data samples. E.g. Filling time of
-    // populating one profile is different from populating two sections, therefore, we
-    // shouldn't record the later to regress the representation of existing statistics.
-    if (address.length > 1 || creditCard.length > 1) {
-      timeStartedFillingMS = null;
-    }
+    let { address, creditCard } = data;
 
     let browser = this.manager.browsingContext.top.embedderElement;
 
@@ -747,13 +631,11 @@ class FormAutofillParent extends JSWindowActorParent {
     await Promise.all(
       [
         await Promise.all(
-          address.map(addrRecord =>
-            this._onAddressSubmit(addrRecord, browser, timeStartedFillingMS)
-          )
+          address.map(addrRecord => this._onAddressSubmit(addrRecord, browser))
         ),
         await Promise.all(
           creditCard.map(ccRecord =>
-            this._onCreditCardSubmit(ccRecord, browser, timeStartedFillingMS)
+            this._onCreditCardSubmit(ccRecord, browser)
           )
         ),
       ]
@@ -771,26 +653,5 @@ class FormAutofillParent extends JSWindowActorParent {
           })()
         )
     );
-  }
-
-  /**
-   * Set the probes for the filling time with specific filling type and form type.
-   *
-   * @private
-   * @param  {string} formType
-   *         3 type of form (address/creditcard/address-creditcard).
-   * @param  {string} fillingType
-   *         3 filling type (manual/autofill/autofill-update).
-   * @param  {int|null} startedFillingMS
-   *         Time that form started to filling in ms. Early return if start time is null.
-   */
-  _recordFormFillingTime(formType, fillingType, startedFillingMS) {
-    if (!startedFillingMS) {
-      return;
-    }
-    let histogram = Services.telemetry.getKeyedHistogramById(
-      "FORM_FILLING_REQUIRED_TIME_MS"
-    );
-    histogram.add(`${formType}-${fillingType}`, Date.now() - startedFillingMS);
   }
 }

@@ -574,6 +574,9 @@ const TEST_GLOBAL = {
       onUpdate() {},
       off() {},
     },
+    cookieBannerHandling: {
+      getVariable() {},
+    },
   },
   TelemetryEnvironment: {
     setExperimentActive() {},
@@ -670,6 +673,11 @@ const TEST_GLOBAL = {
         record() {},
       },
       click: {
+        record() {},
+      },
+    },
+    serverKnobs: {
+      validation: {
         record() {},
       },
     },

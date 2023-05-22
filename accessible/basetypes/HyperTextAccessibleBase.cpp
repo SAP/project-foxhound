@@ -239,10 +239,8 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
   // and last character, and union their bounds. They might reside on different
   // lines, and a simple union may yield an incorrect width. We
   // should use the length of the longest spanned line for our width.
-  // TODO: This functionality should probably live in TextLeafRange
-  // see bug 1769824
 
-  TextLeafPoint currPoint = ToTextLeafPoint(aStartOffset, false);
+  TextLeafPoint startPoint = ToTextLeafPoint(aStartOffset, false);
   TextLeafPoint endPoint =
       ToTextLeafPoint(ConvertMagicOffset(aEndOffset), true);
   if (!endPoint) {
@@ -254,44 +252,18 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
   // For our purposes, `endPoint` should be inclusive.
   endPoint = endPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR,
                                    eDirPrevious, false);
-
-  if (endPoint == currPoint) {
-    result = currPoint.CharBounds();
-    nsAccUtils::ConvertScreenCoordsTo(&result.x, &result.y, aCoordType, Acc());
-    return result;
-  } else if (endPoint < currPoint) {
+  if (endPoint < startPoint) {
     return result;
   }
 
-  bool locatedFinalLine = false;
-  result = currPoint.CharBounds();
-
-  // Union the first and last chars of each line to create a line rect. Then,
-  // union the lines together.
-  while (!locatedFinalLine) {
-    // Fetch the last point in the current line by getting the
-    // start of the next line and going back one char. We don't
-    // use BOUNDARY_LINE_END here because it is equivalent to LINE_START when
-    // the line doesn't end with a line feed character.
-    TextLeafPoint lineStartPoint =
-        currPoint.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_START, eDirNext,
-                               /* aIncludeOrigin */ false);
-    TextLeafPoint lastPointInLine = lineStartPoint.FindBoundary(
-        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
-        /* aIncludeOrigin */ false);
-    if (endPoint <= lastPointInLine) {
-      lastPointInLine = endPoint;
-      locatedFinalLine = true;
-    }
-
-    LayoutDeviceIntRect currLine = currPoint.CharBounds();
-    currLine.UnionRect(currLine, lastPointInLine.CharBounds());
-    result.UnionRect(result, currLine);
-
-    currPoint = lineStartPoint;
+  if (endPoint == startPoint) {
+    result = startPoint.CharBounds();
+  } else {
+    TextLeafRange range(startPoint, endPoint);
+    result = range.Bounds();
   }
 
-  // Calls to TextLeafPoint::CharBounds() will construct screen coordinates.
+  // Calls to TextLeafRange::Bounds() will construct screen coordinates.
   // Perform any additional conversions here.
   nsAccUtils::ConvertScreenCoordsTo(&result.x, &result.y, aCoordType, Acc());
   return result;
@@ -307,7 +279,7 @@ int32_t HyperTextAccessibleBase::OffsetAtPoint(int32_t aX, int32_t aY,
     return -1;
   }
 
-  TextLeafPoint point = ToTextLeafPoint(0, false);
+  TextLeafPoint startPoint = ToTextLeafPoint(0, false);
   // As with TextBounds, we walk to the very end of the text contained in this
   // hypertext and then step backwards to make our endPoint inclusive.
   TextLeafPoint endPoint =
@@ -315,18 +287,27 @@ int32_t HyperTextAccessibleBase::OffsetAtPoint(int32_t aX, int32_t aY,
   endPoint =
       endPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
                             /* aIncludeOrigin */ false);
+  TextLeafPoint point = startPoint;
   // XXX: We should create a TextLeafRange object for this hypertext and move
   // this search inside the TextLeafRange class.
   // If there are no characters in this container, we might have moved endPoint
-  // before point. In that case, we shouldn't try to move further forward, as
-  // that might result in an infinite loop.
-  if (point <= endPoint) {
+  // before startPoint. In that case, we shouldn't try to move further forward,
+  // as that might result in an infinite loop.
+  if (startPoint <= endPoint) {
     for (; !point.ContainsPoint(coords.x, coords.y) && point != endPoint;
          point = point.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirNext,
                                     /* aIncludeOrigin */ false)) {
     }
   }
   if (!point.ContainsPoint(coords.x, coords.y)) {
+    LayoutDeviceIntRect startRect = startPoint.CharBounds();
+    if (coords.x < startRect.x || coords.y < startRect.y) {
+      // Bug 1816601: The point is within the container but above or to the left
+      // of the rectangle at offset 0. We should really return -1, but we've
+      // returned 0 for many years due to a bug. Some users have unfortunately
+      // come to rely on this, so perpetuate this here.
+      return 0;
+    }
     return -1;
   }
   DebugOnly<bool> ok = false;
@@ -784,6 +765,19 @@ bool HyperTextAccessibleBase::SelectionBoundsAt(int32_t aSelectionNum,
                         /* aDescendToEnd */ true);
   }
   return true;
+}
+
+bool HyperTextAccessibleBase::SetSelectionBoundsAt(int32_t aSelectionNum,
+                                                   int32_t aStartOffset,
+                                                   int32_t aEndOffset) {
+  TextLeafRange range(ToTextLeafPoint(aStartOffset),
+                      ToTextLeafPoint(aEndOffset, true));
+  if (!range) {
+    NS_ERROR("Wrong in offset");
+    return false;
+  }
+
+  return range.SetSelection(aSelectionNum);
 }
 
 }  // namespace mozilla::a11y

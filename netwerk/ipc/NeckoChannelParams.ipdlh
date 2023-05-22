@@ -23,7 +23,7 @@ include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/net/ClassOfService.h";
 
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
-using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
+using mozilla::net::RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
 using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
@@ -128,6 +128,7 @@ struct LoadInfoArgs
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
+  bool                        hasInjectedCookieForCookieBannerHandling;
 
   /**
    * ClientInfo structure representing the window or worker that triggered

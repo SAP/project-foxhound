@@ -9,8 +9,10 @@ job-defaults:
     worker-type: b-linux-gcp
     worker:
         max-run-time: 1800
+        env:
+            FETCH: rust-minidump/minidump-stackwalk
     run:
-        script: build-minidump-stackwalk.sh
+        script: build-rust-based-toolchain.sh
         toolchain-artifact: public/build/minidump-stackwalk.tar.zst
     fetches:
         fetch:
@@ -23,7 +25,6 @@ linux64-minidump-stackwalk:
         arguments: ['x86_64-unknown-linux-gnu']
     fetches:
         toolchain:
-            - linux64-binutils
             - linux64-clang-toolchain
             - linux64-rust-toolchain
             - sysroot-x86_64-linux-gnu
@@ -37,8 +38,7 @@ macosx64-minidump-stackwalk:
         toolchain:
             - linux64-rust-macos-toolchain
             - linux64-clang-toolchain
-            - linux64-cctools-port
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
 
 macosx64-aarch64-minidump-stackwalk:
     treeherder:
@@ -49,8 +49,7 @@ macosx64-aarch64-minidump-stackwalk:
         toolchain:
             - linux64-rust-macos-toolchain
             - linux64-clang-toolchain
-            - linux64-cctools-port
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
 
 win32-minidump-stackwalk:
     treeherder:
@@ -60,7 +59,6 @@ win32-minidump-stackwalk:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-liblowercase
             - linux64-rust-windows-toolchain
             - win64-vs2017
 
@@ -72,7 +70,6 @@ win64-minidump-stackwalk:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-liblowercase
             - linux64-rust-windows-toolchain
             - win64-vs2017
 
@@ -96,5 +93,4 @@ linux64-breakpad-injector:
     fetches:
         toolchain:
             - linux64-clang-toolchain
-            - linux64-binutils
             - linux64-toolchain-sysroot

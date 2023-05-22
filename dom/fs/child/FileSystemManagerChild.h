@@ -7,26 +7,36 @@
 #ifndef DOM_FS_CHILD_FILESYSTEMMANAGERCHILD_H_
 #define DOM_FS_CHILD_FILESYSTEMMANAGERCHILD_H_
 
+#include "mozilla/dom/FileSystemWritableFileStreamChild.h"
 #include "mozilla/dom/PFileSystemManagerChild.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 
+class FileSystemBackgroundRequestHandler;
+
 class FileSystemManagerChild : public PFileSystemManagerChild {
  public:
-  NS_INLINE_DECL_REFCOUNTING_WITH_DESTROY(FileSystemManagerChild, Destroy())
+  NS_INLINE_DECL_REFCOUNTING_WITH_DESTROY(FileSystemManagerChild, Destroy(),
+                                          override)
 
-  virtual void CloseAll();
+  void SetBackgroundRequestHandler(
+      FileSystemBackgroundRequestHandler* aBackgroundRequestHandler);
+
+#ifdef DEBUG
+  virtual bool AllSyncAccessHandlesClosed() const;
+
+  virtual bool AllWritableFileStreamsClosed() const;
+#endif
 
   virtual void Shutdown();
-
-  already_AddRefed<PFileSystemAccessHandleChild>
-  AllocPFileSystemAccessHandleChild();
 
   already_AddRefed<PFileSystemWritableFileStreamChild>
   AllocPFileSystemWritableFileStreamChild();
 
   ::mozilla::ipc::IPCResult RecvCloseAll(CloseAllResolver&& aResolver);
+
+  void ActorDestroy(ActorDestroyReason aWhy) override;
 
  protected:
   virtual ~FileSystemManagerChild() = default;
@@ -35,6 +45,10 @@ class FileSystemManagerChild : public PFileSystemManagerChild {
     Shutdown();
     delete this;
   }
+
+  // The weak reference is cleared in ActorDestroy.
+  FileSystemBackgroundRequestHandler* MOZ_NON_OWNING_REF
+      mBackgroundRequestHandler;
 };
 
 }  // namespace mozilla::dom

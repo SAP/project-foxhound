@@ -248,7 +248,7 @@
                 <menuitem id="historyRestoreLastSession"
                           command="Browser:RestoreLastSession" data-l10n-id="menu-history-restore-last-session"/>
                 <menuitem id="hiddenTabsMenu"
-                          oncommand="gTabsPanel.showHiddenTabsPanel(event);"
+                          oncommand="gTabsPanel.showHiddenTabsPanel(event, 'hidden-tabs-menuitem');"
                           hidden="true" data-l10n-id="menu-history-hidden-tabs"/>
                 <menu id="historyUndoMenu"
                       disabled="true" data-l10n-id="menu-history-undo-menu">
@@ -437,6 +437,9 @@
               </menupopup>
             </menu>
 #ifdef XP_MACOSX
+<!-- Do not dynamically modify the Window menu and be careful when making static changes to it.
+     macOS adds extra functionality to this menu, such as a list of windows, which can break when
+     modifying this menu. See bug 1642138 and bug 1807697 for example. -->
             <menu id="windowMenu"
                    data-l10n-id="menu-window-menu">
                 <menupopup id="windowPopup">

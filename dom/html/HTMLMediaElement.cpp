@@ -139,8 +139,8 @@
 #include <limits>
 #include <type_traits>
 
-mozilla::LazyLogModule gMediaElementLog("nsMediaElement");
-mozilla::LazyLogModule gMediaElementEventsLog("nsMediaElementEvents");
+mozilla::LazyLogModule gMediaElementLog("HTMLMediaElement");
+mozilla::LazyLogModule gMediaElementEventsLog("HTMLMediaElementEvents");
 
 extern mozilla::LazyLogModule gAutoplayPermissionLog;
 #define AUTOPLAY_LOG(msg, ...) \
@@ -2912,7 +2912,7 @@ void HTMLMediaElement::ResumeLoad(PreloadAction aAction) {
 }
 
 bool HTMLMediaElement::AllowedToPlay() const {
-  return AutoplayPolicy::IsAllowedToPlay(*this);
+  return media::AutoplayPolicy::IsAllowedToPlay(*this);
 }
 
 uint32_t HTMLMediaElement::GetPreloadDefault() const {

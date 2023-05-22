@@ -24,11 +24,11 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cluster.h"
+#include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/frame_header.h"
-#include "lib/jxl/gaborish.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -684,7 +684,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     for (size_t i = 0; i < nb_channels; i++) {
       int32_t min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-      int64_t colors = max - min + 1;
+      int64_t colors = (int64_t)max - min + 1;
       JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
       maybe_palette_1.begin_c = i + gi.nb_meta_channels;
@@ -1371,7 +1371,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       for (size_t i = 0; i < nb_channels; i++) {
         int32_t min, max;
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-        int colors = max - min + 1;
+        int64_t colors = (int64_t)max - min + 1;
         JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
         Transform maybe_palette_1(TransformId::kPalette);
         maybe_palette_1.begin_c = i + gi.nb_meta_channels;
@@ -1417,6 +1417,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       case SpeedTier::kKitten:
         nb_rcts_to_try = 9;
         break;
+      case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         nb_rcts_to_try = 19;
         break;

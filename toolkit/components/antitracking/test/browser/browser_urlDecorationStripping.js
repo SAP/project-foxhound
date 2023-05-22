@@ -3,8 +3,6 @@
 // eTLD+1 URL when tracking identifiers controlled by this service are
 // present in the referrer URI.
 
-/* import-globals-from antitracking_head.js */
-
 "use strict";
 
 const { RemoteSettings } = ChromeUtils.import(
@@ -12,9 +10,6 @@ const { RemoteSettings } = ChromeUtils.import(
 );
 const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
-);
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const APS_PREF =

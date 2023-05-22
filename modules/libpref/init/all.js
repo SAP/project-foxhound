@@ -225,8 +225,6 @@ pref("browser.helperApps.neverAsk.saveToDisk", "");
 pref("browser.helperApps.neverAsk.openFile", "");
 pref("browser.helperApps.deleteTempFileOnExit", false);
 
-// xxxbsmedberg: where should prefs for the toolkit go?
-pref("browser.chrome.toolbar_tips",         true);
 // max image size for which it is placed in the tab icon for tabbrowser.
 // if 0, no images are used for tab icons for image documents.
 pref("browser.chrome.image_icons.max_size", 1024);
@@ -311,7 +309,11 @@ pref("media.videocontrols.picture-in-picture.video-toggle.position", "right");
 pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.size", "medium");
+#ifdef NIGHTLY_BUILD
+pref("media.videocontrols.picture-in-picture.improved-video-controls.enabled", true);
+#else
 pref("media.videocontrols.picture-in-picture.improved-video-controls.enabled", false);
+#endif
 pref("media.videocontrols.keyboard-tab-to-all-controls", true);
 
 #ifdef MOZ_WEBRTC
@@ -372,8 +374,8 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.navigator.audio.fake_frequency", 1000);
   pref("media.navigator.permission.disabled", false);
   pref("media.navigator.streams.fake", false);
-  pref("media.peerconnection.simulcast", true);
   pref("media.peerconnection.default_iceservers", "[]");
+  pref("media.peerconnection.allow_old_setParameters", true);
   pref("media.peerconnection.ice.loopback", false); // Set only for testing in offline environments.
   pref("media.peerconnection.ice.tcp", true);
   pref("media.peerconnection.ice.tcp_so_sock_count", 0); // Disable SO gathering
@@ -1647,10 +1649,6 @@ pref("network.proxy.no_proxies_on",         "");
 pref("network.proxy.failover_timeout",      1800); // 30 minutes
 pref("network.online",                      true); //online/offline
 
-// The interval in seconds to move the cookies in the child process.
-// Set to 0 to disable moving the cookies.
-pref("network.cookie.move.interval_sec",    0);
-
 // This pref contains the list of hostnames (such as
 // "mozilla.org,example.net"). For these hosts, firefox will treat
 // SameSite=None if nothing else is specified, even if
@@ -1979,9 +1977,6 @@ pref("extensions.eventPages.enabled", true);
 pref("extensions.manifestV2.actionsPopupURLRestricted", false);
 // Whether "manifest_version: 3" extensions should be allowed to install successfully.
 pref("extensions.manifestV3.enabled", true);
-// Whether to enable the unified extensions feature. Note that this pref is
-// enabled for Firefox Desktop in `browser/app/profile/firefox.js`.
-pref("extensions.unifiedExtensions.enabled", false);
 // Whether to enable the updated openPopup API.
 #ifdef NIGHTLY_BUILD
   pref("extensions.openPopupWithoutUserGesture.enabled", true);
@@ -1990,12 +1985,6 @@ pref("extensions.unifiedExtensions.enabled", false);
 #endif
 // Install origins restriction.
 pref("extensions.install_origins.enabled", false);
-
-// Modifier key prefs: default to Windows settings,
-// menu access key = alt, accelerator key = control.
-// Use 17 for Ctrl, 18 for Alt, 224 for Meta, 91 for Win, 0 for none. Mac settings in macprefs.js
-pref("ui.key.accelKey", 17);
-pref("ui.key.menuAccessKey", 18);
 
 // Middle-mouse handling
 pref("middlemouse.paste", false);
@@ -2830,11 +2819,6 @@ pref("font.size.monospace.x-math", 13);
   pref("font.weight-override.HelveticaNeue-LightItalic", 300);
   pref("font.weight-override.HelveticaNeue-MediumItalic", 500); // Harmonize MediumItalic with Medium
 
-  // Override the Windows settings: no menu key, meta accelerator key. ctrl for general access key in HTML/XUL
-  // Use 17 for Ctrl, 18 for Option, 224 for Cmd, 0 for none
-  pref("ui.key.menuAccessKey", 0);
-  pref("ui.key.accelKey", 224);
-
   // See bug 404131, topmost <panel> element wins to Dashboard on MacOSX.
   pref("ui.panel.default_level_parent", false);
 
@@ -3239,12 +3223,15 @@ pref("signon.debug",                        false);
 pref("signon.recipes.path", "resource://app/defaults/settings/main/password-recipes.json");
 pref("signon.recipes.remoteRecipes.enabled", true);
 pref("signon.relatedRealms.enabled", false);
-
 pref("signon.schemeUpgrades",                     true);
 pref("signon.includeOtherSubdomainsInLookup",     true);
 // This temporarily prevents the primary password to reprompt for autocomplete.
 pref("signon.masterPasswordReprompt.timeout_ms", 900000); // 15 Minutes
 pref("signon.showAutoCompleteFooter",             false);
+pref("signon.firefoxRelay.base_url", "https://relay.firefox.com/api/v1/");
+pref("signon.firefoxRelay.learn_more_url", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/firefox-relay-integration");
+pref("signon.signupDetection.confidenceThreshold",     "0.75");
+pref("signon.signupDetection.enabled",                 false);
 
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
@@ -3421,8 +3408,6 @@ pref("alerts.showFavicons", false);
   // Whether to use macOS native full screen for Fullscreen API
   pref("full-screen-api.macos-native-full-screen", false);
 #endif
-// whether to prevent the top level widget from going fullscreen
-pref("full-screen-api.ignore-widgets", false);
 // transition duration of fade-to-black and fade-from-black, unit: ms
 #ifndef MOZ_WIDGET_GTK
   pref("full-screen-api.transition-duration.enter", "200 200");
@@ -3830,6 +3815,16 @@ pref("browser.storageManager.pressureNotification.usageThresholdGB", 5);
 
 pref("browser.sanitizer.loglevel", "Warn");
 
+// Enable Firefox translations based on Bergamot[1]. This project is in-development and
+// an effort to integrate the Firefox Translations[2] project direcly into Gecko.
+// See Bug 971044.
+//
+// [1]: https://browser.mt/
+// [2]: https://github.com/mozilla/firefox-translations
+pref("browser.translations.enable", false);
+// Set to "All" to see all logs, which are useful for debugging.
+pref("browser.translations.logLevel", "Error");
+
 // When a user cancels this number of authentication dialogs coming from
 // a single web page in a row, all following authentication dialogs will
 // be blocked (automatically canceled) for that page. The counter resets
@@ -3876,11 +3871,7 @@ pref("toolkit.aboutProcesses.showAllSubframes", false);
   pref("toolkit.aboutProcesses.showThreads", false);
 #endif
 // If `true`, about:processes will offer to profile processes.
-#ifdef NIGHTLY_BUILD
-  pref("toolkit.aboutProcesses.showProfilerIcons", true);
-#else
-  pref("toolkit.aboutProcesses.showProfilerIcons", false);
-#endif
+pref("toolkit.aboutProcesses.showProfilerIcons", true);
 // Time in seconds between when the profiler is started and when the
 // profile is captured.
 pref("toolkit.aboutProcesses.profileDuration", 5);
@@ -4175,9 +4166,6 @@ pref("extensions.formautofill.creditCards.enabled", true);
 pref("extensions.formautofill.creditCards.ignoreAutocompleteOff", true);
 // Supported countries need to follow ISO 3166-1 to align with "browser.search.region"
 pref("extensions.formautofill.creditCards.supportedCountries", "US,CA,GB,FR,DE");
-// Temporary preference to control displaying the UI elements for
-// credit card autofill used for the duration of the A/B test.
-pref("extensions.formautofill.creditCards.hideui", false);
 
 // Algorithm used by formautofill while determine whether a field is a credit card field
 // 0:Heurstics based on regular expression string matching
@@ -4192,14 +4180,6 @@ pref("extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThresh
 // This is Only for testing! Set the confidence value (> 0 && <= 1) after a field is identified by fathom
 pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
 
-// Pref for shield/heartbeat to recognize users who have used Credit Card
-// Autofill. The valid values can be:
-// 0: none
-// 1: submitted a manually-filled credit card form (but didn't see the doorhanger
-//    because of a duplicate profile in the storage)
-// 2: saw the doorhanger
-// 3: submitted an autofill'ed credit card form
-pref("extensions.formautofill.creditCards.used", 0);
 pref("extensions.formautofill.firstTimeUse", true);
 pref("extensions.formautofill.heuristics.enabled", true);
 pref("extensions.formautofill.section.enabled", true);
@@ -4221,6 +4201,9 @@ pref("cookiebanners.bannerClicking.logLevel", "Error");
 // CookieBannerRule.schema.json.
 pref("cookiebanners.listService.testRules", "[]");
 
+// Still fetches rules from RemoteSettings, but discards them. Used in tests.
+pref("cookiebanners.listService.testSkipRemoteSettings", false);
+
 // The domains we will block from installing SitePermsAddons. Comma-separated
 // full domains: any subdomains of the domains listed will also be allowed.
-pref("dom.sitepermsaddon-provider.separatedBlocklistedDomains", "shopee.co.th");
+pref("dom.sitepermsaddon-provider.separatedBlocklistedDomains", "shopee.co.th,alipay.com,miravia.es");

@@ -10,15 +10,23 @@ EXPORTS.mozilla.dom += [
     "FileSystemTypes.h",
 ]
 
+EXPORTS.mozilla.dom.fs += [
+    "IPCRejectReporter.h",
+    "ManagedMozPromiseRequestHolder.h",
+    "TargetPtrHolder.h",
+]
+
 UNIFIED_SOURCES += [
     "FileSystemHelpers.cpp",
     "FileSystemLog.cpp",
+    "IPCRejectReporter.cpp",
 ]
 
 FINAL_LIBRARY = "xul"
 
 IPDL_SOURCES += [
     "PFileSystemAccessHandle.ipdl",
+    "PFileSystemAccessHandleControl.ipdl",
     "PFileSystemManager.ipdl",
     "PFileSystemWritableFileStream.ipdl",
 ]

@@ -904,7 +904,7 @@ static JSLinearString* EnsureLinear(
   return linear;
 }
 
-//Taintfox: Concat without adding operations to taint flow
+// Taintfox: Concat without adding operations to taint flow
 template <AllowGC allowGC>
 JSString* js::ConcatStringsQuiet(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,

@@ -36,7 +36,7 @@ add_task(async function() {
     newWin.gBrowser.selectedBrowser,
     true /* includeSubFrames */
   );
-  BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, pageUrl);
+  BrowserTestUtils.loadURIString(newWin.gBrowser.selectedBrowser, pageUrl);
   await browserLoadedPromise;
 
   newWin.gBrowser.selectedBrowser.focus();
@@ -45,45 +45,34 @@ add_task(async function() {
 
   // We need to explicitly call Element.focus() since dataURL is treated as
   // cross-origin, thus autofocus doesn't work there.
-  const iframe = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+  const iframeBC = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     return content.document.querySelector("iframe").browsingContext;
   });
 
-  await SpecialPowers.spawn(iframe, [], async () => {
+  const [
+    iframeBorderLeft,
+    iframeBorderTop,
+    iframeX,
+    iframeY,
+  ] = await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    await SpecialPowers.contentTransformsReceived(content);
+    const iframe = content.document.querySelector("iframe");
+    const rect = iframe.getBoundingClientRect();
+    const x = content.window.mozInnerScreenX + rect.left;
+    const y = content.window.mozInnerScreenY + rect.top;
+    const cs = content.window.getComputedStyle(iframe);
+    return [parseInt(cs.borderLeftWidth), parseInt(cs.borderTopWidth), x, y];
+  });
+
+  const selectRect = await SpecialPowers.spawn(iframeBC, [], async function() {
+    await SpecialPowers.contentTransformsReceived(content);
     const input = content.document.getElementById("select");
     const focusPromise = new Promise(resolve => {
       input.addEventListener("focus", resolve, { once: true });
     });
     input.focus();
     await focusPromise;
-  });
-
-  const [iframeBorderLeft, iframeBorderTop] = await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [],
-    () => {
-      const cs = content.window.getComputedStyle(
-        content.document.querySelector("iframe")
-      );
-      return [parseInt(cs.borderLeftWidth), parseInt(cs.borderTopWidth)];
-    }
-  );
-
-  const [iframeX, iframeY] = await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [],
-    () => {
-      const rect = content.document
-        .querySelector("iframe")
-        .getBoundingClientRect();
-      const x = content.window.mozInnerScreenX + rect.left;
-      const y = content.window.mozInnerScreenY + rect.top;
-      return [x, y];
-    }
-  );
-
-  const selectRect = await SpecialPowers.spawn(iframe, [], () => {
-    return content.document.querySelector("select").getBoundingClientRect();
+    return input.getBoundingClientRect();
   });
 
   // Open the select popup.

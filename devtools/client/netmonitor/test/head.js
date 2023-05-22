@@ -7,7 +7,6 @@
  * tests without referencing head.js explicitly.
  */
 
-/* import-globals-from ../../shared/test/shared-head.js */
 /* exported Toolbox, restartNetMonitor, teardown, waitForExplicitFinish,
    verifyRequestItemTarget, waitFor, waitForDispatch, testFilterButtons,
    performRequestsInContent, waitForNetworkEvents, selectIndexAndWaitForSourceEditor,
@@ -215,16 +214,21 @@ registerCleanupFunction(() => {
   Services.cookies.removeAll();
 });
 
-async function toggleCache(toolbox, disabled) {
-  const options = { cacheDisabled: disabled };
-
+async function disableCacheAndReload(toolbox, waitForLoad) {
   // Disable the cache for any toolbox that it is opened from this point on.
-  Services.prefs.setBoolPref("devtools.cache.disabled", disabled);
+  Services.prefs.setBoolPref("devtools.cache.disabled", true);
 
-  await toolbox.commands.targetConfigurationCommand.updateConfiguration(
-    options
-  );
-  await toolbox.commands.targetCommand.reloadTopLevelTarget();
+  await toolbox.commands.targetConfigurationCommand.updateConfiguration({
+    cacheDisabled: true,
+  });
+
+  // If the page which is reloaded is not found, this will likely cause
+  // reloadTopLevelTarget to not return so let not wait for it.
+  if (waitForLoad) {
+    await toolbox.commands.targetCommand.reloadTopLevelTarget();
+  } else {
+    toolbox.commands.targetCommand.reloadTopLevelTarget();
+  }
 }
 
 /**
@@ -311,7 +315,12 @@ async function waitForAllNetworkUpdateEvents() {
 
 function initNetMonitor(
   url,
-  { requestCount, expectedEventTimings, enableCache = false }
+  {
+    requestCount,
+    expectedEventTimings,
+    waitForLoad = true,
+    enableCache = false,
+  }
 ) {
   info("Initializing a network monitor pane.");
 
@@ -331,7 +340,7 @@ function initNetMonitor(
       ],
     });
 
-    const tab = await addTab(url);
+    const tab = await addTab(url, { waitForLoad });
     info("Net tab added successfully: " + url);
 
     const toolbox = await gDevTools.showToolboxForTab(tab, {
@@ -346,12 +355,18 @@ function initNetMonitor(
     if (!enableCache) {
       info("Disabling cache and reloading page.");
 
-      const requestsDone = waitForNetworkEvents(monitor, requestCount, {
-        expectedEventTimings,
-      });
-      const markersDone = waitForTimelineMarkers(monitor);
-      await toggleCache(toolbox, true);
-      await Promise.all([requestsDone, markersDone]);
+      const allComplete = [];
+      allComplete.push(
+        waitForNetworkEvents(monitor, requestCount, {
+          expectedEventTimings,
+        })
+      );
+
+      if (waitForLoad) {
+        allComplete.push(waitForTimelineMarkers(monitor));
+      }
+      await disableCacheAndReload(toolbox, waitForLoad);
+      await Promise.all(allComplete);
       await clearNetworkEvents(monitor);
     }
 
@@ -363,7 +378,7 @@ function restartNetMonitor(monitor, { requestCount }) {
   info("Restarting the specified network monitor.");
 
   return (async function() {
-    const tab = monitor.toolbox.target.localTab;
+    const tab = monitor.commands.descriptorFront.localTab;
     const url = tab.linkedBrowser.currentURI.spec;
 
     await waitForAllNetworkUpdateEvents();
@@ -986,7 +1001,7 @@ async function hideColumn(monitor, column) {
     `#requests-list-${column}-button`,
     0
   );
-  getContextMenuItem(monitor, `request-list-header-${column}-toggle`).click();
+  await selectContextMenuItem(monitor, `request-list-header-${column}-toggle`);
   await onHeaderRemoved;
 
   ok(
@@ -1009,7 +1024,7 @@ async function showColumn(monitor, column) {
     `#requests-list-${column}-button`,
     1
   );
-  getContextMenuItem(monitor, `request-list-header-${column}-toggle`).click();
+  await selectContextMenuItem(monitor, `request-list-header-${column}-toggle`);
   await onHeaderAdded;
 
   ok(
@@ -1246,6 +1261,22 @@ function getContextMenuItem(monitor, id) {
   return Menu.getMenuElementById(id, monitor.panelWin.document);
 }
 
+async function maybeOpenAncestorMenu(menuItem) {
+  const parentPopup = menuItem.parentNode;
+  if (parentPopup.state == "shown") {
+    return;
+  }
+  const shown = BrowserTestUtils.waitForEvent(parentPopup, "popupshown");
+  if (parentPopup.state == "showing") {
+    await shown;
+    return;
+  }
+  const parentMenu = parentPopup.parentNode;
+  await maybeOpenAncestorMenu(parentMenu);
+  parentMenu.openMenu(true);
+  await shown;
+}
+
 /*
  * Selects and clicks the context menu item, it should
  * also wait for the popup to close.
@@ -1256,16 +1287,12 @@ function getContextMenuItem(monitor, id) {
  */
 async function selectContextMenuItem(monitor, id) {
   const contextMenuItem = getContextMenuItem(monitor, id);
-  contextMenuItem.click();
 
-  // Hide and wait for hiding of the context menu
-  const onHidden = new Promise(resolve =>
-    contextMenuItem.parentElement.addEventListener("popuphidden", resolve, {
-      once: true,
-    })
-  );
-  contextMenuItem.parentElement.hidePopup();
-  await onHidden;
+  const popup = contextMenuItem.parentNode;
+  await maybeOpenAncestorMenu(contextMenuItem);
+  const hidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+  popup.activateItem(contextMenuItem);
+  await hidden;
 }
 
 /**
@@ -1300,12 +1327,11 @@ async function waitForDOMIfNeeded(target, selector, expectedLength = 1) {
 async function toggleBlockedUrl(element, monitor, store, action = "block") {
   EventUtils.sendMouseEvent({ type: "contextmenu" }, element);
   const contextMenuId = `request-list-context-${action}-url`;
-  const contextBlockToggle = getContextMenuItem(monitor, contextMenuId);
   const onRequestComplete = waitForDispatch(
     store,
     "REQUEST_BLOCKING_UPDATE_COMPLETE"
   );
-  contextBlockToggle.click();
+  await selectContextMenuItem(monitor, contextMenuId);
 
   info(`Wait for selected request to be ${action}ed`);
   await onRequestComplete;

@@ -12,7 +12,6 @@
 #include "nsIWebNavigation.h"
 #include "nsCOMPtr.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebBrowserChromeFocus.h"
 #include "nsIDOMEventListener.h"
 #include "nsIInterfaceRequestor.h"
@@ -141,7 +140,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                            public ipc::MessageManagerCallback,
                            public PBrowserChild,
                            public nsIWebBrowserChrome,
-                           public nsIEmbeddingSiteWindow,
                            public nsIWebBrowserChromeFocus,
                            public nsIInterfaceRequestor,
                            public nsIWindowProvider,
@@ -199,7 +197,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIWEBBROWSERCHROME
-  NS_DECL_NSIEMBEDDINGSITEWINDOW
   NS_DECL_NSIWEBBROWSERCHROMEFOCUS
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSIWINDOWPROVIDER
@@ -436,8 +433,9 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   bool DeallocPDocAccessibleChild(PDocAccessibleChild*);
 #endif
 
-  PColorPickerChild* AllocPColorPickerChild(const nsAString& aTitle,
-                                            const nsAString& aInitialColor);
+  PColorPickerChild* AllocPColorPickerChild(
+      const nsAString& aTitle, const nsAString& aInitialColor,
+      const nsTArray<nsString>& aDefaultColors);
 
   bool DeallocPColorPickerChild(PColorPickerChild* aActor);
 
@@ -601,6 +599,9 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   // Request that the docshell be marked as active.
   void PaintWhileInterruptingJS(const layers::LayersObserverEpoch& aEpoch);
 
+  void UnloadLayersWhileInterruptingJS(
+      const layers::LayersObserverEpoch& aEpoch);
+
   nsresult CanCancelContentJS(nsIRemoteTab::NavigationType aNavigationType,
                               int32_t aNavigationIndex, nsIURI* aNavigationURI,
                               int32_t aEpoch, bool* aCanCancel);
@@ -703,9 +704,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvSuppressDisplayport(const bool& aEnabled);
 
   mozilla::ipc::IPCResult RecvScrollbarPreferenceChanged(ScrollbarPreference);
-
-  mozilla::ipc::IPCResult RecvSetKeyboardIndicators(
-      const UIStateChangeType& aShowFocusRings);
 
   mozilla::ipc::IPCResult RecvStopIMEStateManagement();
 
@@ -838,18 +836,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   // Whether we're artificially preserving layers.
   bool mIsPreservingLayers : 1;
 
-  // In some circumstances, a DocShell might be in a state where it is
-  // "blocked", and we should not attempt to change its active state or
-  // the underlying PresShell state until the DocShell becomes unblocked.
-  // It is possible, however, for the parent process to send commands to
-  // change those states while the DocShell is blocked. We store those
-  // states temporarily as "pending", and only apply them once the DocShell
-  // is no longer blocked.
-  bool mPendingDocShellIsActive : 1;
-  bool mPendingDocShellReceivedMessage : 1;
-  bool mPendingRenderLayers : 1;
-  bool mPendingRenderLayersReceivedMessage : 1;
-
   // Holds the compositor options for the compositor rendering this tab,
   // once we find out which compositor that is.
   Maybe<mozilla::layers::CompositorOptions> mCompositorOptions;
@@ -894,10 +880,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 #if defined(ACCESSIBILITY)
   PDocAccessibleChild* mTopLevelDocAccessibleChild;
 #endif
-  layers::LayersObserverEpoch mPendingLayersObserverEpoch;
-  // When mPendingDocShellBlockers is greater than 0, the DocShell is blocked,
-  // and once it reaches 0, it is no longer blocked.
-  uint32_t mPendingDocShellBlockers;
   int32_t mCancelContentJSEpoch;
 
   Maybe<LayoutDeviceToLayoutDeviceMatrix4x4> mChildToParentConversionMatrix;

@@ -29,6 +29,10 @@
 #  include "MFMediaEngineChild.h"
 #endif
 
+#ifdef MOZ_WMF_CDM
+#  include "MFCDMChild.h"
+#endif
+
 namespace mozilla {
 
 #define LOG(msg, ...) \
@@ -417,10 +421,14 @@ RemoteDecoderManagerChild::Construct(RefPtr<RemoteDecoderChild>&& aChild,
           [aLocation](const mozilla::ipc::ResponseRejectReason& aReason) {
             // The parent has died.
             nsresult err =
-                ((aLocation == RemoteDecodeIn::GpuProcess) ||
-                 (aLocation == RemoteDecodeIn::RddProcess))
-                    ? NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_RDD_OR_GPU_ERR
-                    : NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_UTILITY_ERR;
+                NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_UTILITY_ERR;
+            if (aLocation == RemoteDecodeIn::GpuProcess ||
+                aLocation == RemoteDecodeIn::RddProcess) {
+              err = NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_RDD_OR_GPU_ERR;
+            } else if (aLocation ==
+                       RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM) {
+              err = NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR;
+            }
             return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
                 err, __func__);
           });
@@ -684,6 +692,20 @@ bool RemoteDecoderManagerChild::DeallocPMFMediaEngineChild(
 #ifdef MOZ_WMF_MEDIA_ENGINE
   MFMediaEngineChild* child = static_cast<MFMediaEngineChild*>(actor);
   child->IPDLActorDestroyed();
+#endif
+  return true;
+}
+
+PMFCDMChild* RemoteDecoderManagerChild::AllocPMFCDMChild(const nsAString&) {
+  MOZ_ASSERT_UNREACHABLE(
+      "RemoteDecoderManagerChild cannot create PMFContentDecryptionModuleChild "
+      "classes");
+  return nullptr;
+}
+
+bool RemoteDecoderManagerChild::DeallocPMFCDMChild(PMFCDMChild* actor) {
+#ifdef MOZ_WMF_CDM
+  static_cast<MFCDMChild*>(actor)->IPDLActorDestroyed();
 #endif
   return true;
 }

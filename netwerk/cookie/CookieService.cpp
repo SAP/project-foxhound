@@ -6,6 +6,7 @@
 
 #include "CookieCommons.h"
 #include "CookieLogging.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/RefPtr.h"
@@ -215,6 +216,8 @@ already_AddRefed<CookieService> CookieService::GetSingleton() {
   // Release our members (e.g. nsIObserverService and nsIPrefBranch), since GC
   // cycles have already been completed and would result in serious leaks.
   // See bug 209571.
+  // TODO: Verify what is the earliest point in time during shutdown where
+  // we can deny the creation of the CookieService as a whole.
   gCookieService = new CookieService();
   if (gCookieService) {
     if (NS_SUCCEEDED(gCookieService->Init())) {
@@ -269,8 +272,10 @@ void CookieService::InitCookieStorages() {
   NS_ASSERTION(!mPersistentStorage, "already have a default CookieStorage");
   NS_ASSERTION(!mPrivateStorage, "already have a private CookieStorage");
 
-  // Create two new CookieStorages.
-  if (MOZ_UNLIKELY(StaticPrefs::network_cookie_noPersistentStorage())) {
+  // Create two new CookieStorages. If we are in or beyond our observed
+  // shutdown phase, just be non-persistent.
+  if (MOZ_UNLIKELY(StaticPrefs::network_cookie_noPersistentStorage() ||
+                   AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown))) {
     mPersistentStorage = CookiePrivateStorage::Create();
   } else {
     mPersistentStorage = CookiePersistentStorage::Create();
@@ -784,7 +789,7 @@ CookieService::GetSessionCookies(nsTArray<RefPtr<nsICookie>>& aCookies) {
   mPersistentStorage->EnsureInitialized();
 
   // We expose only non-private cookies.
-  mPersistentStorage->GetCookies(aCookies);
+  mPersistentStorage->GetSessionCookies(aCookies);
 
   return NS_OK;
 }
@@ -1149,6 +1154,24 @@ void CookieService::GetCookiesForURI(
   aCookieList.Sort(CompareCookiesForSending());
 }
 
+static bool ContainsUnicodeChars(const nsCString& str) {
+  const auto* start = str.BeginReading();
+  const auto* end = str.EndReading();
+
+  return std::find_if(start, end, [](unsigned char c) { return c >= 0x80; }) !=
+         end;
+}
+
+static void RecordUnicodeTelemetry(const CookieStruct& cookieData) {
+  auto label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::none;
+  if (ContainsUnicodeChars(cookieData.name())) {
+    label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::unicodeName;
+  } else if (ContainsUnicodeChars(cookieData.value())) {
+    label = Telemetry::LABELS_NETWORK_COOKIE_UNICODE_BYTE::unicodeValue;
+  }
+  Telemetry::AccumulateCategorical(label);
+}
+
 // processes a single cookie, and returns true if there are more cookies
 // to be processed
 bool CookieService::CanSetCookie(
@@ -1219,6 +1242,8 @@ bool CookieService::CanSetCookie(
         "CookieOversize"_ns, params);
     return newCookie;
   }
+
+  RecordUnicodeTelemetry(aCookieData);
 
   if (!CookieCommons::CheckName(aCookieData)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
@@ -2526,6 +2551,8 @@ bool CookieService::SetCookiesFromIPC(const nsACString& aBaseDomain,
     if (!CookieCommons::CheckNameAndValueSize(cookieData)) {
       return false;
     }
+
+    RecordUnicodeTelemetry(cookieData);
 
     if (!CookieCommons::CheckName(cookieData)) {
       return false;

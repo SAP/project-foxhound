@@ -11,6 +11,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -20,7 +21,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
-  ClientID: "resource://gre/modules/ClientID.jsm",
   ColorwayClosetOpener: "resource:///modules/ColorwayClosetOpener.jsm",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
@@ -632,495 +632,6 @@ var DiscoveryAPI = {
     return results.map(details => new DiscoAddonWrapper(details));
   },
 };
-
-class SupportLink extends HTMLAnchorElement {
-  static get observedAttributes() {
-    return ["support-page"];
-  }
-
-  connectedCallback() {
-    this.setHref();
-    this.setAttribute("target", "_blank");
-  }
-
-  attributeChangedCallback(name, oldVal, newVal) {
-    if (name === "support-page") {
-      this.setHref();
-    }
-  }
-
-  setHref() {
-    let base = SUPPORT_URL + this.getAttribute("support-page");
-    this.href = this.hasAttribute("utmcontent")
-      ? formatUTMParams(this.getAttribute("utmcontent"), base)
-      : base;
-  }
-}
-customElements.define("support-link", SupportLink, { extends: "a" });
-
-class PanelList extends HTMLElement {
-  static get observedAttributes() {
-    return ["open"];
-  }
-
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    // Ensure that the element is hidden even if its main stylesheet hasn't
-    // loaded yet. On initial load, or with cache disabled, the element could
-    // briefly flicker before the stylesheet is loaded without this.
-    let style = document.createElement("style");
-    style.textContent = `
-      :host(:not([open])) {
-        display: none;
-      }
-    `;
-    this.shadowRoot.appendChild(style);
-    this.shadowRoot.appendChild(importTemplate("panel-list"));
-  }
-
-  connectedCallback() {
-    this.setAttribute("role", "menu");
-  }
-
-  attributeChangedCallback(name, oldVal, newVal) {
-    if (name == "open" && newVal != oldVal) {
-      if (this.open) {
-        this.onShow();
-      } else {
-        this.onHide();
-      }
-    }
-  }
-
-  get open() {
-    return this.hasAttribute("open");
-  }
-
-  set open(val) {
-    this.toggleAttribute("open", val);
-  }
-
-  show(triggeringEvent) {
-    this.triggeringEvent = triggeringEvent;
-    this.open = true;
-  }
-
-  hide(triggeringEvent) {
-    let openingEvent = this.triggeringEvent;
-    this.triggeringEvent = triggeringEvent;
-    this.open = false;
-    // Refocus the button that opened the menu if we have one.
-    if (openingEvent && openingEvent.target) {
-      openingEvent.target.focus();
-    }
-  }
-
-  toggle(triggeringEvent) {
-    if (this.open) {
-      this.hide(triggeringEvent);
-    } else {
-      this.show(triggeringEvent);
-    }
-  }
-
-  async setAlign() {
-    // Set the showing attribute to hide the panel until its alignment is set.
-    this.setAttribute("showing", "true");
-    // Tell the parent node to hide any overflow in case the panel extends off
-    // the page before the alignment is set.
-    this.parentNode.style.overflow = "hidden";
-
-    // Wait for a layout flush, then find the bounds.
-    let {
-      anchorHeight,
-      anchorLeft,
-      anchorTop,
-      anchorWidth,
-      panelHeight,
-      panelWidth,
-      winHeight,
-      winScrollY,
-      winScrollX,
-      winWidth,
-    } = await new Promise(resolve => {
-      this.style.left = 0;
-      this.style.top = 0;
-
-      requestAnimationFrame(() =>
-        setTimeout(() => {
-          let anchorNode =
-            (this.triggeringEvent && this.triggeringEvent.target) ||
-            this.parentNode;
-          // Use y since top is reserved.
-          let anchorBounds = window.windowUtils.getBoundsWithoutFlushing(
-            anchorNode
-          );
-          let panelBounds = window.windowUtils.getBoundsWithoutFlushing(this);
-          resolve({
-            anchorHeight: anchorBounds.height,
-            anchorLeft: anchorBounds.left,
-            anchorTop: anchorBounds.top,
-            anchorWidth: anchorBounds.width,
-            panelHeight: panelBounds.height,
-            panelWidth: panelBounds.width,
-            winHeight: innerHeight,
-            winWidth: innerWidth,
-            winScrollX: scrollX,
-            winScrollY: scrollY,
-          });
-        }, 0)
-      );
-    });
-
-    // Calculate the left/right alignment.
-    let align;
-    let leftOffset;
-    let leftAlignX = anchorLeft;
-    let rightAlignX = anchorLeft + anchorWidth - panelWidth;
-
-    if (Services.locale.isAppLocaleRTL) {
-      // Prefer aligning on the right.
-      align = rightAlignX < 0 ? "left" : "right";
-    } else {
-      // Prefer aligning on the left.
-      align = leftAlignX + panelWidth > winWidth ? "right" : "left";
-    }
-    leftOffset = align === "left" ? leftAlignX : rightAlignX;
-
-    let bottomAlignY = anchorTop + anchorHeight;
-    let valign;
-    let topOffset;
-    if (bottomAlignY + panelHeight > winHeight) {
-      topOffset = anchorTop - panelHeight;
-      valign = "top";
-    } else {
-      topOffset = bottomAlignY;
-      valign = "bottom";
-    }
-
-    // Set the alignments and show the panel.
-    this.setAttribute("align", align);
-    this.setAttribute("valign", valign);
-    this.parentNode.style.overflow = "";
-
-    this.style.left = `${leftOffset + winScrollX}px`;
-    this.style.top = `${topOffset + winScrollY}px`;
-
-    this.removeAttribute("showing");
-  }
-
-  addHideListeners() {
-    // Hide when a panel-item is clicked in the list.
-    this.addEventListener("click", this);
-    document.addEventListener("keydown", this);
-    // Hide when a click is initiated outside the panel.
-    document.addEventListener("mousedown", this);
-    // Hide if focus changes and the panel isn't in focus.
-    document.addEventListener("focusin", this);
-    // Reset or focus tracking, we treat the first focusin differently.
-    this.focusHasChanged = false;
-    // Hide on resize, scroll or losing window focus.
-    window.addEventListener("resize", this);
-    window.addEventListener("scroll", this);
-    window.addEventListener("blur", this);
-  }
-
-  removeHideListeners() {
-    this.removeEventListener("click", this);
-    document.removeEventListener("keydown", this);
-    document.removeEventListener("mousedown", this);
-    document.removeEventListener("focusin", this);
-    window.removeEventListener("resize", this);
-    window.removeEventListener("scroll", this);
-    window.removeEventListener("blur", this);
-  }
-
-  handleEvent(e) {
-    // Ignore the event if it caused the panel to open.
-    if (e == this.triggeringEvent) {
-      return;
-    }
-
-    switch (e.type) {
-      case "resize":
-      case "scroll":
-      case "blur":
-        this.hide();
-        break;
-      case "click":
-        if (e.target.tagName == "PANEL-ITEM") {
-          this.hide();
-        } else {
-          // Avoid falling through to the default click handler of the
-          // add-on card, which would expand the add-on card.
-          e.stopPropagation();
-        }
-        break;
-      case "keydown":
-        if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Tab") {
-          // Ignore tabbing with a modifer other than shift.
-          if (e.key === "Tab" && (e.altKey || e.ctrlKey || e.metaKey)) {
-            return;
-          }
-
-          // Don't scroll the page or let the regular tab order take effect.
-          e.preventDefault();
-
-          // Keep moving to the next/previous element sibling until we find a
-          // panel-item that isn't hidden.
-          let moveForward =
-            e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey);
-
-          // If the menu is opened with the mouse, the active element might be
-          // somewhere else in the document. In that case we should ignore it
-          // to avoid walking unrelated DOM nodes.
-          this.focusWalker.currentNode = this.contains(document.activeElement)
-            ? document.activeElement
-            : this;
-          let nextItem = moveForward
-            ? this.focusWalker.nextNode()
-            : this.focusWalker.previousNode();
-
-          // If the next item wasn't found, try looping to the top/bottom.
-          if (!nextItem) {
-            this.focusWalker.currentNode = this;
-            if (moveForward) {
-              nextItem = this.focusWalker.firstChild();
-            } else {
-              nextItem = this.focusWalker.lastChild();
-            }
-          }
-          break;
-        } else if (e.key === "Escape") {
-          this.hide();
-        } else if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-          // Check if any of the children have an accesskey for this letter.
-          let item = this.querySelector(
-            `[accesskey="${e.key.toLowerCase()}"],
-             [accesskey="${e.key.toUpperCase()}"]`
-          );
-          if (item) {
-            item.click();
-          }
-        }
-        break;
-      case "mousedown":
-      case "focusin":
-        // There will be a focusin after the mousedown that opens the panel
-        // using the mouse. Ignore the first focusin event if it's on the
-        // triggering target.
-        if (
-          this.triggeringEvent &&
-          e.target == this.triggeringEvent.target &&
-          !this.focusHasChanged
-        ) {
-          this.focusHasChanged = true;
-          // If the target isn't in the panel, hide. This will close when focus
-          // moves out of the panel, or there's a click started outside the
-          // panel.
-        } else if (!e.target || e.target.closest("panel-list") != this) {
-          this.hide();
-          // Just record that there was a focusin event.
-        } else {
-          this.focusHasChanged = true;
-        }
-        break;
-    }
-  }
-
-  /**
-   * A TreeWalker that can be used to focus elements. The returned element will
-   * be the element that has gained focus based on the requested movement
-   * through the tree.
-   *
-   * Example:
-   *
-   *   this.focusWalker.currentNode = this;
-   *   // Focus and get the first focusable child.
-   *   let focused = this.focusWalker.nextNode();
-   *   // Focus the second focusable child.
-   *   this.focusWalker.nextNode();
-   */
-  get focusWalker() {
-    if (!this._focusWalker) {
-      this._focusWalker = document.createTreeWalker(
-        this,
-        NodeFilter.SHOW_ELEMENT,
-        {
-          acceptNode: node => {
-            // No need to look at hidden nodes.
-            if (node.hidden) {
-              return NodeFilter.FILTER_REJECT;
-            }
-
-            // Focus the node, if it worked then this is the node we want.
-            node.focus();
-            if (node === document.activeElement) {
-              return NodeFilter.FILTER_ACCEPT;
-            }
-
-            // Continue into child nodes if the parent couldn't be focused.
-            return NodeFilter.FILTER_SKIP;
-          },
-        }
-      );
-    }
-    return this._focusWalker;
-  }
-
-  async onShow() {
-    this.sendEvent("showing");
-    this.addHideListeners();
-    await this.setAlign();
-
-    // Wait until the next paint for the alignment to be set and panel to be
-    // visible.
-    requestAnimationFrame(() => {
-      // Focus the first focusable panel-item.
-      this.focusWalker.currentNode = this;
-      this.focusWalker.nextNode();
-
-      this.sendEvent("shown");
-    });
-  }
-
-  onHide() {
-    requestAnimationFrame(() => this.sendEvent("hidden"));
-    this.removeHideListeners();
-  }
-
-  sendEvent(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
-  }
-}
-customElements.define("panel-list", PanelList);
-
-class PanelItem extends HTMLElement {
-  static get observedAttributes() {
-    return ["accesskey"];
-  }
-
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-
-    let style = document.createElement("link");
-    style.rel = "stylesheet";
-    style.href = "chrome://mozapps/content/extensions/panel-item.css";
-
-    this.button = document.createElement("button");
-    this.button.setAttribute("role", "menuitem");
-
-    // Use a XUL label element to show the accesskey.
-    this.label = document.createXULElement("label");
-    this.button.appendChild(this.label);
-
-    let supportLinkSlot = document.createElement("slot");
-    supportLinkSlot.name = "support-link";
-
-    let defaultSlot = document.createElement("slot");
-    defaultSlot.style.display = "none";
-
-    this.shadowRoot.append(style, this.button, supportLinkSlot, defaultSlot);
-
-    // When our content changes, move the text into the label. It doesn't work
-    // with a <slot>, unfortunately.
-    new MutationObserver(() => {
-      this.label.textContent = defaultSlot
-        .assignedNodes()
-        .map(node => node.textContent)
-        .join("");
-    }).observe(this, { characterData: true, childList: true, subtree: true });
-  }
-
-  connectedCallback() {
-    this.panel = this.closest("panel-list");
-
-    if (this.panel) {
-      this.panel.addEventListener("hidden", this);
-      this.panel.addEventListener("shown", this);
-    }
-  }
-
-  disconnectedCallback() {
-    if (this.panel) {
-      this.panel.removeEventListener("hidden", this);
-      this.panel.removeEventListener("shown", this);
-      this.panel = null;
-    }
-  }
-
-  attributeChangedCallback(name, oldVal, newVal) {
-    if (name === "accesskey") {
-      // Bug 1037709 - Accesskey doesn't work in shadow DOM.
-      // Ideally we'd have the accesskey set in shadow DOM, and on
-      // attributeChangedCallback we'd just update the shadow DOM accesskey.
-
-      // Skip this change event if we caused it.
-      if (this._modifyingAccessKey) {
-        this._modifyingAccessKey = false;
-        return;
-      }
-
-      this.label.accessKey = newVal || "";
-
-      // Bug 1588156 - Accesskey is not ignored for hidden non-input elements.
-      // Since the accesskey won't be ignored, we need to remove it ourselves
-      // when the panel is closed, and move it back when it opens.
-      if (!this.panel || !this.panel.open) {
-        // When the panel isn't open, just store the key for later.
-        this._accessKey = newVal || null;
-        this._modifyingAccessKey = true;
-        this.accessKey = "";
-      } else {
-        this._accessKey = null;
-      }
-    }
-  }
-
-  get disabled() {
-    return this.button.hasAttribute("disabled");
-  }
-
-  set disabled(val) {
-    this.button.toggleAttribute("disabled", val);
-  }
-
-  get checked() {
-    return this.hasAttribute("checked");
-  }
-
-  set checked(val) {
-    this.toggleAttribute("checked", val);
-  }
-
-  focus() {
-    this.button.focus();
-  }
-
-  handleEvent(e) {
-    // Bug 1588156 - Accesskey is not ignored for hidden non-input elements.
-    // Since the accesskey won't be ignored, we need to remove it ourselves
-    // when the panel is closed, and move it back when it opens.
-    switch (e.type) {
-      case "shown":
-        if (this._accessKey) {
-          this.accessKey = this._accessKey;
-          this._accessKey = null;
-        }
-        break;
-      case "hidden":
-        if (this.accessKey) {
-          this._accessKey = this.accessKey;
-          this._modifyingAccessKey = true;
-          this.accessKey = "";
-        }
-        break;
-    }
-  }
-}
-customElements.define("panel-item", PanelItem);
 
 class SearchAddons extends HTMLElement {
   connectedCallback() {
@@ -2014,7 +1525,7 @@ class SidebarFooter extends HTMLElement {
     let supportItem = this.createItem({
       icon: "chrome://global/skin/icons/help.svg",
       createLinkElement: () => {
-        let link = document.createElement("a", { is: "support-link" });
+        let link = document.createElement("a", { is: "moz-support-link" });
         link.setAttribute("support-page", "addons-help");
         link.id = "help-button";
         return link;
@@ -2078,7 +1589,7 @@ class AddonOptions extends HTMLElement {
     const children = Array.from(this.panel.children).filter(el => !el.hidden);
 
     for (let child of children) {
-      if (child.tagName == "PANEL-ITEM-SEPARATOR") {
+      if (child.localName == "hr") {
         child.hidden = !elWasVisible;
         if (!child.hidden) {
           lastSeparator = child;
@@ -2117,7 +1628,7 @@ class AddonOptions extends HTMLElement {
           el.hidden = false;
           el.disabled = true;
           if (!el.querySelector('[slot="support-link"]')) {
-            let link = document.createElement("a", { is: "support-link" });
+            let link = document.createElement("a", { is: "moz-support-link" });
             link.setAttribute("data-l10n-name", "link");
             link.setAttribute("support-page", "cant-remove-addon");
             link.setAttribute("slot", "support-link");
@@ -2617,17 +2128,10 @@ class AddonPermissionsList extends HTMLElement {
         let item = document.createElement("li");
         item.classList.add("permission-info");
 
-        let label = document.createElement("label");
-        label.textContent = msg;
-
-        let toggle = document.createElement("input");
+        let toggle = document.createElement("moz-toggle");
+        toggle.setAttribute("label", msg);
         toggle.id = `permission-${id}`;
-
-        label.setAttribute("for", toggle.id);
-        item.appendChild(label);
-
         toggle.setAttribute("permission-type", type);
-        toggle.setAttribute("type", "checkbox");
 
         let checked =
           grantedPerms.permissions.includes(perm) ||
@@ -2640,13 +2144,12 @@ class AddonPermissionsList extends HTMLElement {
           toggle.toggleAttribute("permission-all-sites", true);
         }
 
-        toggle.checked = checked;
+        toggle.pressed = checked;
         item.classList.toggle("permission-checked", checked);
 
         toggle.setAttribute("permission-key", perm);
         toggle.setAttribute("action", "toggle-permission");
-        toggle.classList.add("toggle-button");
-        label.appendChild(toggle);
+        item.appendChild(toggle);
         list.appendChild(item);
       }
     }
@@ -3146,12 +2649,6 @@ class AddonCard extends HTMLElement {
 
     if (e.type == "click") {
       switch (action) {
-        case "toggle-permission":
-          let permission = e.target.getAttribute("permission-key");
-          let type = e.target.getAttribute("permission-type");
-          let fname = e.target.checked ? "add" : "remove";
-          this.setAddonPermission(permission, type, fname);
-          break;
         case "toggle-disabled":
           this.recordActionEvent(addon.userDisabled ? "enable" : "disable");
           // Keep the checked state the same until the add-on's state changes.
@@ -3306,6 +2803,11 @@ class AddonCard extends HTMLElement {
           }
           break;
       }
+    } else if (e.type == "toggle" && action == "toggle-permission") {
+      let permission = e.target.getAttribute("permission-key");
+      let type = e.target.getAttribute("permission-type");
+      let fname = e.target.pressed ? "add" : "remove";
+      this.setAddonPermission(permission, type, fname);
     } else if (e.type == "change") {
       let { name } = e.target;
       let telemetryValue = e.target.getAttribute("data-telemetry-value");
@@ -3367,6 +2869,7 @@ class AddonCard extends HTMLElement {
     this.addEventListener("change", this);
     this.addEventListener("click", this);
     this.addEventListener("mousedown", this);
+    this.addEventListener("toggle", this);
     this.panel.addEventListener("shown", this);
     this.panel.addEventListener("hidden", this);
   }
@@ -3375,6 +2878,7 @@ class AddonCard extends HTMLElement {
     this.removeEventListener("change", this);
     this.removeEventListener("click", this);
     this.removeEventListener("mousedown", this);
+    this.removeEventListener("toggle", this);
     this.panel.removeEventListener("shown", this);
     this.panel.removeEventListener("hidden", this);
   }
@@ -3436,7 +2940,7 @@ class AddonCard extends HTMLElement {
         addon.type === "extension" ||
         addon.type === "sitepermission"
       ) {
-        toggleDisabledButton.checked = !addon.userDisabled;
+        toggleDisabledButton.pressed = !addon.userDisabled;
       }
     }
 
@@ -3697,7 +3201,7 @@ class AddonCard extends HTMLElement {
       let checked = !data.removed;
       if (target) {
         target.closest("li").classList.toggle("permission-checked", checked);
-        target.checked = checked;
+        target.pressed = checked;
       }
     }
     if (hasAllSites) {
@@ -3705,7 +3209,7 @@ class AddonCard extends HTMLElement {
       let target = document.querySelector("[permission-all-sites]");
       let checked = await AddonCard.optionalAllSitesGranted(this.addon.id);
       target.closest("li").classList.toggle("permission-checked", checked);
-      target.checked = checked;
+      target.pressed = checked;
     }
   }
 
@@ -5003,11 +4507,23 @@ gViewController.defineView("list", async type => {
   const disabledAddonsFilterFn = addon =>
     !addon.hidden && !addon.isActive && !isPending(addon, "uninstall");
 
+  const isRetainedColorwayBuiltIn = addon =>
+    BuiltInThemes.isMonochromaticTheme(addon.id) &&
+    BuiltInThemes.isRetainedExpiredTheme(addon.id);
+
+  const isMigratedColorway = addon =>
+    BuiltInThemes.isMonochromaticTheme(addon.id) &&
+    !addon.isBuiltinColorwayTheme;
+
   const disabledThemesFilterFn = addon =>
     disabledAddonsFilterFn(addon) &&
-    ((BuiltInThemes.isRetainedExpiredTheme(addon.id) &&
-      !COLORWAY_CLOSET_ENABLED) ||
-      !BuiltInThemes.isMonochromaticTheme(addon.id));
+    // Show disabled themes that are not colorway themes.
+    (!BuiltInThemes.isMonochromaticTheme(addon.id) ||
+      // Show migrated or retained themes when the colorway
+      // section is disabled (which is expected to happen automatically
+      // after the last colletion is expired after 2023-01-17)
+      (!COLORWAY_CLOSET_ENABLED &&
+        (isRetainedColorwayBuiltIn(addon) || isMigratedColorway(addon))));
 
   sections.push({
     headingId: getL10nIdMapping(`${type}-disabled-heading`),

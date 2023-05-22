@@ -17,7 +17,6 @@
 #include "mozilla/dom/nsCSPService.h"
 #include "mozilla/StoragePrincipalHelper.h"
 
-#include "nsContentSecurityUtils.h"
 #include "nsHttp.h"
 #include "nsHttpChannel.h"
 #include "nsHttpChannelAuthProvider.h"
@@ -1390,8 +1389,8 @@ nsresult nsHttpChannel::SetupTransaction() {
   mTransaction->SetIsForWebTransport(mIsForWebTransport);
   rv = mTransaction->Init(
       mCaps, mConnectionInfo, &mRequestHead, mUploadStream, mReqContentLength,
-      LoadUploadStreamHasHeaders(), GetCurrentEventTarget(), callbacks, this,
-      mTopBrowsingContextId, category, mRequestContext, mClassOfService,
+      LoadUploadStreamHasHeaders(), GetCurrentSerialEventTarget(), callbacks,
+      this, mTopBrowsingContextId, category, mRequestContext, mClassOfService,
       mInitialRwin, LoadResponseTimeoutEnabled(), mChannelId,
       std::move(observer), std::move(pushCallback), mTransWithPushedStream,
       mPushedStreamId);
@@ -1601,7 +1600,6 @@ nsresult nsHttpChannel::CallOnStartRequest() {
     } else if (opaqueResponse == OpaqueResponse::Sniff) {
       MOZ_DIAGNOSTIC_ASSERT(mORB);
       nsresult rv = mORB->EnsureOpaqueResponseIsAllowedAfterSniff(this);
-      MOZ_DIAGNOSTIC_ASSERT(!mORB->IsSniffing());
 
       if (NS_FAILED(rv)) {
         return rv;
@@ -2376,9 +2374,6 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
         // any cached credentials, nor we want to ask the user.
         // It's up to the consumer to re-try w/o setting a custom
         // auth header if cached credentials should be attempted.
-        rv = NS_ERROR_FAILURE;
-      } else if (!nsContentSecurityUtils::CheckCSPFrameAncestorAndXFO(this)) {
-        // CSP Frame Ancestor and X-Frame-Options check has failed
         rv = NS_ERROR_FAILURE;
       } else {
         rv = mAuthProvider->ProcessAuthentication(
@@ -5119,6 +5114,15 @@ nsresult nsHttpChannel::SetupReplacementChannel(nsIURI* newURI,
   nsCOMPtr<nsILoadInfo> newLoadInfo = newChannel->LoadInfo();
   nsHTTPSOnlyUtils::PotentiallyClearExemptFlag(newLoadInfo);
 
+  // pass on the early hint observer to be able to process `103 Early Hints`
+  // responses after cross origin redirects
+  if (mEarlyHintObserver) {
+    if (RefPtr<nsHttpChannel> httpChannelImpl = do_QueryObject(newChannel)) {
+      httpChannelImpl->SetEarlyHintObserver(mEarlyHintObserver);
+    }
+    mEarlyHintObserver = nullptr;
+  }
+
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
   if (!httpChannel) return NS_OK;  // no other options to set
 
@@ -6428,7 +6432,12 @@ nsresult nsHttpChannel::MaybeStartDNSPrefetch() {
     mDNSPrefetch =
         new nsDNSPrefetch(mURI, originAttributes, nsIRequest::GetTRRMode(),
                           this, LoadTimingEnabled());
-    nsresult rv = mDNSPrefetch->PrefetchHigh(mCaps & NS_HTTP_REFRESH_DNS);
+    nsIDNSService::DNSFlags dnsFlags =
+        nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR;
+    if (mCaps & NS_HTTP_REFRESH_DNS) {
+      dnsFlags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
+    }
+    nsresult rv = mDNSPrefetch->PrefetchHigh(dnsFlags);
 
     if (dnsStrategy & DNS_BLOCK_ON_ORIGIN_RESOLVE) {
       LOG(("  blocking on prefetching origin"));
@@ -7234,6 +7243,100 @@ static void ReportHTTPSRRTelemetry(
   }
 }
 
+static nsLiteralCString ContentTypeToTelemetryLabel(nsHttpChannel* aChannel) {
+  nsAutoCString contentType;
+  aChannel->GetContentType(contentType);
+
+  if (StringBeginsWith(contentType, "text/"_ns)) {
+    if (contentType.EqualsLiteral(TEXT_HTML)) {
+      return "text_html"_ns;
+    }
+    if (contentType.EqualsLiteral(TEXT_CSS)) {
+      return "text_css"_ns;
+    }
+    if (contentType.EqualsLiteral(TEXT_JSON)) {
+      return "text_json"_ns;
+    }
+    if (contentType.EqualsLiteral(TEXT_PLAIN)) {
+      return "text_plain"_ns;
+    }
+    if (contentType.EqualsLiteral(TEXT_JAVASCRIPT)) {
+      return "text_javascript"_ns;
+    }
+    return "text_other"_ns;
+  }
+
+  if (StringBeginsWith(contentType, "audio/"_ns)) {
+    return "audio"_ns;
+  }
+
+  if (StringBeginsWith(contentType, "video/"_ns)) {
+    return "video"_ns;
+  }
+
+  if (StringBeginsWith(contentType, "multipart/"_ns)) {
+    return "multipart"_ns;
+  }
+
+  if (StringBeginsWith(contentType, "image/"_ns)) {
+    if (contentType.EqualsLiteral(IMAGE_ICO) ||
+        contentType.EqualsLiteral(IMAGE_ICO_MS) ||
+        contentType.EqualsLiteral(IMAGE_ICON_MS)) {
+      return "icon"_ns;
+    }
+    return "image"_ns;
+  }
+
+  if (StringBeginsWith(contentType, "application/"_ns)) {
+    if (contentType.EqualsLiteral(APPLICATION_JSON)) {
+      return "text_json"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_OGG)) {
+      return "video"_ns;
+    }
+    if (contentType.EqualsLiteral("application/ocsp-response")) {
+      return "ocsp"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_XPINSTALL)) {
+      return "xpinstall"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_WASM)) {
+      return "wasm"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_PDF) ||
+        contentType.EqualsLiteral(APPLICATION_POSTSCRIPT)) {
+      return "pdf"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_OCTET_STREAM)) {
+      return "octet_stream"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_ECMASCRIPT) ||
+        contentType.EqualsLiteral(APPLICATION_JAVASCRIPT) ||
+        contentType.EqualsLiteral(APPLICATION_XJAVASCRIPT)) {
+      return "text_javascript"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_NS_PROXY_AUTOCONFIG) ||
+        contentType.EqualsLiteral(APPLICATION_NS_JAVASCRIPT_AUTOCONFIG)) {
+      return "proxy"_ns;
+    }
+    if (contentType.EqualsLiteral(APPLICATION_BROTLI) ||
+        contentType.Find("zip") != kNotFound ||
+        contentType.Find("compress") != kNotFound) {
+      return "compressed"_ns;
+    }
+    if (contentType.Find("x509") != kNotFound) {
+      return "x509"_ns;
+    }
+    return "application_other"_ns;
+  }
+
+  if (contentType.EqualsLiteral(BINARY_OCTET_STREAM)) {
+    return "octet_stream"_ns;
+  }
+
+  return "other"_ns;
+}
+
 NS_IMETHODIMP
 nsHttpChannel::OnStopRequest(nsIRequest* request, nsresult status) {
   AUTO_PROFILER_LABEL("nsHttpChannel::OnStopRequest", NETWORK);
@@ -7370,6 +7473,19 @@ nsHttpChannel::OnStopRequest(nsIRequest* request, nsresult status) {
 
     mTransferSize = mTransaction->GetTransferSize();
     mRequestSize = mTransaction->GetRequestSize();
+
+    // Make sure the size does not overflow.
+    int32_t totalSize = static_cast<int32_t>(
+        std::clamp<uint64_t>(mRequestSize + mTransferSize, 0LU,
+                             std::numeric_limits<int32_t>::max()));
+
+    // Record telemetry for transferred size keyed by contentType
+    nsLiteralCString label = ContentTypeToTelemetryLabel(this);
+    if (mPrivateBrowsing) {
+      mozilla::glean::network::data_size_pb_per_type.Get(label).Add(totalSize);
+    } else {
+      mozilla::glean::network::data_size_per_type.Get(label).Add(totalSize);
+    }
 
     // If we are using the transaction to serve content, we also save the
     // time since async open in the cache entry so we can compare telemetry
@@ -7959,7 +8075,7 @@ nsHttpChannel::RetargetDeliveryTo(nsIEventTarget* aNewTarget) {
 
     // If retarget fails for transaction pump, we must restore mCachePump.
     if (NS_FAILED(rv) && retargetableCachePump) {
-      nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
+      nsCOMPtr<nsIEventTarget> main = GetMainThreadSerialEventTarget();
       NS_ENSURE_TRUE(main, NS_ERROR_UNEXPECTED);
       rv = retargetableCachePump->RetargetDeliveryTo(main);
     }
@@ -8544,6 +8660,11 @@ nsHttpChannel::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
                                 nsresult status) {
   MOZ_ASSERT(NS_IsMainThread(), "Expecting DNS callback on main thread.");
 
+  if (nsCOMPtr<nsIDNSAddrRecord> r = do_QueryInterface(rec)) {
+    r->GetEffectiveTRRMode(&mEffectiveTRRMode);
+    r->GetTrrSkipReason(&mTRRSkipReason);
+  }
+
   LOG(
       ("nsHttpChannel::OnLookupComplete [this=%p] prefetch complete%s: "
        "%s status[0x%" PRIx32 "]\n",
@@ -8717,7 +8838,7 @@ void nsHttpChannel::UpdateAggregateCallbacks() {
   }
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   NS_NewNotificationCallbacksAggregation(mCallbacks, mLoadGroup,
-                                         GetCurrentEventTarget(),
+                                         GetCurrentSerialEventTarget(),
                                          getter_AddRefs(callbacks));
   mTransaction->SetSecurityCallbacks(callbacks);
 }
@@ -9856,13 +9977,14 @@ nsHttpChannel::SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) {
 }
 
 NS_IMETHODIMP
-nsHttpChannel::EarlyHint(const nsACString& linkHeader,
-                         const nsACString& referrerPolicy) {
+nsHttpChannel::EarlyHint(const nsACString& aLinkHeader,
+                         const nsACString& aReferrerPolicy,
+                         const nsACString& aCspHeader) {
   LOG(("nsHttpChannel::EarlyHint.\n"));
 
   if (mEarlyHintObserver && nsContentUtils::ComputeIsSecureContext(this)) {
     LOG(("nsHttpChannel::EarlyHint propagated.\n"));
-    mEarlyHintObserver->EarlyHint(linkHeader, referrerPolicy);
+    mEarlyHintObserver->EarlyHint(aLinkHeader, aReferrerPolicy, aCspHeader);
   }
   return NS_OK;
 }

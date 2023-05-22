@@ -10,7 +10,6 @@
 
 requestLongerTimeout(2);
 
-/* import-globals-from ../../../framework/browser-toolbox/test/helpers-browser-toolbox.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
   this
@@ -21,7 +20,6 @@ Services.scriptloader.loadSubScript(
 // browser toolbox.
 add_task(async function testSourceTreeNamesForWebExtensions() {
   await pushPref("devtools.chrome.enabled", true);
-  await pushPref("devtools.browsertoolbox.fission", true);
   await pushPref("devtools.browsertoolbox.scope", "everything");
   const extension = await installAndStartContentScriptExtension();
 

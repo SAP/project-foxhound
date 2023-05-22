@@ -1038,13 +1038,13 @@ macro_rules! impl_basic_serde_funcs {
         }
 
         #[no_mangle]
-        pub extern "C" fn $de_name(input: &ByteBuf, v: &mut $computed_type) -> bool {
+        pub unsafe extern "C" fn $de_name(input: &ByteBuf, v: *mut $computed_type) -> bool {
             let buf = match deserialize(view_byte_buf(input)) {
                 Ok(buf) => buf,
                 Err(..) => return false,
             };
 
-            *v = buf;
+            std::ptr::write(v, buf);
             true
         }
     };
@@ -2544,6 +2544,7 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
 
         let element = GeckoElement(element);
         let quirks_mode = element.as_node().owner_doc().quirks_mode();
+        let mut nth_index_cache = Default::default();
         let visited_mode = if relevant_link_visited {
             VisitedHandlingMode::RelevantLinkVisited
         } else {
@@ -2552,7 +2553,7 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
         let mut ctx = MatchingContext::new_for_visited(
             matching_mode,
             None,
-            None,
+            &mut nth_index_cache,
             visited_mode,
             quirks_mode,
             NeedsSelectorFlags::No,
@@ -2980,7 +2981,7 @@ pub extern "C" fn Servo_ContainerRule_QueryContainerFor(
 ) -> *const RawGeckoElement {
     read_locked_arc(rule, |rule: &ContainerRule| {
         rule.condition
-            .find_container(GeckoElement(element))
+            .find_container(GeckoElement(element), None)
             .map_or(ptr::null(), |result| result.element.0)
     })
 }
@@ -3240,7 +3241,7 @@ pub extern "C" fn Servo_FontFaceRule_GetFontLanguageOverride(
     rule: &RawServoFontFaceRule,
     out: &mut computed::FontLanguageOverride,
 ) -> bool {
-    simple_font_descriptor_getter_impl!(rule, out, language_override, compute_non_system)
+    simple_font_descriptor_getter_impl!(rule, out, language_override, clone)
 }
 
 // Returns a Percentage of -1.0 if the override descriptor is present but 'normal'
@@ -4040,6 +4041,45 @@ fn debug_atom_array(atoms: &nsTArray<structs::RefPtr<nsAtom>>) -> String {
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_ComputedValues_ResolveHighlightPseudoStyle(
+    element: &RawGeckoElement,
+    highlight_name: *const nsAtom,
+    raw_data: &RawServoStyleSet,
+) -> Strong<ComputedValues> {
+    let element = GeckoElement(element);
+    let data = element
+        .borrow_data()
+        .expect("Calling ResolveHighlightPseudoStyle on unstyled element?");
+    let pseudo_element = unsafe {
+        AtomIdent::with(highlight_name, |atom| {
+            PseudoElement::Highlight(atom.to_owned())
+        })
+    };
+
+    let doc_data = PerDocumentStyleData::from_ffi(raw_data).borrow();
+
+    let matching_fn = |pseudo: &PseudoElement| *pseudo == pseudo_element;
+
+    let global_style_data = &*GLOBAL_STYLE_DATA;
+    let guard = global_style_data.shared_lock.read();
+    let style = get_pseudo_style(
+        &guard,
+        element,
+        &pseudo_element,
+        RuleInclusion::All,
+        &data.styles,
+        None,
+        &doc_data.stylist,
+        /* is_probe = */true,
+        Some(&matching_fn),
+    );
+    match style {
+        Some(s) => s.into(),
+        None => Strong::null(),
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_ComputedValues_ResolveXULTreePseudoStyle(
     element: &RawGeckoElement,
     pseudo_tag: *mut nsAtom,
@@ -4131,6 +4171,7 @@ fn get_pseudo_style(
                             inputs,
                             pseudo,
                             &guards,
+                            Some(styles.primary()),
                             Some(inherited_styles),
                             Some(element),
                         )
@@ -4179,6 +4220,7 @@ fn get_pseudo_style(
                 element,
                 &pseudo,
                 rule_inclusion,
+                styles.primary(),
                 base,
                 is_probe,
                 matching_func,
@@ -5941,6 +5983,10 @@ pub extern "C" fn Servo_ReparentStyle(
             pseudo.as_ref(),
             inputs,
             &StylesheetGuards::same(&guard),
+            match element.is_some() && pseudo.is_some() {
+                true => Some(parent_style),
+                false => None,
+            },
             Some(parent_style),
             Some(parent_style_ignoring_first_line),
             Some(layout_parent_style),
@@ -6053,7 +6099,8 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
         .map(|d| d.styles.primary())
         .map(|x| &**x);
 
-    let container_size_query = ContainerSizeQuery::for_element(element);
+    let container_size_query =
+        ContainerSizeQuery::for_element(element, pseudo.as_ref().and(parent_style));
     let mut conditions = Default::default();
     let mut context = create_context_for_animation(
         &data,
@@ -6178,7 +6225,7 @@ pub extern "C" fn Servo_GetAnimationValues(
         .map(|d| d.styles.primary())
         .map(|x| &**x);
 
-    let container_size_query = ContainerSizeQuery::for_element(element);
+    let container_size_query = ContainerSizeQuery::for_element(element, None);
     let mut conditions = Default::default();
     let mut context = create_context_for_animation(
         &data,
@@ -6231,7 +6278,7 @@ pub extern "C" fn Servo_AnimationValue_Compute(
         .map(|d| d.styles.primary())
         .map(|x| &**x);
 
-    let container_size_query = ContainerSizeQuery::for_element(element);
+    let container_size_query = ContainerSizeQuery::for_element(element, None);
     let mut conditions = Default::default();
     let mut context = create_context_for_animation(
         &data,
@@ -7268,10 +7315,12 @@ pub unsafe extern "C" fn Servo_InvalidateStyleForDocStateChanges(
             &*styles.data
         }));
 
+    let mut nth_index_cache = Default::default();
     let root = GeckoElement(root);
     let mut processor = DocumentStateInvalidationProcessor::new(
         iter,
         DocumentState::from_bits_truncate(states_changed),
+        &mut nth_index_cache,
         root.as_node().owner_doc().quirks_mode(),
     );
 

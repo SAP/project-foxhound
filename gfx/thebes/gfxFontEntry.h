@@ -181,8 +181,9 @@ class gfxFontEntry {
   bool IsItalic() const { return SlantStyle().Min().IsItalic(); }
   bool IsOblique() const { return SlantStyle().Min().IsOblique(); }
   bool IsUpright() const { return SlantStyle().Min().IsNormal(); }
-  inline bool SupportsItalic();
-  inline bool SupportsBold();  // defined below, because of RangeFlags use
+  inline bool SupportsItalic();  // defined below, because of RangeFlags use
+  inline bool SupportsBold();
+  inline bool MayUseSyntheticSlant();
   bool IgnoreGDEF() const { return mIgnoreGDEF; }
   bool IgnoreGSUB() const { return mIgnoreGSUB; }
 
@@ -452,6 +453,7 @@ class gfxFontEntry {
 
   bool HasBoldVariableWeight();
   bool HasItalicVariation();
+  bool HasSlantVariation();
   bool HasOpticalSize();
 
   void CheckForVariationAxes();
@@ -552,7 +554,7 @@ class gfxFontEntry {
   // descriptors, it is treated as the initial value for font-matching (and
   // so that is what we record in the font entry), but when rendering the
   // range is NOT clamped.
-  enum class RangeFlags : uint8_t {
+  enum class RangeFlags : uint16_t {
     eNoFlags = 0,
     eAutoWeight = (1 << 0),
     eAutoStretch = (1 << 1),
@@ -564,16 +566,18 @@ class gfxFontEntry {
     eBoldVariableWeight = (1 << 3),
     // Whether the face has an 'ital' axis.
     eItalicVariation = (1 << 4),
+    // Whether the face has a 'slnt' axis.
+    eSlantVariation = (1 << 5),
 
     // Flags to record if the face uses a non-CSS-compatible scale
     // for weight and/or stretch, in which case we won't map the
     // properties to the variation axes (though they can still be
     // explicitly set using font-variation-settings).
-    eNonCSSWeight = (1 << 5),
-    eNonCSSStretch = (1 << 6),
+    eNonCSSWeight = (1 << 6),
+    eNonCSSStretch = (1 << 7),
 
     // Whether the font has an 'opsz' axis.
-    eOpticalSize = (1 << 7)
+    eOpticalSize = (1 << 8)
   };
   RangeFlags mRangeFlags = RangeFlags::eNoFlags;
 
@@ -829,6 +833,22 @@ inline bool gfxFontEntry::SupportsBold() {
   return Weight().Max().IsBold() ||
          ((mRangeFlags & RangeFlags::eAutoWeight) == RangeFlags::eAutoWeight &&
           HasBoldVariableWeight());
+}
+
+inline bool gfxFontEntry::MayUseSyntheticSlant() {
+  if (!IsUpright()) {
+    return false;  // The resource is already non-upright.
+  }
+  if (HasSlantVariation()) {
+    if (mRangeFlags & RangeFlags::eAutoSlantStyle) {
+      return false;
+    }
+    if (!SlantStyle().IsSingle()) {
+      return false;  // The resource has a 'slnt' axis, and has not been
+                     // clamped to just its upright setting.
+    }
+  }
+  return true;
 }
 
 // used when iterating over all fonts looking for a match for a given character

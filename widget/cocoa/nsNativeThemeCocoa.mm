@@ -127,7 +127,7 @@ void CUIDraw(CUIRendererRef r, CGRect rect, CGContextRef ctx, CFDictionaryRef op
 
 static void DrawFocusRingForCellIfNeeded(NSCell* aCell, NSRect aWithFrame, NSView* aInView) {
   if ([aCell showsFirstResponder]) {
-    CGContextRef cgContext = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
+    CGContextRef cgContext = [[NSGraphicsContext currentContext] CGContext];
     CGContextSaveGState(cgContext);
 
     // It's important to set the focus ring style before we enter the
@@ -214,7 +214,7 @@ static void DrawCellIncludingFocusRing(NSCell* aCell, NSRect aWithFrame, NSView*
 }
 
 - (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
-  CGContext* cgContext = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
+  CGContext* cgContext = [[NSGraphicsContext currentContext] CGContext];
 
   HIThemeTrackDrawInfo tdi;
 
@@ -374,8 +374,12 @@ static BOOL FrameIsInActiveWindow(nsIFrame* aFrame) {
 
   // XUL popups, e.g. the toolbar customization popup, can't become key windows,
   // but controls in these windows should still get the active look.
-  if (topLevelWidget->WindowType() == eWindowType_popup) return YES;
-  if ([win isSheet]) return [win isKeyWindow];
+  if (topLevelWidget->GetWindowType() == widget::WindowType::Popup) {
+    return YES;
+  }
+  if ([win isSheet]) {
+    return [win isKeyWindow];
+  }
   return [win isMainWindow] && ![win attachedSheet];
 }
 
@@ -499,7 +503,7 @@ nsNativeThemeCocoa::~nsNativeThemeCocoa() {
 // Limit on the area of the target rect (in pixels^2) in
 // DrawCellWithScaling() and DrawButton() and above which we
 // don't draw the object into a bitmap buffer.  This is to avoid crashes in
-// [NSGraphicsContext graphicsContextWithGraphicsPort:flipped:] and
+// [NSGraphicsContext graphicsContextWithCGContext:flipped:] and
 // CGContextDrawImage(), and also to avoid very poor drawing performance in
 // CGContextDrawImage() when it scales the bitmap (particularly if xscale or
 // yscale is less than but near 1 -- e.g. 0.9).  This value was determined
@@ -570,9 +574,8 @@ static void DrawCellWithScaling(NSCell* cell, CGContextRef cgContext, const HIRe
     InflateControlRect(&drawRect, controlSize, marginSet);
 
     NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-    [NSGraphicsContext
-        setCurrentContext:[NSGraphicsContext graphicsContextWithGraphicsPort:cgContext
-                                                                     flipped:YES]];
+    [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithCGContext:cgContext
+                                                                                 flipped:YES]];
 
     DrawCellIncludingFocusRing(cell, drawRect, view);
 
@@ -607,8 +610,8 @@ static void DrawCellWithScaling(NSCell* cell, CGContextRef cgContext, const HIRe
     }
 
     NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-    [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithGraphicsPort:ctx
-                                                                                    flipped:YES]];
+    [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithCGContext:ctx
+                                                                                 flipped:YES]];
 
     CGContextScaleCTM(ctx, backingScaleFactor, backingScaleFactor);
 
@@ -890,7 +893,7 @@ static const CellRenderSettings checkboxSettings = {{
                                                          {0, 1, 0, 1}   // regular
                                                      }}};
 
-static NSCellStateValue CellStateForCheckboxOrRadioState(
+static NSControlStateValue CellStateForCheckboxOrRadioState(
     nsNativeThemeCocoa::CheckboxOrRadioState aState) {
   switch (aState) {
     case nsNativeThemeCocoa::CheckboxOrRadioState::eOff:
@@ -1274,7 +1277,7 @@ void nsNativeThemeCocoa::DrawHelpButton(CGContextRef cgContext, const HIRect& in
 
 void nsNativeThemeCocoa::DrawDisclosureButton(CGContextRef cgContext, const HIRect& inBoxRect,
                                               ControlParams aControlParams,
-                                              NSCellStateValue aCellState) {
+                                              NSControlStateValue aCellState) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   ApplyControlParamsToNSCell(aControlParams, mDisclosureButtonCell);
@@ -1293,8 +1296,8 @@ void nsNativeThemeCocoa::DrawDisclosureButton(CGContextRef cgContext, const HIRe
 void nsNativeThemeCocoa::DrawFocusOutline(CGContextRef cgContext, const HIRect& inBoxRect) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
   NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-  [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithGraphicsPort:cgContext
-                                                                                  flipped:YES]];
+  [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithCGContext:cgContext
+                                                                               flipped:YES]];
   CGContextSaveGState(cgContext);
   NSSetFocusRingStyle(NSFocusRingOnly);
   NSRectFill(NSRectFromCGRect(inBoxRect));

@@ -39,7 +39,6 @@ extensions.on("uninstalling", (msg, extension) => {
   if (extension.uninstallURL) {
     let browser = windowTracker.topWindow.gBrowser;
     browser.addTab(extension.uninstallURL, {
-      disallowInheritPrincipal: true,
       relatedToCurrent: true,
       triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
         {}
@@ -1220,6 +1219,12 @@ class TabManager extends TabManagerBase {
 
   wrapTab(nativeTab) {
     return new Tab(this.extension, nativeTab, tabTracker.getId(nativeTab));
+  }
+
+  getWrapper(nativeTab) {
+    if (!nativeTab.ownerGlobal.gBrowserInit.isAdoptingTab()) {
+      return super.getWrapper(nativeTab);
+    }
   }
 }
 

@@ -155,11 +155,6 @@ GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) {
 }
 
 NS_IMETHODIMP
-GfxInfo::GetDesktopEnvironment(nsAString& aDesktopEnvironment) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 GfxInfo::GetTestType(nsAString& aTestType) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 static nsresult GetKeyValue(const WCHAR* keyLocation, const WCHAR* keyName,
@@ -1959,11 +1954,13 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       return NS_OK;
     }
 
+#ifndef NIGHTLY_BUILD
     if (mHasDriverVersionMismatch) {
       aFailureId = "FEATURE_FAILURE_MISMATCHED_VERSION";
       *aStatus = nsIGfxInfo::FEATURE_BLOCKED_MISMATCHED_VERSION;
       return NS_OK;
     }
+#endif
   }
 
   return GfxInfoBase::GetFeatureStatusImpl(

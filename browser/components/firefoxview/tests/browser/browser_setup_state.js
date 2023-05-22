@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { TabsSetupFlowManager } = ChromeUtils.importESModule(
-  "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
-);
-
 const FXA_CONTINUE_EVENT = [
   ["firefoxview", "entered", "firefoxview", undefined],
   ["firefoxview", "fxa_continue", "sync", undefined],
@@ -626,7 +622,7 @@ async function mockFxaDeviceConnected(win) {
   const url = "https://example.org/pair/auth/complete";
   is(win.gBrowser.tabs.length, 3, "Tabs strip should contain three tabs");
 
-  BrowserTestUtils.loadURI(win.gBrowser.selectedTab.linkedBrowser, url);
+  BrowserTestUtils.loadURIString(win.gBrowser.selectedTab.linkedBrowser, url);
 
   await BrowserTestUtils.browserLoaded(
     win.gBrowser.selectedTab.linkedBrowser,

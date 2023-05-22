@@ -14,8 +14,9 @@
 #include <string.h>  // for memcpy
 #include <utility>   // for move
 
-#include "debugger/Debugger.h"  // for DebuggerSourceReferent, Debugger
-#include "debugger/Script.h"    // for DebuggerScript
+#include "debugger/Debugger.h"         // for DebuggerSourceReferent, Debugger
+#include "debugger/Script.h"           // for DebuggerScript
+#include "frontend/FrontendContext.h"  // for AutoReportFrontendContext
 #include "gc/Tracer.h"  // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "js/CompilationAndEvaluation.h"  // for Compile
 #include "js/ErrorReport.h"  // for JS_ReportErrorASCII,  JS_ReportErrorNumberASCII
@@ -25,7 +26,6 @@
 #include "js/SourceText.h"              // for JS::SourceOwnership
 #include "js/String.h"                  // for JS_CopyStringCharsZ
 #include "vm/BytecodeUtil.h"            // for JSDVG_SEARCH_STACK
-#include "vm/ErrorContext.h"            // for AutoReportFrontendContext
 #include "vm/JSContext.h"               // for JSContext (ptr only)
 #include "vm/JSObject.h"                // for JSObject, RequireObject
 #include "vm/JSScript.h"                // for ScriptSource, ScriptSourceObject
@@ -73,8 +73,8 @@ const JSClass DebuggerSource::class_ = {
 NativeObject* DebuggerSource::initClass(JSContext* cx,
                                         Handle<GlobalObject*> global,
                                         HandleObject debugCtor) {
-  return InitClass(cx, debugCtor, nullptr, &class_, construct, 0, properties_,
-                   methods_, nullptr, nullptr);
+  return InitClass(cx, debugCtor, nullptr, nullptr, "Source", construct, 0,
+                   properties_, methods_, nullptr, nullptr);
 }
 
 /* static */
@@ -95,7 +95,6 @@ DebuggerSource* DebuggerSource::create(JSContext* cx, HandleObject proto,
 }
 
 Debugger* DebuggerSource::owner() const {
-  MOZ_ASSERT(isInstance());
   JSObject* dbgobj = &getReservedSlot(OWNER_SLOT).toObject();
   return Debugger::fromJSObject(dbgobj);
 }
@@ -147,16 +146,7 @@ DebuggerSource* DebuggerSource::check(JSContext* cx, HandleValue thisv) {
     return nullptr;
   }
 
-  DebuggerSource* thisSourceObj = &thisobj->as<DebuggerSource>();
-
-  if (!thisSourceObj->isInstance()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_INCOMPATIBLE_PROTO, "Debugger.Source",
-                              "method", "prototype object");
-    return nullptr;
-  }
-
-  return thisSourceObj;
+  return &thisobj->as<DebuggerSource>();
 }
 
 struct MOZ_STACK_CLASS DebuggerSource::CallData {
@@ -222,7 +212,16 @@ class DebuggerSourceGetTextMatcher {
       return NewStringCopyZ<CanGC>(cx_, "[no source]");
     }
 
-    if (ss->isFunctionBody()) {
+    // In case of DOM event handler like <div onclick="foo()" the JS code is
+    // wrapped into
+    //   function onclick() {foo()}
+    // We want to only return `foo()` here.
+    // But only for event handlers, for `new Function("foo()")`, we want to
+    // return:
+    //   function anonymous() {foo()}
+    if (ss->hasIntroductionType() &&
+        strcmp(ss->introductionType(), "eventHandler") == 0 &&
+        ss->isFunctionBody()) {
       return ss->functionBodyString(cx_);
     }
 
@@ -529,8 +528,8 @@ bool DebuggerSource::CallData::setSourceMapURL() {
     return false;
   }
 
-  AutoReportFrontendContext ec(cx);
-  if (!ss->setSourceMapURL(&ec, std::move(chars))) {
+  AutoReportFrontendContext fc(cx);
+  if (!ss->setSourceMapURL(&fc, std::move(chars))) {
     return false;
   }
 

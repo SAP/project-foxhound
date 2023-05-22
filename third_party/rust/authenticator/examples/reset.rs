@@ -14,7 +14,7 @@ use std::env;
 use std::sync::mpsc::{channel, RecvError};
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options]", program);
+    let brief = format!("Usage: {program} [options]");
     print!("{}", opts.usage(&brief));
 }
 
@@ -55,7 +55,7 @@ fn main() {
             timeout_s * 1_000
         }
         Err(e) => {
-            println!("{}", e);
+            println!("{e}");
             print_usage(&program, opts);
             return;
         }
@@ -86,12 +86,12 @@ fn main() {
 
     let (status_tx, status_rx) = channel::<StatusUpdate>();
     let (reset_tx, reset_rx) = channel();
-    let rs_tx = reset_tx.clone();
+    let rs_tx = reset_tx;
     let callback = StateCallback::new(Box::new(move |rv| {
         let _ = rs_tx.send(rv);
     }));
 
-    if let Err(e) = manager.reset(timeout_ms, status_tx.clone(), callback) {
+    if let Err(e) = manager.reset(timeout_ms, status_tx, callback) {
         panic!("Couldn't register: {:?}", e);
     };
 
@@ -106,7 +106,7 @@ fn main() {
                 return;
             }
             Ok(StatusUpdate::DeviceSelected(dev_info)) => {
-                println!("STATUS: Continuing with device: {}", dev_info);
+                println!("STATUS: Continuing with device: {dev_info}");
                 break;
             }
             Ok(StatusUpdate::PinError(..)) => panic!("Reset should never ask for a PIN!"),

@@ -84,9 +84,8 @@ export class UrlbarInput {
                         role="listbox"/>
             </html:div>
           </html:div>
-          <menupopup class="urlbarView-result-menu">
-            <menuitem label="test" data-command="test"/>
-          </menupopup>
+          <menupopup class="urlbarView-result-menu"
+                     consumeoutsideclicks="false"/>
           <hbox class="search-one-offs"
                 includecurrentengine="true"
                 disabletab="true"/>
@@ -337,13 +336,13 @@ export class UrlbarInput {
     dueToSessionRestore = false,
     dontShowSearchTerms = false
   ) {
-    if (!dontShowSearchTerms && this.window.gBrowser.userTypedValue == null) {
+    if (
+      !dontShowSearchTerms &&
+      (this.window.gBrowser.userTypedValue == null ||
+        this.window.gBrowser.userTypedValue == "")
+    ) {
       this.window.gBrowser.selectedBrowser.showingSearchTerms = false;
-      if (
-        lazy.UrlbarPrefs.get("showSearchTermsFeatureGate") &&
-        lazy.UrlbarPrefs.get("showSearchTerms.enabled") &&
-        !lazy.UrlbarPrefs.get("browser.search.widget.inNavBar")
-      ) {
+      if (lazy.UrlbarPrefs.isPersistedSearchTermsEnabled()) {
         let term = lazy.UrlbarSearchUtils.getSearchTermIfDefaultSerpUri(
           this.window.gBrowser.selectedBrowser.originalURI ?? uri
         );
@@ -361,8 +360,15 @@ export class UrlbarInput {
     // an empty string and we're switching tabs. In the latter case, when the
     // user makes the input empty, switches tabs, and switches back, we want the
     // URI to become visible again so the user knows what URI they're viewing.
+    // An exception to this is made in case of an auth request from a different
+    // base domain. To avoid auth prompt spoofing we already display the url of
+    // the cross domain resource, although the page is not loaded yet.
+    // This url will be set/unset by PromptParent. See bug 791594 for reference.
     if (value === null || (!value && dueToTabSwitch)) {
-      uri = uri || this.window.gBrowser.currentURI;
+      uri =
+        this.window.gBrowser.selectedBrowser.currentAuthPromptURI ||
+        uri ||
+        this.window.gBrowser.currentURI;
       // Strip off usernames and passwords for the location bar
       try {
         uri = Services.io.createExposableURI(uri);
@@ -570,7 +576,7 @@ export class UrlbarInput {
     // If the value was submitted during composition, the result may not have
     // been updated yet, because the input event happens after composition end.
     // We can't trust element nor _resultForCurrentValue targets in that case,
-    // so we'always generate a new heuristic to load.
+    // so we always generate a new heuristic to load.
     let isComposing = this.editor.composing;
 
     // Use the selected element if we have one; this is usually the case
@@ -634,7 +640,7 @@ export class UrlbarInput {
         this,
         searchString,
         oneOffParams.engine.name
-      ).catch(Cu.reportError);
+      ).catch(console.error);
     } else {
       // Use the current value if we don't have a UrlbarResult e.g. because the
       // view is closed.
@@ -933,6 +939,8 @@ export class UrlbarInput {
           break;
         }
 
+        // Keep the searchMode for telemetry since handleRevert sets it to null.
+        const searchMode = this.searchMode;
         this.handleRevert();
         let prevTab = this.window.gBrowser.selectedTab;
         let loadOpts = {
@@ -945,6 +953,7 @@ export class UrlbarInput {
         let searchString = this._lastSearchString;
         this.controller.engagementEvent.record(event, {
           searchString,
+          searchMode,
           selIndex,
           selType: "tabswitch",
           provider: result.providerName,
@@ -963,7 +972,7 @@ export class UrlbarInput {
           // We don't await for this, because a rejection should not interrupt
           // the load. Just reportError it.
           lazy.UrlbarUtils.addToInputHistory(url, searchString).catch(
-            Cu.reportError
+            console.error
           );
         }
 
@@ -1026,7 +1035,7 @@ export class UrlbarInput {
             this,
             result.payload.suggestion || result.payload.query,
             engine.name
-          ).catch(Cu.reportError);
+          ).catch(console.error);
         }
         break;
       }
@@ -1057,6 +1066,8 @@ export class UrlbarInput {
           break;
         }
         url = result.payload.url;
+        // Keep the searchMode for telemetry since handleRevert sets it to null.
+        const searchMode = this.searchMode;
         // Do not revert the Urlbar if we're going to navigate. We want the URL
         // populated so we can navigate to it.
         if (!url || !result.payload.shouldNavigate) {
@@ -1066,8 +1077,8 @@ export class UrlbarInput {
           result.providerName
         );
 
-        // Keep startEventInfo since the startEventInfo state might be changed
-        // if the URL Bar loses focus on pickResult.
+        // Keep startEventInfo for telemetry since the startEventInfo state might
+        // be changed if the URL Bar loses focus on pickResult.
         const startEventInfo = this.controller.engagementEvent._startEventInfo;
         provider?.tryMethod("pickResult", result, element);
 
@@ -1076,6 +1087,7 @@ export class UrlbarInput {
           this.controller.engagementEvent.record(event, {
             selIndex,
             searchString: this._lastSearchString,
+            searchMode,
             selType: this.controller.engagementEvent.typeFromElement(element),
             provider: result.providerName,
             element,
@@ -1127,7 +1139,7 @@ export class UrlbarInput {
       if (input !== undefined) {
         // We don't await for this, because a rejection should not interrupt
         // the load. Just reportError it.
-        lazy.UrlbarUtils.addToInputHistory(url, input).catch(Cu.reportError);
+        lazy.UrlbarUtils.addToInputHistory(url, input).catch(console.error);
       }
     }
 
@@ -1687,7 +1699,7 @@ export class UrlbarInput {
       if (sourceName) {
         searchMode = { source };
       } else {
-        Cu.reportError(`Unrecognized source: ${source}`);
+        console.error(`Unrecognized source: ${source}`);
       }
     }
 
@@ -1727,7 +1739,7 @@ export class UrlbarInput {
           try {
             lazy.BrowserSearchTelemetry.recordSearchMode(searchMode);
           } catch (ex) {
-            Cu.reportError(ex);
+            console.error(ex);
           }
         }
       }
@@ -2045,7 +2057,7 @@ export class UrlbarInput {
     try {
       return Services.uriFixup.getFixupURIInfo(searchString, flags);
     } catch (ex) {
-      Cu.reportError(
+      console.error(
         `An error occured while trying to fixup "${searchString}": ${ex}`
       );
     }
@@ -2531,9 +2543,7 @@ export class UrlbarInput {
       );
       value = info.fixedURI.spec;
     } catch (ex) {
-      Cu.reportError(
-        `An error occured while trying to fixup "${value}": ${ex}`
-      );
+      console.error(`An error occured while trying to fixup "${value}": ${ex}`);
     }
 
     this.value = value;
@@ -2632,7 +2642,7 @@ export class UrlbarInput {
     } catch (ex) {
       // Things may go wrong when adding url to session history,
       // but don't let that interfere with the loading of the url.
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     // TODO: When bug 1498553 is resolved, we should be able to
@@ -3208,11 +3218,24 @@ export class UrlbarInput {
         if (event.target.closest("tab")) {
           break;
         }
+
         // Close the view when clicking on toolbars and other UI pieces that
         // might not automatically remove focus from the input.
         // Respect the autohide preference for easier inspecting/debugging via
         // the browser toolbox.
         if (!lazy.UrlbarPrefs.get("ui.popup.disable_autohide")) {
+          if (this.view.isOpen && !this.hasAttribute("focused")) {
+            // In this case, as blur event never happen from the inputField, we
+            // record abandonment event explicitly.
+            let blurEvent = new FocusEvent("blur", {
+              relatedTarget: this.inputField,
+            });
+            this.controller.engagementEvent.record(blurEvent, {
+              searchString: this._lastSearchString,
+              searchSource: this.getSearchSource(blurEvent),
+            });
+          }
+
           this.view.close();
         }
         break;
@@ -3220,6 +3243,16 @@ export class UrlbarInput {
   }
 
   _on_input(event) {
+    if (
+      this._autofillPlaceholder &&
+      this.value === this.window.gBrowser.userTypedValue &&
+      (event.inputType === "deleteContentBackward" ||
+        event.inputType === "deleteContentForward")
+    ) {
+      // Take a telemetry if user deleted whole autofilled value.
+      Services.telemetry.scalarAdd("urlbar.autofill_deletion", 1);
+    }
+
     let value = this.value;
     this.valueIsTyped = true;
     this._untrimmedValue = value;
@@ -3318,7 +3351,9 @@ export class UrlbarInput {
       // The check on isHandlingUserInput filters out async "select" events
       // from setSelectionRange(), which occur when autofill text is selected.
       !this.window.windowUtils.isHandlingUserInput ||
-      !Services.clipboard.supportsSelectionClipboard()
+      !Services.clipboard.isClipboardTypeSupported(
+        Services.clipboard.kSelectionClipboard
+      )
     ) {
       return;
     }
@@ -3579,7 +3614,7 @@ export class UrlbarInput {
     let title = this.window.gBrowser.contentTitle || href;
 
     event.dataTransfer.setData("text/x-moz-url", `${href}\n${title}`);
-    event.dataTransfer.setData("text/unicode", href);
+    event.dataTransfer.setData("text/plain", href);
     event.dataTransfer.setData("text/html", `<a href="${href}">${title}</a>`);
     event.dataTransfer.effectAllowed = "copyLink";
     event.stopPropagation();
@@ -3684,7 +3719,7 @@ function getDroppableData(event) {
     }
   }
   // Handle as text.
-  return event.dataTransfer.getData("text/unicode");
+  return event.dataTransfer.getData("text/plain");
 }
 
 /**

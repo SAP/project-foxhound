@@ -67,8 +67,9 @@ static nsresult ResolveHost(const nsACString& host,
   }
 
   nsCOMPtr<nsICancelable> tmpOutstanding;
-  return dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0,
-                                 nullptr, listener, nullptr, aOriginAttributes,
+  return dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                                 nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr,
+                                 listener, nullptr, aOriginAttributes,
                                  getter_AddRefs(tmpOutstanding));
 }
 
@@ -786,7 +787,7 @@ class SocketListenerProxy final : public nsIUDPSocketListener {
   explicit SocketListenerProxy(nsIUDPSocketListener* aListener)
       : mListener(new nsMainThreadPtrHolder<nsIUDPSocketListener>(
             "SocketListenerProxy::mListener", aListener)),
-        mTarget(GetCurrentEventTarget()) {}
+        mTarget(GetCurrentSerialEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -878,7 +879,7 @@ class SocketListenerProxyBackground final : public nsIUDPSocketListener {
 
  public:
   explicit SocketListenerProxyBackground(nsIUDPSocketListener* aListener)
-      : mListener(aListener), mTarget(GetCurrentEventTarget()) {}
+      : mListener(aListener), mTarget(GetCurrentSerialEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -1078,7 +1079,7 @@ nsUDPSocket::AsyncListen(nsIUDPSocketListener* aListener) {
   NS_ENSURE_TRUE(mSyncListener == nullptr, NS_ERROR_IN_PROGRESS);
   {
     MutexAutoLock lock(mLock);
-    mListenerTarget = GetCurrentEventTarget();
+    mListenerTarget = GetCurrentSerialEventTarget();
     if (NS_IsMainThread()) {
       // PNecko usage
       mListener = new SocketListenerProxy(aListener);

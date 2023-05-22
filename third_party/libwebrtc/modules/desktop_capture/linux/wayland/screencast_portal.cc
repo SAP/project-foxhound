@@ -29,17 +29,54 @@ using xdg_portal::SetupRequestResponseSignal;
 using xdg_portal::SetupSessionRequestHandlers;
 using xdg_portal::StartSessionRequest;
 using xdg_portal::TearDownSession;
+using xdg_portal::RequestResponseFromPortalResponse;
+
+ScreenCastPortal::CaptureSourceType ToCaptureSourceType(CaptureType type) {
+  switch (type) {
+    case CaptureType::kScreen:
+      return ScreenCastPortal::CaptureSourceType::kScreen;
+    case CaptureType::kWindow:
+      return ScreenCastPortal::CaptureSourceType::kWindow;
+    case CaptureType::kAnyScreenContent:
+      return ScreenCastPortal::CaptureSourceType::kAnyScreenContent;
+  }
+}
+
+// TODO(https://crbug.com/1359411): Migrate downstream consumers off of
+// CaptureSourceType and delete this.
+CaptureType ToCaptureType(ScreenCastPortal::CaptureSourceType source_type) {
+  switch (source_type) {
+    case ScreenCastPortal::CaptureSourceType::kScreen:
+      return CaptureType::kScreen;
+    case ScreenCastPortal::CaptureSourceType::kWindow:
+      return CaptureType::kWindow;
+    default:
+      RTC_DCHECK_NOTREACHED();
+      return CaptureType::kScreen;
+  }
+}
 
 }  // namespace
 
-ScreenCastPortal::ScreenCastPortal(
-    ScreenCastPortal::CaptureSourceType source_type,
-    PortalNotifier* notifier)
-    : ScreenCastPortal(source_type,
+ScreenCastPortal::ScreenCastPortal(CaptureType type, PortalNotifier* notifier)
+    : ScreenCastPortal(type,
                        notifier,
                        OnProxyRequested,
                        OnSourcesRequestResponseSignal,
                        this) {}
+
+ScreenCastPortal::ScreenCastPortal(
+    CaptureType type,
+    PortalNotifier* notifier,
+    ProxyRequestResponseHandler proxy_request_response_handler,
+    SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
+    gpointer user_data)
+    : notifier_(notifier),
+      capture_source_type_(ToCaptureSourceType(type)),
+      proxy_request_response_handler_(proxy_request_response_handler),
+      sources_request_response_signal_handler_(
+          sources_request_response_signal_handler),
+      user_data_(user_data) {}
 
 ScreenCastPortal::ScreenCastPortal(
     CaptureSourceType source_type,
@@ -47,27 +84,28 @@ ScreenCastPortal::ScreenCastPortal(
     ProxyRequestResponseHandler proxy_request_response_handler,
     SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
     gpointer user_data)
-    : notifier_(notifier),
-      capture_source_type_(source_type),
-      proxy_request_response_handler_(proxy_request_response_handler),
-      sources_request_response_signal_handler_(
-          sources_request_response_signal_handler),
-      user_data_(user_data) {}
+    : ScreenCastPortal(ToCaptureType(source_type),
+                       notifier,
+                       proxy_request_response_handler,
+                       sources_request_response_signal_handler,
+                       user_data) {}
 
 ScreenCastPortal::~ScreenCastPortal() {
-  Cleanup();
+  Stop();
 }
 
-void ScreenCastPortal::Cleanup() {
+void ScreenCastPortal::Stop() {
   UnsubscribeSignalHandlers();
   TearDownSession(std::move(session_handle_), proxy_, cancellable_,
                   connection_);
   session_handle_ = "";
   cancellable_ = nullptr;
   proxy_ = nullptr;
+  restore_token_ = "";
 
   if (pw_fd_ != -1) {
     close(pw_fd_);
+    pw_fd_ = -1;
   }
 }
 
@@ -120,7 +158,7 @@ xdg_portal::SessionDetails ScreenCastPortal::GetSessionDetails() {
 void ScreenCastPortal::OnPortalDone(RequestResponse result) {
   notifier_->OnScreenCastRequestResult(result, pw_stream_node_id_, pw_fd_);
   if (result != RequestResponse::kSuccess) {
-    Cleanup();
+    Stop();
   }
 }
 
@@ -161,7 +199,13 @@ void ScreenCastPortal::OnSessionRequestResponseSignal(
   that->RegisterSessionClosedSignalHandler(
       OnSessionClosedSignal, parameters, that->connection_,
       that->session_handle_, that->session_closed_signal_id_);
-  that->SourcesRequest();
+
+  // Do not continue if we don't get session_handle back. The call above will
+  // already notify the capturer there is a failure, but we would still continue
+  // to make following request and crash on that.
+  if (!that->session_handle_.empty()) {
+    that->SourcesRequest();
+  }
 }
 
 // static
@@ -342,7 +386,7 @@ void ScreenCastPortal::OnStartRequestResponseSignal(GDBusConnection* connection,
                 response_data.receive());
   if (portal_response || !response_data) {
     RTC_LOG(LS_ERROR) << "Failed to start the screen cast session.";
-    that->OnPortalDone(static_cast<RequestResponse>(portal_response));
+    that->OnPortalDone(RequestResponseFromPortalResponse(portal_response));
     return;
   }
 

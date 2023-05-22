@@ -12,7 +12,7 @@
  *          closeBrowserAction closePageAction
  *          promisePopupShown promisePopupHidden promisePopupNotificationShown
  *          toggleBookmarksToolbar
- *          openContextMenu closeContextMenu
+ *          openContextMenu closeContextMenu promiseContextMenuClosed
  *          openContextMenuInSidebar openContextMenuInPopup
  *          openExtensionContextMenu closeExtensionContextMenu
  *          openActionContextMenu openSubmenu closeActionContextMenu
@@ -53,12 +53,7 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
 const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.import(
   "resource://testing-common/AppUiTestDelegate.jsm"
 );
-const { AppConstants } = ChromeUtils.importESModule(
-  "resource://gre/modules/AppConstants.sys.mjs"
-);
-const { CustomizableUI } = ChromeUtils.import(
-  "resource:///modules/CustomizableUI.jsm"
-);
+
 const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
 );
@@ -336,9 +331,7 @@ var awaitExtensionPanel = function(extension, win = window, awaitLoad = true) {
 };
 
 function getCustomizableUIPanelID(win = window) {
-  return win.gUnifiedExtensions.isEnabled
-    ? CustomizableUI.AREA_ADDONS
-    : CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
+  return CustomizableUI.AREA_ADDONS;
 }
 
 function getBrowserActionWidget(extension) {
@@ -351,9 +344,8 @@ function getBrowserActionPopup(extension, win = window) {
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     return win.document.getElementById("customizationui-widget-panel");
   }
-  return win.gUnifiedExtensions.isEnabled
-    ? win.gUnifiedExtensions.panel
-    : win.PanelUI.overflowPanel;
+
+  return win.gUnifiedExtensions.panel;
 }
 
 var showBrowserAction = function(extension, win = window) {
@@ -379,10 +371,8 @@ async function triggerBrowserActionWithKeyboard(
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     await focusButtonAndPressKey(key, node, modifiers);
   } else if (group.areaType == CustomizableUI.TYPE_PANEL) {
-    // Use key navigation so that the PanelMultiView doesn't ignore key events
-    let panel = win.gUnifiedExtensions.isEnabled
-      ? win.gUnifiedExtensions.panel
-      : win.document.getElementById("widget-overflow");
+    // Use key navigation so that the PanelMultiView doesn't ignore key events.
+    let panel = win.gUnifiedExtensions.panel;
     while (win.document.activeElement != node) {
       EventUtils.synthesizeKey("KEY_ArrowDown");
       ok(
@@ -528,16 +518,18 @@ async function openContextMenu(selector = "#img1", win = window) {
   return contentAreaContextMenu;
 }
 
-async function closeContextMenu(contextMenu, win = window) {
-  let doc = win.document;
+async function promiseContextMenuClosed(contextMenu) {
   let contentAreaContextMenu =
-    contextMenu || doc.getElementById("contentAreaContextMenu");
-  let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenu,
-    "popuphidden"
-  );
+    contextMenu || document.getElementById("contentAreaContextMenu");
+  return BrowserTestUtils.waitForEvent(contentAreaContextMenu, "popuphidden");
+}
+
+async function closeContextMenu(contextMenu, win = window) {
+  let contentAreaContextMenu =
+    contextMenu || win.document.getElementById("contentAreaContextMenu");
+  let closed = promiseContextMenuClosed(contentAreaContextMenu);
   contentAreaContextMenu.hidePopup();
-  await popupHiddenPromise;
+  await closed;
 }
 
 async function openExtensionContextMenu(selector = "#img1") {
@@ -566,10 +558,7 @@ async function closeExtensionContextMenu(itemToSelect, modifiers = {}) {
   let contentAreaContextMenu = document.getElementById(
     "contentAreaContextMenu"
   );
-  let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenu,
-    "popuphidden"
-  );
+  let popupHiddenPromise = promiseContextMenuClosed(contentAreaContextMenu);
   if (itemToSelect) {
     itemToSelect.closest("menupopup").activateItem(itemToSelect, modifiers);
   } else {
@@ -995,7 +984,7 @@ async function getIncognitoWindow(url = "about:privatebrowsing") {
   let data = windowWatcher.awaitMessage("data");
 
   let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, url);
+  BrowserTestUtils.loadURIString(win.gBrowser.selectedBrowser, url);
 
   let details = await data;
   await windowWatcher.unload();

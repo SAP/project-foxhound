@@ -3,8 +3,8 @@
 
 requestLongerTimeout(2);
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 EXPECTED_BREACH = {
@@ -83,7 +83,7 @@ add_task(async function test_telemetry_events() {
     }
   );
   let newTab = await promiseNewTab;
-  ok(true, "New tab opened to " + FAKE_LEARN_MORE_URL);
+  Assert.ok(true, "New tab opened to " + FAKE_LEARN_MORE_URL);
   BrowserTestUtils.removeTab(newTab);
   await LoginTestUtils.telemetry.waitForEventCount(3);
 
@@ -125,7 +125,7 @@ add_task(async function test_telemetry_events() {
     originInput.click();
   });
   newTab = await promiseNewTab;
-  ok(true, "New tab opened to " + TEST_LOGIN3.origin);
+  Assert.ok(true, "New tab opened to " + TEST_LOGIN3.origin);
   BrowserTestUtils.removeTab(newTab);
   await LoginTestUtils.telemetry.waitForEventCount(nextTelemetryEventCount++);
 
@@ -254,8 +254,9 @@ add_task(async function test_telemetry_events() {
   });
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
-    let loginFilter = content.document.querySelector("login-filter");
-    let input = loginFilter.shadowRoot.querySelector("input");
+    const loginList = content.document.querySelector("login-list");
+    const loginFilter = loginList.shadowRoot.querySelector("login-filter");
+    const input = loginFilter.shadowRoot.querySelector("input");
     input.setUserInput("test");
   });
   await LoginTestUtils.telemetry.waitForEventCount(nextTelemetryEventCount++);

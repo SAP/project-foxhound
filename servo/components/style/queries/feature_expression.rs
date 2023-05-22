@@ -263,7 +263,7 @@ impl ToCss for QueryFeatureExpression {
     where
         W: fmt::Write,
     {
-        dest.write_str("(")?;
+        dest.write_char('(')?;
 
         match self.kind {
             QueryFeatureExpressionKind::Empty => self.write_name(dest)?,
@@ -637,7 +637,7 @@ impl QueryFeatureExpression {
                     .kind
                     .non_ranged_value()
                     .map(|v| *expect!(Enumerated, v));
-                evaluator(context, computed)
+                return evaluator(context, computed)
             },
             Evaluator::BoolInteger(eval) => {
                 let computed = self

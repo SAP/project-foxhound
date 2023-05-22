@@ -1593,12 +1593,13 @@ WrappedFunction::WrappedFunction(JSFunction* nativeFun, uint16_t nargs,
 
 MCall* MCall::New(TempAllocator& alloc, WrappedFunction* target, size_t maxArgc,
                   size_t numActualArgs, bool construct, bool ignoresReturnValue,
-                  bool isDOMCall, DOMObjectKind objectKind) {
+                  bool isDOMCall, mozilla::Maybe<DOMObjectKind> objectKind) {
+  MOZ_ASSERT(isDOMCall == objectKind.isSome());
   MOZ_ASSERT(maxArgc >= numActualArgs);
   MCall* ins;
   if (isDOMCall) {
     MOZ_ASSERT(!construct);
-    ins = new (alloc) MCallDOMNative(target, numActualArgs, objectKind);
+    ins = new (alloc) MCallDOMNative(target, numActualArgs, *objectKind);
   } else {
     ins =
         new (alloc) MCall(target, numActualArgs, construct, ignoresReturnValue);
@@ -4280,6 +4281,27 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
         return true;
       }
     }
+
+    // Optimize comparison against NaN.
+    if (mozilla::IsNaN(cte)) {
+      switch (jsop_) {
+        case JSOp::Lt:
+        case JSOp::Le:
+        case JSOp::Gt:
+        case JSOp::Ge:
+        case JSOp::Eq:
+        case JSOp::StrictEq:
+          *result = false;
+          break;
+        case JSOp::Ne:
+        case JSOp::StrictNe:
+          *result = true;
+          break;
+        default:
+          MOZ_CRASH("Unexpected op.");
+      }
+      return true;
+    }
   }
 
   if (!left->isConstant() || !right->isConstant()) {
@@ -4754,7 +4776,7 @@ MObjectState::MObjectState(const Shape* shape)
   setRecoveredOnBailout();
 
   numSlots_ = shape->asShared().slotSpan();
-  numFixedSlots_ = shape->numFixedSlots();
+  numFixedSlots_ = shape->asShared().numFixedSlots();
 }
 
 /* static */
@@ -6303,7 +6325,7 @@ MDefinition::AliasType MGuardShape::mightAlias(const MDefinition* store) const {
   }
   if (object()->isConstantProto()) {
     const MDefinition* receiverObject =
-        object()->toConstantProto()->receiverObject()->skipObjectGuards();
+        object()->toConstantProto()->getReceiverObject();
     switch (store->op()) {
       case MDefinition::Opcode::StoreFixedSlot:
         if (store->toStoreFixedSlot()->object()->skipObjectGuards() ==
@@ -6374,23 +6396,29 @@ MDefinition* MMegamorphicLoadSlotByValue::foldsTo(TempAllocator& alloc) {
     input = input->toBox()->input();
   }
 
+  MDefinition* result = this;
+
   if (input->isConstant()) {
     MConstant* constant = input->toConstant();
     if (constant->type() == MIRType::Symbol) {
       PropertyKey id = PropertyKey::Symbol(constant->toSymbol());
-      return MMegamorphicLoadSlot::New(alloc, object(), id);
+      result = MMegamorphicLoadSlot::New(alloc, object(), id);
     }
 
     if (constant->type() == MIRType::String) {
       JSString* str = constant->toString();
       if (str->isAtom() && !str->asAtom().isIndex()) {
         PropertyKey id = PropertyKey::NonIntAtom(str);
-        return MMegamorphicLoadSlot::New(alloc, object(), id);
+        result = MMegamorphicLoadSlot::New(alloc, object(), id);
       }
     }
   }
 
-  return this;
+  if (result != this) {
+    result->setDependency(dependency());
+  }
+
+  return result;
 }
 
 bool MMegamorphicLoadSlot::congruentTo(const MDefinition* ins) const {
@@ -6536,6 +6564,10 @@ MDefinition* MGuardStringToDouble::foldsTo(TempAllocator& alloc) {
 }
 
 AliasSet MGuardNoDenseElements::getAliasSet() const {
+  return AliasSet::Load(AliasSet::ObjectFields);
+}
+
+AliasSet MIteratorHasIndices::getAliasSet() const {
   return AliasSet::Load(AliasSet::ObjectFields);
 }
 
@@ -6818,6 +6850,11 @@ AliasSet MGuardIndexIsValidUpdateOrAdd::getAliasSet() const {
 AliasSet MCallObjectHasSparseElement::getAliasSet() const {
   return AliasSet::Load(AliasSet::Element | AliasSet::ObjectFields |
                         AliasSet::FixedSlot | AliasSet::DynamicSlot);
+}
+
+AliasSet MLoadSlotByIteratorIndex::getAliasSet() const {
+  return AliasSet::Load(AliasSet::ObjectFields | AliasSet::FixedSlot |
+                        AliasSet::DynamicSlot | AliasSet::Element);
 }
 
 MDefinition* MGuardInt32IsNonNegative::foldsTo(TempAllocator& alloc) {

@@ -9,6 +9,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Result.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/Report.h"
@@ -32,6 +33,7 @@ using mozilla::MallocSizeOf;
 using mozilla::Maybe;
 using mozilla::MicroTaskRunnable;
 using mozilla::dom::BlobURLProtocolHandler;
+using mozilla::dom::CallerType;
 using mozilla::dom::ClientInfo;
 using mozilla::dom::Report;
 using mozilla::dom::ReportingObserver;
@@ -70,10 +72,6 @@ nsIGlobalObject::~nsIGlobalObject() {
 }
 
 nsIPrincipal* nsIGlobalObject::PrincipalOrNull() const {
-  if (!NS_IsMainThread()) {
-    return nullptr;
-  }
-
   JSObject* global = GetGlobalJSObjectPreserveColor();
   if (NS_WARN_IF(!global)) return nullptr;
 
@@ -377,10 +375,6 @@ void nsIGlobalObject::SetByteLengthQueuingStrategySizeFunction(
   mByteLengthQueuingStrategySizeFunction = aFunction;
 }
 
-bool nsIGlobalObject::ShouldResistFingerprinting() const {
-  return nsContentUtils::ShouldResistFingerprinting();
-}
-
 mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
 nsIGlobalObject::GetStorageKey() {
   return mozilla::Err(NS_ERROR_NOT_AVAILABLE);
@@ -398,15 +392,8 @@ mozilla::Result<bool, nsresult> nsIGlobalObject::HasEqualStorageKey(
   return mozilla::ipc::StorageKeysEqual(storageKey, aStorageKey);
 }
 
-bool nsIGlobalObject::IsSystemPrincipal() const {
-  MOZ_ASSERT(NS_IsMainThread(),
-             "Cannot ask nsIGlobalObject IsSystemPrincipal off-main-thread");
-
-  return PrincipalOrNull()->IsSystemPrincipal();
-}
-
 RTPCallerType nsIGlobalObject::GetRTPCallerType() const {
-  if (IsSystemPrincipal()) {
+  if (PrincipalOrNull() && PrincipalOrNull()->IsSystemPrincipal()) {
     return RTPCallerType::SystemPrincipal;
   }
 
@@ -419,4 +406,8 @@ RTPCallerType nsIGlobalObject::GetRTPCallerType() const {
   }
 
   return RTPCallerType::Normal;
+}
+
+bool nsIGlobalObject::ShouldResistFingerprinting(CallerType aCallerType) const {
+  return aCallerType != CallerType::System && ShouldResistFingerprinting();
 }

@@ -289,13 +289,10 @@ var gXPInstallObserver = {
       displayURI: installInfo.originatingURI,
       persistent: true,
       hideClose: true,
-    };
-
-    if (gUnifiedExtensions.isEnabled) {
-      options.popupOptions = {
+      popupOptions: {
         position: "bottomright topright",
-      };
-    }
+      },
+    };
 
     let acceptInstallation = () => {
       for (let install of installInfo.installs) {
@@ -524,13 +521,10 @@ var gXPInstallObserver = {
       persistent: true,
       hideClose: true,
       timeout: Date.now() + 30000,
-    };
-
-    if (gUnifiedExtensions.isEnabled) {
-      options.popupOptions = {
+      popupOptions: {
         position: "bottomright topright",
-      };
-    }
+      },
+    };
 
     switch (aTopic) {
       case "addon-install-disabled": {
@@ -1249,23 +1243,21 @@ var gUnifiedExtensions = {
       return;
     }
 
-    if (this.isEnabled) {
-      this._button = document.getElementById("unified-extensions-button");
-      // TODO: Bug 1778684 - Auto-hide button when there is no active extension.
-      this._button.hidden = false;
+    this._button = document.getElementById("unified-extensions-button");
+    // TODO: Bug 1778684 - Auto-hide button when there is no active extension.
+    this._button.hidden = false;
 
-      document
-        .getElementById("nav-bar")
-        .setAttribute("unifiedextensionsbuttonshown", true);
+    document
+      .getElementById("nav-bar")
+      .setAttribute("unifiedextensionsbuttonshown", true);
 
-      gBrowser.addTabsProgressListener(this);
-      window.addEventListener("TabSelect", () => this.updateAttention());
+    gBrowser.addTabsProgressListener(this);
+    window.addEventListener("TabSelect", () => this.updateAttention());
 
-      this.permListener = () => this.updateAttention();
-      lazy.ExtensionPermissions.addListener(this.permListener);
+    this.permListener = () => this.updateAttention();
+    lazy.ExtensionPermissions.addListener(this.permListener);
 
-      gNavToolbox.addEventListener("customizationstarting", this);
-    }
+    gNavToolbox.addEventListener("customizationstarting", this);
 
     this._initialized = true;
   },
@@ -1276,13 +1268,6 @@ var gUnifiedExtensions = {
       this.permListener = null;
     }
     gNavToolbox.removeEventListener("customizationstarting", this);
-  },
-
-  get isEnabled() {
-    return Services.prefs.getBoolPref(
-      "extensions.unifiedExtensions.enabled",
-      false
-    );
   },
 
   onLocationChange(browser, webProgress, _request, _uri, flags) {
@@ -1297,10 +1282,9 @@ var gUnifiedExtensions = {
   },
 
   // Update the attention indicator for the whole unified extensions button.
-  async updateAttention() {
+  updateAttention() {
     let attention = false;
-    for (let addon of await this.getActiveExtensions()) {
-      let policy = WebExtensionPolicy.getByID(addon.id);
+    for (let policy of this.getActivePolicies()) {
       let widget = this.browserActionFor(policy)?.widget;
 
       // Only show for extensions which are not already visible in the toolbar.
@@ -1321,25 +1305,21 @@ var gUnifiedExtensions = {
   },
 
   getPopupAnchorID(aBrowser, aWindow) {
-    if (this.isEnabled) {
-      const anchorID = "unified-extensions-button";
-      const attr = anchorID + "popupnotificationanchor";
+    const anchorID = "unified-extensions-button";
+    const attr = anchorID + "popupnotificationanchor";
 
-      if (!aBrowser[attr]) {
-        // A hacky way of setting the popup anchor outside the usual url bar
-        // icon box, similar to how it was done for CFR.
-        // See: https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/PopupNotifications.sys.mjs#40
-        aBrowser[attr] = aWindow.document.getElementById(
-          anchorID
-          // Anchor on the toolbar icon to position the popup right below the
-          // button.
-        ).firstElementChild;
-      }
-
-      return anchorID;
+    if (!aBrowser[attr]) {
+      // A hacky way of setting the popup anchor outside the usual url bar
+      // icon box, similar to how it was done for CFR.
+      // See: https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/PopupNotifications.sys.mjs#40
+      aBrowser[attr] = aWindow.document.getElementById(
+        anchorID
+        // Anchor on the toolbar icon to position the popup right below the
+        // button.
+      ).firstElementChild;
     }
 
-    return "addons-notification-icon";
+    return anchorID;
   },
 
   get button() {
@@ -1347,41 +1327,36 @@ var gUnifiedExtensions = {
   },
 
   /**
-   * Gets a list of active AddonWrapper instances of type "extension", sorted
-   * alphabetically based on add-on's names. Optionally, filter out extensions
-   * with browser action.
+   * Gets a list of active WebExtensionPolicy instances of type "extension",
+   * sorted alphabetically based on add-on's names. Optionally, filter out
+   * extensions with browser action.
    *
    * @param {bool} all When set to true (the default), return the list of all
-   *                   active extensions, including the ones that have a
+   *                   active policies, including the ones that have a
    *                   browser action. Otherwise, extensions with browser
    *                   action are filtered out.
-   * @returns {Array<AddonWrapper>} An array of active extensions.
+   * @returns {Array<WebExtensionPolicy>} An array of active policies.
    */
-  async getActiveExtensions(all = true) {
-    // TODO: Bug 1778682 - Use a new method on `AddonManager` so that we get
-    // the same list of extensions as the one in `about:addons`.
-
-    // We only want to display active and visible extensions that do not have a
-    // browser action, and we want to list them alphabetically.
-    let addons = await AddonManager.getAddonsByTypes(["extension"]);
-    addons = addons.filter(addon => {
-      if (addon.hidden || !addon.isActive) {
+  getActivePolicies(all = true) {
+    let policies = WebExtensionPolicy.getActiveExtensions();
+    policies = policies.filter(policy => {
+      let { extension } = policy;
+      if (!policy.active || extension?.type !== "extension") {
         return false;
       }
 
-      const policy = WebExtensionPolicy.getByID(addon.id);
-      // Ignore extensions that cannot access the current window (e.g.
-      // extensions not allowed in PB mode when we are in a private window)
-      // since users cannot do anything with those extensions anyway.
-      if (!policy?.canAccessWindow(window)) {
+      // Ignore hidden and extensions that cannot access the current window
+      // (because of PB mode when we are in a private window), since users
+      // cannot do anything with those extensions anyway.
+      if (extension.isHidden || !policy.canAccessWindow(window)) {
         return false;
       }
 
-      return all || !policy.extension.hasBrowserActionUI;
+      return all || !extension.hasBrowserActionUI;
     });
-    addons.sort((a1, a2) => a1.name.localeCompare(a2.name));
 
-    return addons;
+    policies.sort((a, b) => a.name.localeCompare(b.name));
+    return policies;
   },
 
   /**
@@ -1391,14 +1366,11 @@ var gUnifiedExtensions = {
    *
    * @returns {boolean} Whether there are extensions listed in the panel.
    */
-  async hasExtensionsInPanel() {
-    const extensions = await this.getActiveExtensions();
+  hasExtensionsInPanel() {
+    const policies = this.getActivePolicies();
 
-    return !!extensions
-      .map(extension => {
-        const policy = WebExtensionPolicy.getByID(extension.id);
-        return this.browserActionFor(policy)?.widget;
-      })
+    return !!policies
+      .map(policy => this.browserActionFor(policy)?.widget)
       .filter(widget => {
         return (
           !widget ||
@@ -1424,25 +1396,30 @@ var gUnifiedExtensions = {
     }
   },
 
-  async onPanelViewShowing(panelview) {
+  onPanelViewShowing(panelview) {
     const list = panelview.querySelector(".unified-extensions-list");
     // Only add extensions that do not have a browser action in this list since
     // the extensions with browser action have CUI widgets and will appear in
     // the panel (or toolbar) via the CUI mechanism.
-    const extensions = await this.getActiveExtensions(/* all */ false);
+    const policies = this.getActivePolicies(/* all */ false);
 
-    for (const extension of extensions) {
+    for (const policy of policies) {
       const item = document.createElement("unified-extensions-item");
-      item.setAddon(extension);
+      item.setExtension(policy.extension);
       list.appendChild(item);
     }
   },
 
   onPanelViewHiding(panelview) {
+    if (window.closed) {
+      return;
+    }
     const list = panelview.querySelector(".unified-extensions-list");
     while (list.lastChild) {
       list.lastChild.remove();
     }
+    // If temporary access was granted, (maybe) clear attention indicator.
+    requestAnimationFrame(() => this.updateAttention());
   },
 
   _panel: null,
@@ -1496,7 +1473,7 @@ var gUnifiedExtensions = {
 
         // The button should directly open `about:addons` when the user does not
         // have any active extensions listed in the unified extensions panel.
-        if (!(await this.hasExtensionsInPanel())) {
+        if (!this.hasExtensionsInPanel()) {
           await BrowserOpenAddonsMgr("addons://discover/");
           return;
         }

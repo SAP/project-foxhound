@@ -17,22 +17,35 @@ UPLOAD_DIR= taskcluster/scripts/misc/repack-clang.sh
 
 case "$CONFIGS" in
 *macosx64*)
+  # cmake makes decisions based on the output of the mac-only sw_vers, which is
+  # obviously missing when cross-compiling, so create a fake one. The exact
+  # version doesn't really matter: as of writing, cmake checks at most for 10.5.
+  mkdir -p $ORIGPWD/bin
+  echo "#!/bin/sh" > $ORIGPWD/bin/sw_vers
+  echo echo 10.12 >> $ORIGPWD/bin/sw_vers
+  chmod +x $ORIGPWD/bin/sw_vers
   # these variables are used in build-clang.py
-  export CROSS_CCTOOLS_PATH=$MOZ_FETCHES_DIR/cctools
   export CROSS_SYSROOT=$(ls -d $MOZ_FETCHES_DIR/MacOSX1*.sdk)
-  export PATH=$PATH:$CROSS_CCTOOLS_PATH/bin
+  export PATH=$PATH:$ORIGPWD/bin
   ;;
 *win64*)
-  export UPLOAD_DIR=$ORIGPWD/public/build
-  # Set up all the Visual Studio paths.
-  . taskcluster/scripts/misc/vs-setup.sh
+  case "$(uname -s)" in
+  MINGW*|MSYS*)
+    export UPLOAD_DIR=$ORIGPWD/public/build
+    # Set up all the Visual Studio paths.
+    . taskcluster/scripts/misc/vs-setup.sh
 
-  # LLVM_ENABLE_DIA_SDK is set if the directory "$ENV{VSINSTALLDIR}DIA SDK"
-  # exists.
-  export VSINSTALLDIR="${VSPATH}/"
+    # LLVM_ENABLE_DIA_SDK is set if the directory "$ENV{VSINSTALLDIR}DIA SDK"
+    # exists.
+    export VSINSTALLDIR="${VSPATH}/"
 
-  export PATH="$(cd $MOZ_FETCHES_DIR/cmake && pwd)/bin:${PATH}"
-  export PATH="$(cd $MOZ_FETCHES_DIR/ninja && pwd)/bin:${PATH}"
+    export PATH="$(cd $MOZ_FETCHES_DIR/cmake && pwd)/bin:${PATH}"
+    export PATH="$(cd $MOZ_FETCHES_DIR/ninja && pwd)/bin:${PATH}"
+    ;;
+  *)
+    export VSINSTALLDIR="$MOZ_FETCHES_DIR/vs"
+    ;;
+  esac
   ;;
 *linux64*|*android*)
   ;;

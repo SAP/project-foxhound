@@ -14,7 +14,7 @@ add_task(async function test() {
   });
 
   let loadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     tab.linkedBrowser,
     "https://example.com/browser/toolkit/components/passwordmgr/test/browser/authenticate.sjs"
   );
@@ -22,7 +22,7 @@ add_task(async function test() {
   // Wait for the basic auth prompt
   let dialog = await authPromptShown;
 
-  is(gBrowser.selectedTab, tab, "Should have selected the new tab");
+  Assert.equal(gBrowser.selectedTab, tab, "Should have selected the new tab");
 
   // Cancel the auth prompt
   PromptTestUtils.handlePrompt(dialog, { buttonNumClick: 1 });

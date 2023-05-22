@@ -15,9 +15,9 @@ import yaml
 from redo import retry
 from taskgraph import create
 from taskgraph.create import create_tasks
+
+# TODO: Let standalone taskgraph generate parameters instead of calling internals
 from taskgraph.decision import (
-    # TODO: Let standalone taskgraph generate parameters instead
-    # of calling internals
     _determine_more_accurate_base_ref,
     _determine_more_accurate_base_rev,
     _get_env_prefix,
@@ -63,6 +63,10 @@ PER_PROJECT_PARAMETERS = {
     },
     "cedar": {
         "target_tasks_method": "default",
+    },
+    "holly": {
+        "enable_always_target": True,
+        "target_tasks_method": "holly_tasks",
     },
     "oak": {
         "target_tasks_method": "nightly_desktop",
@@ -541,10 +545,10 @@ def read_artifact(filename):
     path = os.path.join(ARTIFACTS_DIR, filename)
     if filename.endswith(".yml"):
         return load_yaml(path, filename)
-    elif filename.endswith(".json"):
+    if filename.endswith(".json"):
         with open(path) as f:
             return json.load(f)
-    elif filename.endswith(".json.gz"):
+    if filename.endswith(".json.gz"):
         import gzip
 
         with gzip.open(path, "rb") as f:

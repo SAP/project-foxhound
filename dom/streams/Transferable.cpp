@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ErrorList.h"
+#include "ReadableStreamPipeTo.h"
 #include "js/RootingAPI.h"
 #include "js/String.h"
 #include "js/TypeDecls.h"
@@ -23,12 +24,13 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/ReadableStream.h"
-#include "mozilla/dom/ReadableStreamPipeTo.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/TransformStream.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 static void PackAndPostMessage(JSContext* aCx, MessagePort* aPort,
                                const nsAString& aType,
@@ -177,8 +179,9 @@ class SetUpTransformWritableMessageEventListener final
   // Note: This promise field is shared with the sink algorithms.
   Promise* BackpressurePromise() { return mBackpressurePromise; }
 
-  void CreateBackpressurePromise(ErrorResult& aRv) {
-    mBackpressurePromise = Promise::Create(mController->GetParentObject(), aRv);
+  void CreateBackpressurePromise() {
+    mBackpressurePromise =
+        Promise::CreateInfallible(mController->GetParentObject());
   }
 
  private:
@@ -316,10 +319,7 @@ class CrossRealmWritableUnderlyingSinkAlgorithms final
     // promise resolved with undefined.
     // Note: This promise field is shared with the message event listener.
     if (!mListener->BackpressurePromise()) {
-      mListener->CreateBackpressurePromise(aRv);
-      if (aRv.Failed()) {
-        return nullptr;
-      }
+      mListener->CreateBackpressurePromise();
       mListener->BackpressurePromise()->MaybeResolveWithUndefined();
     }
 
@@ -332,11 +332,7 @@ class CrossRealmWritableUnderlyingSinkAlgorithms final
                MessagePort* aPort,
                JS::Handle<JS::Value> aChunk) -> already_AddRefed<Promise> {
               // Step 2.1: Set backpressurePromise to a new promise.
-              aListener->CreateBackpressurePromise(aRv);
-              if (aRv.Failed()) {
-                aPort->Close();
-                return nullptr;
-              }
+              aListener->CreateBackpressurePromise();
 
               // Step 2.2: Let result be PackAndPostMessageHandlingError(port,
               // "chunk", chunk).
@@ -449,10 +445,7 @@ MOZ_CAN_RUN_SCRIPT static void SetUpCrossRealmTransformWritable(
 
   // Step 3: Let backpressurePromise be a new promise.
   RefPtr<Promise> backpressurePromise =
-      Promise::Create(aWritable->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+      Promise::CreateInfallible(aWritable->GetParentObject());
 
   // Step 4: Add a handler for port’s message event with the following steps:
   auto listener = MakeRefPtr<SetUpTransformWritableMessageEventListener>(

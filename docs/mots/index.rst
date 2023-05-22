@@ -15,10 +15,16 @@ Overview
 --------
 To add, remove, or update module information, see the `mots documentation <https://mots.readthedocs.io/en/latest/#adding-a-module>`_.
 
-Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
+Mozilla operates under a `module ownership governance system
+<https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a
+discrete unit of code or activity. An owner is the person in charge of a module
+or sub-module. A peer is a person whom the owner has appointed to help them. A
+module may have multiple peers and, very occasionally, multiple owners.
 
-The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
-
+The system is overseen by the owner and peers of the Module Ownership module.
+For the modules that make up Firefox, oversight is provided by the Firefox
+Technical Leadership module. Owners may add and remove peers from their modules
+as they wish, without reference to anyone else.
 
 
 -------
@@ -44,7 +50,8 @@ The top level directory for the mozilla tree.
 
 Code Coverage
 ~~~~~~~~~~~~~
-Tools for code coverage instrumentation, and coverage data parsing and management.
+Tools for code coverage instrumentation, and coverage data parsing and
+management.
 
 
 .. list-table::
@@ -68,7 +75,10 @@ Tools for code coverage instrumentation, and coverage data parsing and managemen
 
 Core: Accessibility
 ~~~~~~~~~~~~~~~~~~~
-Support for platform accessibility APIs. Accessibility APIs are used by 3rd party software like screen readers, screen magnifiers, and voice dictation software, which need information about document content and UI controls, as well as important events like changes of focus.
+Support for platform accessibility APIs. Accessibility APIs are used by 3rd
+party software like screen readers, screen magnifiers, and voice dictation
+software, which need information about document content and UI controls, as
+well as important events like changes of focus.
 
 
 .. list-table::
@@ -99,7 +109,8 @@ Support for platform accessibility APIs. Accessibility APIs are used by 3rd part
 
 Core: Animation
 ~~~~~~~~~~~~~~~
-Declarative animations: CSS animations, CSS transitions, Web Animations API, and off-main thread animations.
+Declarative animations: CSS animations, CSS transitions, Web Animations API,
+and off-main thread animations.
 
 
 .. list-table::
@@ -138,7 +149,7 @@ Tracking detection and content-blocking.
     * - Peer(s)
       -
         | `Andrea Marchesini (baku) <https://people.mozilla.org/s?query=baku>`__
-        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
+        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
         | `Paul Zühlcke (pbz) <https://people.mozilla.org/s?query=pbz>`__
         | `Johann Hofmann (johannh) <https://people.mozilla.org/s?query=johannh>`__
     * - Peer(s) Emeritus
@@ -209,7 +220,8 @@ Web API for rendering apps, browser windows and widgets.
 
 Core: Build and Release Tools
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Tools related to build and release automation and configuration of release builds.
+Tools related to build and release automation and configuration of release
+builds.
 
 
 .. list-table::
@@ -218,7 +230,13 @@ Tools related to build and release automation and configuration of release build
 
     * - Owner(s)
       -
-        | `Aki Sasaki (aki) <https://people.mozilla.org/s?query=aki>`__
+        | `Julien Cristau (jcristau) <https://people.mozilla.org/s?query=jcristau>`__
+    * - Peer(s)
+      -
+        | `Heitor Neiva (hneiva) <https://people.mozilla.org/s?query=hneiva>`__
+        | `bhearsum (bhearsum) <https://people.mozilla.org/s?query=bhearsum>`__
+    * - Owner(s) Emeritus
+      - Aki Sasaki
     * - Includes
       -
         | `tools/update-packaging/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/update-packaging/\*\*/\*>`__
@@ -232,7 +250,8 @@ Tools related to build and release automation and configuration of release build
 
 Core: Build Config
 ~~~~~~~~~~~~~~~~~~
-The build system for Gecko and several mozilla.org hosted Gecko-based applications.
+The build system for Gecko and several mozilla.org hosted Gecko-based
+applications.
 
 
 .. list-table::
@@ -291,7 +310,9 @@ Submodule of the build config covering Fennec's build system in mobile/android.
 
 Core: Build Config - Taskgraph
 ==============================
-Support for task-graph generation in decision, action, and cron tasks, including configuration of all tasks including those for CI, nightlies, and releases; as well as Docker and VM images used to execute those tasks.
+Support for task-graph generation in decision, action, and cron tasks,
+including configuration of all tasks including those for CI, nightlies, and
+releases; as well as Docker and VM images used to execute those tasks.
 
 
 .. list-table::
@@ -320,7 +341,8 @@ Support for task-graph generation in decision, action, and cron tasks, including
 
 Core: Code Analysis and Debugging Tools
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Tools for debugging Mozilla code or for analyzing speed, memory use, and other characteristics of it.
+Tools for debugging Mozilla code or for analyzing speed, memory use, and other
+characteristics of it.
 
 
 .. list-table::
@@ -341,7 +363,11 @@ Tools for debugging Mozilla code or for analyzing speed, memory use, and other c
 
 Core: Content Security
 ~~~~~~~~~~~~~~~~~~~~~~
-Native content-based security features enforced in the ContentSecurityManager, including: Content Security Policy (CSP), Mixed Content Blocker (MCB), Referrer Policy, Subresource Integrity (SRI), Cross-Origin Resource Sharing (CORS), X-Frame-Options, X-Content-Type-Options: nosniff, HTTPS-Only-Mode, Sanitizer API, Sec-Fetch Metadata, and top-level data: URI blocking.
+Native content-based security features enforced in the ContentSecurityManager,
+including: Content Security Policy (CSP), Mixed Content Blocker (MCB), Referrer
+Policy, Subresource Integrity (SRI), Cross-Origin Resource Sharing (CORS),
+X-Frame-Options, X-Content-Type-Options: nosniff, HTTPS-Only-Mode, Sanitizer
+API, Sec-Fetch Metadata, and top-level data: URI blocking.
 
 
 .. list-table::
@@ -350,7 +376,7 @@ Native content-based security features enforced in the ContentSecurityManager, i
 
     * - Owner(s)
       -
-        | `ckerschbaumer <https://people.mozilla.org/s?query=ckerschbaumer>`__
+        | `Christoph Kerschbaumer (ckerschb) <https://people.mozilla.org/s?query=ckerschb>`__
     * - Peer(s)
       -
         | `Tanvi Vyas (tanvi) <https://people.mozilla.org/s?query=tanvi>`__
@@ -395,7 +421,10 @@ Core: Cookies
 
 Core: Crash reporting
 ~~~~~~~~~~~~~~~~~~~~~
-Infrastructure and tools used to generate, submit and process crash reports. This includes the in-tree google-breakpad fork, the crash report generation machinery as well as the host tools used to dump symbols, analyse minidumps and generate stack traces.
+Infrastructure and tools used to generate, submit and process crash reports.
+This includes the in-tree google-breakpad fork, the crash report generation
+machinery as well as the host tools used to dump symbols, analyse minidumps and
+generate stack traces.
 
 
 .. list-table::
@@ -425,9 +454,39 @@ Infrastructure and tools used to generate, submit and process crash reports. Thi
     * - Bugzilla Components
       - Toolkit::Crash Reporting
 
+Core: Credentials
+~~~~~~~~~~~~~~~~~
+API Surface for FedCM and WebAuthn
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Benjamin VanderSloot (bvandersloot) <https://people.mozilla.org/s?query=bvandersloot>`__
+        | `John Schanck (jschanck) <https://people.mozilla.org/s?query=jschanck>`__
+    * - Peer(s)
+      -
+        | `Tim Huang (timhuang) <https://people.mozilla.org/s?query=timhuang>`__
+        | `Paul Zühlcke (pbz) <https://people.mozilla.org/s?query=pbz>`__
+    * - Includes
+      -
+        | `toolkit/components/credentialmanagement/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/credentialmanagement/\*\*/\*>`__
+        | `browser/components/credentialmanager/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/credentialmanager/\*\*/\*>`__
+        | `dom/credentialmanagement/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=dom/credentialmanagement/\*\*/\*>`__
+        | `dom/webauthn/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=dom/webauthn/\*\*/\*>`__
+    * - Group
+      - dev-platform
+    * - Bugzilla Components
+      - Core::DOM: Credential Management, Core::DOM: Web Authentication
+
 Core: C++/Rust usage, tools, and style
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Aspects of C++ use such as language feature usage, standard library versions/usage, compiler/toolchain versions, formatting and naming style, and aspects of Rust use as needs arise
+Aspects of C++ use such as language feature usage, standard library
+versions/usage, compiler/toolchain versions, formatting and naming style, and
+aspects of Rust use as needs arise
 
 
 .. list-table::
@@ -470,11 +529,11 @@ Code to break and collect objects within reference cycles
       - David Baron
     * - Includes
       -
-        | `xpcom/base/nsCycleCollector.\* <https://searchfox.org/mozilla-central/search?q=&path=xpcom/base/nsCycleCollector.\*>`__
+        | `xpcom/base/nsCycleCollect\* <https://searchfox.org/mozilla-central/search?q=&path=xpcom/base/nsCycleCollect\*>`__
     * - Group
       - dev-platform
     * - Bugzilla Components
-      - Core::XPCOM
+      - Core::Cycle Collector
 
 Core: DLL Services
 ~~~~~~~~~~~~~~~~~~
@@ -607,7 +666,7 @@ Streams Specification implementation
     * - Peer(s)
       -
         | `Olli Pettay (smaug) <https://people.mozilla.org/s?query=smaug>`__
-        | `Tom Schuster (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
+        | `Tom S (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
         | `Kagami (saschanaz) <https://people.mozilla.org/s?query=saschanaz>`__
     * - Includes
       -
@@ -675,7 +734,8 @@ DOM Events and Event Handling
 
 Core: Firefox Source Documentation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The infrastructure platform used to generate Firefox's source documentation, excluding editorial control over the content.
+The infrastructure platform used to generate Firefox's source documentation,
+excluding editorial control over the content.
 
 
 .. list-table::
@@ -761,7 +821,8 @@ Framework for embedding Gecko into Android applications
 
 Core: Global Key Bindings
 ~~~~~~~~~~~~~~~~~~~~~~~~~
-Global hot keys for Firefox. Does not include underlined menu accelerators and the like, as those are part of i18n.
+Global hot keys for Firefox. Does not include underlined menu accelerators and
+the like, as those are part of i18n.
 
 
 .. list-table::
@@ -818,7 +879,8 @@ Mozilla graphics API
     * - URL
       - https://wiki.mozilla.org/Platform/GFX https://wiki.mozilla.org/Gecko:Layers https://wiki.mozilla.org/Gecko:2DGraphicsSketch
     * - Bugzilla Components
-      - Core::Graphics, Core::Graphics: Layers, Core::Graphics: Text, Core::Graphics: WebRender, Core::GFX: Color Management, Core::Canvas: 2D, Core::Canvas: WebGL
+      - Core::Graphics, Core::Graphics: Layers, Core::Graphics: Text, Core::Graphics:
+        WebRender, Core::GFX: Color Management, Core::Canvas: 2D, Core::Canvas: WebGL
 
 Core: HAL
 ~~~~~~~~~
@@ -842,7 +904,8 @@ Hardware Abstraction Layer
 
 Core: HTML Parser
 ~~~~~~~~~~~~~~~~~
-The HTML Parser transforms HTML source code into a DOM. It conforms to the HTML specification, and is mostly translated automatically from Java to C++.
+The HTML Parser transforms HTML source code into a DOM. It conforms to the HTML
+specification, and is mostly translated automatically from Java to C++.
 
 
 .. list-table::
@@ -1003,7 +1066,7 @@ JavaScript engine (SpiderMonkey)
         | `Bobby Holley (bholley) <https://people.mozilla.org/s?query=bholley>`__
         | `Bryan Thrall (bthrall) <https://people.mozilla.org/s?query=bthrall>`__
         | `Dan Minor (dminor) <https://people.mozilla.org/s?query=dminor>`__
-        | `Tom Schuster (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
+        | `Tom S (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
         | `Iain Ireland (iain) <https://people.mozilla.org/s?query=iain>`__
         | `Jon Coppeard (jonco) <https://people.mozilla.org/s?query=jonco>`__
         | `Julian Seward (jseward) <https://people.mozilla.org/s?query=jseward>`__
@@ -1024,7 +1087,9 @@ JavaScript engine (SpiderMonkey)
     * - URL
       - https://spidermonkey.dev/
     * - Bugzilla Components
-      - Core::JavaScript Engine, Core::JavaScript: GC, Core::JavaScript: Internationalization API, Core::JavaScript: Standard Library, Core::JavaScript: WebAssembly, Core::js-ctypes
+      - Core::JavaScript Engine, Core::JavaScript: GC, Core::JavaScript:
+        Internationalization API, Core::JavaScript: Standard Library, Core::JavaScript:
+        WebAssembly, Core::js-ctypes
 
 Core: JavaScript JIT
 ~~~~~~~~~~~~~~~~~~~~
@@ -1048,7 +1113,7 @@ JavaScript engine's JIT compilers (IonMonkey, Baseline)
         | `Brian Hackett (bhackett1024) <https://people.mozilla.org/s?query=bhackett1024>`__
         | `Iain Ireland (iain) <https://people.mozilla.org/s?query=iain>`__
         | `Nicolas B (nbp) <https://people.mozilla.org/s?query=nbp>`__
-        | `Tom Schuster (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
+        | `Tom S (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
         | `Sean Stangl (sstangl) <https://people.mozilla.org/s?query=sstangl>`__
         | `Kannan Vijayan (djvj) <https://people.mozilla.org/s?query=djvj>`__
         | `Luke Wagner (luke) <https://people.mozilla.org/s?query=luke>`__
@@ -1123,7 +1188,12 @@ rendering tree construction, layout (reflow), etc.
     * - URL
       - https://wiki.mozilla.org/Gecko:Overview#Layout
     * - Bugzilla Components
-      - Core::Layout, Core::Layout: Block and Inline, Core::Layout: Columns, Core::Layout: Flexbox, Core::Layout: Floats, Core::Layout: Form Controls, Core::Layout: Generated Content, Lists, and Counters, Core::Layout: Grid, Core::Layout: Images, Video, and HTML Frames, Core::Layout: Positioned, Core::Layout: Ruby, Core::Layout: Scrolling and Overflow, Core::Layout: Tables, Core::Layout: Text and Fonts, Core::Print Preview, Core::Printing: Output
+      - Core::Layout, Core::Layout: Block and Inline, Core::Layout: Columns,
+        Core::Layout: Flexbox, Core::Layout: Floats, Core::Layout: Form Controls,
+        Core::Layout: Generated Content, Lists, and Counters, Core::Layout: Grid,
+        Core::Layout: Images, Video, and HTML Frames, Core::Layout: Positioned,
+        Core::Layout: Ruby, Core::Layout: Scrolling and Overflow, Core::Layout: Tables,
+        Core::Layout: Text and Fonts, Core::Print Preview, Core::Printing: Output
 
 Core: Legacy HTML Parser
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1153,7 +1223,8 @@ Core: Legacy HTML Parser
 
 Core: libjar
 ~~~~~~~~~~~~
-The JAR handling code (protocol handler, stream implementation, and zipreader/zipwriter).
+The JAR handling code (protocol handler, stream implementation, and
+zipreader/zipwriter).
 
 
 .. list-table::
@@ -1181,7 +1252,8 @@ The JAR handling code (protocol handler, stream implementation, and zipreader/zi
 
 Core: MathML
 ~~~~~~~~~~~~
-MathML is a low-level specification for describing mathematics which provides a foundation for the inclusion of mathematical expressions in Web pages.
+MathML is a low-level specification for describing mathematics which provides a
+foundation for the inclusion of mathematical expressions in Web pages.
 
 
 .. list-table::
@@ -1206,7 +1278,9 @@ MathML is a low-level specification for describing mathematics which provides a 
 
 Core: Media Playback
 ~~~~~~~~~~~~~~~~~~~~
-HTML Media APIs, including Media Source Extensions and non-MSE video/audio element playback, and Encrypted Media Extensions. (WebRTC and WebAudio not included).
+HTML Media APIs, including Media Source Extensions and non-MSE video/audio
+element playback, and Encrypted Media Extensions. (WebRTC and WebAudio not
+included).
 
 .. warning::
     This module does not have any owners specified.
@@ -1270,7 +1344,8 @@ Pluggable transport for real-time media
 
 Core: Memory Allocator
 ~~~~~~~~~~~~~~~~~~~~~~
-Most things related to memory allocation in Gecko, including jemalloc, replace-malloc, DMD (dark matter detector), logalloc, etc.
+Most things related to memory allocation in Gecko, including jemalloc, replace-
+malloc, DMD (dark matter detector), logalloc, etc.
 
 
 .. list-table::
@@ -1292,7 +1367,9 @@ Most things related to memory allocation in Gecko, including jemalloc, replace-m
 
 Core: mfbt
 ~~~~~~~~~~
-mfbt is a collection of headers, macros, data structures, methods, and other functionality available for use and reuse throughout all Mozilla code (including SpiderMonkey and Gecko more broadly).
+mfbt is a collection of headers, macros, data structures, methods, and other
+functionality available for use and reuse throughout all Mozilla code
+(including SpiderMonkey and Gecko more broadly).
 
 
 .. list-table::
@@ -1342,7 +1419,8 @@ Platform independent 2D graphics API
 
 Core: Mozglue
 ~~~~~~~~~~~~~
-Glue library containing various low-level functionality, including a dynamic linker for Android, a DLL block list for Windows, etc.
+Glue library containing various low-level functionality, including a dynamic
+linker for Android, a DLL block list for Windows, etc.
 
 
 .. list-table::
@@ -1434,11 +1512,17 @@ The Mozilla Networking Library
     * - URL
       - :ref:`Networking`
     * - Bugzilla Components
-      - Core::Networking, Core::Networking: Cache, Core::Networking: Cookies, Core::Networking: FTP, Core::Networking: File, Core::Networking: HTTP, Core::Networking: JAR, Core::Networking: Websockets, Core::DOM: Networking
+      - Core::Networking, Core::Networking: Cache, Core::Networking: Cookies,
+        Core::Networking: FTP, Core::Networking: File, Core::Networking: HTTP,
+        Core::Networking: JAR, Core::Networking: Websockets, Core::DOM: Networking
 
 Core: NodeJS usage, tools, and style
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Advises on the use of NodeJS and npm packages at build and runtime. Reviews additions/upgrades/removals of vendored npm packages. Works with appropriate teams to maintain automated license and security audits of npm packages. Works with the security team and relevant developers to respond to vulnerabilities in NodeJS and vendored npm packages.
+Advises on the use of NodeJS and npm packages at build and runtime. Reviews
+additions/upgrades/removals of vendored npm packages. Works with appropriate
+teams to maintain automated license and security audits of npm packages. Works
+with the security team and relevant developers to respond to vulnerabilities in
+NodeJS and vendored npm packages.
 
 
 .. list-table::
@@ -1603,7 +1687,8 @@ Preference library
 
 Core: Private Browsing
 ~~~~~~~~~~~~~~~~~~~~~~
-Implementation of the Private Browsing mode, and the integration of other modules with Private Browsing APIs.
+Implementation of the Private Browsing mode, and the integration of other
+modules with Private Browsing APIs.
 
 
 .. list-table::
@@ -1642,7 +1727,7 @@ Caps is the capabilities-based security system.
     * - Peer(s)
       -
         | `Boris Zbarsky (bzbarsky) <https://people.mozilla.org/s?query=bzbarsky>`__
-        | `ckerschbaumer <https://people.mozilla.org/s?query=ckerschbaumer>`__
+        | `Christoph Kerschbaumer (ckerschb) <https://people.mozilla.org/s?query=ckerschb>`__
     * - Peer(s) Emeritus
       - Brendan Eich, Johnny Stenback, Dan Veditz
     * - Includes
@@ -1657,7 +1742,8 @@ Caps is the capabilities-based security system.
 
 Core: Push Notifications
 ~~~~~~~~~~~~~~~~~~~~~~~~
-Push is a way for application developers to send messages to their web applications.
+Push is a way for application developers to send messages to their web
+applications.
 
 .. warning::
     This module does not have any owners specified.
@@ -1758,7 +1844,8 @@ Sandboxing for the Windows platform
 
 Core: security
 ~~~~~~~~~~~~~~
-Crypto/PKI code, including NSS (Network Security Services) and JSS (NSS for Java)
+Crypto/PKI code, including NSS (Network Security Services) and JSS (NSS for
+Java)
 
 
 .. list-table::
@@ -1847,7 +1934,8 @@ Sandboxing using WASM/RLBox libraries.
 
 Core: Static analysis & rewriting for C++
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Tools for checking C++ code looking for problems at compile time, plus tools for automated rewriting of C++ code.
+Tools for checking C++ code looking for problems at compile time, plus tools
+for automated rewriting of C++ code.
 
 
 .. list-table::
@@ -2013,7 +2101,8 @@ User Agent String
 
 Core: View System
 ~~~~~~~~~~~~~~~~~
-The View Manager is responsible for handling "heavyweight" rendering (some clipping, compositing) and event handling tasks.
+The View Manager is responsible for handling "heavyweight" rendering (some
+clipping, compositing) and event handling tasks.
 
 
 .. list-table::
@@ -2153,7 +2242,8 @@ WebGPU implementation
 
 Core: WebRTC
 ~~~~~~~~~~~~
-WebRTC is responsible for realtime audio and video communication, as well as related issues like low-level camera and microphone access
+WebRTC is responsible for realtime audio and video communication, as well as
+related issues like low-level camera and microphone access
 
 
 .. list-table::
@@ -2182,7 +2272,8 @@ WebRTC is responsible for realtime audio and video communication, as well as rel
 
 Core: WebVR
 ~~~~~~~~~~~
-Gecko's implementation of WebVR (Virtual Reality) functionality, including API, devices, graphics and integration
+Gecko's implementation of WebVR (Virtual Reality) functionality, including API,
+devices, graphics and integration
 
 
 .. list-table::
@@ -2210,7 +2301,9 @@ Gecko's implementation of WebVR (Virtual Reality) functionality, including API, 
 
 Core: WebRTC Media
 ==================
-Submodule of WebRTC responsible for access to media input devices (microphones, cameras, screen capture), as well as realtime audiovisual codecs and packetization.
+Submodule of WebRTC responsible for access to media input devices (microphones,
+cameras, screen capture), as well as realtime audiovisual codecs and
+packetization.
 
 
 .. list-table::
@@ -2242,7 +2335,8 @@ Submodule of WebRTC responsible for access to media input devices (microphones, 
 
 Core: WebRTC Signaling
 ======================
-Submodule of WebRTC responsible for implementation of PeerConnection API, WebRTC identity, and SDP/JSEP handling
+Submodule of WebRTC responsible for implementation of PeerConnection API,
+WebRTC identity, and SDP/JSEP handling
 
 
 .. list-table::
@@ -2297,7 +2391,8 @@ Top level Widget
 
 Core: Widget - Android
 ~~~~~~~~~~~~~~~~~~~~~~
-This is part of the [https://wiki.mozilla.org/Modules/Core#GeckoView GeckoView] module.
+This is part of the [https://wiki.mozilla.org/Modules/Core#GeckoView GeckoView]
+module.
 
 
 .. list-table::
@@ -2414,7 +2509,9 @@ Windows widget support
 
 Core: XML
 ~~~~~~~~~
-XML in Mozilla, including XML, XHTML, Namespaces in XML, Associating Style Sheets with XML Documents, XML Linking and XML Extras. XML-related things that are not covered by more specific projects.
+XML in Mozilla, including XML, XHTML, Namespaces in XML, Associating Style
+Sheets with XML Documents, XML Linking and XML Extras. XML-related things that
+are not covered by more specific projects.
 
 
 .. list-table::
@@ -2536,7 +2633,8 @@ Deep Magic
 
 Core: XPIDL
 ~~~~~~~~~~~
-Cross-platform IDL compiler; produces .h C++ header files and .xpt runtime type description files from .idl interface description files.
+Cross-platform IDL compiler; produces .h C++ header files and .xpt runtime type
+description files from .idl interface description files.
 
 
 .. list-table::
@@ -2602,7 +2700,7 @@ Standalone Web Browser.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Peer(s) Emeritus
@@ -2679,7 +2777,7 @@ The application update services.
 
     * - Owner(s)
       -
-        | `Kirk Steuber (bytesized) <https://people.mozilla.org/s?query=bytesized>`__
+        | `Robin Steuber (bytesized) <https://people.mozilla.org/s?query=bytesized>`__
     * - Peer(s)
       -
         | `Molly Howell (mhowell) <https://people.mozilla.org/s?query=mhowell>`__
@@ -2749,7 +2847,7 @@ The main browser UI except where covered by more specific submodules.
 
     * - Owner(s)
       -
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
     * - Peer(s)
       -
         | `Mike Conley (mconley) <https://people.mozilla.org/s?query=mconley>`__
@@ -2774,8 +2872,7 @@ The downloads UI and service.
     * - Peer(s)
       -
         | `Gijs <https://people.mozilla.org/s?query=Gijs>`__
-    * - Peer(s) Emeritus
-      - Micah Tigley
+        | `Micah Tigley (micah) <https://people.mozilla.org/s?query=micah>`__
     * - Includes
       -
         | `browser/components/downloads/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/downloads/\*\*/\*>`__
@@ -2798,7 +2895,7 @@ System policies for controlling Firefox.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -2834,6 +2931,26 @@ Desktop clients for our experiments and off-train deployments systems.
       - Firefox::Normandy, Firefox::Nimbus Desktop Client
 
 
+Firefox View
+============
+The Firefox View page and its modules.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Sarah Clements (sclements) <https://people.mozilla.org/s?query=sclements>`__
+    * - Peer(s)
+      -
+        | `Sam Foster (sfoster) <https://people.mozilla.org/s?query=sfoster>`__
+    * - Includes
+      -
+        | `browser/components/firefoxview/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/firefoxview/\*\*/\*>`__
+
+
 Form Autofill
 =============
 Form detection and autocomplete.
@@ -2849,7 +2966,7 @@ Form detection and autocomplete.
     * - Peer(s)
       -
         | `Tim Giles (tgiles) <https://people.mozilla.org/s?query=tgiles>`__
-        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
+        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
     * - Owner(s) Emeritus
       - Matthew Noorenberghe
     * - Includes
@@ -2988,9 +3105,9 @@ Managing, saving and filling logins.
         | `Sergey Galich (serg) <https://people.mozilla.org/s?query=serg>`__
     * - Peer(s)
       -
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Tim Giles (tgiles) <https://people.mozilla.org/s?query=tgiles>`__
-        | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
+        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
         | `Sam Foster (sfoster) <https://people.mozilla.org/s?query=sfoster>`__
     * - Owner(s) Emeritus
       - Matthew Noorenberghe
@@ -3003,12 +3120,14 @@ Managing, saving and filling logins.
     * - URL
       - https://wiki.mozilla.org/Toolkit:Password_Manager
     * - Bugzilla Components
-      - Toolkit::Password Manager, Toolkit::Password Manager: Site, Compatibility, Firefox::about:logins
+      - Toolkit::Password Manager, Toolkit::Password Manager: Site, Compatibility,
+        Firefox::about:logins
 
 
 Picture-in-Picture
 ==================
-A component that allows video elements to be pulled out into an always-on-top window.
+A component that allows video elements to be pulled out into an always-on-top
+window.
 
 
 .. list-table::
@@ -3019,12 +3138,11 @@ A component that allows video elements to be pulled out into an always-on-top wi
       -
         | `Molly Howell (mhowell) <https://people.mozilla.org/s?query=mhowell>`__
         | `Mike Conley (mconley) <https://people.mozilla.org/s?query=mconley>`__
+        | `Micah Tigley (micah) <https://people.mozilla.org/s?query=micah>`__
     * - Peer(s)
       -
         | `Niklas Baumgardner (niklas) <https://people.mozilla.org/s?query=niklas>`__
         | `kpatenio (kpatenio) <https://people.mozilla.org/s?query=kpatenio>`__
-    * - Owner(s) Emeritus
-      - Micah Tigley
     * - Includes
       -
         | `toolkit/components/pictureinpicture <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/pictureinpicture>`__
@@ -3045,6 +3163,7 @@ Migrating data from other browsers.
         | `Gijs <https://people.mozilla.org/s?query=Gijs>`__
     * - Peer(s)
       -
+        | `Mike Conley (mconley) <https://people.mozilla.org/s?query=mconley>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3112,7 +3231,8 @@ The search service, address bar and address bar autocomplete.
 
 Security and Privacy UI
 =======================
-The front-end to our security and privacy features, including Protections UI, Site Identity, Site Permissions and Certificate Errors
+The front-end to our security and privacy features, including Protections UI,
+Site Identity, Site Permissions and Certificate Errors
 
 
 .. list-table::
@@ -3134,7 +3254,8 @@ The front-end to our security and privacy features, including Protections UI, Si
         | `browser/components/protections/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/protections/\*\*/\*>`__
         | `browser/components/controlcenter/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/controlcenter/\*\*/\*>`__
     * - Bugzilla Components
-      - Firefox::Security, Firefox::Protections UI, Firefox::Site Identity, Firefox::Site Permissions
+      - Firefox::Security, Firefox::Protections UI, Firefox::Site Identity,
+        Firefox::Site Permissions
 
 
 Session Restore
@@ -3176,7 +3297,7 @@ The front-end settings user interface.
 
     * - Owner(s)
       -
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
     * - Peer(s)
       -
         | `Mark Striemer (mstriemer) <https://people.mozilla.org/s?query=mstriemer>`__
@@ -3207,7 +3328,7 @@ The UI component controlling browser tabs.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3242,9 +3363,9 @@ The installer for Windows.
       - Firefox::Installer
 
 
-Marionette
-~~~~~~~~~~
-Marionette is a remote protocol that lets out-of-process programs communicate with, instrument, and control Gecko-based browsers. Combined with geckodriver, this forms our WebDriver implementation.
+DevTools
+~~~~~~~~
+Mozilla Developer Tools
 
 
 .. list-table::
@@ -3253,16 +3374,50 @@ Marionette is a remote protocol that lets out-of-process programs communicate wi
 
     * - Owner(s)
       -
-        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+        | `Jan Honza Odvarko (Honza) <https://people.mozilla.org/s?query=Honza>`__
     * - Peer(s)
       -
+        | `Alexandre Poirot (ochameau) <https://people.mozilla.org/s?query=ochameau>`__
         | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
-        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Nicolas Chevobbe (nchevobbe) <https://people.mozilla.org/s?query=nchevobbe>`__
+        | `Hubert Boma Manilla (bomsy) <https://people.mozilla.org/s?query=bomsy>`__
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Owner(s) Emeritus
+      - Patrick Brosset, Joe Walker, Dave Camp, Rob Campbell
+    * - Peer(s) Emeritus
+      - Mihai Șucan, Heather Arthur, Anton Kovalyov, Brandon Benvie, Eddy Bruel, James Long, Matteo Ferretti, Steve Fink (heapsnapshot code), Jaroslav Šnajdr, Tom Tromey, Paul Rouget, Victor Porof, Lin Clark, Jan Keromnes, Jordan Santell, Soledad Penadés, Mike Ratcliffe, Panagiotis Astithas, Tim Nguyen, Brian Grinstead, J. Ryan Stinnett, Jason Laster, David Walsh, Greg Tatum, Gabriel Luong, Brad Werth, Daisuke Akatsuka, Yulia Startsev, Logan Smyth, Julien Wajsberg, Razvan Caliman, Micah Tigley, Nick Fitzgerald, Jim Blandy, Belén Albeza
     * - Includes
       -
-        | `testing/marionette/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/marionette/\*\*/\*>`__
+        | `devtools/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=devtools/\*\*/\*>`__
+    * - URL
+      - http://firefox-dev.tools/
     * - Bugzilla Components
-      - Testing :: Marionette
+      - DevTools
+
+JavaScript usage, tools, and style
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Aspects of JavaScript use such as language feature usage, tooling such as lint
+configurations, formatting and naming style.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Dave Townsend (mossop) <https://people.mozilla.org/s?query=mossop>`__
+    * - Peer(s)
+      -
+        | `Gijs <https://people.mozilla.org/s?query=Gijs>`__
+        | `Mark Banner (standard8) <https://people.mozilla.org/s?query=standard8>`__
+        | `Jan de Mooij (jandem) <https://people.mozilla.org/s?query=jandem>`__
+    * - Includes
+      -
+        | `.eslintrc-test-paths.js <https://searchfox.org/mozilla-central/search?q=&path=.eslintrc-test-paths.js>`__
+        | `\*\*/.eslintignore <https://searchfox.org/mozilla-central/search?q=&path=\*\*/.eslintignore>`__
+        | `\*\*/.eslintrc.js <https://searchfox.org/mozilla-central/search?q=&path=\*\*/.eslintrc.js>`__
+        | `tools/lint/eslint/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/lint/eslint/\*\*/\*>`__
 
 mots config
 ~~~~~~~~~~~
@@ -3290,11 +3445,14 @@ Configuration-driven script harness.
 
     * - Owner(s)
       -
-        | `Aki Sasaki (aki) <https://people.mozilla.org/s?query=aki>`__
+        | `Geoff Brown (gbrown) <https://people.mozilla.org/s?query=gbrown>`__
     * - Peer(s)
       -
-        | `Justin Wood (Callek) <https://people.mozilla.org/s?query=Callek>`__
-        | `Tom Prince (tomprince) <https://people.mozilla.org/s?query=tomprince>`__
+        | `Joel Maher (jmaher) <https://people.mozilla.org/s?query=jmaher>`__
+    * - Owner(s) Emeritus
+      - Aki Sasaki
+    * - Peer(s) Emeritus
+      - Justin Wood, Tom Prince
     * - Includes
       -
         | `testing/mozharness/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/mozharness/\*\*/\*>`__
@@ -3324,6 +3482,184 @@ Aspects of Python use such as tooling, formatting and naming style
     * - Bugzilla Components
       - Developer Infrastructure :: Lint and Formatting
 
+Remote Protocol
+~~~~~~~~~~~~~~~
+Low-level remote protocol exposing interfaces for inspecting state and
+controlling execution of web documents, instrumenting various subsystems in the
+browser, simulating user interaction for automation purposes, and for
+subscribing to updates from the aforementioned.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Includes
+      -
+        | `remote/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/\*\*/\*>`__
+    * - URL
+      - https://firefox-source-docs.mozilla.org/remote/
+    * - Bugzilla Components
+      - Remote Protocol
+
+Agent
+=====
+Underlying transport layer and server to allow remoting of Firefox for
+automation and debugging.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Owner(s) Emeritus
+      - Andreas Tolfsen
+    * - Peer(s) Emeritus
+      - Maja Frydrychowicz, Alexandre Poirot, Yulia Startsev
+    * - Includes
+      -
+        | `remote/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/\*\*/\*>`__
+    * - Excludes
+      -
+        | `remote/cdp/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/cdp/\*>`__
+        | `remote/marionette/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/marionette/\*>`__
+        | `remote/webdriver-bidi/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/webdriver-bidi/\*>`__
+    * - Bugzilla Components
+      - Remote Protocol :: Agent
+
+
+CDP
+===
+The core implementation for CDP support. Please file domain specific issues and
+requests under the appropriate CDP-prefixed Remote Protocol component.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Owner(s) Emeritus
+      - Andreas Tolfsen
+    * - Peer(s) Emeritus
+      - Maja Frydrychowicz, Alexandre Poirot, Yulia Startsev
+    * - Includes
+      -
+        | `remote/cdp/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/cdp/\*>`__
+    * - Bugzilla Components
+      - Remote Protocol :: CDP
+
+
+Marionette
+==========
+Marionette is a remote protocol that lets out-of-process programs communicate
+with, instrument, and control Gecko-based browsers. Combined with geckodriver,
+this forms our WebDriver classic implementation.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Owner(s) Emeritus
+      - Andreas Tolfsen
+    * - Peer(s) Emeritus
+      - Maja Frydrychowicz, David Burns
+    * - Includes
+      -
+        | `remote/marionette/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/marionette/\*>`__
+    * - Group
+      - dev-webdriver
+    * - Bugzilla Components
+      - Remote Protocol :: Marionette
+
+
+WebDriver BiDi
+==============
+W3C WebDriver BiDi implementation for Gecko-based browsers.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Includes
+      -
+        | `remote/webdriver-bidi/\* <https://searchfox.org/mozilla-central/search?q=&path=remote/webdriver-bidi/\*>`__
+    * - Group
+      - dev-webdriver
+    * - Bugzilla Components
+      - Remote Protocol :: WebDriver BiDi
+
+
+Sync
+~~~~
+Firefox Sync client
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Mark Hammond (markh) <https://people.mozilla.org/s?query=markh>`__
+    * - Peer(s)
+      -
+        | `Lougenia Bailey (lougenia) <https://people.mozilla.org/s?query=lougenia>`__
+        | `Tarik Eshaq (teshaq) <https://people.mozilla.org/s?query=teshaq>`__
+        | `Ben Dean-Kawamura (bdk) <https://people.mozilla.org/s?query=bdk>`__
+        | `Sammy Khamis (skhamis) <https://people.mozilla.org/s?query=skhamis>`__
+        | `Lina Butler (lina) <https://people.mozilla.org/s?query=lina>`__
+    * - Owner(s) Emeritus
+      - Ryan Kelly
+    * - Includes
+      -
+        | `services/sync/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=services/sync/\*\*/\*>`__
+    * - URL
+      - https://wiki.mozilla.org/Services/Process/Code_Review
+    * - Bugzilla Components
+      - Sync
+
 firefox-ui
 ~~~~~~~~~~
 Firefox UI test framework.
@@ -3339,6 +3675,10 @@ Firefox UI test framework.
     * - Peer(s)
       -
         | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Peer(s) Emeritus
+      - Maja Frydrychowicz
     * - Includes
       -
         | `testing/firefox-ui/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/firefox-ui/\*\*/\*>`__
@@ -3347,7 +3687,8 @@ Firefox UI test framework.
 
 geckodriver
 ~~~~~~~~~~~
-Proxy for using W3C WebDriver-compatible clients to interact with Gecko-based browsers.
+Proxy for using W3C WebDriver-compatible clients to interact with Gecko-based
+browsers.
 
 
 .. list-table::
@@ -3363,6 +3704,8 @@ Proxy for using W3C WebDriver-compatible clients to interact with Gecko-based br
     * - Includes
       -
         | `testing/geckodriver/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/geckodriver/\*\*/\*>`__
+    * - Group
+      - dev-webdriver
     * - Bugzilla Components
       - Testing :: geckodriver
 
@@ -3383,6 +3726,33 @@ GTest test harness.
         | `testing/gtest/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/gtest/\*\*/\*>`__
     * - Bugzilla Components
       - Testing :: GTest
+
+Marionette Client & Harness
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Python client and harness for the Marionette remote protocol implementation.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Henrik Skupin (whimboo) <https://people.mozilla.org/s?query=whimboo>`__
+    * - Peer(s)
+      -
+        | `Julian Descottes (jdescottes) <https://people.mozilla.org/s?query=jdescottes>`__
+        | `James Graham (jgraham) <https://people.mozilla.org/s?query=jgraham>`__
+        | `Alexandra Borovova (Sasha) <https://people.mozilla.org/s?query=Sasha>`__
+    * - Owner(s) Emeritus
+      - Andreas Tolfsen
+    * - Peer(s) Emeritus
+      - Maja Frydrychowicz, David Burns
+    * - Includes
+      -
+        | `testing/marionette/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/marionette/\*\*/\*>`__
+    * - Bugzilla Components
+      - Testing :: Marionette Client & Harness
 
 Mochitest
 ~~~~~~~~~
@@ -3433,7 +3803,9 @@ Base modules used for implementing test components.
 
 Performance Testing
 ~~~~~~~~~~~~~~~~~~~
-This module encompasses all of our performance test frameworks: Raptor, Talos, MozPerfTest, AWSY.
+This module encompasses all of our performance testing projects, e.g.  Raptor,
+Talos, MozPerfTest, AWSY, mach try perf, etc.. See our PerfDocs for more
+information  on the owners/peers of the various components (linked below).
 
 
 .. list-table::
@@ -3445,15 +3817,27 @@ This module encompasses all of our performance test frameworks: Raptor, Talos, M
         | `Greg Mierzwinski (sparky) <https://people.mozilla.org/s?query=sparky>`__
     * - Peer(s)
       -
+        | `Andrej Glavic (andrej) <https://people.mozilla.org/s?query=andrej>`__
+        | `Dave Hunt (davehunt) <https://people.mozilla.org/s?query=davehunt>`__
         | `Kimberly Sereduck (kimberlythegeek) <https://people.mozilla.org/s?query=kimberlythegeek>`__
+        | `Kash Shampur (kshampur) <https://people.mozilla.org/s?query=kshampur>`__
     * - Includes
       -
         | `testing/raptor/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/raptor/\*\*/\*>`__
         | `testing/talos/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/talos/\*\*/\*>`__
         | `python/mozperftest/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=python/mozperftest/\*\*/\*>`__
         | `testing/awsy/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/awsy/\*\*/\*>`__
+        | `tools/lint/perfdocs/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/lint/perfdocs/\*\*/\*>`__
+        | `testing/perfdocs/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/perfdocs/\*\*/\*>`__
+        | `testing/performance/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/performance/\*\*/\*>`__
+        | `testing/condprofile/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=testing/condprofile/\*\*/\*>`__
+        | `tools/browsertime/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=tools/browsertime/\*\*/\*>`__
+        | `tools/tryselect/selectors/perf.py <https://searchfox.org/mozilla-central/search?q=&path=tools/tryselect/selectors/perf.py>`__
+    * - URL
+      - :ref:`Performance Testing`
     * - Bugzilla Components
-      - Testing :: Raptor, Testing :: Talos, Testing :: AWSY, Testing :: Performance
+      - Testing :: Raptor, Testing :: Talos, Testing :: AWSY, Testing :: Performance,
+        Testing :: mozperftest, Testing :: Condprofile
 
 Reftest (+ jsreftest + crashtest)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3558,7 +3942,7 @@ Components shared between desktop and mobile browsers.
         | `Gijs <https://people.mozilla.org/s?query=Gijs>`__
     * - Peer(s)
       -
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3593,7 +3977,12 @@ The profile system and startup process before the front-end launches.
 
 Telemetry
 =========
-The core infrastructure in the Firefox client to send back telemetry data. Includes the common mechanisms to record, view and submit data: Legacy Telemetry and Glean (via Firefox on Glean (FOG)). This module does ''not'' include responsibility for every piece of submitted Telemetry data. Each team/module is responsible for their own measurements (histograms, scalars, other ping submissions, etc.).
+The core infrastructure in the Firefox client to send back telemetry data.
+Includes the common mechanisms to record, view and submit data: Legacy
+Telemetry and Glean (via Firefox on Glean (FOG)). This module does ''not''
+include responsibility for every piece of submitted Telemetry data. Each
+team/module is responsible for their own measurements (histograms, scalars,
+other ping submissions, etc.).
 
 
 .. list-table::
@@ -3636,7 +4025,7 @@ The base widgets used throughout the UI.
         | `Neil Deakin (enndeakin) <https://people.mozilla.org/s?query=enndeakin>`__
     * - Peer(s)
       -
-        | `jaws <https://people.mozilla.org/s?query=jaws>`__
+        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Peer(s) Emeritus
@@ -3671,3 +4060,35 @@ Webextension APIs and integration.
       -
         | `browser/components/extensions/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=browser/components/extensions/\*\*/\*>`__
         | `toolkit/components/extensions/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/extensions/\*\*/\*>`__
+
+
+URL Classifier
+~~~~~~~~~~~~~~
+Database and list-based classification of URL resources, such as Tracking
+Protection and SafeBrowsing.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Dimi Lee (dlee) <https://people.mozilla.org/s?query=dlee>`__
+        | `Luke Crouch (groovecoder) <https://people.mozilla.org/s?query=groovecoder>`__
+    * - Peer(s)
+      -
+        | `Tim Huang (timhuang) <https://people.mozilla.org/s?query=timhuang>`__
+        | `Gian-Carlo Pascutto (gcp) <https://people.mozilla.org/s?query=gcp>`__
+    * - Owner(s) Emeritus
+      - François Marier
+    * - Peer(s) Emeritus
+      - Henry Chang, Ryan Tilder
+    * - Includes
+      -
+        | `toolkit/components/url-classifier/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=toolkit/components/url-classifier/\*\*/\*>`__
+        | `netwerk/url-classifier/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=netwerk/url-classifier/\*\*/\*>`__
+    * - Group
+      - dev-platform
+    * - URL
+      - https://github.com/mozilla-services/shavar https://wiki.mozilla.org/Phishing_Protection https://wiki.mozilla.org/Security/Tracking_protection https://wiki.mozilla.org/Security/Application_Reputation

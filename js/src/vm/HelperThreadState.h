@@ -21,13 +21,13 @@
 
 #include "ds/Fifo.h"
 #include "frontend/CompilationStencil.h"  // CompilationStencil, CompilationGCOutput
+#include "frontend/FrontendContext.h"
 #include "js/CompileOptions.h"
 #include "js/experimental/JSStencil.h"
 #include "js/HelperThreadAPI.h"
 #include "js/Stack.h"  // JS::NativeStackLimit
 #include "js/TypeDecls.h"
 #include "threading/ConditionVariable.h"
-#include "vm/ErrorContext.h"
 #include "vm/HelperThreads.h"
 #include "vm/HelperThreadTask.h"
 #include "vm/JSContext.h"
@@ -333,6 +333,7 @@ class GlobalHelperThreadState {
 
   GCParallelTaskList& gcParallelWorklist() { return gcParallelWorklist_; }
 
+  size_t getGCParallelThreadCount() const { return gcParallelThreadCount; }
   void setGCParallelThreadCount(size_t count,
                                 const AutoLockHelperThreadState&) {
     MOZ_ASSERT(count >= 1);
@@ -529,7 +530,7 @@ struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
   UniquePtr<frontend::CompilationGCOutput> gcOutput_;
 
   // Record any errors happening while parsing or generating bytecode.
-  OffThreadErrorContext ec_;
+  FrontendContext fc_;
 
   ParseTask(ParseTaskKind kind, JSContext* cx,
             JS::OffThreadCompileCallback callback, void* callbackData);
@@ -542,7 +543,7 @@ struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
   void activate(JSRuntime* rt);
   void deactivate(JSRuntime* rt);
 
-  virtual void parse(JSContext* cx, ErrorContext* ec) = 0;
+  virtual void parse(JSContext* cx, FrontendContext* fc) = 0;
 
   bool runtimeMatches(JSRuntime* rt) { return runtime == rt; }
 
@@ -595,7 +596,7 @@ struct DelazifyStrategy {
   // This function is called with the script index of:
   //  - top-level script, when starting the off-thread delazification.
   //  - functions added by `add` and delazified by `DelazifyTask`.
-  [[nodiscard]] bool add(ErrorContext* ec,
+  [[nodiscard]] bool add(FrontendContext* fc,
                          const frontend::CompilationStencil& stencil,
                          ScriptIndex index);
 };
@@ -665,7 +666,7 @@ struct DelazifyTask : public mozilla::LinkedListElement<DelazifyTask>,
   frontend::CompilationStencilMerger merger;
 
   // Record any errors happening while parsing or generating bytecode.
-  OffThreadErrorContext ec_;
+  FrontendContext fc_;
 
   // Create a new DelazifyTask and initialize it.
   //

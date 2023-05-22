@@ -73,10 +73,13 @@ include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/FeaturePolicyUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
+include "mozilla/dom/PageLoadEventUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
+include "mozilla/glean/GleanMetrics.h";
 include "mozilla/ipc/ByteBufUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
+include "mozilla/net/NeckoMessageUtils.h";
 include "mozilla/PermissionDelegateIPCUtils.h";
 
 [RefCounted] using class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
@@ -118,6 +121,7 @@ using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
 #endif  // defined(XP_WIN)
 
 using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
+using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/GleanMetrics.h";
 [MoveOnly] using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
@@ -140,8 +144,8 @@ using mozilla::dom::ServiceWorkerShutdownState::Progress from "mozilla/dom/Servi
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
 using mozilla::ContentBlockingNotifier::BlockingDecision from "mozilla/ContentBlockingNotifier.h";
 using mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices from "mozilla/StorageAccessAPIHelper.h";
-using JSActorMessageKind from "mozilla/dom/JSActor.h";
-using JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
+using mozilla::dom::JSActorMessageKind from "mozilla/dom/JSActor.h";
+using mozilla::dom::JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
 using mozilla::PermissionDelegateHandler::DelegatedPermissionList from "mozilla/PermissionDelegateHandler.h";
 [RefCounted] using class nsILayoutHistoryState from "nsILayoutHistoryState.h";
 using class mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
@@ -151,9 +155,10 @@ using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
 using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 [RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
-using Wireframe from "mozilla/dom/DocumentBinding.h";
+using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
 [RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
+using nsIDNSService::ResolverMode from "nsIDNSService.h";
 
 union ChromeRegistryItem
 {
@@ -224,6 +229,7 @@ union SystemParameterValue {
 struct ClipboardCapabilities {
   bool supportsSelectionClipboard;
   bool supportsFindClipboard;
+  bool supportsSelectionCache;
 };
 
 union FileDescOrError {
@@ -364,6 +370,7 @@ struct XPCOMInitData
     DynamicScalarDefinition[] dynamicScalarDefs;
     MetricMask perfStatsMask;
     nsCString trrDomain;
+    ResolverMode trrMode;
 };
 
 struct VisitedQueryResult
@@ -651,6 +658,7 @@ child:
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
+    async SetTRRMode(ResolverMode aMode);
 
     async NotifyVisited(VisitedQueryResult[] uri);
 
@@ -807,7 +815,8 @@ child:
      */
     async NotifyIdleObserver(uint64_t observerId, nsCString topic, nsString str);
 
-    async InvokeDragSession(MaybeDiscardedWindowContext aContext,
+    async InvokeDragSession(MaybeDiscardedWindowContext aSourceWindowContext,
+                            MaybeDiscardedWindowContext aSourceTopWindowContext,
                             IPCDataTransfer[] transfers, uint32_t action);
 
     async EndDragSession(bool aDoneDrag, bool aUserCancelled,
@@ -1136,7 +1145,7 @@ parent:
 
     async ShowAlert(nsIAlertNotification alert);
 
-    async CloseAlert(nsString name);
+    async CloseAlert(nsString name, bool contextClosed);
 
     async DisableNotifications(nsIPrincipal principal);
 
@@ -1572,14 +1581,6 @@ parent:
       nsIReferrerInfo aReferrerInfo,
       OriginAttributes aOriginAttributes);
 
-    /**
-     * Tells the parent to ungrab the pointer on the default display.
-     *
-     * This is for GTK platforms where we have to ensure the pointer ungrab happens in the
-     * chrome process as that's the process that receives the pointer event.
-     */
-    sync UngrabPointer(uint32_t time);
-
     sync RemovePermission(nsIPrincipal principal, nsCString permissionType) returns (nsresult rv);
 
     /**
@@ -1614,6 +1615,11 @@ parent:
                                                 nsID? aAgentClusterId);
 
      async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, nsIPrincipal principal);
+
+    /**
+     * Messages for communicating child Glean data to the parent process
+     */
+    async RecordPageLoadEvent(PageLoadExtra event);
 
     /**
      * Messages for communicating child Telemetry to the parent process
@@ -1834,7 +1840,7 @@ parent:
     // Called when a nsDocShellLoadState which was received over IPC is
     // destroyed in the content process to clean up pending state left behind
     // tracking the load state in the parent process.
-    async CleanupPendingLoadState(uint64_t aLoadIdentifier);
+    [LazySend] async CleanupPendingLoadState(uint64_t aLoadIdentifier);
 
 both:
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
@@ -1881,7 +1887,7 @@ both:
      * new BrowsingContext has a parent window, it must be owned by the
      * embedding process, otherwise it must be owned by the opener, if set.
      */
-    async CreateBrowsingContext(uint64_t aGroupId, BrowsingContextInitializer aInit);
+    [LazySend] async CreateBrowsingContext(uint64_t aGroupId, BrowsingContextInitializer aInit);
 
     /**
      * If aDoDiscard is true, discards the passed-in BrowsingContext. If the
@@ -1911,7 +1917,7 @@ both:
     async FinalizeFocusOuter(MaybeDiscardedBrowsingContext aContext, bool aCanFocus,
                              CallerType aCallerType);
 parent:
-    async InsertNewFocusActionId(uint64_t aActionId);
+    [LazySend] async InsertNewFocusActionId(uint64_t aActionId);
     async BlurToParent(MaybeDiscardedBrowsingContext aFocusedBrowsingContext,
                       MaybeDiscardedBrowsingContext aBrowsingContextToClear,
                       MaybeDiscardedBrowsingContext aAncestorBrowsingContextToFocus,
@@ -1946,7 +1952,7 @@ both:
 child:
     // NOTE: These methods are only needed on the child, as the parent
     // WindowContext is managed using the PWindowGlobal actor's lifecycle.
-    async CreateWindowContext(WindowContextInitializer aInit);
+    [LazySend] async CreateWindowContext(WindowContextInitializer aInit);
     async DiscardWindowContext(uint64_t aContextId) returns (bool unused);
 
 parent:

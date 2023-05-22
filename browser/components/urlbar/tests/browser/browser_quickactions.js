@@ -30,8 +30,6 @@ add_setup(async function setup() {
       ["browser.urlbar.quickactions.enabled", true],
       ["browser.urlbar.suggest.quickactions", true],
       ["browser.urlbar.shortcuts.quickactions", true],
-      ["screenshots.browser.component.enabled", true],
-      ["extensions.screenshots.disabled", false],
     ],
   });
 
@@ -160,7 +158,11 @@ add_task(async function enter_search_mode_key() {
     source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
     entry: "typed",
   });
-
+  Assert.equal(
+    await hasQuickActions(window),
+    true,
+    "Actions are shown in search mode"
+  );
   await UrlbarTestUtils.exitSearchMode(window);
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_Escape");
@@ -206,13 +208,19 @@ add_task(async function test_disabled() {
   UrlbarProviderQuickActions.removeAction("disabledaction");
 });
 
-add_task(async function test_screenshot_disabled() {
+/**
+ * The first part of this test confirms that when the screenshots component is enabled
+ * the screenshot quick action button will be enabled on about: pages.
+ * The second part confirms that when the screenshots extension is enabled the
+ * screenshot quick action button will be disbaled on about: pages.
+ */
+add_task(async function test_screenshot_enabled_or_disabled() {
   let onLoaded = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
     "about:blank"
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:blank");
   await onLoaded;
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -225,6 +233,30 @@ add_task(async function test_screenshot_disabled() {
     "The action is displayed"
   );
   let screenshotButton = window.document.querySelector(
+    ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
+  );
+  Assert.ok(
+    !screenshotButton.hasAttribute("disabled"),
+    "Screenshot button is enabled on about pages"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["screenshots.browser.component.enabled", false]],
+  });
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "screenshot",
+  });
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(window),
+    2,
+    "The action is displayed"
+  );
+  screenshotButton = window.document.querySelector(
     ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
   );
   Assert.equal(
@@ -268,7 +300,11 @@ async function isScreenshotInitialized() {
 }
 
 add_task(async function test_screenshot() {
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, DUMMY_PAGE);
+  await SpecialPowers.pushPrefEnv({
+    set: [["screenshots.browser.component.enabled", true]],
+  });
+
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, DUMMY_PAGE);
   await BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
@@ -438,7 +474,10 @@ let COMMANDS_TESTS = [
         false,
         "http://example.com/"
       );
-      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      BrowserTestUtils.loadURIString(
+        gBrowser.selectedBrowser,
+        "http://example.com/"
+      );
       await onLoad;
     },
     uri: "about:addons",
@@ -453,7 +492,10 @@ let COMMANDS_TESTS = [
         false,
         "http://example.com/"
       );
-      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      BrowserTestUtils.loadURIString(
+        gBrowser.selectedBrowser,
+        "http://example.com/"
+      );
       await onLoad;
     },
     uri: "about:addons",
@@ -468,7 +510,10 @@ let COMMANDS_TESTS = [
         false,
         "http://example.com/"
       );
-      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      BrowserTestUtils.loadURIString(
+        gBrowser.selectedBrowser,
+        "http://example.com/"
+      );
       await onLoad;
     },
     uri: "about:addons",
@@ -483,7 +528,10 @@ let COMMANDS_TESTS = [
         false,
         "http://example.com/"
       );
-      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      BrowserTestUtils.loadURIString(
+        gBrowser.selectedBrowser,
+        "http://example.com/"
+      );
       await onLoad;
     },
     uri: "about:addons",
@@ -560,7 +608,10 @@ add_task(async function test_viewsource() {
   );
 
   info("Check the button status of when the page is web content");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com");
+  BrowserTestUtils.loadURIString(
+    gBrowser.selectedBrowser,
+    "http://example.com"
+  );
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -681,10 +732,17 @@ async function hasQuickActions(win) {
 }
 
 add_task(async function test_show_in_zero_prefix() {
-  for (const showInZeroPrefix of [false, true]) {
-    info(`Test when quickactions.showInZeroPrefix pref is ${showInZeroPrefix}`);
+  for (const minimumSearchString of [0, 3]) {
+    info(
+      `Test when quickactions.minimumSearchString pref is ${minimumSearchString}`
+    );
     await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.quickactions.showInZeroPrefix", showInZeroPrefix]],
+      set: [
+        [
+          "browser.urlbar.quickactions.minimumSearchString",
+          minimumSearchString,
+        ],
+      ],
     });
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -693,7 +751,7 @@ add_task(async function test_show_in_zero_prefix() {
 
     Assert.equal(
       await hasQuickActions(window),
-      showInZeroPrefix,
+      !minimumSearchString,
       "Result for quick actions is as expected"
     );
     await SpecialPowers.popPrefEnv();

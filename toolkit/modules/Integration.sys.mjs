@@ -69,17 +69,20 @@
  * Overrides are included in the prototype chain of the combined object in the
  * same order they were registered, where the first is closest to the root.
  *
- * When defining overrides, you do not need to set the "__proto__" property of
+ * When defining overrides, you do not need to manipulate the prototype chain of
  * the objects you create, because their properties and methods are moved to a
  * new object with the correct prototype. If you do, however, you can call base
  * properties and methods using the "super" keyword. For example:
  *
- *   Integration.downloads.register(base => ({
- *     __proto__: base,
- *     getTemporaryDirectory() {
- *       return super.getTemporaryDirectory() + "subdir/";
- *     },
- *   }));
+ *   Integration.downloads.register(base => {
+ *     let newObject = {
+ *       getTemporaryDirectory() {
+ *         return super.getTemporaryDirectory() + "subdir/";
+ *       },
+ *     };
+ *     Object.setPrototypeOf(newObject, base);
+ *     return newObject;
+ *   });
  *
  * *** State handling ***
  *
@@ -143,7 +146,7 @@ var IntegrationPoint = function() {
           " they change when new overrides are registered.",
         Cr.NS_ERROR_NO_INTERFACE
       );
-      Cu.reportError(ex);
+      console.error(ex);
       throw ex;
     },
   };
@@ -240,7 +243,7 @@ IntegrationPoint.prototype = {
         combined = Object.create(combined, descriptors);
       } catch (ex) {
         // Any error will result in the current override being skipped.
-        Cu.reportError(ex);
+        console.error(ex);
       }
     }
 

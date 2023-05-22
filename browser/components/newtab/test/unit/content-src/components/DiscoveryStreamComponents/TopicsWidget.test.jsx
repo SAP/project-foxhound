@@ -1,12 +1,15 @@
 import { combineReducers, createStore } from "redux";
-import { INITIAL_STATE, reducers } from "common/Reducers.jsm";
+import { INITIAL_STATE, reducers } from "common/Reducers.sys.mjs";
 import { Provider } from "react-redux";
 import {
   _TopicsWidget as TopicsWidgetBase,
   TopicsWidget,
 } from "content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget";
 import { SafeAnchor } from "content-src/components/DiscoveryStreamComponents/SafeAnchor/SafeAnchor";
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { mount } from "enzyme";
 import React from "react";
 
@@ -48,7 +51,7 @@ describe("Discovery Stream <TopicsWidget>", () => {
 
   it("should render", () => {
     assert.ok(wrapper.exists());
-    assert.ok(wrapper.find(".ds-topics-widget"));
+    assert.ok(wrapper.find(".ds-topics-widget").exists());
   });
 
   it("should connect with DiscoveryStream store", () => {

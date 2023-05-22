@@ -1,4 +1,7 @@
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 licenses(["notice"])
 
@@ -79,6 +82,8 @@ cc_library(
         "vqsort_i32d.cc",
         "vqsort_i64a.cc",
         "vqsort_i64d.cc",
+        "vqsort_kv64a.cc",
+        "vqsort_kv64d.cc",
         "vqsort_kv128a.cc",
         "vqsort_kv128d.cc",
         "vqsort_u16a.cc",

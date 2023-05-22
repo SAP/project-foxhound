@@ -11,10 +11,10 @@ use crate::gpu_cache::{GpuCacheAddress, GpuDataRequest};
 use crate::internal_types::FastHashMap;
 use crate::prim_store::ClipData;
 use crate::render_task::RenderTaskAddress;
-use crate::renderer::ShaderColorMode;
+use crate::renderer::{ShaderColorMode, GpuBufferAddress};
 use std::i32;
 use crate::util::{TransformedRectKind, MatrixHelpers};
-use crate::glyph_rasterizer::SubpixelDirection;
+use glyph_rasterizer::SubpixelDirection;
 use crate::util::{ScaleOffset, pack_as_float};
 
 // Contains type that must exactly match the same structures declared in GLSL.
@@ -293,7 +293,7 @@ pub struct CompositeInstance {
     color: PremultipliedColorF,
 
     // Packed into a single vec4 (aParams)
-    z_id: f32,
+    _padding: f32,
     color_space_or_uv_type: f32, // YuvColorSpace for YUV;
                                  // UV coordinate space for RGB
     yuv_format: f32,            // YuvFormat
@@ -311,7 +311,6 @@ impl CompositeInstance {
         rect: PictureRect,
         clip_rect: DeviceRect,
         color: PremultipliedColorF,
-        z_id: ZBufferId,
         transform: CompositorTransform,
     ) -> Self {
         let uv = TexelRect::new(0.0, 0.0, 1.0, 1.0);
@@ -319,7 +318,7 @@ impl CompositeInstance {
             rect,
             clip_rect,
             color,
-            z_id: z_id.0 as f32,
+            _padding: 0.0,
             color_space_or_uv_type: pack_as_float(UV_TYPE_NORMALIZED),
             yuv_format: 0.0,
             yuv_channel_bit_depth: 0.0,
@@ -332,7 +331,6 @@ impl CompositeInstance {
         rect: PictureRect,
         clip_rect: DeviceRect,
         color: PremultipliedColorF,
-        z_id: ZBufferId,
         uv_rect: TexelRect,
         transform: CompositorTransform,
     ) -> Self {
@@ -340,7 +338,7 @@ impl CompositeInstance {
             rect,
             clip_rect,
             color,
-            z_id: z_id.0 as f32,
+            _padding: 0.0,
             color_space_or_uv_type: pack_as_float(UV_TYPE_UNNORMALIZED),
             yuv_format: 0.0,
             yuv_channel_bit_depth: 0.0,
@@ -352,7 +350,6 @@ impl CompositeInstance {
     pub fn new_yuv(
         rect: PictureRect,
         clip_rect: DeviceRect,
-        z_id: ZBufferId,
         yuv_color_space: YuvRangedColorSpace,
         yuv_format: YuvFormat,
         yuv_channel_bit_depth: u32,
@@ -363,7 +360,7 @@ impl CompositeInstance {
             rect,
             clip_rect,
             color: PremultipliedColorF::WHITE,
-            z_id: z_id.0 as f32,
+            _padding: 0.0,
             color_space_or_uv_type: pack_as_float(yuv_color_space as u32),
             yuv_format: pack_as_float(yuv_format as u32),
             yuv_channel_bit_depth: pack_as_float(yuv_channel_bit_depth),
@@ -544,6 +541,41 @@ impl From<SplitCompositeInstance> for PrimitiveInstanceData {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct QuadInstance {
+    pub render_task_address: RenderTaskAddress,
+    pub prim_address: GpuBufferAddress,
+    pub z_id: ZBufferId,
+    pub transform_id: TransformPaletteId,
+    pub edge_flags: i32,
+    // The number of tiles configured during the prepare pass for this quad instance
+    pub tile_count_x: u8,
+    pub tile_count_y: u8,
+    pub tile_index_x: u8,
+    pub tile_index_y: u8,
+}
+
+impl From<QuadInstance> for PrimitiveInstanceData {
+    fn from(instance: QuadInstance) -> Self {
+        /*
+            [32 bits prim address]
+            [16 bits tile config] [16 bits render task address]
+            [8 bits edge flags] [24 bits z_id]
+            [8 bits x/y tile index] [24 bits xf_id]
+         */
+        PrimitiveInstanceData {
+            data: [
+                instance.prim_address.as_int(),
+                ((instance.tile_count_x as i32) << 24) |
+                ((instance.tile_count_y as i32) << 16) |
+                instance.render_task_address.0 as i32,
+                (instance.edge_flags << 24) | instance.z_id.0,
+                ((instance.tile_index_x as i32) << 28) | ((instance.tile_index_y as i32) << 24) | instance.transform_id.0 as i32,
+            ],
+        }
+    }
+}
+
 bitflags! {
     // Note: This can use up to 12 bits due to how it will
     // be packed in the instance data.
@@ -643,7 +675,7 @@ impl TransformPaletteId {
 
     /// Extract the transform kind from the id.
     pub fn transform_kind(&self) -> TransformedRectKind {
-        if (self.0 >> 24) == 0 {
+        if (self.0 >> 23) == 0 {
             TransformedRectKind::AxisAligned
         } else {
             TransformedRectKind::Complex
@@ -655,7 +687,7 @@ impl TransformPaletteId {
     /// aligned (i.e. perspective warp) even though we may still want to for the
     /// general case.
     pub fn override_transform_kind(&self, kind: TransformedRectKind) -> Self {
-        TransformPaletteId((self.0 & 0xFFFFFFu32) | ((kind as u32) << 24))
+        TransformPaletteId((self.0 & 0x7FFFFFu32) | ((kind as u32) << 23))
     }
 }
 
@@ -788,7 +820,7 @@ impl TransformPalette {
         let transform_kind = self.metadata[index].transform_kind as u32;
         TransformPaletteId(
             (index as u32) |
-            (transform_kind << 24)
+            (transform_kind << 23)
         )
     }
 
@@ -805,7 +837,7 @@ impl TransformPalette {
         let transform_kind = self.metadata[index].transform_kind as u32;
         TransformPaletteId(
             (index as u32) |
-            (transform_kind << 24)
+            (transform_kind << 23)
         )
     }
 }

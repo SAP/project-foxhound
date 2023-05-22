@@ -326,7 +326,6 @@ class CompositableHandle final {
 enum class CompositableHandleOwner : uint8_t {
   WebRenderBridge,
   ImageBridge,
-  InProcessManager,
 };
 
 struct RemoteTextureId {
@@ -406,6 +405,36 @@ struct RemoteTextureOwnerId {
   //   RemoteTextureOwnerId::HashFn> myMap;
   struct HashFn {
     std::size_t operator()(const RemoteTextureOwnerId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
+};
+
+// TextureId allocated in GPU process
+struct GpuProcessTextureId {
+  uint64_t mId = 0;
+
+  static GpuProcessTextureId GetNext();
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  bool operator==(const GpuProcessTextureId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const GpuProcessTextureId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<GpuProcessTextureId, ValueType,
+  //   GpuProcessTextureId::HashFn> myMap;
+  struct HashFn {
+    std::size_t operator()(const GpuProcessTextureId aKey) const {
       return std::hash<uint64_t>{}(aKey.mId);
     }
   };

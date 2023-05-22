@@ -11,7 +11,6 @@ import("../../webrtc.gni")
 rtc_library("task_queue") {
   visibility = [ "*" ]
   public = [
-    "queued_task.h",
     "task_queue_base.h",
     "task_queue_factory.h",
   ]
@@ -68,7 +67,9 @@ rtc_library("task_queue_test") {
     ]
   } else {
     deps = [
+      ":default_task_queue_factory",
       ":task_queue",
+      "../../api:field_trials_view",
       "../../api/units:time_delta",
       "../../rtc_base:refcount",
       "../../rtc_base:rtc_event",
@@ -89,11 +90,26 @@ rtc_library("default_task_queue_factory") {
     poisonous = [ "default_task_queue" ]
   }
   sources = [ "default_task_queue_factory.h" ]
-  deps = [ ":task_queue" ]
+  deps = [
+    ":task_queue",
+    "../../api:field_trials_view",
+    "../../rtc_base/memory:always_valid_pointer",
+  ]
 
   if (rtc_enable_libevent) {
-    sources += [ "default_task_queue_factory_libevent.cc" ]
-    deps += [ "../../rtc_base:rtc_task_queue_libevent" ]
+    if (is_android) {
+      sources +=
+          [ "default_task_queue_factory_stdlib_or_libevent_experiment.cc" ]
+      deps += [
+        "../../api/transport:field_trial_based_config",
+        "../../rtc_base:logging",
+        "../../rtc_base:rtc_task_queue_libevent",
+        "../../rtc_base:rtc_task_queue_stdlib",
+      ]
+    } else {
+      sources += [ "default_task_queue_factory_libevent.cc" ]
+      deps += [ "../../rtc_base:rtc_task_queue_libevent" ]
+    }
   } else if (is_mac || is_ios) {
     sources += [ "default_task_queue_factory_gcd.cc" ]
     deps += [ "../../rtc_base:rtc_task_queue_gcd" ]
@@ -104,15 +120,6 @@ rtc_library("default_task_queue_factory") {
     sources += [ "default_task_queue_factory_stdlib.cc" ]
     deps += [ "../../rtc_base:rtc_task_queue_stdlib" ]
   }
-}
-
-rtc_source_set("to_queued_task") {
-  visibility = [ "*" ]
-  sources = [ "to_queued_task.h" ]
-  deps = [
-    ":task_queue",
-    "../../api/task_queue:pending_task_safety_flag",
-  ]
 }
 
 rtc_library("pending_task_safety_flag") {
@@ -142,23 +149,11 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_library("to_queued_task_unittests") {
-    testonly = true
-    sources = [ "to_queued_task_unittest.cc" ]
-    deps = [
-      ":to_queued_task",
-      "../../api/task_queue",
-      "../../test:test_support",
-    ]
-    absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
-  }
-
   rtc_library("pending_task_safety_flag_unittests") {
     testonly = true
     sources = [ "pending_task_safety_flag_unittest.cc" ]
     deps = [
       ":pending_task_safety_flag",
-      ":to_queued_task",
       "../../rtc_base:logging",
       "../../rtc_base:rtc_event",
       "../../rtc_base:rtc_task_queue",

@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { TabsSetupFlowManager } = ChromeUtils.importESModule(
-  "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
-);
-
 XPCOMUtils.defineLazyModuleGetters(globalThis, {
   SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
 });
@@ -69,6 +65,55 @@ const syncedTabsData5 = [
     ],
   },
 ];
+
+const desktopTabs = [
+  {
+    type: "tab",
+    title: "Internet for people, not profits - Mozilla",
+    url: "https://www.mozilla.org/",
+    icon:
+      "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
+    lastUsed: 1655730486, // Mon Jan 19 1970 22:55:30 GMT+0000
+  },
+  {
+    type: "tab",
+    title: "Firefox Privacy Notice",
+    url: "https://www.mozilla.org/en-US/privacy/firefox/",
+    icon:
+      "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
+    lastUsed: 1673991540155, // Tue, 17 Jan 2023 16:39:00 GMT
+  },
+  {
+    type: "tab",
+    title: "Bugzilla Main Page",
+    url: "https://bugzilla.mozilla.org/",
+    icon: "https://bugzilla.mozilla.org/extensions/BMO/web/images/favicon.ico",
+    lastUsed: 1673513538000, // Thu, 12 Jan 2023 03:52:18 GMT
+  },
+];
+
+const mobileTabs = [
+  {
+    type: "tab",
+    title: "Internet for people, not profits - Mozilla",
+    url: "https://www.mozilla.org/",
+    icon:
+      "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
+    lastUsed: 1606510800000, // Fri Nov 27 2020 16:00:00 GMT+0000
+  },
+  {
+    type: "tab",
+    title: "Firefox Privacy Notice",
+    url: "https://www.mozilla.org/en-US/privacy/firefox/",
+    icon:
+      "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
+    lastUsed: 1606510800000, // Fri Nov 27 2020 16:00:00 GMT+0000
+  },
+];
+
+const syncedTabsData6 = structuredClone(syncedTabsData1);
+syncedTabsData6[0].tabs = desktopTabs;
+syncedTabsData6[1].tabs = mobileTabs;
 
 const NO_TABS_EVENTS = [
   ["firefoxview", "entered", "firefoxview", undefined],
@@ -145,7 +190,7 @@ add_task(async function test_tab_list_ordering() {
     // first list item has been updated
     await BrowserTestUtils.waitForMutationCondition(
       syncedTabsList,
-      { childList: true },
+      { childList: true, subtree: true },
       () => syncedTabsList.firstChild.textContent.includes("Firefox")
     );
 
@@ -230,7 +275,7 @@ add_task(async function test_empty_list_items() {
     // first list item has been updated
     await BrowserTestUtils.waitForMutationCondition(
       syncedTabsList,
-      { childList: true },
+      { childList: true, subtree: true },
       () =>
         syncedTabsList.firstChild.textContent.includes("Firefox Privacy Notice")
     );
@@ -317,7 +362,7 @@ add_task(async function test_empty_list() {
     const syncedTabsList = document.querySelector("ol.synced-tabs-list");
     await BrowserTestUtils.waitForMutationCondition(
       syncedTabsList,
-      { childList: true },
+      { childList: true, subtree: true },
       () => syncedTabsList.children.length
     );
 
@@ -369,7 +414,7 @@ add_task(async function test_time_updates_correctly() {
     const timeLabel = document.querySelector("span.synced-tab-li-time");
     await BrowserTestUtils.waitForMutationCondition(
       timeLabel,
-      { childList: true },
+      { childList: true, subtree: true },
       () => !timeLabel.textContent.includes("now")
     );
 
@@ -481,7 +526,7 @@ add_task(async function test_tabs_sync_on_user_page_reload() {
     // The tab pickup list has been updated
     await BrowserTestUtils.waitForMutationCondition(
       syncedTabsList,
-      { childList: true },
+      { childList: true, subtree: true },
       () =>
         syncedTabsList.firstChild.textContent.includes("Sandboxes - Sinon.JS")
     );
@@ -601,6 +646,126 @@ add_task(async function test_keyboard_navigation() {
       "Summary element should be focused when shift tabbing away from list"
     );
 
+    sandbox.restore();
+    cleanup_tab_pickup();
+  });
+});
+
+add_task(async function test_duplicate_tab_filter() {
+  const sandbox = setupRecentDeviceListMocks();
+  const syncedTabsMock = sandbox.stub(SyncedTabs, "getRecentTabs");
+  let mockTabs6 = getMockTabData(syncedTabsData6);
+  syncedTabsMock.callsFake(() => {
+    info(
+      `Stubbed SyncedTabs.getRecentTabs returning a promise that resolves to ${mockTabs6.length} tabs\n`
+    );
+    return Promise.resolve(mockTabs6);
+  });
+
+  await withFirefoxView({}, async browser => {
+    await setupListState(browser);
+
+    Assert.equal(
+      mockTabs6[0].title,
+      "Firefox Privacy Notice",
+      `First tab should be ${mockTabs6[0].title}`
+    );
+
+    Assert.equal(
+      mockTabs6[0].lastUsed,
+      1673991540155,
+      `First tab lastUsed value should be ${mockTabs6[0].lastUsed}`
+    );
+
+    Assert.equal(
+      mockTabs6[1].title,
+      "Bugzilla Main Page",
+      `Second tab should be ${mockTabs6[1].title}`
+    );
+
+    Assert.equal(
+      mockTabs6[1].lastUsed,
+      1673513538000,
+      `Second tab lastUsed value should be ${mockTabs6[1].lastUsed}`
+    );
+
+    Assert.equal(
+      mockTabs6[2].title,
+      "Internet for people, not profits - Mozilla",
+      `Third tab should be ${mockTabs6[2].title}`
+    );
+
+    Assert.equal(
+      mockTabs6[2].lastUsed,
+      1606510800000,
+      `Third tab lastUsed value should be ${mockTabs6[2].lastUsed}`
+    );
+
+    sandbox.restore();
+    cleanup_tab_pickup();
+  });
+});
+
+add_task(async function test_tabs_dont_update_unnecessarily() {
+  const sandbox = setupRecentDeviceListMocks();
+  const syncedTabsMock = sandbox.stub(SyncedTabs, "getRecentTabs");
+  let mockTabs1 = getMockTabData(syncedTabsData1);
+  syncedTabsMock.callsFake(() => {
+    info(
+      `Stubbed SyncedTabs.getRecentTabs returning a promise that resolves to ${mockTabs1.length} tabs\n`
+    );
+    return Promise.resolve(mockTabs1);
+  });
+
+  await withFirefoxView({}, async browser => {
+    await setupListState(browser);
+
+    const { document } = browser.contentWindow;
+    const syncedTabsList = document.querySelector("ol.synced-tabs-list");
+
+    Assert.ok(
+      syncedTabsList.children.length === 3,
+      "Tab Pickup list should have three list items"
+    );
+
+    Assert.ok(
+      syncedTabsList.firstChild.textContent.includes(
+        "Internet for people, not profits - Mozilla"
+      ),
+      `First item in the Tab Pickup list is ${mockTabs1[0].title}`
+    );
+
+    Assert.ok(
+      syncedTabsList.children[1].textContent.includes("The Times"),
+      `Second item in Tab Pickup list is ${mockTabs1[1].title}`
+    );
+
+    Assert.ok(
+      syncedTabsList.children[2].textContent.includes("Sandboxes - Sinon.JS"),
+      `Third item in Tab Pickup list is ${mockTabs1[2].title}`
+    );
+
+    let wasMutated = false;
+
+    const callback = () => {
+      wasMutated = true;
+    };
+
+    const observer = new MutationObserver(callback);
+
+    observer.observe(syncedTabsList, { childList: true, subtree: true });
+
+    syncedTabsMock.returns(mockTabs1);
+    const tabPickupList = document.querySelector("tab-pickup-list");
+    const updateTabsListSpy = sandbox.spy(tabPickupList, "updateTabsList");
+
+    // Initiate a synced tabs update
+    Services.obs.notifyObservers(null, "services.sync.tabs.changed");
+
+    await TestUtils.waitForCondition(() => updateTabsListSpy.called);
+    Assert.ok(!wasMutated, "The synced tabs list was not mutated");
+
+    observer.disconnect();
     sandbox.restore();
     cleanup_tab_pickup();
   });

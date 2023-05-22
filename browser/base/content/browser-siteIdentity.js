@@ -449,7 +449,7 @@ var gIdentityHandler = {
 
   removeCertException() {
     if (!this._uriHasHost) {
-      Cu.reportError(
+      console.error(
         "Trying to revoke a cert exception on a URI without a host?"
       );
       return;
@@ -515,7 +515,7 @@ var gIdentityHandler = {
     let principal = gBrowser.contentPrincipal;
     // ...but if we're on the HTTPS-Only error page, the content-principal is
     // for HTTPS but. We always want to set the exception for HTTP. (Code should
-    // be almost identical to the one in AboutHttpsOnlyErrorParent.jsm)
+    // be almost identical to the one in AboutHttpsOnlyErrorParent.sys.mjs)
     let newURI;
     if (this._isAboutHttpsOnlyErrorPage) {
       newURI = gBrowser.currentURI
@@ -626,9 +626,9 @@ var gIdentityHandler = {
       );
       return principal.isOriginPotentiallyTrustworthy;
     } catch (error) {
-      Cu.reportError(
-        "Error while computing isPotentiallyTrustWorthy for pdf viewer page: " +
-          error
+      console.error(
+        "Error while computing isPotentiallyTrustWorthy for pdf viewer page: ",
+        error
       );
       return false;
     }
@@ -1209,7 +1209,7 @@ var gIdentityHandler = {
     PanelMultiView.openPopup(this._identityPopup, this._identityIconBox, {
       position: "bottomleft topleft",
       triggerEvent: event,
-    }).catch(Cu.reportError);
+    }).catch(console.error);
   },
 
   onPopupShown(event) {

@@ -23,7 +23,7 @@ TEST(BitrateProberTest, VerifyStatesAndTimeBetweenProbes) {
   BitrateProber prober(config);
   EXPECT_FALSE(prober.is_probing());
 
-  Timestamp now = Timestamp::Millis(0);
+  Timestamp now = Timestamp::Zero();
   const Timestamp start_time = now;
   EXPECT_EQ(prober.NextProbeTime(now), Timestamp::PlusInfinity());
 
@@ -160,7 +160,7 @@ TEST(BitrateProberTest, VerifyProbeSizeOnHighBitrate) {
 
   const DataRate kHighBitrate = DataRate::KilobitsPerSec(10000);  // 10 Mbps
 
-  prober.CreateProbeCluster({.at_time = Timestamp::Millis(0),
+  prober.CreateProbeCluster({.at_time = Timestamp::Zero(),
                              .target_data_rate = kHighBitrate,
                              .target_duration = TimeDelta::Millis(15),
                              .target_probe_count = 5,
@@ -168,6 +168,30 @@ TEST(BitrateProberTest, VerifyProbeSizeOnHighBitrate) {
   // Probe size should ensure a minimum of 1 ms interval.
   EXPECT_GT(prober.RecommendedMinProbeSize(),
             kHighBitrate * TimeDelta::Millis(1));
+}
+
+TEST(BitrateProberTest, ProbeSizeCanBeSetWithFieldTrial) {
+  const test::ExplicitKeyValueConfig trials(
+      "WebRTC-Bwe-ProbingBehavior/min_probe_delta:20ms/");
+  BitrateProber prober(trials);
+  prober.SetEnabled(true);
+
+  const DataRate kHighBitrate = DataRate::KilobitsPerSec(10000);  // 10 Mbps
+
+  prober.CreateProbeCluster({.at_time = Timestamp::Zero(),
+                             .target_data_rate = kHighBitrate,
+                             .target_duration = TimeDelta::Millis(15),
+                             .target_probe_count = 5,
+                             .id = 0});
+  EXPECT_EQ(prober.RecommendedMinProbeSize(),
+            kHighBitrate * TimeDelta::Millis(20));
+
+  prober.OnIncomingPacket(DataSize::Bytes(1000));
+  // Next time to send probe should be "min_probe_delta" if the recommended
+  // number of bytes has been sent.
+  prober.ProbeSent(Timestamp::Zero(), prober.RecommendedMinProbeSize());
+  EXPECT_EQ(prober.NextProbeTime(Timestamp::Zero()),
+            Timestamp::Zero() + TimeDelta::Millis(20));
 }
 
 TEST(BitrateProberTest, MinumumNumberOfProbingPackets) {
@@ -178,8 +202,8 @@ TEST(BitrateProberTest, MinumumNumberOfProbingPackets) {
   const DataRate kBitrate = DataRate::KilobitsPerSec(100);
   const DataSize kPacketSize = DataSize::Bytes(1000);
 
-  Timestamp now = Timestamp::Millis(0);
-  prober.CreateProbeCluster({.at_time = Timestamp::Millis(0),
+  Timestamp now = Timestamp::Zero();
+  prober.CreateProbeCluster({.at_time = Timestamp::Zero(),
                              .target_data_rate = kBitrate,
                              .target_duration = TimeDelta::Millis(15),
                              .target_probe_count = 5,
@@ -201,8 +225,8 @@ TEST(BitrateProberTest, ScaleBytesUsedForProbing) {
   const DataSize kPacketSize = DataSize::Bytes(1000);
   const DataSize kExpectedDataSent = kBitrate * TimeDelta::Millis(15);
 
-  Timestamp now = Timestamp::Millis(0);
-  prober.CreateProbeCluster({.at_time = Timestamp::Millis(0),
+  Timestamp now = Timestamp::Zero();
+  prober.CreateProbeCluster({.at_time = Timestamp::Zero(),
                              .target_data_rate = kBitrate,
                              .target_duration = TimeDelta::Millis(15),
                              .target_probe_count = 5,
@@ -225,8 +249,8 @@ TEST(BitrateProberTest, HighBitrateProbing) {
   const DataSize kPacketSize = DataSize::Bytes(1000);
   const DataSize kExpectedDataSent = kBitrate * TimeDelta::Millis(15);
 
-  Timestamp now = Timestamp::Millis(0);
-  prober.CreateProbeCluster({.at_time = Timestamp::Millis(0),
+  Timestamp now = Timestamp::Zero();
+  prober.CreateProbeCluster({.at_time = Timestamp::Zero(),
                              .target_data_rate = kBitrate,
                              .target_duration = TimeDelta::Millis(15),
                              .target_probe_count = 5,
@@ -251,7 +275,7 @@ TEST(BitrateProberTest, ProbeClusterTimeout) {
   const DataSize kExpectedDataSent = kSmallPacketSize * 2 * 5;
   const TimeDelta kTimeout = TimeDelta::Millis(5000);
 
-  Timestamp now = Timestamp::Millis(0);
+  Timestamp now = Timestamp::Zero();
   prober.CreateProbeCluster({.at_time = now,
                              .target_data_rate = kBitrate,
                              .target_duration = TimeDelta::Millis(15),

@@ -32,7 +32,16 @@ MFMediaEngineChild::MFMediaEngineChild(MFMediaEngineWrapper* aOwner,
     : mOwner(aOwner),
       mManagerThread(RemoteDecoderManagerChild::GetManagerThread()),
       mMediaEngineId(0 /* invalid id, will be initialized later */),
-      mFrameStats(WrapNotNull(aFrameStats)) {}
+      mFrameStats(WrapNotNull(aFrameStats)) {
+  if (mFrameStats->GetPresentedFrames() > 0) {
+    mAccumulatedPresentedFramesFromPrevEngine =
+        Some(mFrameStats->GetPresentedFrames());
+  }
+  if (mFrameStats->GetDroppedSinkFrames() > 0) {
+    mAccumulatedDroppedFramesFromPrevEngine =
+        Some(mFrameStats->GetDroppedSinkFrames());
+  }
+}
 
 RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
     bool aShouldPreload) {
@@ -41,8 +50,8 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
                                                        __func__);
   }
 
-  if (!IsWin8OrLater()) {
-    CLOG("Media engine can only be used after Windows8");
+  if (!IsWin10OrLater()) {
+    CLOG("Only support MF media engine playback on Windows 10+");
     return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_FAILURE,
                                                        __func__);
   }
@@ -174,19 +183,36 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvUpdateStatisticData(
     const StatisticData& aData) {
   AssertOnManagerThread();
   const uint64_t currentRenderedFrames = mFrameStats->GetPresentedFrames();
+  const uint64_t newRenderedFrames = GetUpdatedRenderedFrames(aData);
   // Media engine won't tell us that which stage those dropped frames happened,
   // so we treat all of them as the frames dropped in the a/v sync stage (sink).
   const uint64_t currentDroppedSinkFrames = mFrameStats->GetDroppedSinkFrames();
-  MOZ_ASSERT(aData.renderedFrames() >= currentRenderedFrames);
-  MOZ_ASSERT(aData.droppedFrames() >= currentDroppedSinkFrames);
-  mFrameStats->Accumulate({0, 0, aData.renderedFrames() - currentRenderedFrames,
-                           0, aData.droppedFrames() - currentDroppedSinkFrames,
-                           0});
+  const uint64_t newDroppedSinkFrames = GetUpdatedDroppedFrames(aData);
+  mFrameStats->Accumulate({0, 0, newRenderedFrames - currentRenderedFrames, 0,
+                           newDroppedSinkFrames - currentDroppedSinkFrames, 0});
   CLOG("Update statictis data (rendered %" PRIu64 " -> %" PRIu64
        ", dropped %" PRIu64 " -> %" PRIu64 ")",
        currentRenderedFrames, mFrameStats->GetPresentedFrames(),
        currentDroppedSinkFrames, mFrameStats->GetDroppedSinkFrames());
+  MOZ_ASSERT(mFrameStats->GetPresentedFrames() >= currentRenderedFrames);
+  MOZ_ASSERT(mFrameStats->GetDroppedSinkFrames() >= currentDroppedSinkFrames);
   return IPC_OK();
+}
+
+uint64_t MFMediaEngineChild::GetUpdatedRenderedFrames(
+    const StatisticData& aData) {
+  return mAccumulatedPresentedFramesFromPrevEngine
+             ? (aData.renderedFrames() +
+                *mAccumulatedPresentedFramesFromPrevEngine)
+             : aData.renderedFrames();
+}
+
+uint64_t MFMediaEngineChild::GetUpdatedDroppedFrames(
+    const StatisticData& aData) {
+  return mAccumulatedDroppedFramesFromPrevEngine
+             ? (aData.droppedFrames() +
+                *mAccumulatedDroppedFramesFromPrevEngine)
+             : aData.droppedFrames();
 }
 
 void MFMediaEngineChild::OwnerDestroyed() {
@@ -202,14 +228,22 @@ void MFMediaEngineChild::OwnerDestroyed() {
 
 void MFMediaEngineChild::IPDLActorDestroyed() {
   AssertOnManagerThread();
+  if (!mShutdown) {
+    CLOG("Destroyed actor without shutdown, remote process has crashed!");
+    mOwner->NotifyError(NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR);
+  }
   mIPDLSelfRef = nullptr;
 }
 
 void MFMediaEngineChild::Shutdown() {
   AssertOnManagerThread();
+  if (mShutdown) {
+    return;
+  }
   SendShutdown();
   mInitPromiseHolder.RejectIfExists(NS_ERROR_FAILURE, __func__);
   mInitEngineRequest.DisconnectIfExists();
+  mShutdown = true;
 }
 
 MFMediaEngineWrapper::MFMediaEngineWrapper(ExternalEngineStateMachine* aOwner,

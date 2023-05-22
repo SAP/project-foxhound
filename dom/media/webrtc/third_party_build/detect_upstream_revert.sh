@@ -3,7 +3,9 @@
 function show_error_msg()
 {
   echo "*** ERROR *** $? line $1 $0 did not complete successfully!"
+  echo "$ERROR_HELP"
 }
+ERROR_HELP=""
 
 # Print an Error message if `set -eE` causes the script to exit due to a failed command
 trap 'show_error_msg $LINENO' ERR
@@ -27,8 +29,8 @@ else
   exit
 fi
 
-if [ "x$MOZ_LIBWEBRTC_COMMIT" = "x" ]; then
-  echo "MOZ_LIBWEBRTC_COMMIT is not defined, see README.md"
+if [ "x$MOZ_LIBWEBRTC_BRANCH" = "x" ]; then
+  echo "MOZ_LIBWEBRTC_BRANCH is not defined, see README.md"
   exit
 fi
 
@@ -47,7 +49,7 @@ echo "MOZ_LIBWEBRTC_BASE: $MOZ_LIBWEBRTC_BASE"
 echo "MOZ_LIBWEBRTC_NEXT_BASE: $MOZ_LIBWEBRTC_NEXT_BASE"
 echo "MOZ_LIBWEBRTC_COMMIT_MSG: $MOZ_LIBWEBRTC_COMMIT_MSG"
 export MOZ_LIBWEBRTC_REVERT_SHA=`cd $MOZ_LIBWEBRTC_SRC ; \
-git log --oneline -r $MOZ_LIBWEBRTC_BASE..$MOZ_GIT_RELEASE_BRANCH \
+git log --oneline -r $MOZ_LIBWEBRTC_BASE..$MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
  | grep -F "Revert \"$MOZ_LIBWEBRTC_COMMIT_MSG" \
  | tail -1 | awk '{print $1;}' || true`
 

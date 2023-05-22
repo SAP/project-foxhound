@@ -17,6 +17,7 @@
 #include "lib/jxl/enc_ar_control_field.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_chroma_from_luma.h"
+#include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
 #include "lib/jxl/enc_patch_dictionary.h"
@@ -24,7 +25,6 @@
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/gaborish.h"
 
 namespace jxl {
 namespace {
@@ -828,10 +828,13 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   if (cparams.speed_tier > SpeedTier::kHare || cparams.uniform_quant > 0) {
     enc_state->initial_quant_field =
         ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
+    enc_state->initial_quant_masking =
+        ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
     float q = cparams.uniform_quant > 0
                   ? cparams.uniform_quant
                   : kAcQuant / cparams.butteraugli_distance;
     FillImage(q, &enc_state->initial_quant_field);
+    FillImage(1.0f / (q + 0.001f), &enc_state->initial_quant_masking);
   } else {
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;

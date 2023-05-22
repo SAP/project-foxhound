@@ -776,13 +776,6 @@ bool js::InternalConstructWithProvidedThis(JSContext* cx, HandleValue fval,
 
 bool js::CallGetter(JSContext* cx, HandleValue thisv, HandleValue getter,
                     MutableHandleValue rval) {
-  // Invoke could result in another try to get or set the same id again, see
-  // bug 355497.
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   FixedInvokeArgs<0> args(cx);
 
   return Call(cx, getter, thisv, args, rval, CallReason::Getter);
@@ -790,13 +783,7 @@ bool js::CallGetter(JSContext* cx, HandleValue thisv, HandleValue getter,
 
 bool js::CallSetter(JSContext* cx, HandleValue thisv, HandleValue setter,
                     HandleValue v) {
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   FixedInvokeArgs<1> args(cx);
-
   args[0].set(v);
 
   RootedValue ignored(cx);
@@ -1943,19 +1930,15 @@ void js::ReportInNotObjectError(JSContext* cx, HandleValue lref,
     if (str->length() > MaxStringLength) {
       JSStringBuilder buf(cx);
       if (!buf.appendSubstring(str, 0, MaxStringLength)) {
-        buf.failure();
         return nullptr;
       }
       if (!buf.append("...")) {
-        buf.failure();
         return nullptr;
       }
       str = buf.finishString();
       if (!str) {
-        buf.failure();
         return nullptr;
       }
-      buf.ok();
     }
     return QuoteString(cx, str, '"');
   };

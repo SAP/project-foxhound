@@ -631,7 +631,7 @@ class WebIDLHelpers:
                 schema_data["returns"], "%s return value" % api_fun.api_path_string
             )
 
-        return "void"
+        return "undefined"
 
     @classmethod
     def webidl_method_params(cls, api_fun, schema_group=None, params_schema_data=None):
@@ -640,7 +640,7 @@ class WebIDLHelpers:
 
         If the schema for the function includes `allowAmbiguousOptionalArguments`
         then the methods paramers are going to be the variadic arguments of type
-        `any` (e.g. `void myMethod(any... args);`).
+        `any` (e.g. `undefined myMethod(any... args);`).
 
         If params_schema_data is None, then the parameters will be resolved internally
         from the schema data.
@@ -690,9 +690,10 @@ class WebIDLHelpers:
                 # in this method.
                 continue
 
+            api_path = api_fun.api_path_string
+            pname = param["name"]
             ptype = cls.webidl_type_from_mapping(
-                param,
-                "%s method parameter %s" % (api_fun.api_path_string, param["name"]),
+                param, f"{api_path} method parameter {pname}"
             )
 
             if (
@@ -702,12 +703,12 @@ class WebIDLHelpers:
             ):
                 if ptype != "Function":
                     raise TypeError(
-                        "unexpected optional type. "
-                        "Only Function is expected to be marked as optional"
+                        f"unexpected optional type: '{ptype}'. "
+                        f"Only Function is expected to be marked as optional: '{api_path}' parameter '{pname}'"
                     )
-                ptype = "optional %s" % ptype
+                ptype = f"optional {ptype}"
 
-            params.append("%s %s" % (ptype, param["name"]))
+            params.append(f"{ptype} {pname}")
 
         if api_fun.is_async(schema_group):
             # Add the chrome-compatible callback as an additional optional parameter
@@ -718,7 +719,7 @@ class WebIDLHelpers:
             # of the schema data for the callback parameter and throws if the expected
             # parameter is missing).
             params.append(
-                "optional Function %s" % api_fun.get_async_callback_name(schema_group)
+                f"optional Function {api_fun.get_async_callback_name(schema_group)}"
             )
 
         return params

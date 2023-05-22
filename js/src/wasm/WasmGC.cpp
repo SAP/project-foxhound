@@ -204,7 +204,7 @@ bool wasm::GenerateStackmapEntriesForTrapExit(
 
 void wasm::EmitWasmPreBarrierGuard(MacroAssembler& masm, Register instance,
                                    Register scratch, Register valueAddr,
-                                   Label* skipBarrier) {
+                                   size_t valueOffset, Label* skipBarrier) {
   // If no incremental GC has started, we don't need the barrier.
   masm.loadPtr(
       Address(instance, Instance::offsetOfAddressOfNeedsIncrementalBarrier()),
@@ -213,15 +213,20 @@ void wasm::EmitWasmPreBarrierGuard(MacroAssembler& masm, Register instance,
                     skipBarrier);
 
   // If the previous value is null, we don't need the barrier.
-  masm.loadPtr(Address(valueAddr, 0), scratch);
+  masm.loadPtr(Address(valueAddr, valueOffset), scratch);
   masm.branchTestPtr(Assembler::Zero, scratch, scratch, skipBarrier);
 }
 
 void wasm::EmitWasmPreBarrierCall(MacroAssembler& masm, Register instance,
-                                  Register scratch, Register valueAddr) {
+                                  Register scratch, Register valueAddr,
+                                  size_t valueOffset) {
   MOZ_ASSERT(valueAddr == PreBarrierReg);
 
-  masm.loadPtr(Address(instance, Instance::offsetOfPreBarrierCode()), scratch);
+  // Add the offset to the PreBarrierReg, if any.
+  if (valueOffset != 0) {
+    masm.addPtr(Imm32(valueOffset), valueAddr);
+  }
+
 #if defined(DEBUG) && defined(JS_CODEGEN_ARM64)
   // The prebarrier assumes that x28 == sp.
   Label ok;
@@ -230,7 +235,16 @@ void wasm::EmitWasmPreBarrierCall(MacroAssembler& masm, Register instance,
   masm.breakpoint();
   masm.bind(&ok);
 #endif
+
+  // Load and call the pre-write barrier code. It will preserve all volatile
+  // registers.
+  masm.loadPtr(Address(instance, Instance::offsetOfPreBarrierCode()), scratch);
   masm.call(scratch);
+
+  // Remove the offset we folded into PreBarrierReg, if any.
+  if (valueOffset != 0) {
+    masm.subPtr(Imm32(valueOffset), valueAddr);
+  }
 }
 
 void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
@@ -281,6 +295,11 @@ bool wasm::IsValidStackMapKey(bool debugEnabled, const uint8_t* nextPC) {
 #  elif defined(JS_CODEGEN_LOONG64)
   // TODO(loong64): Implement IsValidStackMapKey.
   return true;
+#  elif defined(JS_CODEGEN_RISCV64)
+  const uint32_t* insn = (const uint32_t*)nextPC;
+  return (((uintptr_t(insn) & 3) == 0) &&
+              (insn[-1] == 0x00006037 && insn[-2] == 0x00100073) ||  // break;
+          ((insn[-1] & kBaseOpcodeMask) == JALR));
 #  else
   MOZ_CRASH("IsValidStackMapKey: requires implementation on this platform");
 #  endif

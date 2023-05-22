@@ -133,8 +133,8 @@ CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
       kind_(Function) {
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
-  MOZ_ASSERT(offsets.uncheckedCallEntry - begin_ <= UINT8_MAX);
-  MOZ_ASSERT(offsets.tierEntry - begin_ <= UINT8_MAX);
+  MOZ_ASSERT(offsets.uncheckedCallEntry - begin_ <= UINT16_MAX);
+  MOZ_ASSERT(offsets.tierEntry - begin_ <= UINT16_MAX);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = funcLineOrBytecode;
   u.func.beginToUncheckedCallEntry_ = offsets.uncheckedCallEntry - begin_;
@@ -154,8 +154,21 @@ const CodeRange* wasm::LookupInSorted(const CodeRangeVector& codeRanges,
   return &codeRanges[match];
 }
 
+CallIndirectId CallIndirectId::forAsmJSFunc() {
+  return CallIndirectId(CallIndirectIdKind::AsmJS, 0);
+}
+
 CallIndirectId CallIndirectId::forFunc(const ModuleEnvironment& moduleEnv,
                                        uint32_t funcIndex) {
+  // asm.js tables are homogenous and don't require a signature check
+  if (moduleEnv.isAsmJS()) {
+    return CallIndirectId::forAsmJSFunc();
+  }
+
+  FuncDesc func = moduleEnv.funcs[funcIndex];
+  if (!func.canRefFunc()) {
+    return CallIndirectId();
+  }
   return CallIndirectId::forFuncType(moduleEnv,
                                      moduleEnv.funcs[funcIndex].typeIndex);
 }
@@ -164,7 +177,7 @@ CallIndirectId CallIndirectId::forFuncType(const ModuleEnvironment& moduleEnv,
                                            uint32_t funcTypeIndex) {
   // asm.js tables are homogenous and don't require a signature check
   if (moduleEnv.isAsmJS()) {
-    return CallIndirectId();
+    return CallIndirectId::forAsmJSFunc();
   }
 
   const FuncType& funcType = moduleEnv.types->type(funcTypeIndex).funcType();
@@ -173,7 +186,7 @@ CallIndirectId CallIndirectId::forFuncType(const ModuleEnvironment& moduleEnv,
                           funcType.immediateTypeId());
   }
   return CallIndirectId(CallIndirectIdKind::Global,
-                        moduleEnv.offsetOfTypeId(funcTypeIndex));
+                        moduleEnv.offsetOfTypeDef(funcTypeIndex));
 }
 
 CalleeDesc CalleeDesc::function(uint32_t funcIndex) {

@@ -723,14 +723,6 @@ Element* HTMLEditor::FindSelectionRoot(const nsINode& aNode) const {
     return GetDocument()->GetRootElement();
   }
 
-  // XXX If we have readonly flag, shouldn't return the element which has
-  // contenteditable="true"?  However, such case isn't there without chrome
-  // permission script.
-  if (IsReadonly()) {
-    // We still want to allow selection in a readonly editor.
-    return GetRoot();
-  }
-
   nsIContent* content = const_cast<nsIContent*>(aNode.AsContent());
   if (!content->HasFlag(NODE_IS_EDITABLE)) {
     // If the content is in read-write state but is not editable itself,
@@ -1900,6 +1892,10 @@ nsresult HTMLEditor::InsertElementAtSelectionAsAction(
     return NS_ERROR_INVALID_ARG;
   }
 
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   AutoEditActionDataSetter editActionData(
       *this, HTMLEditUtils::GetEditActionForInsert(*aElement), aPrincipal);
   nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -1912,11 +1908,6 @@ nsresult HTMLEditor::InsertElementAtSelectionAsAction(
   DebugOnly<nsresult> rvIgnored = CommitComposition();
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                        "EditorBase::CommitComposition() failed, but ignored");
-
-  // XXX Oh, this should be done before dispatching `beforeinput` event.
-  if (IsReadonly()) {
-    return NS_OK;
-  }
 
   {
     Result<EditActionResult, nsresult> result = CanHandleHTMLEditSubAction();
@@ -3574,9 +3565,6 @@ nsresult HTMLEditor::SetHTMLBackgroundColorWithTransaction(
           // is stack only class and keeps grabbing it until it's destroyed.
           nsresult rv = RemoveAttributeWithTransaction(
               MOZ_KnownLive(cellElement), *nsGkAtoms::bgcolor);
-          if (NS_WARN_IF(Destroyed())) {
-            return NS_ERROR_EDITOR_DESTROYED;
-          }
           if (NS_FAILED(rv)) {
             NS_WARNING(
                 "EditorBase::RemoveAttributeWithTransaction(nsGkAtoms::bgcolor)"
@@ -5750,7 +5738,7 @@ nsresult HTMLEditor::SetAttributeOrEquivalent(Element* aElement,
     if (EditorElementStyle::IsHTMLStyle(aAttribute)) {
       const EditorElementStyle elementStyle =
           EditorElementStyle::Create(*aAttribute);
-      if (styledElement && elementStyle.IsCSSEditable(*styledElement)) {
+      if (styledElement && elementStyle.IsCSSRemovable(*styledElement)) {
         // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
         // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
         nsresult rv = CSSEditUtils::RemoveCSSEquivalentToStyle(
@@ -5779,7 +5767,7 @@ nsresult HTMLEditor::SetAttributeOrEquivalent(Element* aElement,
   if (EditorElementStyle::IsHTMLStyle(aAttribute)) {
     const EditorElementStyle elementStyle =
         EditorElementStyle::Create(*aAttribute);
-    if (styledElement && elementStyle.IsCSSEditable(*styledElement)) {
+    if (styledElement && elementStyle.IsCSSSettable(*styledElement)) {
       // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
       // be guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
       Result<size_t, nsresult> count = CSSEditUtils::SetCSSEquivalentToStyle(
@@ -5821,9 +5809,12 @@ nsresult HTMLEditor::SetAttributeOrEquivalent(Element* aElement,
   if (aAttribute == nsGkAtoms::style) {
     // if it is the style attribute, just add the new value to the existing
     // style attribute's value
-    nsAutoString existingValue;
+    nsString existingValue;  // Use nsString to avoid copying the string
+                             // buffer at setting the attribute below.
     aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::style, existingValue);
-    existingValue.Append(HTMLEditUtils::kSpace);
+    if (!existingValue.IsEmpty()) {
+      existingValue.Append(HTMLEditUtils::kSpace);
+    }
     existingValue.Append(aValue);
     if (aSuppressTransaction) {
       nsresult rv = aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
@@ -5863,7 +5854,7 @@ nsresult HTMLEditor::RemoveAttributeOrEquivalent(Element* aElement,
   if (IsCSSEnabled() && EditorElementStyle::IsHTMLStyle(aAttribute)) {
     const EditorElementStyle elementStyle =
         EditorElementStyle::Create(*aAttribute);
-    if (elementStyle.IsCSSEditable(*aElement)) {
+    if (elementStyle.IsCSSRemovable(*aElement)) {
       // XXX It might be keep handling attribute even if aElement is not
       //     an nsStyledElement instance.
       nsStyledElement* styledElement =
@@ -5970,7 +5961,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
                 *range.StartRef().ContainerAs<Text>(),
                 HTMLEditUtils::ClosestEditableBlockElement));
         if (!editableBlockStyledElement ||
-            !EditorElementStyle::BGColor().IsCSSEditable(
+            !EditorElementStyle::BGColor().IsCSSSettable(
                 *editableBlockStyledElement)) {
           continue;
         }
@@ -5995,7 +5986,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
         const RefPtr<nsStyledElement> styledElement =
             range.StartRef().GetContainerAs<nsStyledElement>();
         if (!styledElement ||
-            !EditorElementStyle::BGColor().IsCSSEditable(*styledElement)) {
+            !EditorElementStyle::BGColor().IsCSSSettable(*styledElement)) {
           continue;
         }
         Result<size_t, nsresult> result = CSSEditUtils::SetCSSEquivalentToStyle(
@@ -6026,7 +6017,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
                     *range.StartRef().GetChild(),
                     HTMLEditUtils::ClosestEditableBlockElement));
         if (!editableBlockStyledElement ||
-            !EditorElementStyle::BGColor().IsCSSEditable(
+            !EditorElementStyle::BGColor().IsCSSSettable(
                 *editableBlockStyledElement)) {
           continue;
         }
@@ -6087,7 +6078,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
         nsStyledElement* const blockStyledElement =
             nsStyledElement::FromNode(handledBlockParent);
         if (blockStyledElement &&
-            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
+            EditorElementStyle::BGColor().IsCSSSettable(*blockStyledElement)) {
           // MOZ_KnownLive(*blockStyledElement): It's handledBlockParent
           // whose type is RefPtr.
           Result<size_t, nsresult> result =
@@ -6118,7 +6109,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
         nsStyledElement* const blockStyledElement =
             nsStyledElement::FromNode(handledBlockParent);
         if (blockStyledElement &&
-            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
+            EditorElementStyle::BGColor().IsCSSSettable(*blockStyledElement)) {
           // MOZ_KnownLive(*blockStyledElement): It's handledBlockParent whose
           // type is RefPtr.
           Result<size_t, nsresult> result =
@@ -6150,7 +6141,7 @@ nsresult HTMLEditor::SetBlockBackgroundColorWithCSSAsSubAction(
         const RefPtr<nsStyledElement> blockStyledElement =
             nsStyledElement::FromNode(editableBlockElement);
         if (blockStyledElement &&
-            EditorElementStyle::BGColor().IsCSSEditable(*blockStyledElement)) {
+            EditorElementStyle::BGColor().IsCSSSettable(*blockStyledElement)) {
           Result<size_t, nsresult> result =
               CSSEditUtils::SetCSSEquivalentToStyle(
                   WithTransaction::Yes, *this, *blockStyledElement,

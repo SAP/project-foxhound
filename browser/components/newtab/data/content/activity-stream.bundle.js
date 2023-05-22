@@ -78,58 +78,195 @@ __webpack_require__.d(builtins_namespaceObject, {
   "NUMBER": () => (NUMBER)
 });
 
-;// CONCATENATED MODULE: ./common/Actions.jsm
+;// CONCATENATED MODULE: ./common/Actions.sys.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 const MAIN_MESSAGE_TYPE = "ActivityStream:Main";
 const CONTENT_MESSAGE_TYPE = "ActivityStream:Content";
 const PRELOAD_MESSAGE_TYPE = "ActivityStream:PreloadedBrowser";
 const UI_CODE = 1;
 const BACKGROUND_PROCESS = 2;
+
 /**
  * globalImportContext - Are we in UI code (i.e. react, a dom) or some kind of background process?
  *                       Use this in action creators if you need different logic
  *                       for ui/background processes.
  */
+const globalImportContext =
+  typeof Window === "undefined" ? BACKGROUND_PROCESS : UI_CODE;
 
-const globalImportContext = typeof Window === "undefined" ? BACKGROUND_PROCESS : UI_CODE; // Create an object that avoids accidental differing key/value pairs:
+// Create an object that avoids accidental differing key/value pairs:
 // {
 //   INIT: "INIT",
 //   UNINIT: "UNINIT"
 // }
-
 const actionTypes = {};
 
-for (const type of ["ABOUT_SPONSORED_TOP_SITES", "ADDONS_INFO_REQUEST", "ADDONS_INFO_RESPONSE", "ARCHIVE_FROM_POCKET", "AS_ROUTER_INITIALIZED", "AS_ROUTER_PREF_CHANGED", "AS_ROUTER_TARGETING_UPDATE", "AS_ROUTER_TELEMETRY_USER_EVENT", "BLOCK_URL", "BOOKMARK_URL", "CLEAR_PREF", "COPY_DOWNLOAD_LINK", "DELETE_BOOKMARK_BY_ID", "DELETE_FROM_POCKET", "DELETE_HISTORY_URL", "DIALOG_CANCEL", "DIALOG_OPEN", "DISABLE_SEARCH", "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE", "DISCOVERY_STREAM_CONFIG_CHANGE", "DISCOVERY_STREAM_CONFIG_RESET", "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", "DISCOVERY_STREAM_CONFIG_SETUP", "DISCOVERY_STREAM_CONFIG_SET_VALUE", "DISCOVERY_STREAM_DEV_EXPIRE_CACHE", "DISCOVERY_STREAM_DEV_IDLE_DAILY", "DISCOVERY_STREAM_DEV_SYNC_RS", "DISCOVERY_STREAM_DEV_SYSTEM_TICK", "DISCOVERY_STREAM_EXPERIMENT_DATA", "DISCOVERY_STREAM_FEEDS_UPDATE", "DISCOVERY_STREAM_FEED_UPDATE", "DISCOVERY_STREAM_IMPRESSION_STATS", "DISCOVERY_STREAM_LAYOUT_RESET", "DISCOVERY_STREAM_LAYOUT_UPDATE", "DISCOVERY_STREAM_LINK_BLOCKED", "DISCOVERY_STREAM_LOADED_CONTENT", "DISCOVERY_STREAM_PERSONALIZATION_INIT", "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE", "DISCOVERY_STREAM_POCKET_STATE_INIT", "DISCOVERY_STREAM_POCKET_STATE_SET", "DISCOVERY_STREAM_PREFS_SETUP", "DISCOVERY_STREAM_RECENT_SAVES", "DISCOVERY_STREAM_RETRY_FEED", "DISCOVERY_STREAM_SPOCS_CAPS", "DISCOVERY_STREAM_SPOCS_ENDPOINT", "DISCOVERY_STREAM_SPOCS_PLACEMENTS", "DISCOVERY_STREAM_SPOCS_UPDATE", "DISCOVERY_STREAM_SPOC_BLOCKED", "DISCOVERY_STREAM_SPOC_IMPRESSION", "DISCOVERY_STREAM_USER_EVENT", "DOWNLOAD_CHANGED", "FAKE_FOCUS_SEARCH", "FILL_SEARCH_TERM", "HANDOFF_SEARCH_TO_AWESOMEBAR", "HIDE_PRIVACY_INFO", "INIT", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_DOWNLOAD_FILE", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "OPEN_WEBEXT_SETTINGS", "PARTNER_LINK_ATTRIBUTION", "PLACES_BOOKMARKS_REMOVED", "PLACES_BOOKMARK_ADDED", "PLACES_HISTORY_CLEARED", "PLACES_LINKS_CHANGED", "PLACES_LINKS_DELETED", "PLACES_LINK_BLOCKED", "PLACES_SAVED_TO_POCKET", "POCKET_CTA", "POCKET_LINK_DELETED_OR_ARCHIVED", "POCKET_LOGGED_IN", "POCKET_WAITING_FOR_SPOC", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "PREVIEW_REQUEST", "PREVIEW_REQUEST_CANCEL", "PREVIEW_RESPONSE", "REMOVE_DOWNLOAD_FILE", "RICH_ICON_MISSING", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_MOVE", "SECTION_OPTIONS_CHANGED", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SETTINGS_CLOSE", "SETTINGS_OPEN", "SET_PREF", "SHOW_DOWNLOAD_FILE", "SHOW_FIREFOX_ACCOUNTS", "SHOW_PRIVACY_INFO", "SHOW_SEARCH", "SKIPPED_SIGNIN", "SNIPPETS_BLOCKLIST_CLEARED", "SNIPPETS_BLOCKLIST_UPDATED", "SNIPPETS_DATA", "SNIPPETS_PREVIEW_MODE", "SNIPPETS_RESET", "SNIPPET_BLOCKED", "SUBMIT_EMAIL", "SUBMIT_SIGNIN", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_USER_EVENT", "TOP_SITES_CANCEL_EDIT", "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_EDIT", "TOP_SITES_IMPRESSION_STATS", "TOP_SITES_INSERT", "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_PIN", "TOP_SITES_PREFS_UPDATED", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "TOTAL_BOOKMARKS_REQUEST", "TOTAL_BOOKMARKS_RESPONSE", "UNINIT", "UPDATE_PINNED_SEARCH_SHORTCUTS", "UPDATE_SEARCH_SHORTCUTS", "UPDATE_SECTION_PREFS", "WEBEXT_CLICK", "WEBEXT_DISMISS"]) {
+for (const type of [
+  "ABOUT_SPONSORED_TOP_SITES",
+  "ADDONS_INFO_REQUEST",
+  "ADDONS_INFO_RESPONSE",
+  "ARCHIVE_FROM_POCKET",
+  "AS_ROUTER_INITIALIZED",
+  "AS_ROUTER_PREF_CHANGED",
+  "AS_ROUTER_TARGETING_UPDATE",
+  "AS_ROUTER_TELEMETRY_USER_EVENT",
+  "BLOCK_URL",
+  "BOOKMARK_URL",
+  "CLEAR_PREF",
+  "COPY_DOWNLOAD_LINK",
+  "DELETE_BOOKMARK_BY_ID",
+  "DELETE_FROM_POCKET",
+  "DELETE_HISTORY_URL",
+  "DIALOG_CANCEL",
+  "DIALOG_OPEN",
+  "DISABLE_SEARCH",
+  "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE",
+  "DISCOVERY_STREAM_CONFIG_CHANGE",
+  "DISCOVERY_STREAM_CONFIG_RESET",
+  "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS",
+  "DISCOVERY_STREAM_CONFIG_SETUP",
+  "DISCOVERY_STREAM_CONFIG_SET_VALUE",
+  "DISCOVERY_STREAM_DEV_EXPIRE_CACHE",
+  "DISCOVERY_STREAM_DEV_IDLE_DAILY",
+  "DISCOVERY_STREAM_DEV_SYNC_RS",
+  "DISCOVERY_STREAM_DEV_SYSTEM_TICK",
+  "DISCOVERY_STREAM_EXPERIMENT_DATA",
+  "DISCOVERY_STREAM_FEEDS_UPDATE",
+  "DISCOVERY_STREAM_FEED_UPDATE",
+  "DISCOVERY_STREAM_IMPRESSION_STATS",
+  "DISCOVERY_STREAM_LAYOUT_RESET",
+  "DISCOVERY_STREAM_LAYOUT_UPDATE",
+  "DISCOVERY_STREAM_LINK_BLOCKED",
+  "DISCOVERY_STREAM_LOADED_CONTENT",
+  "DISCOVERY_STREAM_PERSONALIZATION_INIT",
+  "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED",
+  "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE",
+  "DISCOVERY_STREAM_POCKET_STATE_INIT",
+  "DISCOVERY_STREAM_POCKET_STATE_SET",
+  "DISCOVERY_STREAM_PREFS_SETUP",
+  "DISCOVERY_STREAM_RECENT_SAVES",
+  "DISCOVERY_STREAM_RETRY_FEED",
+  "DISCOVERY_STREAM_SPOCS_CAPS",
+  "DISCOVERY_STREAM_SPOCS_ENDPOINT",
+  "DISCOVERY_STREAM_SPOCS_PLACEMENTS",
+  "DISCOVERY_STREAM_SPOCS_UPDATE",
+  "DISCOVERY_STREAM_SPOC_BLOCKED",
+  "DISCOVERY_STREAM_SPOC_IMPRESSION",
+  "DISCOVERY_STREAM_USER_EVENT",
+  "DOWNLOAD_CHANGED",
+  "FAKE_FOCUS_SEARCH",
+  "FILL_SEARCH_TERM",
+  "HANDOFF_SEARCH_TO_AWESOMEBAR",
+  "HIDE_PRIVACY_INFO",
+  "INIT",
+  "NEW_TAB_INIT",
+  "NEW_TAB_INITIAL_STATE",
+  "NEW_TAB_LOAD",
+  "NEW_TAB_REHYDRATED",
+  "NEW_TAB_STATE_REQUEST",
+  "NEW_TAB_UNLOAD",
+  "OPEN_DOWNLOAD_FILE",
+  "OPEN_LINK",
+  "OPEN_NEW_WINDOW",
+  "OPEN_PRIVATE_WINDOW",
+  "OPEN_WEBEXT_SETTINGS",
+  "PARTNER_LINK_ATTRIBUTION",
+  "PLACES_BOOKMARKS_REMOVED",
+  "PLACES_BOOKMARK_ADDED",
+  "PLACES_HISTORY_CLEARED",
+  "PLACES_LINKS_CHANGED",
+  "PLACES_LINKS_DELETED",
+  "PLACES_LINK_BLOCKED",
+  "PLACES_SAVED_TO_POCKET",
+  "POCKET_CTA",
+  "POCKET_LINK_DELETED_OR_ARCHIVED",
+  "POCKET_LOGGED_IN",
+  "POCKET_WAITING_FOR_SPOC",
+  "PREFS_INITIAL_VALUES",
+  "PREF_CHANGED",
+  "PREVIEW_REQUEST",
+  "PREVIEW_REQUEST_CANCEL",
+  "PREVIEW_RESPONSE",
+  "REMOVE_DOWNLOAD_FILE",
+  "RICH_ICON_MISSING",
+  "SAVE_SESSION_PERF_DATA",
+  "SAVE_TO_POCKET",
+  "SCREENSHOT_UPDATED",
+  "SECTION_DEREGISTER",
+  "SECTION_DISABLE",
+  "SECTION_ENABLE",
+  "SECTION_MOVE",
+  "SECTION_OPTIONS_CHANGED",
+  "SECTION_REGISTER",
+  "SECTION_UPDATE",
+  "SECTION_UPDATE_CARD",
+  "SETTINGS_CLOSE",
+  "SETTINGS_OPEN",
+  "SET_PREF",
+  "SHOW_DOWNLOAD_FILE",
+  "SHOW_FIREFOX_ACCOUNTS",
+  "SHOW_PRIVACY_INFO",
+  "SHOW_SEARCH",
+  "SKIPPED_SIGNIN",
+  "SNIPPETS_BLOCKLIST_CLEARED",
+  "SNIPPETS_BLOCKLIST_UPDATED",
+  "SNIPPETS_DATA",
+  "SNIPPETS_PREVIEW_MODE",
+  "SNIPPETS_RESET",
+  "SNIPPET_BLOCKED",
+  "SUBMIT_EMAIL",
+  "SUBMIT_SIGNIN",
+  "SYSTEM_TICK",
+  "TELEMETRY_IMPRESSION_STATS",
+  "TELEMETRY_USER_EVENT",
+  "TOP_SITES_CANCEL_EDIT",
+  "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL",
+  "TOP_SITES_EDIT",
+  "TOP_SITES_IMPRESSION_STATS",
+  "TOP_SITES_INSERT",
+  "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL",
+  "TOP_SITES_PIN",
+  "TOP_SITES_PREFS_UPDATED",
+  "TOP_SITES_UNPIN",
+  "TOP_SITES_UPDATED",
+  "TOTAL_BOOKMARKS_REQUEST",
+  "TOTAL_BOOKMARKS_RESPONSE",
+  "UNINIT",
+  "UPDATE_PINNED_SEARCH_SHORTCUTS",
+  "UPDATE_SEARCH_SHORTCUTS",
+  "UPDATE_SECTION_PREFS",
+  "WEBEXT_CLICK",
+  "WEBEXT_DISMISS",
+]) {
   actionTypes[type] = type;
-} // Helper function for creating routed actions between content and main
-// Not intended to be used by consumers
-
-
-function _RouteMessage(action, options) {
-  const meta = action.meta ? { ...action.meta
-  } : {};
-
-  if (!options || !options.from || !options.to) {
-    throw new Error("Routed Messages must have options as the second parameter, and must at least include a .from and .to property.");
-  } // For each of these fields, if they are passed as an option,
-  // add them to the action. If they are not defined, remove them.
-
-
-  ["from", "to", "toTarget", "fromTarget", "skipMain", "skipLocal"].forEach(o => {
-    if (typeof options[o] !== "undefined") {
-      meta[o] = options[o];
-    } else if (meta[o]) {
-      delete meta[o];
-    }
-  });
-  return { ...action,
-    meta
-  };
 }
+
+// Helper function for creating routed actions between content and main
+// Not intended to be used by consumers
+function _RouteMessage(action, options) {
+  const meta = action.meta ? { ...action.meta } : {};
+  if (!options || !options.from || !options.to) {
+    throw new Error(
+      "Routed Messages must have options as the second parameter, and must at least include a .from and .to property."
+    );
+  }
+  // For each of these fields, if they are passed as an option,
+  // add them to the action. If they are not defined, remove them.
+  ["from", "to", "toTarget", "fromTarget", "skipMain", "skipLocal"].forEach(
+    o => {
+      if (typeof options[o] !== "undefined") {
+        meta[o] = options[o];
+      } else if (meta[o]) {
+        delete meta[o];
+      }
+    }
+  );
+  return { ...action, meta };
+}
+
 /**
  * AlsoToMain - Creates a message that will be dispatched locally and also sent to the Main process.
  *
@@ -139,16 +276,15 @@ function _RouteMessage(action, options) {
  * @param  {string} fromTarget The id of the content port from which the action originated. (optional)
  * @return {object} An action with added .meta properties
  */
-
-
 function AlsoToMain(action, fromTarget, skipLocal) {
   return _RouteMessage(action, {
     from: CONTENT_MESSAGE_TYPE,
     to: MAIN_MESSAGE_TYPE,
     fromTarget,
-    skipLocal
+    skipLocal,
   });
 }
+
 /**
  * OnlyToMain - Creates a message that will be sent to the Main process and skip the local reducer.
  *
@@ -157,25 +293,23 @@ function AlsoToMain(action, fromTarget, skipLocal) {
  * @param  {string} fromTarget The id of the content port from which the action originated. (optional)
  * @return {object} An action with added .meta properties
  */
-
-
 function OnlyToMain(action, fromTarget) {
   return AlsoToMain(action, fromTarget, true);
 }
+
 /**
  * BroadcastToContent - Creates a message that will be dispatched to main and sent to ALL content processes.
  *
  * @param  {object} action Any redux action (required)
  * @return {object} An action with added .meta properties
  */
-
-
 function BroadcastToContent(action) {
   return _RouteMessage(action, {
     from: MAIN_MESSAGE_TYPE,
-    to: CONTENT_MESSAGE_TYPE
+    to: CONTENT_MESSAGE_TYPE,
   });
 }
+
 /**
  * AlsoToOneContent - Creates a message that will be will be dispatched to the main store
  *                    and also sent to a particular Content process.
@@ -185,20 +319,20 @@ function BroadcastToContent(action) {
  * @param  {bool} skipMain Used by OnlyToOneContent to skip the main process
  * @return {object} An action with added .meta properties
  */
-
-
 function AlsoToOneContent(action, target, skipMain) {
   if (!target) {
-    throw new Error("You must provide a target ID as the second parameter of AlsoToOneContent. If you want to send to all content processes, use BroadcastToContent");
+    throw new Error(
+      "You must provide a target ID as the second parameter of AlsoToOneContent. If you want to send to all content processes, use BroadcastToContent"
+    );
   }
-
   return _RouteMessage(action, {
     from: MAIN_MESSAGE_TYPE,
     to: CONTENT_MESSAGE_TYPE,
     toTarget: target,
-    skipMain
+    skipMain,
   });
 }
+
 /**
  * OnlyToOneContent - Creates a message that will be sent to a particular Content process
  *                    and skip the main reducer.
@@ -207,25 +341,23 @@ function AlsoToOneContent(action, target, skipMain) {
  * @param  {string} target The id of a content port
  * @return {object} An action with added .meta properties
  */
-
-
 function OnlyToOneContent(action, target) {
   return AlsoToOneContent(action, target, true);
 }
+
 /**
  * AlsoToPreloaded - Creates a message that dispatched to the main reducer and also sent to the preloaded tab.
  *
  * @param  {object} action Any redux action (required)
  * @return {object} An action with added .meta properties
  */
-
-
 function AlsoToPreloaded(action) {
   return _RouteMessage(action, {
     from: MAIN_MESSAGE_TYPE,
-    to: PRELOAD_MESSAGE_TYPE
+    to: PRELOAD_MESSAGE_TYPE,
   });
 }
+
 /**
  * UserEvent - A telemetry ping indicating a user action. This should only
  *                   be sent from the UI during a user session.
@@ -233,14 +365,13 @@ function AlsoToPreloaded(action) {
  * @param  {object} data Fields to include in the ping (source, etc.)
  * @return {object} An AlsoToMain action
  */
-
-
 function UserEvent(data) {
   return AlsoToMain({
     type: actionTypes.TELEMETRY_USER_EVENT,
-    data
+    data,
   });
 }
+
 /**
  * DiscoveryStreamUserEvent - A telemetry ping indicating a user action from Discovery Stream. This should only
  *                     be sent from the UI during a user session.
@@ -248,14 +379,13 @@ function UserEvent(data) {
  * @param  {object} data Fields to include in the ping (source, etc.)
  * @return {object} An AlsoToMain action
  */
-
-
 function DiscoveryStreamUserEvent(data) {
   return AlsoToMain({
     type: actionTypes.DISCOVERY_STREAM_USER_EVENT,
-    data
+    data,
   });
 }
+
 /**
  * ASRouterUserEvent - A telemetry ping indicating a user action from AS router. This should only
  *                     be sent from the UI during a user session.
@@ -263,14 +393,13 @@ function DiscoveryStreamUserEvent(data) {
  * @param  {object} data Fields to include in the ping (source, etc.)
  * @return {object} An AlsoToMain action
  */
-
-
 function ASRouterUserEvent(data) {
   return AlsoToMain({
     type: actionTypes.AS_ROUTER_TELEMETRY_USER_EVENT,
-    data
+    data,
   });
 }
+
 /**
  * ImpressionStats - A telemetry ping indicating an impression stats.
  *
@@ -278,15 +407,14 @@ function ASRouterUserEvent(data) {
  * @param  {int} importContext (For testing) Override the import context for testing.
  * #return {object} An action. For UI code, a AlsoToMain action.
  */
-
-
 function ImpressionStats(data, importContext = globalImportContext) {
   const action = {
     type: actionTypes.TELEMETRY_IMPRESSION_STATS,
-    data
+    data,
   };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
+
 /**
  * DiscoveryStreamImpressionStats - A telemetry ping indicating an impression stats in Discovery Stream.
  *
@@ -294,15 +422,17 @@ function ImpressionStats(data, importContext = globalImportContext) {
  * @param  {int} importContext (For testing) Override the import context for testing.
  * #return {object} An action. For UI code, a AlsoToMain action.
  */
-
-
-function DiscoveryStreamImpressionStats(data, importContext = globalImportContext) {
+function DiscoveryStreamImpressionStats(
+  data,
+  importContext = globalImportContext
+) {
   const action = {
     type: actionTypes.DISCOVERY_STREAM_IMPRESSION_STATS,
-    data
+    data,
   };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
+
 /**
  * DiscoveryStreamLoadedContent - A telemetry ping indicating a content gets loaded in Discovery Stream.
  *
@@ -310,36 +440,29 @@ function DiscoveryStreamImpressionStats(data, importContext = globalImportContex
  * @param  {int} importContext (For testing) Override the import context for testing.
  * #return {object} An action. For UI code, a AlsoToMain action.
  */
-
-
-function DiscoveryStreamLoadedContent(data, importContext = globalImportContext) {
+function DiscoveryStreamLoadedContent(
+  data,
+  importContext = globalImportContext
+) {
   const action = {
     type: actionTypes.DISCOVERY_STREAM_LOADED_CONTENT,
-    data
+    data,
   };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
 function SetPref(name, value, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.SET_PREF,
-    data: {
-      name,
-      value
-    }
-  };
+  const action = { type: actionTypes.SET_PREF, data: { name, value } };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
 function WebExtEvent(type, data, importContext = globalImportContext) {
   if (!data || !data.source) {
-    throw new Error('WebExtEvent actions should include a property "source", the id of the webextension that should receive the event.');
+    throw new Error(
+      'WebExtEvent actions should include a property "source", the id of the webextension that should receive the event.'
+    );
   }
-
-  const action = {
-    type,
-    data
-  };
+  const action = { type, data };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
@@ -357,79 +480,111 @@ const actionCreators = {
   SetPref,
   WebExtEvent,
   DiscoveryStreamImpressionStats,
-  DiscoveryStreamLoadedContent
-}; // These are helpers to test for certain kinds of actions
+  DiscoveryStreamLoadedContent,
+};
 
+// These are helpers to test for certain kinds of actions
 const actionUtils = {
   isSendToMain(action) {
     if (!action.meta) {
       return false;
     }
-
-    return action.meta.to === MAIN_MESSAGE_TYPE && action.meta.from === CONTENT_MESSAGE_TYPE;
+    return (
+      action.meta.to === MAIN_MESSAGE_TYPE &&
+      action.meta.from === CONTENT_MESSAGE_TYPE
+    );
   },
-
   isBroadcastToContent(action) {
     if (!action.meta) {
       return false;
     }
-
     if (action.meta.to === CONTENT_MESSAGE_TYPE && !action.meta.toTarget) {
       return true;
     }
-
     return false;
   },
-
   isSendToOneContent(action) {
     if (!action.meta) {
       return false;
     }
-
     if (action.meta.to === CONTENT_MESSAGE_TYPE && action.meta.toTarget) {
       return true;
     }
-
     return false;
   },
-
   isSendToPreloaded(action) {
     if (!action.meta) {
       return false;
     }
-
-    return action.meta.to === PRELOAD_MESSAGE_TYPE && action.meta.from === MAIN_MESSAGE_TYPE;
+    return (
+      action.meta.to === PRELOAD_MESSAGE_TYPE &&
+      action.meta.from === MAIN_MESSAGE_TYPE
+    );
   },
-
   isFromMain(action) {
     if (!action.meta) {
       return false;
     }
-
-    return action.meta.from === MAIN_MESSAGE_TYPE && action.meta.to === CONTENT_MESSAGE_TYPE;
+    return (
+      action.meta.from === MAIN_MESSAGE_TYPE &&
+      action.meta.to === CONTENT_MESSAGE_TYPE
+    );
   },
-
   getPortIdOfSender(action) {
-    return action.meta && action.meta.fromTarget || null;
+    return (action.meta && action.meta.fromTarget) || null;
   },
-
-  _RouteMessage
+  _RouteMessage,
 };
-;// CONCATENATED MODULE: ./common/ActorConstants.jsm
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 
+;// CONCATENATED MODULE: ./common/ActorConstants.sys.mjs
+/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const MESSAGE_TYPE_LIST = [
+  "BLOCK_MESSAGE_BY_ID",
+  "USER_ACTION",
+  "IMPRESSION",
+  "TRIGGER",
+  "NEWTAB_MESSAGE_REQUEST",
+  // PB is Private Browsing
+  "PBNEWTAB_MESSAGE_REQUEST",
+  "DOORHANGER_TELEMETRY",
+  "TOOLBAR_BADGE_TELEMETRY",
+  "TOOLBAR_PANEL_TELEMETRY",
+  "MOMENTS_PAGE_TELEMETRY",
+  "INFOBAR_TELEMETRY",
+  "SPOTLIGHT_TELEMETRY",
+  "TOAST_NOTIFICATION_TELEMETRY",
+  "AS_ROUTER_TELEMETRY_USER_EVENT",
 
-const MESSAGE_TYPE_LIST = ["BLOCK_MESSAGE_BY_ID", "USER_ACTION", "IMPRESSION", "TRIGGER", "NEWTAB_MESSAGE_REQUEST", // PB is Private Browsing
-"PBNEWTAB_MESSAGE_REQUEST", "DOORHANGER_TELEMETRY", "TOOLBAR_BADGE_TELEMETRY", "TOOLBAR_PANEL_TELEMETRY", "MOMENTS_PAGE_TELEMETRY", "INFOBAR_TELEMETRY", "SPOTLIGHT_TELEMETRY", "TOAST_NOTIFICATION_TELEMETRY", "AS_ROUTER_TELEMETRY_USER_EVENT", // Admin types
-"ADMIN_CONNECT_STATE", "UNBLOCK_MESSAGE_BY_ID", "UNBLOCK_ALL", "BLOCK_BUNDLE", "UNBLOCK_BUNDLE", "DISABLE_PROVIDER", "ENABLE_PROVIDER", "EVALUATE_JEXL_EXPRESSION", "EXPIRE_QUERY_CACHE", "FORCE_ATTRIBUTION", "FORCE_WHATSNEW_PANEL", "FORCE_PRIVATE_BROWSING_WINDOW", "CLOSE_WHATSNEW_PANEL", "OVERRIDE_MESSAGE", "MODIFY_MESSAGE_JSON", "RESET_PROVIDER_PREF", "SET_PROVIDER_USER_PREF", "RESET_GROUPS_STATE"];
+  // Admin types
+  "ADMIN_CONNECT_STATE",
+  "UNBLOCK_MESSAGE_BY_ID",
+  "UNBLOCK_ALL",
+  "BLOCK_BUNDLE",
+  "UNBLOCK_BUNDLE",
+  "DISABLE_PROVIDER",
+  "ENABLE_PROVIDER",
+  "EVALUATE_JEXL_EXPRESSION",
+  "EXPIRE_QUERY_CACHE",
+  "FORCE_ATTRIBUTION",
+  "FORCE_WHATSNEW_PANEL",
+  "FORCE_PRIVATE_BROWSING_WINDOW",
+  "CLOSE_WHATSNEW_PANEL",
+  "OVERRIDE_MESSAGE",
+  "MODIFY_MESSAGE_JSON",
+  "RESET_PROVIDER_PREF",
+  "SET_PROVIDER_USER_PREF",
+  "RESET_GROUPS_STATE",
+];
+
 const MESSAGE_TYPE_HASH = MESSAGE_TYPE_LIST.reduce((hash, value) => {
   hash[value] = value;
   return hash;
 }, {});
+
 ;// CONCATENATED MODULE: ./content-src/asrouter/asrouter-utils.js
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -6494,7 +6649,8 @@ class _ContextMenuItem extends (external_React_default()).PureComponent {
       onClick: this.onClick,
       onKeyDown: this.onKeyDown,
       onKeyUp: this.onKeyUp,
-      ref: option.first ? this.focusFirst : null
+      ref: option.first ? this.focusFirst : null,
+      "aria-haspopup": option.id === "newtab-menu-edit-topsites" ? "dialog" : null
     }, /*#__PURE__*/external_React_default().createElement("span", {
       "data-l10n-id": option.string_id || option.id
     })));
@@ -10373,10 +10529,11 @@ class SearchShortcutsForm extends (external_React_default()).PureComponent {
   }
 
 }
-;// CONCATENATED MODULE: ./common/Dedupe.jsm
+;// CONCATENATED MODULE: ./common/Dedupe.sys.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 class Dedupe {
   constructor(createKey) {
     this.createKey = createKey || this.defaultCreateKey;
@@ -10385,38 +10542,32 @@ class Dedupe {
   defaultCreateKey(item) {
     return item;
   }
+
   /**
    * Dedupe any number of grouped elements favoring those from earlier groups.
    *
    * @param {Array} groups Contains an arbitrary number of arrays of elements.
    * @returns {Array} A matching array of each provided group deduped.
    */
-
-
   group(...groups) {
     const globalKeys = new Set();
     const result = [];
-
     for (const values of groups) {
       const valueMap = new Map();
-
       for (const value of values) {
         const key = this.createKey(value);
-
         if (!globalKeys.has(key) && !valueMap.has(key)) {
           valueMap.set(key, value);
         }
       }
-
       result.push(valueMap);
       valueMap.forEach((value, key) => globalKeys.add(key));
     }
-
     return result.map(m => Array.from(m.values()));
   }
-
 }
-;// CONCATENATED MODULE: ./common/Reducers.jsm
+
+;// CONCATENATED MODULE: ./common/Reducers.sys.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10427,19 +10578,17 @@ class Dedupe {
 const TOP_SITES_DEFAULT_ROWS = 1;
 const TOP_SITES_MAX_SITES_PER_ROW = 8;
 const PREF_COLLECTION_DISMISSIBLE = "discoverystream.isCollectionDismissible";
+
 const dedupe = new Dedupe(site => site && site.url);
+
 const INITIAL_STATE = {
   App: {
     // Have we received real data from the app yet?
     initialized: false,
-    locale: ""
+    locale: "",
   },
-  ASRouter: {
-    initialized: false
-  },
-  Snippets: {
-    initialized: false
-  },
+  ASRouter: { initialized: false },
+  Snippets: { initialized: false },
   TopSites: {
     // Have we received real data from history yet?
     initialized: false,
@@ -10450,63 +10599,60 @@ const INITIAL_STATE = {
     // Used in content only to open the SearchShortcutsForm modal.
     showSearchShortcutsForm: false,
     // The list of available search shortcuts.
-    searchShortcuts: []
+    searchShortcuts: [],
   },
   Prefs: {
     initialized: false,
-    values: {
-      featureConfig: {}
-    }
+    values: { featureConfig: {} },
   },
   Dialog: {
     visible: false,
-    data: {}
+    data: {},
   },
   Sections: [],
   Pocket: {
     isUserLoggedIn: null,
     pocketCta: {},
-    waitingForSpoc: true
+    waitingForSpoc: true,
   },
   // This is the new pocket configurable layout state.
   DiscoveryStream: {
     // This is a JSON-parsed copy of the discoverystream.config pref value.
-    config: {
-      enabled: false,
-      layout_endpoint: ""
-    },
+    config: { enabled: false, layout_endpoint: "" },
     layout: [],
     lastUpdated: null,
     isPrivacyInfoModalVisible: false,
     isCollectionDismissible: false,
     feeds: {
-      data: {// "https://foo.com/feed1": {lastUpdated: 123, data: []}
+      data: {
+        // "https://foo.com/feed1": {lastUpdated: 123, data: []}
       },
-      loaded: false
+      loaded: false,
     },
     spocs: {
       spocs_endpoint: "",
       lastUpdated: null,
-      data: {// "spocs": {title: "", context: "", items: []},
+      data: {
+        // "spocs": {title: "", context: "", items: []},
         // "placement1": {title: "", context: "", items: []},
       },
       loaded: false,
       frequency_caps: [],
       blocked: [],
-      placements: []
+      placements: [],
     },
     experimentData: {
       utmSource: "pocket-newtab",
       utmCampaign: undefined,
-      utmContent: undefined
+      utmContent: undefined,
     },
     recentSavesData: [],
     isUserLoggedIn: false,
-    recentSavesEnabled: false
+    recentSavesEnabled: false,
   },
   Personalization: {
     lastUpdated: null,
-    initialized: false
+    initialized: false,
   },
   Search: {
     // When search hand-off is enabled, we render a big button that is styled to
@@ -10515,17 +10661,16 @@ const INITIAL_STATE = {
     // really focus the awesomebar without the focus styles ("hidden focus").
     fakeFocus: false,
     // Hide the search box after handing off to AwesomeBar and user starts typing.
-    hide: false
-  }
+    hide: false,
+  },
 };
 
 function App(prevState = INITIAL_STATE.App, action) {
   switch (action.type) {
     case actionTypes.INIT:
       return Object.assign({}, prevState, action.data || {}, {
-        initialized: true
+        initialized: true,
       });
-
     default:
       return prevState;
   }
@@ -10534,14 +10679,12 @@ function App(prevState = INITIAL_STATE.App, action) {
 function ASRouter(prevState = INITIAL_STATE.ASRouter, action) {
   switch (action.type) {
     case actionTypes.AS_ROUTER_INITIALIZED:
-      return { ...action.data,
-        initialized: true
-      };
-
+      return { ...action.data, initialized: true };
     default:
       return prevState;
   }
 }
+
 /**
  * insertPinned - Inserts pinned links in their specified slots
  *
@@ -10549,168 +10692,131 @@ function ASRouter(prevState = INITIAL_STATE.ASRouter, action) {
  * @param {array} a list of pinned links
  * @return {array} resulting list of links with pinned links inserted
  */
-
-
 function insertPinned(links, pinned) {
   // Remove any pinned links
   const pinnedUrls = pinned.map(link => link && link.url);
-  let newLinks = links.filter(link => link ? !pinnedUrls.includes(link.url) : false);
+  let newLinks = links.filter(link =>
+    link ? !pinnedUrls.includes(link.url) : false
+  );
   newLinks = newLinks.map(link => {
     if (link && link.isPinned) {
       delete link.isPinned;
       delete link.pinIndex;
     }
-
     return link;
-  }); // Then insert them in their specified location
+  });
 
+  // Then insert them in their specified location
   pinned.forEach((val, index) => {
     if (!val) {
       return;
     }
-
-    let link = Object.assign({}, val, {
-      isPinned: true,
-      pinIndex: index
-    });
-
+    let link = Object.assign({}, val, { isPinned: true, pinIndex: index });
     if (index > newLinks.length) {
       newLinks[index] = link;
     } else {
       newLinks.splice(index, 0, link);
     }
   });
+
   return newLinks;
 }
 
 function TopSites(prevState = INITIAL_STATE.TopSites, action) {
   let hasMatch;
   let newRows;
-
   switch (action.type) {
     case actionTypes.TOP_SITES_UPDATED:
       if (!action.data || !action.data.links) {
         return prevState;
       }
-
-      return Object.assign({}, prevState, {
-        initialized: true,
-        rows: action.data.links
-      }, action.data.pref ? {
-        pref: action.data.pref
-      } : {});
-
+      return Object.assign(
+        {},
+        prevState,
+        { initialized: true, rows: action.data.links },
+        action.data.pref ? { pref: action.data.pref } : {}
+      );
     case actionTypes.TOP_SITES_PREFS_UPDATED:
-      return Object.assign({}, prevState, {
-        pref: action.data.pref
-      });
-
+      return Object.assign({}, prevState, { pref: action.data.pref });
     case actionTypes.TOP_SITES_EDIT:
       return Object.assign({}, prevState, {
         editForm: {
           index: action.data.index,
-          previewResponse: null
-        }
+          previewResponse: null,
+        },
       });
-
     case actionTypes.TOP_SITES_CANCEL_EDIT:
-      return Object.assign({}, prevState, {
-        editForm: null
-      });
-
+      return Object.assign({}, prevState, { editForm: null });
     case actionTypes.TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL:
-      return Object.assign({}, prevState, {
-        showSearchShortcutsForm: true
-      });
-
+      return Object.assign({}, prevState, { showSearchShortcutsForm: true });
     case actionTypes.TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL:
-      return Object.assign({}, prevState, {
-        showSearchShortcutsForm: false
-      });
-
+      return Object.assign({}, prevState, { showSearchShortcutsForm: false });
     case actionTypes.PREVIEW_RESPONSE:
-      if (!prevState.editForm || action.data.url !== prevState.editForm.previewUrl) {
+      if (
+        !prevState.editForm ||
+        action.data.url !== prevState.editForm.previewUrl
+      ) {
         return prevState;
       }
-
       return Object.assign({}, prevState, {
         editForm: {
           index: prevState.editForm.index,
           previewResponse: action.data.preview,
-          previewUrl: action.data.url
-        }
+          previewUrl: action.data.url,
+        },
       });
-
     case actionTypes.PREVIEW_REQUEST:
       if (!prevState.editForm) {
         return prevState;
       }
-
       return Object.assign({}, prevState, {
         editForm: {
           index: prevState.editForm.index,
           previewResponse: null,
-          previewUrl: action.data.url
-        }
+          previewUrl: action.data.url,
+        },
       });
-
     case actionTypes.PREVIEW_REQUEST_CANCEL:
       if (!prevState.editForm) {
         return prevState;
       }
-
       return Object.assign({}, prevState, {
         editForm: {
           index: prevState.editForm.index,
-          previewResponse: null
-        }
+          previewResponse: null,
+        },
       });
-
     case actionTypes.SCREENSHOT_UPDATED:
       newRows = prevState.rows.map(row => {
         if (row && row.url === action.data.url) {
           hasMatch = true;
-          return Object.assign({}, row, {
-            screenshot: action.data.screenshot
-          });
+          return Object.assign({}, row, { screenshot: action.data.screenshot });
         }
-
         return row;
       });
-      return hasMatch ? Object.assign({}, prevState, {
-        rows: newRows
-      }) : prevState;
-
+      return hasMatch
+        ? Object.assign({}, prevState, { rows: newRows })
+        : prevState;
     case actionTypes.PLACES_BOOKMARK_ADDED:
       if (!action.data) {
         return prevState;
       }
-
       newRows = prevState.rows.map(site => {
         if (site && site.url === action.data.url) {
-          const {
-            bookmarkGuid,
-            bookmarkTitle,
-            dateAdded
-          } = action.data;
+          const { bookmarkGuid, bookmarkTitle, dateAdded } = action.data;
           return Object.assign({}, site, {
             bookmarkGuid,
             bookmarkTitle,
-            bookmarkDateCreated: dateAdded
+            bookmarkDateCreated: dateAdded,
           });
         }
-
         return site;
       });
-      return Object.assign({}, prevState, {
-        rows: newRows
-      });
-
+      return Object.assign({}, prevState, { rows: newRows });
     case actionTypes.PLACES_BOOKMARKS_REMOVED:
       if (!action.data) {
         return prevState;
       }
-
       newRows = prevState.rows.map(site => {
         if (site && action.data.urls.includes(site.url)) {
           const newSite = Object.assign({}, site);
@@ -10719,33 +10825,21 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
           delete newSite.bookmarkDateCreated;
           return newSite;
         }
-
         return site;
       });
-      return Object.assign({}, prevState, {
-        rows: newRows
-      });
-
+      return Object.assign({}, prevState, { rows: newRows });
     case actionTypes.PLACES_LINKS_DELETED:
       if (!action.data) {
         return prevState;
       }
-
-      newRows = prevState.rows.filter(site => !action.data.urls.includes(site.url));
-      return Object.assign({}, prevState, {
-        rows: newRows
-      });
-
+      newRows = prevState.rows.filter(
+        site => !action.data.urls.includes(site.url)
+      );
+      return Object.assign({}, prevState, { rows: newRows });
     case actionTypes.UPDATE_SEARCH_SHORTCUTS:
-      return { ...prevState,
-        searchShortcuts: action.data.searchShortcuts
-      };
-
+      return { ...prevState, searchShortcuts: action.data.searchShortcuts };
     case actionTypes.SNIPPETS_PREVIEW_MODE:
-      return { ...prevState,
-        rows: []
-      };
-
+      return { ...prevState, rows: [] };
     default:
       return prevState;
   }
@@ -10754,19 +10848,11 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
 function Dialog(prevState = INITIAL_STATE.Dialog, action) {
   switch (action.type) {
     case actionTypes.DIALOG_OPEN:
-      return Object.assign({}, prevState, {
-        visible: true,
-        data: action.data
-      });
-
+      return Object.assign({}, prevState, { visible: true, data: action.data });
     case actionTypes.DIALOG_CANCEL:
-      return Object.assign({}, prevState, {
-        visible: false
-      });
-
+      return Object.assign({}, prevState, { visible: false });
     case actionTypes.DELETE_HISTORY_URL:
       return Object.assign({}, INITIAL_STATE.Dialog);
-
     default:
       return prevState;
   }
@@ -10774,21 +10860,16 @@ function Dialog(prevState = INITIAL_STATE.Dialog, action) {
 
 function Prefs(prevState = INITIAL_STATE.Prefs, action) {
   let newValues;
-
   switch (action.type) {
     case actionTypes.PREFS_INITIAL_VALUES:
       return Object.assign({}, prevState, {
         initialized: true,
-        values: action.data
+        values: action.data,
       });
-
     case actionTypes.PREF_CHANGED:
       newValues = Object.assign({}, prevState.values);
       newValues[action.data.name] = action.data.value;
-      return Object.assign({}, prevState, {
-        values: newValues
-      });
-
+      return Object.assign({}, prevState, { values: newValues });
     default:
       return prevState;
   }
@@ -10797,11 +10878,9 @@ function Prefs(prevState = INITIAL_STATE.Prefs, action) {
 function Sections(prevState = INITIAL_STATE.Sections, action) {
   let hasMatch;
   let newState;
-
   switch (action.type) {
     case actionTypes.SECTION_DEREGISTER:
       return prevState.filter(section => section.id !== action.data);
-
     case actionTypes.SECTION_REGISTER:
       // If section exists in prevState, update it
       newState = prevState.map(section => {
@@ -10809,35 +10888,33 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           hasMatch = true;
           return Object.assign({}, section, action.data);
         }
-
         return section;
-      }); // Otherwise, append it
-
+      });
+      // Otherwise, append it
       if (!hasMatch) {
         const initialized = !!(action.data.rows && !!action.data.rows.length);
-        const section = Object.assign({
-          title: "",
-          rows: [],
-          enabled: false
-        }, action.data, {
-          initialized
-        });
+        const section = Object.assign(
+          { title: "", rows: [], enabled: false },
+          action.data,
+          { initialized }
+        );
         newState.push(section);
       }
-
       return newState;
-
     case actionTypes.SECTION_UPDATE:
       newState = prevState.map(section => {
         if (section && section.id === action.data.id) {
           // If the action is updating rows, we should consider initialized to be true.
           // This can be overridden if initialized is defined in the action.data
-          const initialized = action.data.rows ? {
-            initialized: true
-          } : {}; // Make sure pinned cards stay at their current position when rows are updated.
-          // Disabling a section (SECTION_UPDATE with empty rows) does not retain pinned cards.
+          const initialized = action.data.rows ? { initialized: true } : {};
 
-          if (action.data.rows && !!action.data.rows.length && section.rows.find(card => card.pinned)) {
+          // Make sure pinned cards stay at their current position when rows are updated.
+          // Disabling a section (SECTION_UPDATE with empty rows) does not retain pinned cards.
+          if (
+            action.data.rows &&
+            !!action.data.rows.length &&
+            section.rows.find(card => card.pinned)
+          ) {
             const rows = Array.from(action.data.rows);
             section.rows.forEach((card, index) => {
               if (card.pinned) {
@@ -10847,14 +10924,16 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
                 }
               }
             });
-            return Object.assign({}, section, initialized, Object.assign({}, action.data, {
-              rows
-            }));
+            return Object.assign(
+              {},
+              section,
+              initialized,
+              Object.assign({}, action.data, { rows })
+            );
           }
 
           return Object.assign({}, section, initialized, action.data);
         }
-
         return section;
       });
 
@@ -10865,21 +10944,25 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
       action.data.dedupeConfigurations.forEach(dedupeConf => {
         newState = newState.map(section => {
           if (section.id === dedupeConf.id) {
-            const dedupedRows = dedupeConf.dedupeFrom.reduce((rows, dedupeSectionId) => {
-              const dedupeSection = newState.find(s => s.id === dedupeSectionId);
-              const [, newRows] = dedupe.group(dedupeSection.rows, rows);
-              return newRows;
-            }, section.rows);
-            return Object.assign({}, section, {
-              rows: dedupedRows
-            });
+            const dedupedRows = dedupeConf.dedupeFrom.reduce(
+              (rows, dedupeSectionId) => {
+                const dedupeSection = newState.find(
+                  s => s.id === dedupeSectionId
+                );
+                const [, newRows] = dedupe.group(dedupeSection.rows, rows);
+                return newRows;
+              },
+              section.rows
+            );
+
+            return Object.assign({}, section, { rows: dedupedRows });
           }
 
           return section;
         });
       });
-      return newState;
 
+      return newState;
     case actionTypes.SECTION_UPDATE_CARD:
       return prevState.map(section => {
         if (section && section.id === action.data.id && section.rows) {
@@ -10887,117 +10970,105 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
             if (card.url === action.data.url) {
               return Object.assign({}, card, action.data.options);
             }
-
             return card;
           });
-          return Object.assign({}, section, {
-            rows: newRows
-          });
+          return Object.assign({}, section, { rows: newRows });
         }
-
         return section;
       });
-
     case actionTypes.PLACES_BOOKMARK_ADDED:
       if (!action.data) {
         return prevState;
       }
-
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.map(item => {
-          // find the item within the rows that is attempted to be bookmarked
-          if (item.url === action.data.url) {
-            const {
-              bookmarkGuid,
-              bookmarkTitle,
-              dateAdded
-            } = action.data;
-            return Object.assign({}, item, {
-              bookmarkGuid,
-              bookmarkTitle,
-              bookmarkDateCreated: dateAdded,
-              type: "bookmark"
-            });
-          }
-
-          return item;
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.map(item => {
+            // find the item within the rows that is attempted to be bookmarked
+            if (item.url === action.data.url) {
+              const { bookmarkGuid, bookmarkTitle, dateAdded } = action.data;
+              return Object.assign({}, item, {
+                bookmarkGuid,
+                bookmarkTitle,
+                bookmarkDateCreated: dateAdded,
+                type: "bookmark",
+              });
+            }
+            return item;
+          }),
         })
-      }));
-
+      );
     case actionTypes.PLACES_SAVED_TO_POCKET:
       if (!action.data) {
         return prevState;
       }
-
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.map(item => {
-          if (item.url === action.data.url) {
-            return Object.assign({}, item, {
-              open_url: action.data.open_url,
-              pocket_id: action.data.pocket_id,
-              title: action.data.title,
-              type: "pocket"
-            });
-          }
-
-          return item;
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.map(item => {
+            if (item.url === action.data.url) {
+              return Object.assign({}, item, {
+                open_url: action.data.open_url,
+                pocket_id: action.data.pocket_id,
+                title: action.data.title,
+                type: "pocket",
+              });
+            }
+            return item;
+          }),
         })
-      }));
-
+      );
     case actionTypes.PLACES_BOOKMARKS_REMOVED:
       if (!action.data) {
         return prevState;
       }
-
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.map(item => {
-          // find the bookmark within the rows that is attempted to be removed
-          if (action.data.urls.includes(item.url)) {
-            const newSite = Object.assign({}, item);
-            delete newSite.bookmarkGuid;
-            delete newSite.bookmarkTitle;
-            delete newSite.bookmarkDateCreated;
-
-            if (!newSite.type || newSite.type === "bookmark") {
-              newSite.type = "history";
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.map(item => {
+            // find the bookmark within the rows that is attempted to be removed
+            if (action.data.urls.includes(item.url)) {
+              const newSite = Object.assign({}, item);
+              delete newSite.bookmarkGuid;
+              delete newSite.bookmarkTitle;
+              delete newSite.bookmarkDateCreated;
+              if (!newSite.type || newSite.type === "bookmark") {
+                newSite.type = "history";
+              }
+              return newSite;
             }
-
-            return newSite;
-          }
-
-          return item;
+            return item;
+          }),
         })
-      }));
-
+      );
     case actionTypes.PLACES_LINKS_DELETED:
       if (!action.data) {
         return prevState;
       }
-
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.filter(site => !action.data.urls.includes(site.url))
-      }));
-
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.filter(
+            site => !action.data.urls.includes(site.url)
+          ),
+        })
+      );
     case actionTypes.PLACES_LINK_BLOCKED:
       if (!action.data) {
         return prevState;
       }
-
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.filter(site => site.url !== action.data.url)
-      }));
-
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.filter(site => site.url !== action.data.url),
+        })
+      );
     case actionTypes.DELETE_FROM_POCKET:
     case actionTypes.ARCHIVE_FROM_POCKET:
-      return prevState.map(section => Object.assign({}, section, {
-        rows: section.rows.filter(site => site.pocket_id !== action.data.pocket_id)
-      }));
-
+      return prevState.map(section =>
+        Object.assign({}, section, {
+          rows: section.rows.filter(
+            site => site.pocket_id !== action.data.pocket_id
+          ),
+        })
+      );
     case actionTypes.SNIPPETS_PREVIEW_MODE:
-      return prevState.map(section => ({ ...section,
-        rows: []
-      }));
-
+      return prevState.map(section => ({ ...section, rows: [] }));
     default:
       return prevState;
   }
@@ -11006,23 +11077,15 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
 function Snippets(prevState = INITIAL_STATE.Snippets, action) {
   switch (action.type) {
     case actionTypes.SNIPPETS_DATA:
-      return Object.assign({}, prevState, {
-        initialized: true
-      }, action.data);
-
+      return Object.assign({}, prevState, { initialized: true }, action.data);
     case actionTypes.SNIPPET_BLOCKED:
       return Object.assign({}, prevState, {
-        blockList: prevState.blockList.concat(action.data)
+        blockList: prevState.blockList.concat(action.data),
       });
-
     case actionTypes.SNIPPETS_BLOCKLIST_CLEARED:
-      return Object.assign({}, prevState, {
-        blockList: []
-      });
-
+      return Object.assign({}, prevState, { blockList: [] });
     case actionTypes.SNIPPETS_RESET:
       return INITIAL_STATE.Snippets;
-
     default:
       return prevState;
   }
@@ -11031,124 +11094,122 @@ function Snippets(prevState = INITIAL_STATE.Snippets, action) {
 function Pocket(prevState = INITIAL_STATE.Pocket, action) {
   switch (action.type) {
     case actionTypes.POCKET_WAITING_FOR_SPOC:
-      return { ...prevState,
-        waitingForSpoc: action.data
-      };
-
+      return { ...prevState, waitingForSpoc: action.data };
     case actionTypes.POCKET_LOGGED_IN:
-      return { ...prevState,
-        isUserLoggedIn: !!action.data
-      };
-
+      return { ...prevState, isUserLoggedIn: !!action.data };
     case actionTypes.POCKET_CTA:
-      return { ...prevState,
+      return {
+        ...prevState,
         pocketCta: {
           ctaButton: action.data.cta_button,
           ctaText: action.data.cta_text,
           ctaUrl: action.data.cta_url,
-          useCta: action.data.use_cta
-        }
+          useCta: action.data.use_cta,
+        },
       };
-
     default:
       return prevState;
   }
 }
 
-function Reducers_Personalization(prevState = INITIAL_STATE.Personalization, action) {
+function Reducers_sys_Personalization(prevState = INITIAL_STATE.Personalization, action) {
   switch (action.type) {
     case actionTypes.DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED:
-      return { ...prevState,
-        lastUpdated: action.data.lastUpdated
+      return {
+        ...prevState,
+        lastUpdated: action.data.lastUpdated,
       };
-
     case actionTypes.DISCOVERY_STREAM_PERSONALIZATION_INIT:
-      return { ...prevState,
-        initialized: true
+      return {
+        ...prevState,
+        initialized: true,
       };
-
     default:
       return prevState;
   }
-} // eslint-disable-next-line complexity
+}
 
-
+// eslint-disable-next-line complexity
 function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
   // Return if action data is empty, or spocs or feeds data is not loaded
-  const isNotReady = () => !action.data || !prevState.spocs.loaded || !prevState.feeds.loaded;
+  const isNotReady = () =>
+    !action.data || !prevState.spocs.loaded || !prevState.feeds.loaded;
 
   const handlePlacements = handleSites => {
-    const {
-      data,
-      placements
-    } = prevState.spocs;
+    const { data, placements } = prevState.spocs;
     const result = {};
 
     const forPlacement = placement => {
       const placementSpocs = data[placement.name];
 
-      if (!placementSpocs || !placementSpocs.items || !placementSpocs.items.length) {
+      if (
+        !placementSpocs ||
+        !placementSpocs.items ||
+        !placementSpocs.items.length
+      ) {
         return;
       }
 
-      result[placement.name] = { ...placementSpocs,
-        items: handleSites(placementSpocs.items)
+      result[placement.name] = {
+        ...placementSpocs,
+        items: handleSites(placementSpocs.items),
       };
     };
 
     if (!placements || !placements.length) {
-      [{
-        name: "spocs"
-      }].forEach(forPlacement);
+      [{ name: "spocs" }].forEach(forPlacement);
     } else {
       placements.forEach(forPlacement);
     }
-
     return result;
   };
 
-  const nextState = handleSites => ({ ...prevState,
-    spocs: { ...prevState.spocs,
-      data: handlePlacements(handleSites)
+  const nextState = handleSites => ({
+    ...prevState,
+    spocs: {
+      ...prevState.spocs,
+      data: handlePlacements(handleSites),
     },
-    feeds: { ...prevState.feeds,
-      data: Object.keys(prevState.feeds.data).reduce((accumulator, feed_url) => {
-        accumulator[feed_url] = {
-          data: { ...prevState.feeds.data[feed_url].data,
-            recommendations: handleSites(prevState.feeds.data[feed_url].data.recommendations)
-          }
-        };
-        return accumulator;
-      }, {})
-    }
+    feeds: {
+      ...prevState.feeds,
+      data: Object.keys(prevState.feeds.data).reduce(
+        (accumulator, feed_url) => {
+          accumulator[feed_url] = {
+            data: {
+              ...prevState.feeds.data[feed_url].data,
+              recommendations: handleSites(
+                prevState.feeds.data[feed_url].data.recommendations
+              ),
+            },
+          };
+          return accumulator;
+        },
+        {}
+      ),
+    },
   });
 
   switch (action.type) {
-    case actionTypes.DISCOVERY_STREAM_CONFIG_CHANGE: // Fall through to a separate action is so it doesn't trigger a listener update on init
-
+    case actionTypes.DISCOVERY_STREAM_CONFIG_CHANGE:
+    // Fall through to a separate action is so it doesn't trigger a listener update on init
     case actionTypes.DISCOVERY_STREAM_CONFIG_SETUP:
-      return { ...prevState,
-        config: action.data || {}
-      };
-
+      return { ...prevState, config: action.data || {} };
     case actionTypes.DISCOVERY_STREAM_EXPERIMENT_DATA:
-      return { ...prevState,
-        experimentData: action.data || {}
-      };
-
+      return { ...prevState, experimentData: action.data || {} };
     case actionTypes.DISCOVERY_STREAM_LAYOUT_UPDATE:
-      return { ...prevState,
+      return {
+        ...prevState,
         lastUpdated: action.data.lastUpdated || null,
-        layout: action.data.layout || []
+        layout: action.data.layout || [],
       };
-
     case actionTypes.DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE:
-      return { ...prevState,
-        isCollectionDismissible: action.data.value
+      return {
+        ...prevState,
+        isCollectionDismissible: action.data.value,
       };
-
     case actionTypes.DISCOVERY_STREAM_PREFS_SETUP:
-      return { ...prevState,
+      return {
+        ...prevState,
         recentSavesEnabled: action.data.recentSavesEnabled,
         pocketButtonEnabled: action.data.pocketButtonEnabled,
         saveToPocketCard: action.data.saveToPocketCard,
@@ -11158,95 +11219,106 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         newSponsoredLabel: action.data.newSponsoredLabel,
         titleLines: action.data.titleLines,
         descLines: action.data.descLines,
-        readTime: action.data.readTime
+        readTime: action.data.readTime,
       };
-
     case actionTypes.DISCOVERY_STREAM_RECENT_SAVES:
-      return { ...prevState,
-        recentSavesData: action.data.recentSaves
+      return {
+        ...prevState,
+        recentSavesData: action.data.recentSaves,
       };
-
     case actionTypes.DISCOVERY_STREAM_POCKET_STATE_SET:
-      return { ...prevState,
-        isUserLoggedIn: action.data.isUserLoggedIn
+      return {
+        ...prevState,
+        isUserLoggedIn: action.data.isUserLoggedIn,
       };
-
     case actionTypes.HIDE_PRIVACY_INFO:
-      return { ...prevState,
-        isPrivacyInfoModalVisible: false
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: false,
       };
-
     case actionTypes.SHOW_PRIVACY_INFO:
-      return { ...prevState,
-        isPrivacyInfoModalVisible: true
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: true,
       };
-
     case actionTypes.DISCOVERY_STREAM_LAYOUT_RESET:
-      return { ...INITIAL_STATE.DiscoveryStream,
-        config: prevState.config
-      };
-
+      return { ...INITIAL_STATE.DiscoveryStream, config: prevState.config };
     case actionTypes.DISCOVERY_STREAM_FEEDS_UPDATE:
-      return { ...prevState,
-        feeds: { ...prevState.feeds,
-          loaded: true
-        }
+      return {
+        ...prevState,
+        feeds: {
+          ...prevState.feeds,
+          loaded: true,
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_FEED_UPDATE:
       const newData = {};
       newData[action.data.url] = action.data.feed;
-      return { ...prevState,
-        feeds: { ...prevState.feeds,
-          data: { ...prevState.feeds.data,
-            ...newData
-          }
-        }
+      return {
+        ...prevState,
+        feeds: {
+          ...prevState.feeds,
+          data: {
+            ...prevState.feeds.data,
+            ...newData,
+          },
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_SPOCS_CAPS:
-      return { ...prevState,
-        spocs: { ...prevState.spocs,
-          frequency_caps: [...prevState.spocs.frequency_caps, ...action.data]
-        }
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          frequency_caps: [...prevState.spocs.frequency_caps, ...action.data],
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_SPOCS_ENDPOINT:
-      return { ...prevState,
-        spocs: { ...INITIAL_STATE.DiscoveryStream.spocs,
-          spocs_endpoint: action.data.url || INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint
-        }
+      return {
+        ...prevState,
+        spocs: {
+          ...INITIAL_STATE.DiscoveryStream.spocs,
+          spocs_endpoint:
+            action.data.url ||
+            INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_SPOCS_PLACEMENTS:
-      return { ...prevState,
-        spocs: { ...prevState.spocs,
-          placements: action.data.placements || INITIAL_STATE.DiscoveryStream.spocs.placements
-        }
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          placements:
+            action.data.placements ||
+            INITIAL_STATE.DiscoveryStream.spocs.placements,
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_SPOCS_UPDATE:
       if (action.data) {
-        return { ...prevState,
-          spocs: { ...prevState.spocs,
+        return {
+          ...prevState,
+          spocs: {
+            ...prevState.spocs,
             lastUpdated: action.data.lastUpdated,
             data: action.data.spocs,
-            loaded: true
-          }
+            loaded: true,
+          },
         };
       }
-
       return prevState;
-
     case actionTypes.DISCOVERY_STREAM_SPOC_BLOCKED:
-      return { ...prevState,
-        spocs: { ...prevState.spocs,
-          blocked: [...prevState.spocs.blocked, action.data.url]
-        }
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          blocked: [...prevState.spocs.blocked, action.data.url],
+        },
       };
-
     case actionTypes.DISCOVERY_STREAM_LINK_BLOCKED:
-      return isNotReady() ? prevState : nextState(items => items.filter(item => item.url !== action.data.url));
+      return isNotReady()
+        ? prevState
+        : nextState(items =>
+            items.filter(item => item.url !== action.data.url)
+          );
 
     case actionTypes.PLACES_SAVED_TO_POCKET:
       const addPocketInfo = item => {
@@ -11254,39 +11326,39 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           return Object.assign({}, item, {
             open_url: action.data.open_url,
             pocket_id: action.data.pocket_id,
-            context_type: "pocket"
+            context_type: "pocket",
           });
         }
-
         return item;
       };
-
-      return isNotReady() ? prevState : nextState(items => items.map(addPocketInfo));
+      return isNotReady()
+        ? prevState
+        : nextState(items => items.map(addPocketInfo));
 
     case actionTypes.DELETE_FROM_POCKET:
     case actionTypes.ARCHIVE_FROM_POCKET:
-      return isNotReady() ? prevState : nextState(items => items.filter(item => item.pocket_id !== action.data.pocket_id));
+      return isNotReady()
+        ? prevState
+        : nextState(items =>
+            items.filter(item => item.pocket_id !== action.data.pocket_id)
+          );
 
     case actionTypes.PLACES_BOOKMARK_ADDED:
       const updateBookmarkInfo = item => {
         if (item.url === action.data.url) {
-          const {
-            bookmarkGuid,
-            bookmarkTitle,
-            dateAdded
-          } = action.data;
+          const { bookmarkGuid, bookmarkTitle, dateAdded } = action.data;
           return Object.assign({}, item, {
             bookmarkGuid,
             bookmarkTitle,
             bookmarkDateCreated: dateAdded,
-            context_type: "bookmark"
+            context_type: "bookmark",
           });
         }
-
         return item;
       };
-
-      return isNotReady() ? prevState : nextState(items => items.map(updateBookmarkInfo));
+      return isNotReady()
+        ? prevState
+        : nextState(items => items.map(updateBookmarkInfo));
 
     case actionTypes.PLACES_BOOKMARKS_REMOVED:
       const removeBookmarkInfo = item => {
@@ -11295,28 +11367,24 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           delete newSite.bookmarkGuid;
           delete newSite.bookmarkTitle;
           delete newSite.bookmarkDateCreated;
-
           if (!newSite.context_type || newSite.context_type === "bookmark") {
             newSite.context_type = "removedBookmark";
           }
-
           return newSite;
         }
-
         return item;
       };
-
-      return isNotReady() ? prevState : nextState(items => items.map(removeBookmarkInfo));
-
+      return isNotReady()
+        ? prevState
+        : nextState(items => items.map(removeBookmarkInfo));
     case actionTypes.PREF_CHANGED:
       if (action.data.name === PREF_COLLECTION_DISMISSIBLE) {
-        return { ...prevState,
-          isCollectionDismissible: action.data.value
+        return {
+          ...prevState,
+          isCollectionDismissible: action.data.value,
         };
       }
-
       return prevState;
-
     default:
       return prevState;
   }
@@ -11325,21 +11393,11 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
 function Search(prevState = INITIAL_STATE.Search, action) {
   switch (action.type) {
     case actionTypes.DISABLE_SEARCH:
-      return Object.assign({ ...prevState,
-        disable: true
-      });
-
+      return Object.assign({ ...prevState, disable: true });
     case actionTypes.FAKE_FOCUS_SEARCH:
-      return Object.assign({ ...prevState,
-        fakeFocus: true
-      });
-
+      return Object.assign({ ...prevState, fakeFocus: true });
     case actionTypes.SHOW_SEARCH:
-      return Object.assign({ ...prevState,
-        disable: false,
-        fakeFocus: false
-      });
-
+      return Object.assign({ ...prevState, disable: false, fakeFocus: false });
     default:
       return prevState;
   }
@@ -11354,10 +11412,11 @@ const reducers = {
   Dialog,
   Sections,
   Pocket,
-  Personalization: Reducers_Personalization,
+  Personalization: Reducers_sys_Personalization,
   DiscoveryStream,
-  Search
+  Search,
 };
+
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSiteFormInput.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -11456,7 +11515,7 @@ class TopSiteFormInput extends (external_React_default()).PureComponent {
       "data-l10n-id": this.props.placeholderId // Set focus on error if the url field is valid or when the input is first rendered and is empty
       // eslint-disable-next-line jsx-a11y/no-autofocus
       ,
-      autoFocus: this.props.shouldFocus,
+      autoFocus: this.props.autoFocusOnOpen,
       disabled: this.props.loading
     }), this.renderLoadingOrCloseButton(), validationError && /*#__PURE__*/external_React_default().createElement("aside", {
       className: "error-tooltip",
@@ -12164,7 +12223,7 @@ class TopSitePlaceholder extends (external_React_default()).PureComponent {
       className: `placeholder ${this.props.className || ""}`,
       isDraggable: false
     }), /*#__PURE__*/external_React_default().createElement("button", {
-      "aria-haspopup": "true",
+      "aria-haspopup": "dialog",
       className: "context-menu-button edit-button icon",
       "data-l10n-id": "newtab-menu-topsites-placeholder-tooltip",
       onClick: this.onEditButtonClick
@@ -12643,7 +12702,8 @@ class TopSiteForm extends (external_React_default()).PureComponent {
       onChange: this.onLabelChange,
       value: this.state.label,
       titleId: "newtab-topsites-title-label",
-      placeholderId: "newtab-topsites-title-input"
+      placeholderId: "newtab-topsites-title-input",
+      autoFocusOnOpen: true
     }), /*#__PURE__*/external_React_default().createElement(TopSiteFormInput, {
       onChange: this.onUrlChange,
       shouldFocus: this.state.validationError && !this.validateUrl(this.state.url),

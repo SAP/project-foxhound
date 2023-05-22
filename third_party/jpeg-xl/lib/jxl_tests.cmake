@@ -5,7 +5,7 @@ set(TEST_FILES
   extras/codec_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
-  extras/decode_jpeg_test.cc
+  extras/jpegli_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc
   jxl/ans_common_test.cc
@@ -23,13 +23,15 @@ set(TEST_FILES
   jxl/dct_test.cc
   jxl/decode_test.cc
   jxl/enc_external_image_test.cc
+  jxl/enc_gaborish_test.cc
+  jxl/enc_linalg_test.cc
+  jxl/enc_optimize_test.cc
   jxl/enc_photon_noise_test.cc
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
   jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
-  jxl/gaborish_test.cc
   jxl/gamma_correct_test.cc
   jxl/gauss_blur_test.cc
   jxl/gradient_test.cc
@@ -39,11 +41,9 @@ set(TEST_FILES
   jxl/image_ops_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
-  jxl/linalg_test.cc
   jxl/modular_test.cc
   jxl/opsin_image_test.cc
   jxl/opsin_inverse_test.cc
-  jxl/optimize_test.cc
   jxl/padded_bytes_test.cc
   jxl/passes_test.cc
   jxl/patch_dictionary_test.cc
@@ -108,7 +108,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
       -s USE_LIBPNG=1 \
-      -s TOTAL_MEMORY=1536MB \
+      -s ALLOW_MEMORY_GROWTH=1 \
       -s SINGLE_FILE=1 \
       -s PROXY_TO_PTHREAD \
       -s EXIT_RUNTIME=1 \

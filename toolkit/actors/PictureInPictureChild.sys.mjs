@@ -29,6 +29,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "media.videocontrols.picture-in-picture.display-text-tracks.enabled",
   false
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "IMPROVED_CONTROLS_ENABLED_PREF",
+  "media.videocontrols.picture-in-picture.improved-video-controls.enabled",
+  false
+);
+
 const TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.enabled";
 const PIP_ENABLED_PREF = "media.videocontrols.picture-in-picture.enabled";
@@ -162,8 +169,23 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       );
     }
 
-    let scrubberPosition =
-      video.currentTime === 0 ? 0 : video.currentTime / video.duration;
+    let timestamp = undefined;
+    let scrubberPosition = undefined;
+
+    if (lazy.IMPROVED_CONTROLS_ENABLED_PREF) {
+      timestamp = PictureInPictureChild.videoWrapper.formatTimestamp(
+        PictureInPictureChild.videoWrapper.getCurrentTime(video),
+        PictureInPictureChild.videoWrapper.getDuration(video)
+      );
+
+      // Scrubber is hidden if undefined, so only set it to something else
+      // if the timestamp is not undefined.
+      scrubberPosition =
+        timestamp === undefined
+          ? undefined
+          : PictureInPictureChild.videoWrapper.getCurrentTime(video) /
+            PictureInPictureChild.videoWrapper.getDuration(video);
+    }
 
     // All other requests to toggle PiP should open a new PiP
     // window
@@ -177,6 +199,7 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       ccEnabled: lazy.DISPLAY_TEXT_TRACKS_PREF,
       webVTTSubtitles: !!video.textTracks?.length,
       scrubberPosition,
+      timestamp,
     });
   }
 
@@ -375,6 +398,16 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
     }
 
     switch (event.type) {
+      case "touchstart": {
+        // Even if this is a touch event, there may be subsequent click events.
+        // Suppress those events after selecting the toggle to prevent playback changes
+        // when opening the Picture-in-Picture window.
+        if (this.docState.isClickingToggle) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+        break;
+      }
       case "change": {
         const { changedKeys } = event;
         if (changedKeys.includes("PictureInPicture:SiteOverrides")) {
@@ -570,6 +603,9 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
     this.contentWindow.windowRoot.addEventListener("mouseout", this, {
       capture: true,
     });
+    this.contentWindow.windowRoot.addEventListener("touchstart", this, {
+      capture: true,
+    });
   }
 
   removeMouseButtonListeners() {
@@ -595,6 +631,9 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
       capture: true,
     });
     this.contentWindow.windowRoot.removeEventListener("mouseout", this, {
+      capture: true,
+    });
+    this.contentWindow.windowRoot.removeEventListener("touchstart", this, {
       capture: true,
     });
   }
@@ -839,7 +878,13 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
         (!state.clickedElement ||
           state.clickedElement.get() != event.originalTarget);
 
-      if (isMouseUpOnOtherElement || event.type == "click") {
+      if (
+        isMouseUpOnOtherElement ||
+        event.type == "click" ||
+        // pointerup event still triggers after a touchstart event. We just need to detect
+        // the pointer type and determine if we got to this part of the code through a touch event.
+        event.pointerType == "touch"
+      ) {
         // The click is complete, so now we reset the state so that
         // we stop suppressing these events.
         state.isClickingToggle = false;
@@ -1468,7 +1513,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
 
     if (!this.isSubtitlesEnabled) {
       this.isSubtitlesEnabled = true;
-      this.sendAsyncMessage("PictureInPicture:ShowSubtitlesButton");
+      this.sendAsyncMessage("PictureInPicture:EnableSubtitlesButton");
     }
 
     let allCuesArray = [...textTrackCues];
@@ -1689,13 +1734,27 @@ export class PictureInPictureChild extends JSWindowActorChild {
         this.updateWebVTTTextTracksDisplay(cues);
         break;
       }
-      case "timeupdate": {
-        let currentTime = event.target.currentTime;
-        let duration = event.target.duration;
+      case "timeupdate":
+      case "durationchange": {
+        let video = this.getWeakVideo();
+        let currentTime = this.videoWrapper.getCurrentTime(video);
+        let duration = this.videoWrapper.getDuration(video);
         let scrubberPosition = currentTime === 0 ? 0 : currentTime / duration;
-        this.sendAsyncMessage("PictureInPicture:SetScrubberPosition", {
-          scrubberPosition,
-        });
+        let timestamp = this.videoWrapper.formatTimestamp(
+          currentTime,
+          duration
+        );
+        // There's no point in sending this message unless we have a
+        // reasonable timestamp.
+        if (timestamp !== undefined && lazy.IMPROVED_CONTROLS_ENABLED_PREF) {
+          this.sendAsyncMessage(
+            "PictureInPicture:SetTimestampAndScrubberPosition",
+            {
+              scrubberPosition,
+              timestamp,
+            }
+          );
+        }
         break;
       }
     }
@@ -1815,8 +1874,8 @@ export class PictureInPictureChild extends JSWindowActorChild {
         break;
       }
       case "PictureInPicture:SetVideoTime": {
-        const { scrubberPosition } = message.data;
-        this.setVideoTime(scrubberPosition);
+        const { scrubberPosition, wasPlaying } = message.data;
+        this.setVideoTime(scrubberPosition, wasPlaying);
         break;
       }
     }
@@ -1826,11 +1885,11 @@ export class PictureInPictureChild extends JSWindowActorChild {
    * Set the current time of the video based of the position of the scrubber
    * @param {Number} scrubberPosition A number between 0 and 1 representing the position of the scrubber
    */
-  setVideoTime(scrubberPosition) {
+  setVideoTime(scrubberPosition, wasPlaying) {
     const video = this.getWeakVideo();
     let duration = this.videoWrapper.getDuration(video);
     let currentTime = scrubberPosition * duration;
-    this.videoWrapper.setCurrentTime(video, currentTime);
+    this.videoWrapper.setCurrentTime(video, currentTime, wasPlaying);
   }
 
   /**
@@ -2180,7 +2239,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
         break;
     }
 
-    const isVideoStreaming = this.videoWrapper.getDuration(video) == +Infinity;
+    const isVideoStreaming = this.videoWrapper.isLive(video);
     var oldval, newval;
 
     try {
@@ -2237,10 +2296,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
           break;
         case "leftArrow": /* Seek back 5 seconds */
         case "accel-leftArrow" /* Seek back 10% */:
-          if (
-            isVideoStreaming ||
-            !this.isKeyEnabled(lazy.KEYBOARD_CONTROLS.SEEK)
-          ) {
+          if (!this.isKeyEnabled(lazy.KEYBOARD_CONTROLS.SEEK)) {
             return;
           }
 
@@ -2254,10 +2310,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
           break;
         case "rightArrow": /* Seek forward 5 seconds */
         case "accel-rightArrow" /* Seek forward 10% */:
-          if (
-            isVideoStreaming ||
-            !this.isKeyEnabled(lazy.KEYBOARD_CONTROLS.SEEK)
-          ) {
+          if (!this.isKeyEnabled(lazy.KEYBOARD_CONTROLS.SEEK)) {
             return;
           }
 
@@ -2316,7 +2369,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
         }
       );
     } else {
-      this.sendAsyncMessage("PictureInPicture:HideSubtitlesButton");
+      this.sendAsyncMessage("PictureInPicture:DisableSubtitlesButton");
     }
     this.#subtitlesEnabled = val;
   }
@@ -2489,7 +2542,7 @@ class PictureInPictureChildVideoWrapper {
     if (!this.#PictureInPictureChild.isSubtitlesEnabled && text) {
       this.#PictureInPictureChild.isSubtitlesEnabled = true;
       this.#PictureInPictureChild.sendAsyncMessage(
-        "PictureInPicture:ShowSubtitlesButton"
+        "PictureInPicture:EnableSubtitlesButton"
       );
     }
     let pipWindowTracksContainer = this.#PictureInPictureChild.document.getElementById(
@@ -2608,16 +2661,56 @@ class PictureInPictureChildVideoWrapper {
    *  The originating video source element
    * @param {Number} position
    *  The current playback time of the video
+   * @param {Boolean} wasPlaying
+   *  True if the video was playing before seeking else false
    */
-  setCurrentTime(video, position) {
+  setCurrentTime(video, position, wasPlaying) {
     return this.#callWrapperMethod({
       name: "setCurrentTime",
-      args: [video, position],
+      args: [video, position, wasPlaying],
       fallback: () => {
         video.currentTime = position;
       },
       validateRetVal: retVal => retVal == null,
     });
+  }
+
+  /**
+   * Return hours, minutes, and seconds from seconds
+   * @param {Number} aSeconds
+   *  The time in seconds
+   * @returns {String} Timestamp string
+   **/
+  timeFromSeconds(aSeconds) {
+    aSeconds = isNaN(aSeconds) ? 0 : Math.round(aSeconds);
+    let seconds = Math.floor(aSeconds % 60),
+      minutes = Math.floor((aSeconds / 60) % 60),
+      hours = Math.floor(aSeconds / 3600);
+    seconds = seconds < 10 ? "0" + seconds : seconds;
+    minutes = hours > 0 && minutes < 10 ? "0" + minutes : minutes;
+    return aSeconds < 3600
+      ? `${minutes}:${seconds}`
+      : `${hours}:${minutes}:${seconds}`;
+  }
+
+  /**
+   * Format a timestamp from current time and total duration,
+   * output as a string in the form '0:00 / 0:00'
+   * @param {Number} aCurrentTime
+   *  The current time in seconds
+   * @param {Number} aDuration
+   *  The total duration in seconds
+   * @returns {String} Formatted timestamp
+   **/
+  formatTimestamp(aCurrentTime, aDuration) {
+    // We can't format numbers that can't be represented as decimal digits.
+    if (!Number.isFinite(aCurrentTime) || !Number.isFinite(aDuration)) {
+      return undefined;
+    }
+
+    return `${this.timeFromSeconds(aCurrentTime)} / ${this.timeFromSeconds(
+      aDuration
+    )}`;
   }
 
   /**
@@ -2732,6 +2825,22 @@ class PictureInPictureChildVideoWrapper {
       name: "shouldHideToggle",
       args: [video],
       fallback: () => false,
+      validateRetVal: retVal => this.#isBoolean(retVal),
+    });
+  }
+
+  /**
+   * OVERRIDABLE - calls the isLive() method defined in the site wrapper script. Runs a fallback implementation
+   * if the method does not exist or if an error is thrown while calling it. This method is meant to get if the
+   * video is a live stream.
+   * @param {HTMLVideoElement} video
+   *  The originating video source element
+   */
+  isLive(video) {
+    return this.#callWrapperMethod({
+      name: "isLive",
+      args: [video],
+      fallback: () => video.duration === Infinity,
       validateRetVal: retVal => this.#isBoolean(retVal),
     });
   }

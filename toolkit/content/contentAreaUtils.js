@@ -342,7 +342,7 @@ function internalSave(
 
         continueSave();
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   }
 
   function continueSave() {
@@ -835,7 +835,7 @@ function DownloadURL(aURL, aFileName, aInitiatingDocument) {
     // Add the download to the list, allowing it to be managed.
     let list = await Downloads.getList(Downloads.ALL);
     list.add(download);
-  })().catch(Cu.reportError);
+  })().catch(console.error);
 }
 
 // We have no DOM, and can only save the URL as is.
@@ -1106,7 +1106,7 @@ function validateFileName(aFileName) {
     if (processed.replace(/_/g, "").length <= processed.length / 2) {
       // We purposefully do not use a localized default filename,
       // which we could have done using
-      // ContentAreaUtils.stringBundle.GetStringFromName("DefaultSaveFileName")
+      // ContentAreaUtils.stringBundle.GetStringFromName("UntitledSaveFileName")
       // since it may contain invalid characters.
       var original = processed;
       processed = "download";

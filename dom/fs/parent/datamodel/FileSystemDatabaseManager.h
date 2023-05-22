@@ -10,6 +10,7 @@
 #include "ResultConnection.h"
 #include "mozilla/dom/FileSystemTypes.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
+#include "mozilla/dom/quota/UsageInfo.h"
 #include "nsStringFwd.h"
 
 template <class T>
@@ -31,16 +32,35 @@ class FileSystemEntryPair;
 
 namespace data {
 
-using FileSystemConnection = fs::ResultConnection;
-
 class FileSystemDatabaseManager {
  public:
   /**
-   * @brief Returns current total usage
+   * @brief Updates stored usage data for all tracked files.
    *
-   * @return Result<int64_t, QMResult> Usage or error
+   * @return nsresult error code
    */
-  virtual Result<int64_t, QMResult> GetUsage() const = 0;
+  static nsresult RescanUsages(const ResultConnection& aConnection,
+                               const Origin& aOrigin);
+
+  /**
+   * @brief Obtains the current total usage for origin and connection.
+   *
+   * @return Result<quota::UsageInfo, QMResult> On success,
+   *  - field UsageInfo::DatabaseUsage contains the sum of current
+   *    total database and file usage,
+   *  - field UsageInfo::FileUsage is not used and should be equal to Nothing.
+   *
+   * If the disk is inaccessible, various IO related errors may be returned.
+   */
+  static Result<quota::UsageInfo, QMResult> GetUsage(
+      const ResultConnection& aConnection, const Origin& aOrigin);
+
+  /**
+   * @brief Refreshes the stored file size.
+   *
+   * @param aEntry EntryId of the file whose size is refreshed.
+   */
+  virtual nsresult UpdateUsage(const EntryId& aEntry) = 0;
 
   /**
    * @brief Returns directory identifier, optionally creating it if it doesn't
@@ -128,6 +148,16 @@ class FileSystemDatabaseManager {
    * @brief Close database connection.
    */
   virtual void Close() = 0;
+
+  /**
+   * @brief Start tracking file's usage.
+   */
+  virtual nsresult BeginUsageTracking(const EntryId& aEntryId) = 0;
+
+  /**
+   * @brief Stop tracking file's usage.
+   */
+  virtual nsresult EndUsageTracking(const EntryId& aEntryId) = 0;
 
   virtual ~FileSystemDatabaseManager() = default;
 };

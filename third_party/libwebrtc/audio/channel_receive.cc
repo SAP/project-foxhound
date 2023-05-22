@@ -41,7 +41,6 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/race_checker.h"
@@ -196,7 +195,6 @@ class ChannelReceive : public ChannelReceiveInterface,
       RTC_RUN_ON(worker_thread_checker_);
 
   int GetRtpTimestampRateHz() const;
-  int64_t GetRTT() const;
 
   void OnReceivedPayloadData(rtc::ArrayView<const uint8_t> payload,
                              const RTPHeader& rtpHeader)
@@ -341,7 +339,8 @@ void ChannelReceive::OnReceivedPayloadData(
   }
 
   int64_t round_trip_time = 0;
-  rtp_rtcp_->RTT(remote_ssrc_, &round_trip_time, NULL, NULL, NULL);
+  rtp_rtcp_->RTT(remote_ssrc_, &round_trip_time, /*avg_rtt=*/nullptr,
+                 /*min_rtt=*/nullptr, /*max_rtt=*/nullptr);
 
   std::vector<uint16_t> nack_list = acm_receiver_.GetNackList(round_trip_time);
   if (!nack_list.empty()) {
@@ -729,7 +728,9 @@ void ChannelReceive::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
   // Deliver RTCP packet to RTP/RTCP module for parsing
   rtp_rtcp_->IncomingRtcpPacket(data, length);
 
-  int64_t rtt = GetRTT();
+  int64_t rtt = 0;
+  rtp_rtcp_->RTT(remote_ssrc_, &rtt, /*avg_rtt=*/nullptr, /*min_rtt=*/nullptr,
+                 /*max_rtt=*/nullptr);
   if (rtt == 0) {
     // Waiting for valid RTT.
     return;
@@ -812,8 +813,6 @@ CallReceiveStatistics ChannelReceive::GetRTCPStatistics() const {
 
   stats.cumulativeLost = rtp_stats.packets_lost;
   stats.jitterSamples = rtp_stats.jitter;
-
-  stats.rttMs = GetRTT();
 
   // Data counters.
   if (statistician) {
@@ -1039,8 +1038,8 @@ absl::optional<Syncable::Info> ChannelReceive::GetSyncInfo() const {
   return info;
 }
 
-// RTC_RUN_ON(worker_thread_checker_)
 void ChannelReceive::UpdatePlayoutTimestamp(bool rtcp, int64_t now_ms) {
+  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   // TODO(bugs.webrtc.org/11993): Expect to be called exclusively on the
   // network thread. Once that's done, we won't need video_sync_lock_.
 
@@ -1085,27 +1084,6 @@ int ChannelReceive::GetRtpTimestampRateHz() const {
   return (decoder && decoder->second.clockrate_hz != 0)
              ? decoder->second.clockrate_hz
              : acm_receiver_.last_output_sample_rate_hz();
-}
-
-int64_t ChannelReceive::GetRTT() const {
-  RTC_DCHECK_RUN_ON(&network_thread_checker_);
-  std::vector<ReportBlockData> report_blocks =
-      rtp_rtcp_->GetLatestReportBlockData();
-
-  if (report_blocks.empty()) {
-    // Try fall back on an RTT from an associated channel.
-    if (!associated_send_channel_) {
-      return 0;
-    }
-    return associated_send_channel_->GetRTT();
-  }
-
-  for (const ReportBlockData& data : report_blocks) {
-    if (data.report_block().sender_ssrc == remote_ssrc_) {
-      return data.last_rtt_ms();
-    }
-  }
-  return 0;
 }
 
 }  // namespace

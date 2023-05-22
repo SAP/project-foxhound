@@ -38,12 +38,6 @@
 
       this.baseConnect();
 
-      this._firstTab = null;
-      this._lastTab = null;
-      this._beforeSelectedTab = null;
-      this._beforeHoveredTab = null;
-      this._afterHoveredTab = null;
-      this._hoveredTab = null;
       this._blockDblClick = false;
       this._tabDropIndicator = this.querySelector(".tab-drop-indicator");
       this._dragOverDelay = 350;
@@ -61,6 +55,8 @@
         "browser.tabs.tabClipWidth"
       );
       this._hiddenSoundPlayingTabs = new Set();
+      this._allTabs = null;
+      this._visibleTabs = null;
 
       var tab = this.allTabs[0];
       tab.label = this.emptyTabTitle;
@@ -501,12 +497,12 @@
         // since we can update the image during the dnd.
         PageThumbs.captureToCanvas(browser, canvas)
           .then(captureListener)
-          .catch(e => Cu.reportError(e));
+          .catch(e => console.error(e));
       } else {
         // For the non e10s case we can just use PageThumbs
         // sync, so let's use the canvas for setDragImage.
         PageThumbs.captureToCanvas(browser, canvas).catch(e =>
-          Cu.reportError(e)
+          console.error(e)
         );
         dragImageOffset = dragImageOffset * scale;
       }
@@ -532,6 +528,13 @@
       };
 
       event.stopPropagation();
+
+      if (fromTabList) {
+        Services.telemetry.scalarAdd(
+          "browser.ui.interaction.all_tabs_panel_dragstart_tab_event_count",
+          1
+        );
+      }
     }
 
     on_dragover(event) {
@@ -1033,9 +1036,32 @@
     // Accessor for tabs.  arrowScrollbox has a container for non-tab elements
     // at the end, everything else is <tab>s.
     get allTabs() {
+      if (this._allTabs) {
+        return this._allTabs;
+      }
       let children = Array.from(this.arrowScrollbox.children);
       children.pop();
+      this._allTabs = children;
       return children;
+    }
+
+    _getVisibleTabs() {
+      if (!this._visibleTabs) {
+        this._visibleTabs = Array.prototype.filter.call(
+          this.allTabs,
+          tab => !tab.hidden && !tab.closing
+        );
+      }
+      return this._visibleTabs;
+    }
+
+    _invalidateCachedTabs() {
+      this._allTabs = null;
+      this._visibleTabs = null;
+    }
+
+    _invalidateCachedVisibleTabs() {
+      this._visibleTabs = null;
     }
 
     appendChild(tab) {
@@ -1095,7 +1121,7 @@
             this._expandSpacerBy(this._scrollButtonWidth);
           }
 
-          for (let tab of Array.from(gBrowser._removingTabs)) {
+          for (let tab of gBrowser._removingTabs) {
             gBrowser.removeTab(tab);
           }
 
@@ -1198,75 +1224,18 @@
       }
     }
 
-    _getVisibleTabs() {
-      // Cannot access gBrowser before it's initialized.
-      if (!gBrowser) {
-        return this.allTabs[0];
-      }
-
-      return gBrowser.visibleTabs;
-    }
-
     _setPositionalAttributes() {
       let visibleTabs = this._getVisibleTabs();
       if (!visibleTabs.length) {
         return;
       }
-      let selectedTab = this.selectedItem;
-      let selectedIndex = visibleTabs.indexOf(selectedTab);
-      if (this._beforeSelectedTab) {
-        this._beforeSelectedTab.removeAttribute("beforeselected-visible");
-      }
 
-      if (selectedTab.closing || selectedIndex <= 0) {
-        this._beforeSelectedTab = null;
-      } else {
-        let beforeSelectedTab = visibleTabs[selectedIndex - 1];
-        let separatedByScrollButton =
-          this.getAttribute("overflow") == "true" &&
-          beforeSelectedTab.pinned &&
-          !selectedTab.pinned;
-        if (!separatedByScrollButton) {
-          this._beforeSelectedTab = beforeSelectedTab;
-          this._beforeSelectedTab.setAttribute(
-            "beforeselected-visible",
-            "true"
-          );
-        }
-      }
-
-      this._firstTab?.removeAttribute("first-visible-tab");
-      this._firstTab = visibleTabs[0];
-      this._firstTab.setAttribute("first-visible-tab", "true");
-      this._lastTab?.removeAttribute("last-visible-tab");
-      this._lastTab = visibleTabs[visibleTabs.length - 1];
-      this._lastTab.setAttribute("last-visible-tab", "true");
       this._firstUnpinnedTab?.removeAttribute("first-visible-unpinned-tab");
       this._firstUnpinnedTab = visibleTabs.find(t => !t.pinned);
       this._firstUnpinnedTab?.setAttribute(
         "first-visible-unpinned-tab",
         "true"
       );
-
-      let hoveredTab = this._hoveredTab;
-      if (hoveredTab) {
-        hoveredTab._mouseleave();
-      }
-      hoveredTab = this.querySelector("tab:hover");
-      if (hoveredTab) {
-        hoveredTab._mouseenter();
-      }
-
-      // Update before-multiselected attributes.
-      // gBrowser may not be initialized yet, so avoid using it
-      for (let i = 0; i < visibleTabs.length - 1; i++) {
-        let tab = visibleTabs[i];
-        let nextTab = visibleTabs[i + 1];
-        tab.removeAttribute("before-multiselected");
-        if (nextTab.multiselected) {
-          tab.setAttribute("before-multiselected", "true");
-        }
-      }
     }
 
     _updateCloseButtons() {

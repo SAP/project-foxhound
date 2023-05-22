@@ -30,7 +30,7 @@
 
 namespace js {
 
-using JSFunctionVector = GCVector<JSFunction*, 0, SystemAllocPolicy>;
+using JSObjectVector = GCVector<JSObject*, 0, SystemAllocPolicy>;
 
 class WasmMemoryObject;
 class WasmModuleObject;
@@ -39,7 +39,6 @@ class WasmTableObject;
 class WasmGlobalObject;
 class WasmTagObject;
 class WasmExceptionObject;
-class RttValue;
 
 using WasmInstanceObjectVector = GCVector<WasmInstanceObject*>;
 using WasmTableObjectVector = GCVector<WasmTableObject*, 0, SystemAllocPolicy>;

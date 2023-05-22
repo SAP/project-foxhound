@@ -18,6 +18,11 @@ namespace mozilla {
 
 class MemoryReportingProcess;
 
+namespace dom {
+class JSOracleParent;
+class WindowsUtilsParent;
+}  // namespace dom
+
 namespace ipc {
 
 class UtilityProcessParent;
@@ -31,6 +36,10 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
  public:
   using StartRemoteDecodingUtilityPromise =
       MozPromise<Endpoint<PRemoteDecoderManagerChild>, nsresult, true>;
+  using JSOraclePromise = GenericNonExclusivePromise;
+
+  using WindowsUtilsPromise =
+      MozPromise<RefPtr<dom::WindowsUtilsParent>, nsresult, true>;
 
   static void Initialize();
   static void Shutdown();
@@ -48,6 +57,17 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
 
   RefPtr<StartRemoteDecodingUtilityPromise> StartProcessForRemoteMediaDecoding(
       base::ProcessId aOtherProcess, SandboxingKind aSandbox);
+
+  RefPtr<JSOraclePromise> StartJSOracle(mozilla::dom::JSOracleParent* aParent);
+
+#ifdef XP_WIN
+  // Get the (possibly already resolved) promise for the Windows utility
+  // process actor.  Creates the process if it is not running.
+  RefPtr<WindowsUtilsPromise> GetWindowsUtilsPromise();
+  // Releases the WindowsUtils actor so that it can be destroyed.
+  // Subsequent attempts to use WindowsUtils will create a new process.
+  void ReleaseWindowsUtils();
+#endif
 
   void OnProcessUnexpectedShutdown(UtilityProcessHost* aHost);
 
@@ -117,11 +137,21 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
     return {};
   }
 
+  Span<const UtilityActorName> GetActors(SandboxingKind aSbKind) {
+    auto proc = GetProcess(aSbKind);
+    if (!proc) {
+      return {};
+    }
+    return proc->mActors;
+  }
+
   // Shutdown the Utility process for that sandbox.
   void CleanShutdown(SandboxingKind aSandbox);
 
   // Shutdown all utility processes
   void CleanShutdownAllProcesses();
+
+  uint16_t AliveProcesses();
 
  private:
   ~UtilityProcessManager();
@@ -189,7 +219,10 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
 
   RefPtr<ProcessFields> GetProcess(SandboxingKind);
   bool NoMoreProcesses();
-  uint16_t AliveProcesses();
+
+#ifdef XP_WIN
+  RefPtr<dom::WindowsUtilsParent> mWindowsUtils;
+#endif  // XP_WIN
 };
 
 }  // namespace ipc

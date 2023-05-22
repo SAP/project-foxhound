@@ -89,6 +89,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
     ]
     OS_LIBS += [
         "advapi32",
+        "shell32",
         "uuid",
     ]
     DELAYLOAD_DLLS += [
@@ -96,6 +97,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
         "oleaut32.dll",
         "ole32.dll",
         "rpcrt4.dll",
+        "shell32.dll",
         "version.dll",
     ]
 

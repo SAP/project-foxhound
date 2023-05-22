@@ -41,6 +41,7 @@ Navigator includes NavigatorConcurrentHardware;
 Navigator includes NavigatorStorage;
 Navigator includes NavigatorAutomationInformation;
 Navigator includes GPUProvider;
+Navigator includes GlobalPrivacyControl;
 
 interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
@@ -119,7 +120,7 @@ partial interface Navigator {
 };
 
 // https://globalprivacycontrol.github.io/gpc-spec/
-partial interface Navigator {
+interface mixin GlobalPrivacyControl {
   [Pref="privacy.globalprivacycontrol.functionality.enabled"]
   readonly attribute boolean globalPrivacyControl;
 };
@@ -344,3 +345,27 @@ interface mixin NavigatorLocks {
   readonly attribute LockManager locks;
 };
 Navigator includes NavigatorLocks;
+
+// https://w3c.github.io/autoplay/#autoplay-policy
+enum AutoplayPolicy {
+  "allowed",
+  "allowed-muted",
+  "disallowed"
+};
+
+enum AutoplayPolicyMediaType {
+  "mediaelement",
+  "audiocontext"
+};
+
+// https://w3c.github.io/autoplay/#autoplay-detection-methods
+partial interface Navigator {
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(AutoplayPolicyMediaType type);
+
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(HTMLMediaElement element);
+
+  [Pref="dom.media.autoplay-policy-detection.enabled"]
+  AutoplayPolicy getAutoplayPolicy(AudioContext context);
+};

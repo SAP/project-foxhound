@@ -278,6 +278,10 @@ class BookmarkState {
    *   If the item is a folder.
    * @param {Array.<nsIURI>} [options.children]
    *   The list of child URIs to bookmark within the folder.
+   * @param {boolean} [options.autosave]
+   *   If changes to bookmark fields should be saved immediately after calling
+   *   its respective "changed" method, rather than waiting for save() to be
+   *   called.
    */
   constructor({
     info,
@@ -285,12 +289,15 @@ class BookmarkState {
     keyword = "",
     isFolder = false,
     children = [],
+    autosave = false,
   }) {
     this._guid = info.itemGuid;
     this._postData = info.postData;
     this._isTagContainer = info.isTag;
+    this._bulkTaggingUrls = info.uris?.map(uri => uri.spec);
     this._isFolder = isFolder;
     this._children = children;
+    this._autosave = autosave;
 
     // Original Bookmark
     this._originalState = {
@@ -314,8 +321,9 @@ class BookmarkState {
    * @param {string} title
    *   The title of the bookmark
    */
-  _titleChanged(title) {
+  async _titleChanged(title) {
     this._newState.title = title;
+    await this._maybeSave();
   }
 
   /**
@@ -324,8 +332,9 @@ class BookmarkState {
    * @param {string} location
    *   The location of the bookmark
    */
-  _locationChanged(location) {
+  async _locationChanged(location) {
     this._newState.uri = location;
+    await this._maybeSave();
   }
 
   /**
@@ -334,8 +343,9 @@ class BookmarkState {
    * @param {string} tags
    *    Comma separated list of tags
    */
-  _tagsChanged(tags) {
+  async _tagsChanged(tags) {
     this._newState.tags = tags;
+    await this._maybeSave();
   }
 
   /**
@@ -344,8 +354,9 @@ class BookmarkState {
    * @param {string} keyword
    *   The keyword of the bookmark
    */
-  _keywordChanged(keyword) {
+  async _keywordChanged(keyword) {
     this._newState.keyword = keyword;
+    await this._maybeSave();
   }
 
   /**
@@ -354,8 +365,18 @@ class BookmarkState {
    * @param {string} parentGuid
    *   The parentGuid of the bookmark
    */
-  _parentGuidChanged(parentGuid) {
+  async _parentGuidChanged(parentGuid) {
     this._newState.parentGuid = parentGuid;
+    await this._maybeSave();
+  }
+
+  /**
+   * Save changes if autosave is enabled.
+   */
+  async _maybeSave() {
+    if (this._autosave) {
+      await this.save();
+    }
   }
 
   /**
@@ -419,7 +440,7 @@ class BookmarkState {
         tag: this._newState.title,
       })
         .transact()
-        .catch(Cu.reportError);
+        .catch(console.error);
       return this._guid;
     }
 
@@ -446,22 +467,16 @@ class BookmarkState {
           );
           break;
         case "tags":
-          let newTags = [];
-          let removedTags = [];
-          value.filter(element => {
-            if (!this._originalState.tags.includes(element)) {
-              newTags.push(element);
-            }
-          });
-          this._originalState.tags.filter(el => {
-            if (!value.includes(el)) {
-              removedTags.push(el);
-            }
-          });
+          const newTags = value.filter(
+            tag => !this._originalState.tags.includes(tag)
+          );
+          const removedTags = this._originalState.tags.filter(
+            tag => !value.includes(tag)
+          );
           if (newTags.length) {
             transactions.push(
               lazy.PlacesTransactions.Tag({
-                urls: [url],
+                urls: this._bulkTaggingUrls || [url],
                 tags: newTags,
               })
             );
@@ -469,7 +484,7 @@ class BookmarkState {
           if (removedTags.length) {
             transactions.push(
               lazy.PlacesTransactions.Untag({
-                urls: [url],
+                urls: this._bulkTaggingUrls || [url],
                 tags: removedTags,
               })
             );
@@ -499,6 +514,8 @@ class BookmarkState {
       await lazy.PlacesTransactions.batch(transactions);
     }
 
+    this._originalState = { ...this._originalState, ...this._newState };
+    this._newState = {};
     return this._guid;
   }
 }
@@ -623,7 +640,7 @@ export var PlacesUIUtils = {
         !bookmarkGuid &&
         topUndoEntry != lazy.PlacesTransactions.topUndoEntry
       ) {
-        await lazy.PlacesTransactions.undo().catch(Cu.reportError);
+        await lazy.PlacesTransactions.undo().catch(console.error);
       }
 
       this.lastBookmarkDialogDeferred.resolve(bookmarkGuid);
@@ -1006,8 +1023,8 @@ export var PlacesUIUtils = {
     }
 
     return (
-      lazy.PlacesUtils.getConcreteItemId(placesNode) ==
-      lazy.PlacesUtils.placesRootId
+      lazy.PlacesUtils.getConcreteItemGuid(placesNode) ==
+      lazy.PlacesUtils.bookmarks.rootGuid
     );
   },
 
@@ -1096,8 +1113,10 @@ export var PlacesUIUtils = {
    * @param {object} view
    *          The current view that contains the node or nodes selected for
    *          opening
+   * @param {Function=} updateTelemetryFn
+   *          Optional function to call if telemetry needs to be updated
    */
-  openMultipleLinksInTabs(nodeOrNodes, event, view) {
+  openMultipleLinksInTabs(nodeOrNodes, event, view, updateTelemetryFn = null) {
     let window = view.ownerWindow;
     let urlsToOpen = [];
 
@@ -1115,6 +1134,9 @@ export var PlacesUIUtils = {
       }
     }
     if (lazy.OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
+      if (updateTelemetryFn) {
+        updateTelemetryFn(urlsToOpen);
+      }
       this.openTabset(urlsToOpen, event, window);
     }
   },
@@ -1435,7 +1457,7 @@ export var PlacesUIUtils = {
     return guidsToSelect;
   },
 
-  onSidebarTreeClick(event) {
+  onSidebarTreeClick(event, updateTelemetryFn = null) {
     // right-clicks are not handled here
     if (event.button == 2) {
       return;
@@ -1474,7 +1496,12 @@ export var PlacesUIUtils = {
       event.originalTarget.localName == "treechildren"
     ) {
       tree.view.selection.select(cell.row);
-      this.openMultipleLinksInTabs(tree.selectedNode, event, tree);
+      this.openMultipleLinksInTabs(
+        tree.selectedNode,
+        event,
+        tree,
+        updateTelemetryFn
+      );
     } else if (
       !mouseInGutter &&
       !isContainer &&
@@ -1484,15 +1511,21 @@ export var PlacesUIUtils = {
       // do this *before* attempting to load the link since openURL uses
       // selection as an indication of which link to load.
       tree.view.selection.select(cell.row);
+      if (updateTelemetryFn) {
+        updateTelemetryFn([tree.selectedNode]);
+      }
       this.openNodeWithEvent(tree.selectedNode, event);
     }
   },
 
-  onSidebarTreeKeyPress(event) {
+  onSidebarTreeKeyPress(event, updateTelemetryFn = null) {
     let node = event.target.selectedNode;
     if (node) {
       if (event.keyCode == event.DOM_VK_RETURN) {
-        this.openNodeWithEvent(node, event);
+        PlacesUIUtils.openNodeWithEvent(node, event);
+        if (updateTelemetryFn) {
+          updateTelemetryFn([node]);
+        }
       }
     }
   },
@@ -1776,7 +1809,7 @@ export var PlacesUIUtils = {
           let contents = [
             { type: lazy.PlacesUtils.TYPE_X_MOZ_URL, entries: [] },
             { type: lazy.PlacesUtils.TYPE_HTML, entries: [] },
-            { type: lazy.PlacesUtils.TYPE_UNICODE, entries: [] },
+            { type: lazy.PlacesUtils.TYPE_PLAINTEXT, entries: [] },
           ];
 
           contents.forEach(function(content) {
@@ -1837,8 +1870,9 @@ export var PlacesUIUtils = {
       async db => {
         let rows = await db.execute(
           `SELECT COUNT(*) as n FROM moz_bookmarks b
-           WHERE b.parent = :parentId`,
-          { parentId: lazy.PlacesUtils.toolbarFolderId }
+           JOIN moz_bookmarks p ON p.id = b.parent
+           WHERE p.guid = :guid`,
+          { guid: lazy.PlacesUtils.bookmarks.toolbarGuid }
         );
         return rows[0].getResultByName("n");
       }
@@ -1870,7 +1904,7 @@ export var PlacesUIUtils = {
     // Otherwise, wait for a successful migration:
     let obs = (subject, topic, data) => {
       if (
-        data == Ci.nsIBrowserProfileMigrator.BOOKMARKS &&
+        data == lazy.MigrationUtils.resourceTypes.BOOKMARKS &&
         lazy.MigrationUtils.getImportedCount("bookmarks") > 0
       ) {
         lazy.CustomizableUI.removeWidgetFromArea("import-button");
@@ -2016,7 +2050,7 @@ XPCOMUtils.defineLazyGetter(PlacesUIUtils, "URI_FLAVORS", () => {
   return [
     lazy.PlacesUtils.TYPE_X_MOZ_URL,
     TAB_DROP_TYPE,
-    lazy.PlacesUtils.TYPE_UNICODE,
+    lazy.PlacesUtils.TYPE_PLAINTEXT,
   ];
 });
 XPCOMUtils.defineLazyGetter(PlacesUIUtils, "SUPPORTED_FLAVORS", () => {
@@ -2253,7 +2287,7 @@ function getTransactionsForCopy(items, insertionIndex, insertionParentGuid) {
       });
     } else {
       let title =
-        item.type != lazy.PlacesUtils.TYPE_UNICODE ? item.title : item.uri;
+        item.type != lazy.PlacesUtils.TYPE_PLAINTEXT ? item.title : item.uri;
       transaction = lazy.PlacesTransactions.NewBookmark({
         index,
         parentGuid: insertionParentGuid,

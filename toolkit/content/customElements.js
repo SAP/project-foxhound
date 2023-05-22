@@ -737,14 +737,6 @@
         return this.getAttribute("label");
       }
 
-      set crop(val) {
-        this.setAttribute("crop", val);
-      }
-
-      get crop() {
-        return this.getAttribute("crop");
-      }
-
       set image(val) {
         this.setAttribute("image", val);
       }
@@ -830,6 +822,7 @@
       ["message-bar", "chrome://global/content/elements/message-bar.js"],
       ["named-deck", "chrome://global/content/elements/named-deck.js"],
       ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
+      ["panel-list", "chrome://global/content/elements/panel-list.js"],
       ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [

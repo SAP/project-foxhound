@@ -688,11 +688,6 @@ bool Notification::PrefEnabled(JSContext* aCx, JSObject* aObj) {
   return StaticPrefs::dom_webnotifications_enabled();
 }
 
-// static
-bool Notification::IsGetEnabled(JSContext* aCx, JSObject* aObj) {
-  return NS_IsMainThread();
-}
-
 Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
                            const nsAString& aTitle, const nsAString& aBody,
                            NotificationDirection aDir, const nsAString& aLang,
@@ -1684,17 +1679,6 @@ already_AddRefed<Promise> Notification::Get(
   return promise.forget();
 }
 
-already_AddRefed<Promise> Notification::Get(
-    const GlobalObject& aGlobal, const GetNotificationOptions& aFilter,
-    ErrorResult& aRv) {
-  AssertIsOnMainThread();
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  MOZ_ASSERT(global);
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
-
-  return Get(window, aFilter, u""_ns, aRv);
-}
-
 class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
   RefPtr<PromiseWorkerProxy> mPromiseProxy;
   const nsTArray<NotificationStrings> mStrings;
@@ -1872,7 +1856,7 @@ void Notification::Close() {
   }
 }
 
-void Notification::CloseInternal() {
+void Notification::CloseInternal(bool aContextClosed) {
   AssertIsOnMainThread();
   // Transfer ownership (if any) to local scope so we can release it at the end
   // of this function. This is relevant when the call is from
@@ -1887,7 +1871,7 @@ void Notification::CloseInternal() {
     if (alertService) {
       nsAutoString alertName;
       GetAlertName(alertName);
-      alertService->CloseAlert(alertName);
+      alertService->CloseAlert(alertName, aContextClosed);
     }
   }
 }
@@ -2303,7 +2287,7 @@ Notification::Observe(nsISupports* aSubject, const char* aTopic,
         obs->RemoveObserver(this, DOM_WINDOW_FROZEN_TOPIC);
       }
 
-      CloseInternal();
+      CloseInternal(true);
     }
   }
 
@@ -2322,7 +2306,7 @@ nsresult Notification::DispatchToMainThread(
                               nsIEventTarget::DISPATCH_NORMAL);
     }
   }
-  nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadSerialEventTarget();
   MOZ_ASSERT(mainTarget);
   return mainTarget->Dispatch(std::move(aRunnable),
                               nsIEventTarget::DISPATCH_NORMAL);

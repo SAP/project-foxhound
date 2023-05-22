@@ -89,12 +89,12 @@ bool Sprinter::realloc_(size_t newSize) {
   return true;
 }
 
-Sprinter::Sprinter(JSContext* cx, bool shouldReportOOM)
-    : context(cx),
+Sprinter::Sprinter(JSContext* maybeCx, bool shouldReportOOM)
+    : maybeCx(maybeCx),
 #ifdef DEBUG
       initialized(false),
 #endif
-      shouldReportOOM(shouldReportOOM),
+      shouldReportOOM(maybeCx && shouldReportOOM),
       base(nullptr),
       size(0),
       offset(0) {
@@ -197,9 +197,10 @@ bool Sprinter::put(const char* s, size_t len) {
 }
 
 bool Sprinter::putString(JSString* s) {
+  MOZ_ASSERT(maybeCx);
   InvariantChecker ic(this);
 
-  JSLinearString* linear = s->ensureLinear(context);
+  JSLinearString* linear = s->ensureLinear(maybeCx);
   if (!linear) {
     return false;
   }
@@ -225,8 +226,8 @@ void Sprinter::reportOutOfMemory() {
   if (hadOOM_) {
     return;
   }
-  if (context && shouldReportOOM) {
-    ReportOutOfMemory(context);
+  if (maybeCx && shouldReportOOM) {
+    ReportOutOfMemory(maybeCx);
   }
   hadOOM_ = true;
 }
@@ -369,7 +370,8 @@ template bool QuoteString<QuoteTarget::JSON, char16_t>(
     Sprinter* sp, const mozilla::Range<const char16_t> chars, char quote);
 
 bool QuoteString(Sprinter* sp, JSString* str, char quote /*= '\0' */) {
-  JSLinearString* linear = str->ensureLinear(sp->context);
+  MOZ_ASSERT(sp->maybeCx);
+  JSLinearString* linear = str->ensureLinear(sp->maybeCx);
   if (!linear) {
     return false;
   }
@@ -393,7 +395,8 @@ UniqueChars QuoteString(JSContext* cx, JSString* str, char quote /* = '\0' */) {
 }
 
 bool JSONQuoteString(Sprinter* sp, JSString* str) {
-  JSLinearString* linear = str->ensureLinear(sp->context);
+  MOZ_ASSERT(sp->maybeCx);
+  JSLinearString* linear = str->ensureLinear(sp->maybeCx);
   if (!linear) {
     return false;
   }

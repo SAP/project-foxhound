@@ -34,7 +34,6 @@
 #include "vm/Activation.h"  // js::Activation
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
-#include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
 #include "wasm/WasmContext.h"
 
 struct JS_PUBLIC_API JSContext;
@@ -80,7 +79,7 @@ class MOZ_RAII AutoCycleDetector {
 
 struct AutoResolving;
 
-struct OffThreadFrontendErrors;  // vm/HelperThreadState.h
+struct FrontendErrors;  // vm/HelperThreadState.h
 
 class InternalJobQueue : public JS::JobQueue {
  public:
@@ -178,7 +177,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // Thread that the JSContext is currently running on, if in use.
   js::ThreadId currentThread_;
 
-  js::OffThreadFrontendErrors* errors_;
+  js::FrontendErrors* errors_;
 
   // When a helper thread is using a context, it may need to periodically
   // free unused memory.
@@ -329,12 +328,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   inline void leaveRealm(JS::Realm* oldRealm);
 
-  void setOffThreadFrontendErrors(js::OffThreadFrontendErrors* errors) {
-    errors_ = errors;
-  }
-  js::OffThreadFrontendErrors* offThreadFrontendErrors() const {
-    return errors_;
-  }
+  void setFrontendErrors(js::FrontendErrors* errors) { errors_ = errors; }
+  js::FrontendErrors* frontendErrors() const { return errors_; }
 
   // Threads may freely access any data in their realm, compartment and zone.
   JS::Compartment* compartment() const {
@@ -367,12 +362,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::AtomsTable& atoms() { return runtime_->atoms(); }
 
   js::SymbolRegistry& symbolRegistry() { return runtime_->symbolRegistry(); }
-
-  // Methods to access runtime data that must be protected by locks.
-  js::SharedImmutableScriptDataTable& scriptDataTable(
-      js::AutoLockScriptData& lock) {
-    return runtime_->scriptDataTable(lock);
-  }
 
   // Methods to access other runtime data that checks locking internally.
   js::gc::AtomMarkingRuntime& atomMarking() { return runtime_->gc.atomMarking; }
@@ -586,6 +575,18 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void verifyIsSafeToGC() {
     MOZ_DIAGNOSTIC_ASSERT(!inUnsafeRegion,
                           "[AutoAssertNoGC] possible GC in GC-unsafe region");
+  }
+
+  bool isInUnsafeRegion() const { return bool(inUnsafeRegion); }
+
+  // For JIT use.
+  void resetInUnsafeRegion() {
+    MOZ_ASSERT(inUnsafeRegion >= 0);
+    inUnsafeRegion = 0;
+  }
+
+  static constexpr size_t offsetOfInUnsafeRegion() {
+    return offsetof(JSContext, inUnsafeRegion);
   }
 
   /* Whether sampling should be enabled or not. */
@@ -1081,35 +1082,6 @@ class AutoAssertNoPendingException {
  public:
   explicit AutoAssertNoPendingException(JSContext* cxArg) {}
 #endif
-};
-
-class MOZ_RAII AutoLockScriptData {
-  JSRuntime* runtime;
-
- public:
-  explicit AutoLockScriptData(JSRuntime* rt) {
-    MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt) ||
-               CurrentThreadIsParseThread());
-    runtime = rt;
-    if (runtime->hasParseTasks()) {
-      runtime->scriptDataLock.lock();
-    } else {
-      MOZ_ASSERT(!runtime->activeThreadHasScriptDataAccess);
-#ifdef DEBUG
-      runtime->activeThreadHasScriptDataAccess = true;
-#endif
-    }
-  }
-  ~AutoLockScriptData() {
-    if (runtime->hasParseTasks()) {
-      runtime->scriptDataLock.unlock();
-    } else {
-      MOZ_ASSERT(runtime->activeThreadHasScriptDataAccess);
-#ifdef DEBUG
-      runtime->activeThreadHasScriptDataAccess = false;
-#endif
-    }
-  }
 };
 
 class MOZ_RAII AutoNoteDebuggerEvaluationWithOnNativeCallHook {

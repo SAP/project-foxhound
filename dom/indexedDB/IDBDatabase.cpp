@@ -156,7 +156,6 @@ IDBDatabase::IDBDatabase(IDBOpenDBRequest* aRequest,
       mFactory(std::move(aFactory)),
       mSpec(std::move(aSpec)),
       mBackgroundActor(aActor),
-      mFileHandleDisabled(aRequest->IsFileHandleDisabled()),
       mClosed(false),
       mInvalidated(false),
       mQuotaExceeded(false),
@@ -632,49 +631,6 @@ RefPtr<IDBTransaction> IDBDatabase::Transaction(
   return AsRefPtr(std::move(transaction));
 }
 
-RefPtr<IDBRequest> IDBDatabase::CreateMutableFile(
-    JSContext* aCx, const nsAString& aName, const Optional<nsAString>& aType,
-    ErrorResult& aRv) {
-  AssertIsOnOwningThread();
-
-  if (aName.IsEmpty()) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-    return nullptr;
-  }
-
-  if (QuotaManager::IsShuttingDown()) {
-    IDB_REPORT_INTERNAL_ERR();
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-    return nullptr;
-  }
-
-  if (mClosed || mFileHandleDisabled) {
-    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
-    return nullptr;
-  }
-
-  nsString type;
-  if (aType.WasPassed()) {
-    type = aType.Value();
-  }
-
-  CreateFileParams params(nsString(aName), type);
-
-  auto request = IDBRequest::Create(aCx, this, nullptr).unwrap();
-
-  BackgroundDatabaseRequestChild* actor =
-      new BackgroundDatabaseRequestChild(this, request);
-
-  IDB_LOG_MARK_CHILD_REQUEST(
-      "database(%s).createMutableFile(%s)",
-      "IDBDatabase.createMutableFile(%.0s%.0s)", request->LoggingSerialNumber(),
-      IDB_LOG_STRINGIFY(this), NS_ConvertUTF16toUTF8(aName).get());
-
-  mBackgroundActor->SendPBackgroundIDBDatabaseRequestConstructor(actor, params);
-
-  return request;
-}
-
 void IDBDatabase::RegisterTransaction(IDBTransaction& aTransaction) {
   AssertIsOnOwningThread();
   aTransaction.AssertIsOnOwningThread();
@@ -848,43 +804,6 @@ void IDBDatabase::NoteInactiveTransaction() {
 
   MOZ_ALWAYS_SUCCEEDS(
       EventTarget()->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL));
-}
-
-nsresult IDBDatabase::GetQuotaInfo(nsACString& aOrigin,
-                                   PersistenceType* aPersistenceType) {
-  using mozilla::dom::quota::QuotaManager;
-
-  MOZ_ASSERT(NS_IsMainThread(), "This can't work off the main thread!");
-
-  if (aPersistenceType) {
-    *aPersistenceType = mSpec->metadata().persistenceType();
-    MOZ_ASSERT(*aPersistenceType != PERSISTENCE_TYPE_INVALID);
-  }
-
-  PrincipalInfo* principalInfo = mFactory->GetPrincipalInfo();
-  MOZ_ASSERT(principalInfo);
-
-  switch (principalInfo->type()) {
-    case PrincipalInfo::TNullPrincipalInfo:
-      MOZ_CRASH("Is this needed?!");
-
-    case PrincipalInfo::TSystemPrincipalInfo:
-      aOrigin = QuotaManager::GetOriginForChrome();
-      return NS_OK;
-
-    case PrincipalInfo::TContentPrincipalInfo: {
-      QM_TRY_UNWRAP(auto principal, PrincipalInfoToPrincipal(*principalInfo));
-
-      QM_TRY_UNWRAP(aOrigin, QuotaManager::GetOriginFromPrincipal(principal));
-
-      return NS_OK;
-    }
-
-    default:
-      MOZ_CRASH("Unknown PrincipalInfo type!");
-  }
-
-  MOZ_CRASH("Should never get here!");
 }
 
 void IDBDatabase::ExpireFileActors(bool aExpireAll) {

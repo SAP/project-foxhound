@@ -77,7 +77,6 @@ var SidebarUI = {
     return (this.__title = document.getElementById("sidebar-title"));
   },
   _splitter: null,
-  _icon: null,
   _reversePositionButton: null,
   _switcherPanel: null,
   _switcherTarget: null,
@@ -102,7 +101,6 @@ var SidebarUI = {
   init() {
     this._box = document.getElementById("sidebar-box");
     this._splitter = document.getElementById("sidebar-splitter");
-    this._icon = document.getElementById("sidebar-icon");
     this._reversePositionButton = document.getElementById(
       "sidebar-reverse-position"
     );
@@ -235,7 +233,7 @@ var SidebarUI = {
     this._reversePositionButton.setAttribute("label", label);
 
     this._switcherPanel.hidden = false;
-    this._switcherPanel.openPopup(this._icon);
+    this._switcherPanel.openPopup(this._switcherTarget);
     this._switcherTarget.classList.add("active");
   },
 

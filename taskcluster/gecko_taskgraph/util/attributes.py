@@ -51,6 +51,7 @@ RUN_ON_PROJECT_ALIASES = {
     ),
     "release": lambda project: (project in RELEASE_PROJECTS or project == "toolchains"),
     "trunk": lambda project: (project in TRUNK_PROJECTS or project == "toolchains"),
+    "trunk-only": lambda project: project in TRUNK_PROJECTS,
     "autoland": lambda project: project in ("autoland", "toolchains"),
     "autoland-only": lambda project: project == "autoland",
     "mozilla-central": lambda project: project in ("mozilla-central", "toolchains"),
@@ -138,5 +139,4 @@ def is_try(params):
 def task_name(task):
     if task.label.startswith(task.kind + "-"):
         return task.label[len(task.kind) + 1 :]
-    else:
-        raise AttributeError(f"Task {task.label} does not have a name.")
+    raise AttributeError(f"Task {task.label} does not have a name.")

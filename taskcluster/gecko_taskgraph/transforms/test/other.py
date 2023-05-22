@@ -6,8 +6,6 @@ import hashlib
 import json
 import re
 
-from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
-from gecko_taskgraph.util.platforms import platform_family
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from mozbuild.util import ReadOnlyDict
 from taskgraph.transforms.base import TransformSequence
@@ -16,6 +14,9 @@ from taskgraph.util.keyed_by import evaluate_keyed_by
 from taskgraph.util.schema import Schema, resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_path, get_index_url
 from voluptuous import Any, Optional, Required
+
+from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
+from gecko_taskgraph.util.platforms import platform_family
 
 transforms = TransformSequence()
 
@@ -203,7 +204,7 @@ def set_download_symbols(config, tasks):
     for task in tasks:
         if task["test-platform"].split("/")[-1] == "debug":
             task["mozharness"]["download-symbols"] = True
-        elif "asan" in task["build-platform"]:
+        elif "asan" in task["build-platform"] or "tsan" in task["build-platform"]:
             if "download-symbols" in task["mozharness"]:
                 del task["mozharness"]["download-symbols"]
         else:
@@ -328,49 +329,29 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-87",
             ],
             "linux.*": [
-                "linux64-chromedriver-102",
-                "linux64-chromedriver-103",
-                "linux64-chromedriver-104",
-                "linux64-chromedriver-105",
-                "linux64-chromedriver-106",
-                "linux64-chromedriver-107",
                 "linux64-chromedriver-108",
+                "linux64-chromedriver-109",
+                "linux64-chromedriver-110",
             ],
             "macosx.*": [
-                "mac64-chromedriver-102",
-                "mac64-chromedriver-103",
-                "mac64-chromedriver-104",
-                "mac64-chromedriver-105",
-                "mac64-chromedriver-106",
-                "mac64-chromedriver-107",
                 "mac64-chromedriver-108",
+                "mac64-chromedriver-109",
+                "mac64-chromedriver-110",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-102",
-                "win32-chromedriver-103",
-                "win32-chromedriver-104",
-                "win32-chromedriver-105",
-                "win32-chromedriver-106",
-                "win32-chromedriver-107",
                 "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-102",
-                "win32-chromedriver-103",
-                "win32-chromedriver-104",
-                "win32-chromedriver-105",
-                "win32-chromedriver-106",
-                "win32-chromedriver-107",
                 "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-102",
-                "win32-chromedriver-103",
-                "win32-chromedriver-104",
-                "win32-chromedriver-105",
-                "win32-chromedriver-106",
-                "win32-chromedriver-107",
                 "win32-chromedriver-108",
+                "win32-chromedriver-109",
+                "win32-chromedriver-110",
             ],
         }
 
@@ -549,7 +530,7 @@ def enable_code_coverage(config, tasks):
             if "linux" in task["build-platform"]:
                 task["fetches"]["toolchain"].append("linux64-grcov")
             elif "osx" in task["build-platform"]:
-                task["fetches"]["fetch"].append("grcov-osx-x86_64")
+                task["fetches"]["toolchain"].append("macosx64-grcov")
             elif "win" in task["build-platform"]:
                 task["fetches"]["toolchain"].append("win64-grcov")
 
@@ -702,6 +683,11 @@ def handle_tier(config, tasks):
 def apply_raptor_tier_optimization(config, tasks):
     for task in tasks:
         if task["suite"] != "raptor":
+            yield task
+            continue
+
+        if "regression-tests" in task["test-name"]:
+            # Don't optimize the regression tests
             yield task
             continue
 
@@ -1055,4 +1041,19 @@ def set_schedules_components(config, tasks):
         schedules.add(platform_family(task["build-platform"]))
 
         task["schedules-component"] = sorted(schedules)
+        yield task
+
+
+@transforms.add
+def enable_parallel_marking_in_tsan_tests(config, tasks):
+    """Enable parallel marking in TSAN tests"""
+    skip_list = ["cppunittest", "gtest"]
+    for task in tasks:
+        if "-tsan-" in task["test-platform"]:
+            if task["suite"] not in skip_list:
+                extra_options = task["mozharness"].setdefault("extra-options", [])
+                extra_options.append(
+                    "--setpref=javascript.options.mem.gc_parallel_marking=true"
+                )
+
         yield task

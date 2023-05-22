@@ -137,7 +137,7 @@ class nsWindow final : public nsBaseWidget {
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent,
                                         nsNativeWidget aNativeParent,
                                         const LayoutDeviceIntRect& aRect,
-                                        nsWidgetInitData* aInitData) override;
+                                        InitData* aInitData) override;
   virtual void Destroy() override;
   virtual void SetParent(nsIWidget* aNewParent) override;
   virtual nsIWidget* GetParent(void) override;
@@ -238,6 +238,9 @@ class nsWindow final : public nsBaseWidget {
 
   virtual mozilla::ScreenIntMargin GetSafeAreaInsets() const override;
   void UpdateSafeAreaInsets(const mozilla::ScreenIntMargin& aSafeAreaInsets);
+
+  mozilla::jni::NativeWeakPtr<mozilla::widget::NPZCSupport>
+  GetNPZCSupportWeakPtr();
 
  protected:
   void BringToFront();

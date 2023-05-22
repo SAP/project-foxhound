@@ -439,14 +439,6 @@ void WebRenderBridgeChild::UseTextures(
                      t.mPictureRect, t.mFrameID, t.mProducerID, readLocked));
     GetCompositorBridgeChild()->HoldUntilCompositableRefReleasedIfNecessary(
         t.mTextureClient);
-
-    auto fenceFd = t.mTextureClient->GetInternalData()->GetAcquireFence();
-    if (fenceFd.IsValid()) {
-      AddWebRenderParentCommand(CompositableOperation(
-          aCompositable->GetIPCHandle(),
-          OpDeliverAcquireFence(nullptr, t.mTextureClient->GetIPDLActor(),
-                                fenceFd)));
-    }
   }
   AddWebRenderParentCommand(CompositableOperation(aCompositable->GetIPCHandle(),
                                                   OpUseTexture(textures)));
@@ -462,10 +454,12 @@ void WebRenderBridgeChild::UseRemoteTexture(CompositableClient* aCompositable,
       OpUseRemoteTexture(aTextureId, aOwnerId, aSize, aFlags)));
 }
 
-void WebRenderBridgeChild::EnableAsyncCompositable(
-    CompositableClient* aCompositable, bool aEnable) {
+void WebRenderBridgeChild::EnableRemoteTexturePushCallback(
+    CompositableClient* aCompositable, const RemoteTextureOwnerId aOwnerId,
+    const gfx::IntSize aSize, const TextureFlags aFlags) {
   AddWebRenderParentCommand(CompositableOperation(
-      aCompositable->GetIPCHandle(), OpEnableAsyncCompositable(aEnable)));
+      aCompositable->GetIPCHandle(),
+      OpEnableRemoteTexturePushCallback(aOwnerId, aSize, aFlags)));
 }
 
 void WebRenderBridgeChild::UpdateFwdTransactionId() {

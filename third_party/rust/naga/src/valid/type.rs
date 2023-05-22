@@ -1,6 +1,6 @@
 use super::Capabilities;
 use crate::{
-    arena::{Arena, BadHandle, Handle, UniqueArena},
+    arena::{Arena, Handle, UniqueArena},
     proc::Alignment,
 };
 
@@ -9,6 +9,8 @@ bitflags::bitflags! {
     ///
     /// [`Type`]: crate::Type
     /// [`Validator`]: crate::valid::Validator
+    #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+    #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[repr(transparent)]
     pub struct TypeFlags: u8 {
         /// Can be used for data variables.
@@ -88,8 +90,6 @@ pub enum Disalignment {
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum TypeError {
-    #[error(transparent)]
-    BadHandle(#[from] BadHandle),
     #[error("The {0:?} scalar width {1} is not supported")]
     InvalidWidth(crate::ScalarKind, crate::Bytes),
     #[error("The {0:?} scalar width {1} is not supported for an atomic")]
@@ -382,14 +382,6 @@ impl super::Validator {
                 }
 
                 let base_layout = self.layouter[base];
-                let expected_stride = base_layout.to_stride();
-                if stride != expected_stride {
-                    return Err(TypeError::InvalidArrayStride {
-                        stride,
-                        expected: expected_stride,
-                    });
-                }
-
                 let general_alignment = base_layout.alignment;
                 let uniform_layout = match base_info.uniform_layout {
                     Ok(base_alignment) => {
@@ -416,9 +408,9 @@ impl super::Validator {
                     Err(e) => Err(e),
                 };
 
-                let sized_flag = match size {
+                let type_info_mask = match size {
                     crate::ArraySize::Constant(const_handle) => {
-                        let constant = constants.try_get(const_handle)?;
+                        let constant = &constants[const_handle];
                         let length_is_positive = match *constant {
                             crate::Constant {
                                 specialization: Some(_),
@@ -463,19 +455,23 @@ impl super::Validator {
                             return Err(TypeError::NonPositiveArrayLength(const_handle));
                         }
 
-                        TypeFlags::SIZED | TypeFlags::ARGUMENT | TypeFlags::CONSTRUCTIBLE
+                        TypeFlags::DATA
+                            | TypeFlags::SIZED
+                            | TypeFlags::COPY
+                            | TypeFlags::HOST_SHAREABLE
+                            | TypeFlags::ARGUMENT
+                            | TypeFlags::CONSTRUCTIBLE
                     }
                     crate::ArraySize::Dynamic => {
                         // Non-SIZED types may only appear as the last element of a structure.
                         // This is enforced by checks for SIZED-ness for all compound types,
                         // and a special case for structs.
-                        TypeFlags::empty()
+                        TypeFlags::DATA | TypeFlags::COPY | TypeFlags::HOST_SHAREABLE
                     }
                 };
 
-                let base_mask = TypeFlags::COPY | TypeFlags::HOST_SHAREABLE;
                 TypeInfo {
-                    flags: TypeFlags::DATA | (base_info.flags & base_mask) | sized_flag,
+                    flags: base_info.flags & type_info_mask,
                     uniform_layout,
                     storage_layout,
                 }

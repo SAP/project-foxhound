@@ -4,7 +4,6 @@
 
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 import { MigrationUtils } from "resource:///modules/MigrationUtils.sys.mjs";
 import { MigratorBase } from "resource:///modules/MigratorBase.sys.mjs";
 
@@ -43,7 +42,7 @@ Bookmarks.prototype = {
     })().then(
       () => aCallback(true),
       e => {
-        Cu.reportError(e);
+        console.error(e);
         aCallback(false);
       }
     );
@@ -173,7 +172,7 @@ Bookmarks.prototype = {
           try {
             new URL(url);
           } catch (ex) {
-            Cu.reportError(
+            console.error(
               `Ignoring ${url} when importing from Safari because of exception: ${ex}`
             );
             return null;
@@ -242,7 +241,7 @@ History.prototype = {
             } catch (ex) {
               // Safari's History file may contain malformed URIs which
               // will be ignored.
-              Cu.reportError(ex);
+              console.error(ex);
               failedOnce = true;
             }
           }
@@ -260,7 +259,7 @@ History.prototype = {
           () => aCallback(false)
         );
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
         aCallback(false);
       }
     });
@@ -304,7 +303,7 @@ MainPreferencesPropertyList.prototype = {
           try {
             callback(aDict);
           } catch (ex) {
-            Cu.reportError(ex);
+            console.error(ex);
           }
         }
         this._callbacks.splice(0);
@@ -346,16 +345,12 @@ SearchStrings.prototype = {
  * Safari migrator
  */
 export class SafariProfileMigrator extends MigratorBase {
-  get classDescription() {
-    return "Safari Profile Migrator";
+  static get key() {
+    return "safari";
   }
 
-  get contractID() {
-    return "@mozilla.org/profile/migrator;1?app=browser&type=safari";
-  }
-
-  get classID() {
-    return Components.ID("{4b609ecf-60b2-4655-9df4-dc149e474da1}");
+  static get displayNameL10nID() {
+    return "migration-wizard-migrator-display-name-safari";
   }
 
   getResources() {
@@ -391,19 +386,18 @@ export class SafariProfileMigrator extends MigratorBase {
     return resources;
   }
 
-  getLastUsedDate() {
-    let profileDir = FileUtils.getDir("ULibDir", ["Safari"], false);
-    let datePromises = ["Bookmarks.plist", "History.plist"].map(file => {
-      let path = OS.Path.join(profileDir.path, file);
-      return OS.File.stat(path)
-        .catch(() => null)
-        .then(info => {
-          return info ? info.lastModificationDate : 0;
-        });
-    });
-    return Promise.all(datePromises).then(dates => {
-      return new Date(Math.max.apply(Math, dates));
-    });
+  async getLastUsedDate() {
+    const profileDir = FileUtils.getDir("ULibDir", ["Safari"], false);
+    const dates = await Promise.all(
+      ["Bookmarks.plist", "History.plist"].map(file => {
+        const path = PathUtils.join(profileDir.path, file);
+        return IOUtils.stat(path)
+          .then(info => info.lastModified)
+          .catch(() => 0);
+      })
+    );
+
+    return new Date(Math.max(...dates));
   }
 
   async hasPermissions() {

@@ -127,6 +127,8 @@
 
 #include <cstring>
 #include <cerrno>
+#include <optional>
+#include <type_traits>
 #ifdef XP_WIN
 #  include <io.h>
 #  include <windows.h>
@@ -150,7 +152,6 @@
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/RandomNum.h"
-#include "mozilla/Sprintf.h"
 // Note: MozTaggedAnonymousMmap() could call an LD_PRELOADed mmap
 // instead of the one defined here; use only MozTagAnonymousMemory().
 #include "mozilla/TaggedAnonymousMemory.h"
@@ -162,6 +163,10 @@
 #include "rb.h"
 #include "Mutex.h"
 #include "Utils.h"
+
+#if defined(XP_WIN)
+#  include "mozmemory_utils.h"
+#endif
 
 // For GetGeckoProcessType(), when it's used.
 #if defined(XP_WIN) && !defined(JS_STANDALONE)
@@ -198,12 +203,20 @@ using namespace mozilla;
 #  define MALLOC_DECOMMIT
 #endif
 
+// Define MALLOC_RUNTIME_CONFIG depending on MOZ_DEBUG. Overriding this as
+// a build option allows us to build mozjemalloc/firefox without runtime asserts
+// but with runtime configuration. Making some testing easier.
+
+#ifdef MOZ_DEBUG
+#  define MALLOC_RUNTIME_CONFIG
+#endif
+
 // When MALLOC_STATIC_PAGESIZE is defined, the page size is fixed at
 // compile-time for better performance, as opposed to determined at
 // runtime. Some platforms can have different page sizes at runtime
 // depending on kernel configuration, so they are opted out by default.
 // Debug builds are opted out too, for test coverage.
-#ifndef MOZ_DEBUG
+#ifndef MALLOC_RUNTIME_CONFIG
 #  if !defined(__ia64__) && !defined(__sparc__) && !defined(__mips__) &&       \
       !defined(__aarch64__) && !defined(__powerpc__) && !defined(XP_MACOSX) && \
       !defined(__loongarch__)
@@ -492,7 +505,7 @@ static size_t gPageSize;
 #  define END_GLOBALS
 #  define DEFINE_GLOBAL(type) static const type
 #  define GLOBAL_LOG2 LOG2
-#  define GLOBAL_ASSERT_HELPER1(x) static_assert(x, #  x)
+#  define GLOBAL_ASSERT_HELPER1(x) static_assert(x, #x)
 #  define GLOBAL_ASSERT_HELPER2(x, y) static_assert(x, y)
 #  define GLOBAL_ASSERT(...)                                               \
     MACRO_CALL(                                                            \
@@ -772,6 +785,88 @@ class SizeClass {
   size_t mSize;
 };
 
+// Fast division
+//
+// During deallocation we want to divide by the size class.  This class
+// provides a routine and sets up a constant as follows.
+//
+// To divide by a number D that is not a power of two we multiply by (2^17 /
+// D) and then right shift by 17 positions.
+//
+//   X / D
+//
+// becomes
+//
+//   (X * m) >> p
+//
+// Where m is calculated during the FastDivisor constructor similarly to:
+//
+//   m = 2^p / D
+//
+template <typename T>
+class FastDivisor {
+ private:
+  // The shift amount (p) is chosen to minimise the size of m while
+  // working for divisors up to 65536 in steps of 16.  I arrived at 17
+  // experimentally.  I wanted a low number to minimise the range of m
+  // so it can fit in a uint16_t, 16 didn't work but 17 worked perfectly.
+  //
+  // We'd need to increase this if we allocated memory on smaller boundaries
+  // than 16.
+  static const unsigned p = 17;
+
+  // We can fit the inverted divisor in 16 bits, but we template it here for
+  // convenience.
+  T m;
+
+ public:
+  // Needed so mBins can be constructed.
+  FastDivisor() : m(0) {}
+
+  FastDivisor(unsigned div, unsigned max) {
+    MOZ_ASSERT(div <= max);
+
+    // divide_inv_shift is large enough.
+    MOZ_ASSERT((1U << p) >= div);
+
+    // The calculation here for m is formula 26 from Section
+    // 10-9 "Unsigned Division by Divisors >= 1" in
+    // Henry S. Warren, Jr.'s Hacker's Delight, 2nd Ed.
+    unsigned m_ = ((1U << p) + div - 1 - (((1U << p) - 1) % div)) / div;
+
+    // Make sure that max * m does not overflow.
+    MOZ_DIAGNOSTIC_ASSERT(max < UINT_MAX / m_);
+
+    MOZ_ASSERT(m_ <= std::numeric_limits<T>::max());
+    m = static_cast<T>(m_);
+
+    // Initialisation made m non-zero.
+    MOZ_ASSERT(m);
+
+    // Test that all the divisions in the range we expected would work.
+#ifdef MOZ_DEBUG
+    for (unsigned num = 0; num < max; num += div) {
+      MOZ_ASSERT(num / div == divide(num));
+    }
+#endif
+  }
+
+  // Note that this always occurs in uint32_t regardless of m's type.  If m is
+  // a uint16_t it will be zero-extended before the multiplication.  We also use
+  // uint32_t rather than something that could possibly be larger because it is
+  // most-likely the cheapest multiplication.
+  inline uint32_t divide(uint32_t num) const {
+    // Check that m was initialised.
+    MOZ_ASSERT(m);
+    return (num * m) >> p;
+  }
+};
+
+template <typename T>
+unsigned inline operator/(unsigned num, FastDivisor<T> divisor) {
+  return divisor.divide(num);
+}
+
 // ***************************************************************************
 // Radix tree data structures.
 //
@@ -924,9 +1019,6 @@ struct arena_bin_t {
   // Bin's size class.
   size_t mSizeClass;
 
-  // Total size of a run for this bin's size class.
-  size_t mRunSize;
-
   // Total number of regions in a run for this bin's size class.
   uint32_t mRunNumRegions;
 
@@ -937,7 +1029,14 @@ struct arena_bin_t {
   uint32_t mRunFirstRegionOffset;
 
   // Current number of runs in this bin, full or otherwise.
-  unsigned long mNumRuns;
+  uint32_t mNumRuns;
+
+  // A constant for fast division by size class.  This value is 16 bits wide so
+  // it is placed last.
+  FastDivisor<uint16_t> mSizeDivisor;
+
+  // Total number of pages in a run for this bin's size class.
+  uint8_t mRunSizePages;
 
   // Amount of overhead runs are allowed to have.
   static constexpr double kRunOverhead = 1.6_percent;
@@ -961,6 +1060,17 @@ struct arena_bin_t {
   //  3328  36 KiB   3584  32 KiB   3840  64 KiB
   inline void Init(SizeClass aSizeClass);
 };
+
+// We try to keep the above structure aligned with common cache lines sizes,
+// often that's 64 bytes on x86 and ARM, we don't make assumptions for other
+// architectures.
+#if defined(__x86_64__) || defined(__aarch64__)
+// On 64bit platforms this structure is often 48 bytes
+// long, which means every other array element will be properly aligned.
+static_assert(sizeof(arena_bin_t) == 48);
+#elif defined(__x86__) || defined(__arm__)
+static_assert(sizeof(arena_bin_t) == 32);
+#endif
 
 struct arena_t {
 #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
@@ -1275,15 +1385,20 @@ static detail::ThreadLocal<arena_t*, detail::ThreadLocalKeyStorage>
 
 // *****************************
 // Runtime configuration options.
+//
+// Junk - write "junk" to freshly allocated cells.
+// Poison - write "poison" to cells upon deallocation.
 
 const uint8_t kAllocJunk = 0xe4;
 const uint8_t kAllocPoison = 0xe5;
 
-#ifdef MOZ_DEBUG
+#ifdef MALLOC_RUNTIME_CONFIG
 static bool opt_junk = true;
+static bool opt_poison = true;
 static bool opt_zero = false;
 #else
 static const bool opt_junk = false;
+static const bool opt_poison = true;
 static const bool opt_zero = false;
 #endif
 static bool opt_randomize_small = true;
@@ -1362,9 +1477,14 @@ static inline size_t GetChunkOffsetForPtr(const void* aPtr) {
 
 static inline const char* _getprogname(void) { return "<jemalloc>"; }
 
+static inline void MaybePoison(void* aPtr, size_t aSize) {
+  if (opt_poison) {
+    memset(aPtr, kAllocPoison, aSize);
+  }
+}
+
 // Fill the given range of memory with zeroes or junk depending on opt_junk and
-// opt_zero. Callers can force filling with zeroes through the aForceZero
-// argument.
+// opt_zero.
 static inline void ApplyZeroOrJunk(void* aPtr, size_t aSize) {
   if (opt_junk) {
     memset(aPtr, kAllocJunk, aSize);
@@ -1385,10 +1505,7 @@ constexpr size_t kMaxAttempts = 10;
 // Microsoft's documentation for ::Sleep() for details.)
 constexpr size_t kDelayMs = 50;
 
-struct StallSpecs {
-  size_t maxAttempts;
-  size_t delayMs;
-};
+using StallSpecs = ::mozilla::StallSpecs;
 
 static constexpr StallSpecs maxStall = {.maxAttempts = kMaxAttempts,
                                         .delayMs = kDelayMs};
@@ -1408,7 +1525,8 @@ static inline StallSpecs GetStallSpecs() {
 
     // For all other process types, stall for at most half as long.
     default:
-      return {.maxAttempts = kMaxAttempts / 2, .delayMs = kDelayMs};
+      return {.maxAttempts = maxStall.maxAttempts / 2,
+              .delayMs = maxStall.delayMs};
   }
 #  endif
 }
@@ -1420,6 +1538,8 @@ static inline StallSpecs GetStallSpecs() {
 // Ref: https://docs.microsoft.com/en-us/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors
 [[nodiscard]] void* MozVirtualAlloc(LPVOID lpAddress, SIZE_T dwSize,
                                     DWORD flAllocationType, DWORD flProtect) {
+  DWORD const lastError = ::GetLastError();
+
   constexpr auto IsOOMError = [] {
     switch (::GetLastError()) {
       // This is the usual error result from VirtualAlloc for OOM.
@@ -1448,31 +1568,40 @@ static inline StallSpecs GetStallSpecs() {
   // Retry as many times as desired (possibly zero).
   const StallSpecs stallSpecs = GetStallSpecs();
 
-  for (size_t i = 0; i < stallSpecs.maxAttempts; ++i) {
-    ::Sleep(stallSpecs.delayMs);
-    void* ptr = ::VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect);
+  const auto ret =
+      stallSpecs.StallAndRetry(&::Sleep, [&]() -> std::optional<void*> {
+        void* ptr =
+            ::VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect);
 
-    if (ptr) {
-      // The OOM status has been handled, and should not be reported to
-      // telemetry.
-      if (IsOOMError()) {
-        ::SetLastError(0);
-      }
-      return ptr;
-    }
+        if (ptr) {
+          // The OOM status has been handled, and should not be reported to
+          // telemetry.
+          if (IsOOMError()) {
+            ::SetLastError(lastError);
+          }
+          return ptr;
+        }
 
-    // Failure for some reason other than OOM.
-    if (!IsOOMError()) {
-      return nullptr;
-    }
-  }
+        // Failure for some reason other than OOM.
+        if (!IsOOMError()) {
+          return nullptr;
+        }
 
-  // Ah, well. We tried.
-  return nullptr;
+        return std::nullopt;
+      });
+
+  return ret.value_or(nullptr);
 }
 }  // namespace MozAllocRetries
 
 using MozAllocRetries::MozVirtualAlloc;
+
+namespace mozilla {
+MOZ_JEMALLOC_API StallSpecs GetAllocatorStallSpecs() {
+  return ::MozAllocRetries::GetStallSpecs();
+}
+}  // namespace mozilla
+
 #endif  // XP_WIN
 
 // ***************************************************************************
@@ -2348,94 +2477,22 @@ inline void* arena_t::ArenaRunRegAlloc(arena_run_t* aRun, arena_bin_t* aBin) {
   return nullptr;
 }
 
-// To divide by a number D that is not a power of two we multiply by (2^21 /
-// D) and then right shift by 21 positions.
-//
-//   X / D
-//
-// becomes
-//
-//   (X * size_invs[D - 3]) >> SIZE_INV_SHIFT
-//
-// Where D is d/Q and Q is a constant factor.
-template <unsigned Q, unsigned Max>
-struct FastDivide {
-  static_assert(IsPowerOfTwo(Q), "q must be a power-of-two");
-
-  // We don't need FastDivide when dividing by a power-of-two. So when we set
-  // the range (min_divisor - max_divisor inclusive) we can avoid powers-of-two.
-
-  // Because Q is a power of two Q*3 is the first not-power-of-two.
-  static const unsigned min_divisor = Q * 3;
-  static const unsigned max_divisor =
-      mozilla::IsPowerOfTwo(Max) ? Max - Q : Max;
-  // +1 because this range is inclusive.
-  static const unsigned num_divisors = (max_divisor - min_divisor) / Q + 1;
-
-  static const unsigned inv_shift = 21;
-
-  static constexpr unsigned inv(unsigned s) {
-    return ((1U << inv_shift) / (s * Q)) + 1;
-  }
-
-  static unsigned divide(size_t num, unsigned div) {
-    // clang-format off
-    static const unsigned size_invs[] = {
-      inv(3),
-      inv(4),  inv(5),  inv(6),  inv(7),
-      inv(8),  inv(9),  inv(10), inv(11),
-      inv(12), inv(13), inv(14), inv(15),
-      inv(16), inv(17), inv(18), inv(19),
-      inv(20), inv(21), inv(22), inv(23),
-      inv(24), inv(25), inv(26), inv(27),
-      inv(28), inv(29), inv(30), inv(31)
-    };
-    // clang-format on
-
-    // If the divisor is valid (min is below max) then the size_invs array must
-    // be large enough.
-    static_assert(!(min_divisor < max_divisor) ||
-                      num_divisors <= sizeof(size_invs) / sizeof(unsigned),
-                  "num_divisors does not match array size");
-
-    MOZ_ASSERT(div >= min_divisor);
-    MOZ_ASSERT(div <= max_divisor);
-    MOZ_ASSERT(div % Q == 0);
-
-    // If Q isn't a power of two this optimisation would be pointless, we expect
-    // /Q to be reduced to a shift, but we asserted this above.
-    const unsigned idx = div / Q - 3;
-    MOZ_ASSERT(idx < sizeof(size_invs) / sizeof(unsigned));
-    return (num * size_invs[idx]) >> inv_shift;
-  }
-};
-
 static inline void arena_run_reg_dalloc(arena_run_t* run, arena_bin_t* bin,
                                         void* ptr, size_t size) {
-  unsigned diff, regind, elm, bit;
+  uint32_t diff, regind;
+  unsigned elm, bit;
 
   MOZ_DIAGNOSTIC_ASSERT(run->mMagic == ARENA_RUN_MAGIC);
 
   // Avoid doing division with a variable divisor if possible.  Using
   // actual division here can reduce allocator throughput by over 20%!
   diff =
-      (unsigned)((uintptr_t)ptr - (uintptr_t)run - bin->mRunFirstRegionOffset);
-  if (mozilla::IsPowerOfTwo(size)) {
-    regind = diff >> FloorLog2(size);
-  } else {
-    SizeClass sc(size);
-    switch (sc.Type()) {
-      case SizeClass::Quantum:
-        regind = FastDivide<kQuantum, kMaxQuantumClass>::divide(diff, size);
-        break;
-      case SizeClass::QuantumWide:
-        regind =
-            FastDivide<kQuantumWide, kMaxQuantumWideClass>::divide(diff, size);
-        break;
-      default:
-        regind = diff / size;
-    }
-  }
+      (uint32_t)((uintptr_t)ptr - (uintptr_t)run - bin->mRunFirstRegionOffset);
+
+  MOZ_ASSERT(diff <=
+             (static_cast<unsigned>(bin->mRunSizePages) << gPageSize2Pow));
+  regind = diff / bin->mSizeDivisor;
+
   MOZ_DIAGNOSTIC_ASSERT(diff == regind * size);
   MOZ_DIAGNOSTIC_ASSERT(regind < bin->mRunNumRegions);
 
@@ -2793,10 +2850,11 @@ void arena_t::DallocRun(arena_run_t* aRun, bool aDirty) {
   MOZ_RELEASE_ASSERT(run_ind < gChunkNumPages - 1);
   if ((chunk->map[run_ind].bits & CHUNK_MAP_LARGE) != 0) {
     size = chunk->map[run_ind].bits & ~gPageSizeMask;
+    run_pages = (size >> gPageSize2Pow);
   } else {
-    size = aRun->mBin->mRunSize;
+    run_pages = aRun->mBin->mRunSizePages;
+    size = run_pages << gPageSize2Pow;
   }
-  run_pages = (size >> gPageSize2Pow);
 
   // Mark pages as unallocated in the chunk map.
   if (aDirty) {
@@ -2930,7 +2988,8 @@ arena_run_t* arena_t::GetNonFullBinRun(arena_bin_t* aBin) {
   // No existing runs have any space available.
 
   // Allocate a new run.
-  run = AllocRun(aBin->mRunSize, false, false);
+  run = AllocRun(static_cast<size_t>(aBin->mRunSizePages) << gPageSize2Pow,
+                 false, false);
   if (!run) {
     return nullptr;
   }
@@ -2981,7 +3040,7 @@ void arena_bin_t::Init(SizeClass aSizeClass) {
   mSizeClass = aSizeClass.Size();
   mNumRuns = 0;
 
-  // mRunSize expansion loop.
+  // Run size expansion loop.
   while (true) {
     try_nregs = ((try_run_size - kFixedHeaderSize) / mSizeClass) +
                 1;  // Counter-act try_nregs-- in loop.
@@ -3042,10 +3101,12 @@ void arena_bin_t::Init(SizeClass aSizeClass) {
   MOZ_ASSERT((try_mask_nelms << (LOG2(sizeof(int)) + 3)) >= try_nregs);
 
   // Copy final settings.
-  mRunSize = try_run_size;
+  MOZ_ASSERT((try_run_size >> gPageSize2Pow) <= UINT8_MAX);
+  mRunSizePages = static_cast<uint8_t>(try_run_size >> gPageSize2Pow);
   mRunNumRegions = try_nregs;
   mRunNumRegionsMask = try_mask_nelms;
   mRunFirstRegionOffset = try_reg0_offset;
+  mSizeDivisor = FastDivisor<uint16_t>(aSizeClass.Size(), try_run_size);
 }
 
 void* arena_t::MallocSmall(size_t aSize, bool aZero) {
@@ -3538,7 +3599,7 @@ void arena_t::DallocSmall(arena_chunk_t* aChunk, void* aPtr,
   MOZ_DIAGNOSTIC_ASSERT(uintptr_t(aPtr) >=
                         uintptr_t(run) + bin->mRunFirstRegionOffset);
 
-  memset(aPtr, kAllocPoison, size);
+  MaybePoison(aPtr, size);
 
   arena_run_reg_dalloc(run, bin, aPtr, size);
   run->mNumFree++;
@@ -3599,7 +3660,7 @@ void arena_t::DallocLarge(arena_chunk_t* aChunk, void* aPtr) {
   size_t pageind = (uintptr_t(aPtr) - uintptr_t(aChunk)) >> gPageSize2Pow;
   size_t size = aChunk->map[pageind].bits & ~gPageSizeMask;
 
-  memset(aPtr, kAllocPoison, size);
+  MaybePoison(aPtr, size);
   mStats.allocated_large -= size;
 
   DallocRun((arena_run_t*)aPtr, true);
@@ -3698,7 +3759,7 @@ void* arena_t::RallocSmallOrLarge(void* aPtr, size_t aSize, size_t aOldSize) {
   // Try to avoid moving the allocation.
   if (aOldSize <= gMaxLargeClass && sizeClass.Size() == aOldSize) {
     if (aSize < aOldSize) {
-      memset((void*)(uintptr_t(aPtr) + aSize), kAllocPoison, aOldSize - aSize);
+      MaybePoison((void*)(uintptr_t(aPtr) + aSize), aOldSize - aSize);
     }
     return aPtr;
   }
@@ -3707,7 +3768,7 @@ void* arena_t::RallocSmallOrLarge(void* aPtr, size_t aSize, size_t aOldSize) {
     arena_chunk_t* chunk = GetChunkForPtr(aPtr);
     if (sizeClass.Size() < aOldSize) {
       // Fill before shrinking in order to avoid a race.
-      memset((void*)((uintptr_t)aPtr + aSize), kAllocPoison, aOldSize - aSize);
+      MaybePoison((void*)((uintptr_t)aPtr + aSize), aOldSize - aSize);
       RallocShrinkLarge(chunk, aPtr, sizeClass.Size(), aOldSize);
       return aPtr;
     }
@@ -3989,7 +4050,7 @@ void* arena_t::RallocHuge(void* aPtr, size_t aSize, size_t aOldSize) {
       CHUNK_CEILING(aSize + gPageSize) == CHUNK_CEILING(aOldSize + gPageSize)) {
     size_t psize = PAGE_CEILING(aSize);
     if (aSize < aOldSize) {
-      memset((void*)((uintptr_t)aPtr + aSize), kAllocPoison, aOldSize - aSize);
+      MaybePoison((void*)((uintptr_t)aPtr + aSize), aOldSize - aSize);
     }
     if (psize < aOldSize) {
       extent_node_t key;
@@ -4173,12 +4234,18 @@ static bool malloc_init_hard() {
               opt_dirty_max <<= 1;
             }
             break;
-#ifdef MOZ_DEBUG
+#ifdef MALLOC_RUNTIME_CONFIG
           case 'j':
             opt_junk = false;
             break;
           case 'J':
             opt_junk = true;
+            break;
+          case 'q':
+            opt_poison = false;
+            break;
+          case 'Q':
+            opt_poison = true;
             break;
           case 'z':
             opt_zero = false;
@@ -4582,9 +4649,11 @@ inline void MozJemalloc::jemalloc_stats_internal(
           aBinStats[j].num_non_full_runs += num_non_full_runs;
           aBinStats[j].num_runs += bin->mNumRuns;
           aBinStats[j].bytes_unused += bin_unused;
+          size_t bytes_per_run = static_cast<size_t>(bin->mRunSizePages)
+                                 << gPageSize2Pow;
           aBinStats[j].bytes_total +=
-              bin->mNumRuns * (bin->mRunSize - bin->mRunFirstRegionOffset);
-          aBinStats[j].bytes_per_run = bin->mRunSize;
+              bin->mNumRuns * (bytes_per_run - bin->mRunFirstRegionOffset);
+          aBinStats[j].bytes_per_run = bytes_per_run;
         }
       }
     }

@@ -4,9 +4,6 @@
 "use strict";
 
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
 
 ChromeUtils.defineESModuleGetters(this, {
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
@@ -75,12 +72,11 @@ add_task(async function test() {
       await popupshown;
       Assert.equal(menu.state, "open", "Context menu is open");
 
-      menu.querySelector("#context-take-screenshot").click();
-      Assert.equal(observerSpy.callCount, 3, "Observer function called thrice");
-
       let popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
-      menu.hidePopup();
+      menu.activateItem(menu.querySelector("#context-take-screenshot"));
       await popuphidden;
+
+      Assert.equal(observerSpy.callCount, 3, "Observer function called thrice");
 
       const COMPONENT_PREF = "screenshots.browser.component.enabled";
       await SpecialPowers.pushPrefEnv({
@@ -146,16 +142,15 @@ add_task(async function test() {
       await popupshown;
       Assert.equal(menu.state, "open", "Context menu is open");
 
-      menu.querySelector("#context-take-screenshot").click();
+      popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+      menu.activateItem(menu.querySelector("#context-take-screenshot"));
+      await popuphidden;
+
       Assert.equal(
         observerSpy.callCount,
         3,
         "Observer function still called thrice"
       );
-
-      popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
-      menu.hidePopup();
-      await popuphidden;
 
       await SpecialPowers.spawn(
         browser,

@@ -34,13 +34,16 @@ with Files('js/d3/**'):
 with Files('js/cfworker/**'):
     BUG_COMPONENT = ('Toolkit', 'General')
 
+with Files('js/PKI.js/**'):
+    BUG_COMPONENT = ('Firefox', 'Security')
+
 with Files('rust/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('webkit/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
-with Files('prio/**'):
+with Files('xsimd/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('msgpack/**'):
@@ -58,7 +61,16 @@ with Files('rlbox/**'):
 with Files("libwebrtc/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
+with Files("gbm/**"):
+    BUG_COMPONENT = ("Core", "WebRTC")
+
 with Files("pipewire/**"):
+    BUG_COMPONENT = ("Core", "WebRTC")
+
+with Files("drm/**"):
+    BUG_COMPONENT = ("Core", "WebRTC")
+
+with Files("libepoxy/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
 with Files('rlbox_wasm2c_sandbox/**'):

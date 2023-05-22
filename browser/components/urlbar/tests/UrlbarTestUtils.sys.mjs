@@ -28,6 +28,10 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
+  ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 export var UrlbarTestUtils = {
@@ -59,6 +63,7 @@ export var UrlbarTestUtils = {
     if (scope) {
       this.Assert = scope.Assert;
       this.EventUtils = scope.EventUtils;
+      this.info = scope.info;
     }
     // If you add other properties to `this`, null them in uninit().
   },
@@ -193,6 +198,134 @@ export var UrlbarTestUtils = {
    */
   getOneOffSearchButtons(win) {
     return win.gURLBar.view.oneOffSearchButtons;
+  },
+
+  /**
+   * Returns a specific button of a result.
+   *
+   * @param {object} win The window containing the urlbar
+   * @param {string} buttonName The name of the button, e.g. "menu", "0", etc.
+   * @param {number} resultIndex The index of the result
+   * @returns {HtmlElement} The button
+   */
+  getButtonForResultIndex(win, buttonName, resultIndex) {
+    return this.getRowAt(win, resultIndex).querySelector(
+      `.urlbarView-button-${buttonName}`
+    );
+  },
+
+  /**
+   * Show the result menu button regardless of the result being hovered or
+   + selected.
+   *
+   * @param {object} win The window containing the urlbar
+   */
+  disableResultMenuAutohide(win) {
+    let container = this.getResultsContainer(win);
+    let attr = "disable-resultmenu-autohide";
+    container.toggleAttribute(attr, true);
+    this._testScope?.registerCleanupFunction(() => {
+      container.toggleAttribute(attr, false);
+    });
+  },
+
+  /**
+   * Opens the result menu of a specific result.
+   *
+   * @param {object} win The window containing the urlbar
+   * @param {object} [options] The options object.
+   * @param {number} [options.resultIndex] The index of the result. Defaults
+   *        to the current selected index.
+   * @param {boolean} [options.byMouse] Whether to open the menu by mouse or
+   *        keyboard.
+   * @param {string} [options.activationKey] Key to activate the button with,
+   *        defaults to KEY_Enter.
+   */
+  async openResultMenu(
+    win,
+    {
+      resultIndex = win.gURLBar.view.selectedRowIndex,
+      byMouse = false,
+      activationKey = "KEY_Enter",
+    } = {}
+  ) {
+    let menuButton = this.getButtonForResultIndex(win, "menu", resultIndex);
+    this.Assert?.ok(
+      menuButton,
+      `found the menu button at result index ${resultIndex}`
+    );
+    let promiseMenuOpen = lazy.BrowserTestUtils.waitForEvent(
+      win.gURLBar.view.resultMenu,
+      "popupshown"
+    );
+    this._testScope?.info(`selecting the result at index ${resultIndex}`);
+    while (win.gURLBar.view.selectedRowIndex != resultIndex) {
+      this.EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
+    }
+    if (byMouse) {
+      this.EventUtils.synthesizeMouseAtCenter(menuButton, {}, win);
+    } else {
+      if (this.getSelectedElement(win) != menuButton) {
+        this.EventUtils.synthesizeKey("KEY_Tab", {}, win);
+      }
+      this.Assert?.equal(
+        this.getSelectedElement(win),
+        menuButton,
+        `selected the menu button at result index ${resultIndex}`
+      );
+      this.EventUtils.synthesizeKey(activationKey, {}, win);
+    }
+    this._testScope?.info(
+      `waiting for ${activationKey} to open the menu popup`
+    );
+    await promiseMenuOpen;
+    this.Assert?.equal(
+      win.gURLBar.view.resultMenu.state,
+      "open",
+      "Checking popup state"
+    );
+  },
+
+  /**
+   * Opens the result menu of a specific result and presses an access key to
+   * activate a menu item.
+   *
+   * @param {object} win The window containing the urlbar
+   * @param {string} accesskey The access key to press once the menu is open
+   * @param {object} [options] The options object.
+   * @param {number} [options.resultIndex] The index of the result. Defaults
+   *        to the current selected index.
+   * @param {boolean} [options.openByMouse] Whether to open the menu by mouse
+   *        or keyboard.
+   */
+  async openResultMenuAndPressAccesskey(
+    win,
+    accesskey,
+    {
+      resultIndex = win.gURLBar.view.selectedRowIndex,
+      openByMouse = false,
+    } = {}
+  ) {
+    await this.openResultMenu(win, { resultIndex, byMouse: openByMouse });
+    await lazy.BrowserTestUtils.waitForCondition(
+      () =>
+        win.gURLBar.view.resultMenu.querySelector(
+          `menuitem[accesskey=${accesskey}]`
+        ),
+      "Waiting for strings to load"
+    );
+
+    this._testScope?.info(
+      `pressing access key (${accesskey}) to activate menu item`
+    );
+    let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
+      win.gURLBar.view.resultMenu,
+      "command"
+    );
+    this.EventUtils.synthesizeKey(accesskey, {}, win);
+    this._testScope?.info("waiting for command event");
+    await promiseCommand;
+    this._testScope?.info("got the command event");
   },
 
   /**
@@ -559,7 +692,7 @@ export var UrlbarTestUtils = {
     // names that are not usually included in actual search mode objects.  For
     // convenience, ignore those properties if they aren't also present in the
     // urlbar's actual search mode object.
-    let ignoreProperties = ["icon", "pref", "restrict"];
+    let ignoreProperties = ["icon", "pref", "restrict", "telemetryLabel"];
     for (let prop of ignoreProperties) {
       if (prop in expectedSearchMode && !(prop in window.gURLBar.searchMode)) {
         this._testScope?.info(
@@ -876,6 +1009,43 @@ export var UrlbarTestUtils = {
         throw error;
       }
     }
+  },
+
+  /**
+   * Enrolls in a mock Nimbus rollout.
+   *
+   * If you call UrlbarPrefs.updateFirefoxSuggestScenario() from an xpcshell
+   * test, you must call this first to intialize the Nimbus urlbar feature.
+   *
+   * @param {object} value
+   *   Define any desired Nimbus variables in this object.
+   * @returns {Function}
+   *   A cleanup function that will remove the mock rollout.
+   */
+  async initNimbusFeature(value = {}) {
+    this.info?.("initNimbusFeature awaiting ExperimentManager.onStartup");
+    await lazy.ExperimentManager.onStartup();
+
+    this.info?.("initNimbusFeature awaiting ExperimentAPI.ready");
+    await lazy.ExperimentAPI.ready();
+
+    this.info?.("initNimbusFeature awaiting ExperimentFakes.enrollWithRollout");
+    let doCleanup = await lazy.ExperimentFakes.enrollWithRollout({
+      featureId: lazy.NimbusFeatures.urlbar.featureId,
+      value: { enabled: true, ...value },
+    });
+
+    this.info?.("initNimbusFeature done");
+
+    this.registerCleanupFunction?.(() => {
+      // If `doCleanup()` has already been called (i.e., by the caller), it will
+      // throw an error here.
+      try {
+        doCleanup();
+      } catch (error) {}
+    });
+
+    return doCleanup;
   },
 };
 

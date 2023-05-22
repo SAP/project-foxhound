@@ -273,7 +273,8 @@ void BaseCompiler::tableSwitch(Label* theTable, RegI32 switchValue,
   // Jump indirect via table element.
   masm.ma_ldr(DTRAddr(scratch, DtrRegImmShift(switchValue, LSL, 2)), pc, Offset,
               Assembler::Always);
-#elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
+#elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
   ScratchI32 scratch(*this);
   CodeLabel tableCl;
 
@@ -689,7 +690,8 @@ void BaseCompiler::insertBreakablePoint(CallSiteDesc::Kind kind) {
   masm.ma_bl(&debugTrapStub_, Assembler::NonZero);
   masm.append(CallSiteDesc(iter_.lastOpcodeOffset(), kind),
               CodeOffset(masm.currentOffset()));
-#elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_RISCV64)
   ScratchPtr scratch(*this);
   Label L;
   masm.loadPtr(Address(InstanceReg, Instance::offsetOfDebugTrapHandler()),
@@ -764,7 +766,8 @@ void BaseCompiler::insertBreakpointStub() {
     masm.ma_tst(tmp2, Imm32(1 << func_.index % 32), tmp1, Assembler::Always);
     masm.ma_bx(lr, Assembler::Zero);
   }
-#elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_RISCV64)
   {
     ScratchPtr scratch(*this);
 
@@ -1044,7 +1047,8 @@ void BaseCompiler::popStackResults(ABIResultIter& iter, StackHeight stackBase) {
     Stk& v = stk_.back();
     switch (v.kind()) {
       case Stk::ConstI32:
-#if defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
+#if defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
         fr.storeImmediatePtrToStack(v.i32val_, resultHeight, temp);
 #else
         fr.storeImmediatePtrToStack(uint32_t(v.i32val_), resultHeight, temp);
@@ -1576,7 +1580,7 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                                 CodeOffset* slowCallOffset) {
   CallIndirectId callIndirectId =
       CallIndirectId::forFuncType(moduleEnv_, funcTypeIndex);
-  MOZ_ASSERT(callIndirectId.kind() != CallIndirectIdKind::None);
+  MOZ_ASSERT(callIndirectId.kind() != CallIndirectIdKind::AsmJS);
 
   const TableDesc& table = moduleEnv_.tables[tableIndex];
 
@@ -1754,7 +1758,7 @@ RegI32 BaseCompiler::needRotate64Temp() {
   return needI32();
 #elif defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM) ||    \
     defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS64) || \
-    defined(JS_CODEGEN_LOONG64)
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   return RegI32::Invalid();
 #else
   MOZ_CRASH("BaseCompiler platform hook: needRotate64Temp");
@@ -3137,6 +3141,37 @@ bool BaseCompiler::jumpConditionalWithResults(BranchState* b, Cond cond,
            b->label);
   return true;
 }
+
+#ifdef ENABLE_WASM_GC
+bool BaseCompiler::jumpConditionalWithResults(BranchState* b, RegRef object,
+                                              uint32_t typeIndex,
+                                              bool onSuccess) {
+  if (b->hasBlockResults()) {
+    StackHeight resultsBase(0);
+    if (!topBranchParams(b->resultType, &resultsBase)) {
+      return false;
+    }
+    if (b->stackHeight != resultsBase) {
+      Label notTaken;
+      branchGcObjectType(
+          object, typeIndex, &notTaken,
+          /*succeedOnNull=*/false,
+          /*onSuccess=*/b->invertBranch ? onSuccess : !onSuccess);
+
+      // Shuffle stack args.
+      shuffleStackResultsBeforeBranch(resultsBase, b->stackHeight,
+                                      b->resultType);
+      masm.jump(b->label);
+      masm.bind(&notTaken);
+      return true;
+    }
+  }
+
+  branchGcObjectType(object, typeIndex, b->label, /*succeedOnNull=*/false,
+                     /*onSuccess=*/b->invertBranch ? !onSuccess : onSuccess);
+  return true;
+}
+#endif
 
 // sniffConditionalControl{Cmp,Eqz} may modify the latentWhatever_ state in
 // the BaseCompiler so that a subsequent conditional branch can be compiled
@@ -6177,7 +6212,8 @@ void BaseCompiler::emitPreBarrier(RegPtr valueAddr) {
   fr.loadInstancePtr(instance);
 #endif
 
-  EmitWasmPreBarrierGuard(masm, instance, scratch, valueAddr, &skipBarrier);
+  EmitWasmPreBarrierGuard(masm, instance, scratch, valueAddr,
+                          /*valueOffset=*/0, &skipBarrier);
 
 #ifndef RABALDR_PIN_INSTANCE
   fr.loadInstancePtr(instance);
@@ -6190,7 +6226,7 @@ void BaseCompiler::emitPreBarrier(RegPtr valueAddr) {
   masm.Mov(x28, sp);
 #endif
   // The prebarrier call preserves all volatile registers
-  EmitWasmPreBarrierCall(masm, instance, scratch, valueAddr);
+  EmitWasmPreBarrierCall(masm, instance, scratch, valueAddr, /*valueOffset=*/0);
 
   masm.bind(&skipBarrier);
 }
@@ -6304,13 +6340,26 @@ void BaseCompiler::emitBarrieredClear(RegPtr valueAddr) {
 
 #ifdef ENABLE_WASM_GC
 
-void BaseCompiler::emitGcCanon(uint32_t typeIndex) {
-  RegRef rp = needRef();
+RegPtr BaseCompiler::loadTypeDefInstanceData(uint32_t typeIndex) {
+  RegPtr rp = needPtr();
 #  ifndef RABALDR_PIN_INSTANCE
   fr.loadInstancePtr(InstanceReg);
 #  endif
-  masm.loadWasmGlobalPtr(moduleEnv_.offsetOfTypeId(typeIndex), rp);
-  pushRef(rp);
+  masm.computeEffectiveAddress(
+      Address(InstanceReg,
+              Instance::offsetOfGlobalArea() +
+                  moduleEnv_.offsetOfTypeDefInstanceData(typeIndex)),
+      rp);
+  return rp;
+}
+
+RegPtr BaseCompiler::loadTypeDef(uint32_t typeIndex) {
+  RegPtr rp = needPtr();
+#  ifndef RABALDR_PIN_INSTANCE
+  fr.loadInstancePtr(InstanceReg);
+#  endif
+  masm.loadWasmGlobalPtr(moduleEnv_.offsetOfTypeDef(typeIndex), rp);
+  return rp;
 }
 
 /* static */
@@ -6328,6 +6377,38 @@ void BaseCompiler::SignalNullCheck::emitTrapSite(BaseCompiler* bc) {
   MacroAssembler& masm = bc->masm;
   masm.append(wasm::Trap::NullPointerDereference,
               wasm::TrapSite(masm.currentOffset(), trapOffset));
+}
+
+void BaseCompiler::branchGcObjectType(RegRef object, uint32_t typeIndex,
+                                      Label* label, bool succeedOnNull,
+                                      bool onSuccess) {
+  const TypeDef& castTypeDef = (*moduleEnv_.types)[typeIndex];
+  RegPtr superTypeDef = loadTypeDef(typeIndex);
+  RegPtr subTypeDef = needPtr();
+  RegI32 length;
+  if (castTypeDef.subTypingDepth() >= MinSuperTypeVectorLength) {
+    length = needI32();
+  }
+
+  Label fallthrough;
+  Label* successLabel = onSuccess ? label : &fallthrough;
+  Label* failLabel = onSuccess ? &fallthrough : label;
+  if (succeedOnNull) {
+    masm.branchTestPtr(Assembler::Zero, object, object, successLabel);
+  } else {
+    masm.branchTestPtr(Assembler::Zero, object, object, failLabel);
+  }
+  masm.loadPtr(Address(object, WasmGcObject::offsetOfTypeDef()), subTypeDef);
+  masm.branchWasmTypeDefIsSubtype(subTypeDef, superTypeDef, length,
+                                  castTypeDef.subTypingDepth(), label,
+                                  onSuccess);
+  masm.bind(&fallthrough);
+
+  if (castTypeDef.subTypingDepth() >= MinSuperTypeVectorLength) {
+    freeI32(length);
+  }
+  freePtr(subTypeDef);
+  freePtr(superTypeDef);
 }
 
 RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
@@ -6575,9 +6656,9 @@ bool BaseCompiler::emitStructNew() {
 
   const StructType& structType = (*moduleEnv_.types)[typeIndex].structType();
 
-  // Allocate a default initialized struct. This requires the rtt value for the
-  // struct to be pushed on the stack. This will trap on OOM.
-  emitGcCanon(typeIndex);
+  // Allocate a default initialized struct. This requires the type definition
+  // for the struct to be pushed on the stack. This will trap on OOM.
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   if (!emitInstanceCall(SASigStructNew)) {
     return false;
   }
@@ -6662,9 +6743,9 @@ bool BaseCompiler::emitStructNewDefault() {
     return true;
   }
 
-  // Allocate a default initialized struct. This requires the rtt value for the
-  // struct to be pushed on the stack. This will trap on OOM.
-  emitGcCanon(typeIndex);
+  // Allocate a default initialized struct. This requires the type definition
+  // for the struct to be pushed on the stack. This will trap on OOM.
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   return emitInstanceCall(SASigStructNew);
 }
 
@@ -6791,9 +6872,9 @@ bool BaseCompiler::emitArrayNew() {
 
   const ArrayType& arrayType = (*moduleEnv_.types)[typeIndex].arrayType();
 
-  // Allocate a default initialized array. This requires the rtt value for the
-  // array to be pushed on the stack. This will trap on OOM.
-  emitGcCanon(typeIndex);
+  // Allocate a default initialized array. This requires the type definition
+  // for the array to be pushed on the stack. This will trap on OOM.
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   if (!emitInstanceCall(SASigArrayNew)) {
     return false;
   }
@@ -6864,7 +6945,7 @@ bool BaseCompiler::emitArrayNewFixed() {
   // the required number of elements and the required type on, since the call
   // to SASigArrayNew will use them.
   pushI32(numElements);
-  emitGcCanon(typeIndex);
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   if (!emitInstanceCall(SASigArrayNew)) {
     return false;
   }
@@ -6932,9 +7013,9 @@ bool BaseCompiler::emitArrayNewDefault() {
     return true;
   }
 
-  // Allocate a default initialized array. This requires the rtt value for the
-  // array to be pushed on the stack. This will trap on OOM.
-  emitGcCanon(typeIndex);
+  // Allocate a default initialized array. This requires the type definition
+  // for the array to be pushed on the stack. This will trap on OOM.
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   return emitInstanceCall(SASigArrayNew);
 }
 
@@ -6949,7 +7030,7 @@ bool BaseCompiler::emitArrayNewData() {
     return true;
   }
 
-  emitGcCanon(typeIndex);
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   pushI32(int32_t(segIndex));
 
   // The call removes 4 items from the stack: the segment byte offset and
@@ -6969,7 +7050,7 @@ bool BaseCompiler::emitArrayNewElem() {
     return true;
   }
 
-  emitGcCanon(typeIndex);
+  pushPtr(loadTypeDefInstanceData(typeIndex));
   pushI32(int32_t(segIndex));
 
   // The call removes 4 items from the stack: the segment element offset and
@@ -7158,8 +7239,23 @@ bool BaseCompiler::emitRefTest() {
     return true;
   }
 
-  emitGcCanon(typeIndex);
-  return emitInstanceCall(SASigRefTest);
+  Label success;
+  Label join;
+  RegRef object = popRef();
+  RegI32 result = needI32();
+
+  branchGcObjectType(object, typeIndex, &success, /*succeedOnNull=*/false,
+                     /*onSuccess=*/true);
+  masm.xor32(result, result);
+  masm.jump(&join);
+  masm.bind(&success);
+  masm.move32(Imm32(1), result);
+  masm.bind(&join);
+
+  pushI32(result);
+  freeRef(object);
+
+  return true;
 }
 
 bool BaseCompiler::emitRefCast() {
@@ -7173,27 +7269,14 @@ bool BaseCompiler::emitRefCast() {
     return true;
   }
 
-  RegRef refPtr = popRef();
+  RegRef object = popRef();
 
-  // 1. duplicate and shuffle from [ref, rtt] to [ref, ref, rtt]
-  RegRef castedPtr = needRef();
-  moveRef(refPtr, castedPtr);
-  pushRef(castedPtr);
-  pushRef(refPtr);
-  emitGcCanon(typeIndex);
-
-  // 2. ref.test : [ref, rtt] -> [i32]
-  if (!emitInstanceCall(SASigRefTest)) {
-    return false;
-  }
-
-  // 3. trap if result is zero, leaving [ref] as result
-  RegI32 result = popI32();
-  Label nonZero;
-  masm.branchTest32(Assembler::NonZero, result, result, &nonZero);
+  Label success;
+  branchGcObjectType(object, typeIndex, &success, /*succeedOnNull=*/true,
+                     /*onSuccess=*/true);
   masm.wasmTrap(Trap::BadCast, bytecodeOffset());
-  masm.bind(&nonZero);
-  freeI32(result);
+  masm.bind(&success);
+  pushRef(object);
 
   return true;
 }
@@ -7219,37 +7302,58 @@ bool BaseCompiler::emitBrOnCastCommon(bool onSuccess) {
   Control& target = controlItem(labelRelativeDepth);
   target.bceSafeOnExit &= bceSafe_;
 
-  RegRef refPtr = popRef();
+  RegRef object = popRef();
+  pushRef(object);
 
-  // 1. duplicate and shuffle from [T*, ref, rtt] to [T*, ref, ref, rtt]
-  RegRef castedPtr = needRef();
-  moveRef(refPtr, castedPtr);
-  pushRef(castedPtr);
-  pushRef(refPtr);
-  emitGcCanon(castTypeIndex);
-
-  // 2. ref.test : [ref, rtt] -> [i32]
-  if (!emitInstanceCall(SASigRefTest)) {
+  // 3. br_if $l : [T*, ref] -> [T*, ref]
+  BranchState b(&target.label, target.stackHeight, InvertBranch(false),
+                labelType);
+  if (!jumpConditionalWithResults(&b, object, castTypeIndex, onSuccess)) {
     return false;
   }
 
-  // 3. br_if $l : [T*, ref, i32] -> [T*, ref]
+  return true;
+}
+
+bool BaseCompiler::emitRefAsStruct() {
+  Nothing nothing;
+  return iter_.readConversion(ValType(RefType::any()),
+                              ValType(RefType::struct_().asNonNullable()),
+                              &nothing);
+}
+
+bool BaseCompiler::emitBrOnNonStruct() {
+  MOZ_ASSERT(!hasLatentOp());
+
+  uint32_t labelRelativeDepth;
+  ResultType labelType;
+  BaseNothingVector unused_values{};
+  if (!iter_.readBrOnNonStruct(&labelRelativeDepth, &labelType,
+                               &unused_values)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  Control& target = controlItem(labelRelativeDepth);
+  target.bceSafeOnExit &= bceSafe_;
+
   BranchState b(&target.label, target.stackHeight, InvertBranch(false),
                 labelType);
   if (b.hasBlockResults()) {
     needResultRegisters(b.resultType);
   }
-  RegI32 condition = popI32();
+  RegI32 condition = needI32();
+  masm.move32(Imm32(1), condition);
   if (b.hasBlockResults()) {
     freeResultRegisters(b.resultType);
   }
-  if (!jumpConditionalWithResults(
-          &b, (onSuccess ? Assembler::NotEqual : Assembler::Equal), condition,
-          Imm32(0))) {
+  if (!jumpConditionalWithResults(&b, Assembler::Equal, condition, Imm32(0))) {
     return false;
   }
   freeI32(condition);
-
   return true;
 }
 
@@ -8692,17 +8796,19 @@ bool BaseCompiler::emitBody() {
     OpBytes op{};
     CHECK(iter_.readOp(&op));
 
-    // When compilerEnv_.debugEnabled(), every operator has a breakpoint site
-    // except Op::End.
-    if (compilerEnv_.debugEnabled() && op.b0 != (uint16_t)Op::End) {
-      // TODO sync only registers that can be clobbered by the exit
-      // prologue/epilogue or disable these registers for use in
-      // baseline compiler when compilerEnv_.debugEnabled() is set.
-      sync();
+    // When compilerEnv_.debugEnabled(), some operators get a breakpoint site.
+    if (compilerEnv_.debugEnabled() && op.shouldHaveBreakpoint()) {
+      if (previousBreakablePoint_ != masm.currentOffset()) {
+        // TODO sync only registers that can be clobbered by the exit
+        // prologue/epilogue or disable these registers for use in
+        // baseline compiler when compilerEnv_.debugEnabled() is set.
+        sync();
 
-      insertBreakablePoint(CallSiteDesc::Breakpoint);
-      if (!createStackMap("debug: per-insn breakpoint")) {
-        return false;
+        insertBreakablePoint(CallSiteDesc::Breakpoint);
+        if (!createStackMap("debug: per-insn breakpoint")) {
+          return false;
+        }
+        previousBreakablePoint_ = masm.currentOffset();
       }
     }
 
@@ -9416,6 +9522,10 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitBrOnCastCommon(/*onSuccess=*/true));
           case uint32_t(GcOp::BrOnCastFail):
             CHECK_NEXT(emitBrOnCastCommon(/*onSuccess=*/false));
+          case uint32_t(GcOp::RefAsStruct):
+            CHECK_NEXT(emitRefAsStruct());
+          case uint32_t(GcOp::BrOnNonStruct):
+            CHECK_NEXT(emitBrOnNonStruct());
           case uint16_t(GcOp::ExternInternalize):
             CHECK_NEXT(emitExternInternalize());
           case uint16_t(GcOp::ExternExternalize):
@@ -10547,6 +10657,7 @@ BaseCompiler::BaseCompiler(const ModuleEnvironment& moduleEnv,
       compilerEnv_(compilerEnv),
       func_(func),
       locals_(locals),
+      previousBreakablePoint_(UINT32_MAX),
       stkSource_(stkSource),
       // Output-only data structures
       alloc_(alloc->fallible()),

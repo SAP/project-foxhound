@@ -211,6 +211,7 @@ struct BaseCompiler final {
   // We call this address from the breakable point when the breakpoint handler
   // is not null.
   NonAssertingLabel debugTrapStub_;
+  uint32_t previousBreakablePoint_;
 
   // BaselineCompileFunctions() "lends" us the StkVector to use in this
   // BaseCompiler object, and that is installed in |stk_| in our constructor.
@@ -1322,9 +1323,18 @@ struct BaseCompiler final {
   void setLatentEqz(ValType operandType);
   bool hasLatentOp() const;
   void resetLatentOp();
+  // Jump to the given branch, passing results, if the condition, `cond`
+  // matches between `lhs` and `rhs.
   template <typename Cond, typename Lhs, typename Rhs>
   [[nodiscard]] bool jumpConditionalWithResults(BranchState* b, Cond cond,
                                                 Lhs lhs, Rhs rhs);
+#ifdef ENABLE_WASM_GC
+  // Jump to the given branch, passing results, if the WasmGcObject, `object`,
+  // is a subtype of `typeIndex`.
+  [[nodiscard]] bool jumpConditionalWithResults(BranchState* b, RegRef object,
+                                                uint32_t typeIndex,
+                                                bool onSuccess);
+#endif
   template <typename Cond>
   [[nodiscard]] bool sniffConditionalControlCmp(Cond compareOp,
                                                 ValType operandType);
@@ -1630,6 +1640,8 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitRefTest();
   [[nodiscard]] bool emitRefCast();
   [[nodiscard]] bool emitBrOnCastCommon(bool onSuccess);
+  [[nodiscard]] bool emitRefAsStruct();
+  [[nodiscard]] bool emitBrOnNonStruct();
   [[nodiscard]] bool emitExternInternalize();
   [[nodiscard]] bool emitExternExternalize();
 
@@ -1644,7 +1656,15 @@ struct BaseCompiler final {
     static void emitTrapSite(BaseCompiler* bc);
   };
 
-  void emitGcCanon(uint32_t typeIndex);
+  // Load a pointer to the TypeDefInstanceData for a given type index
+  RegPtr loadTypeDefInstanceData(uint32_t typeIndex);
+  // Load a pointer to the TypeDef for a given type index
+  RegPtr loadTypeDef(uint32_t typeIndex);
+
+  // Branch to the label if the WasmGcObject `object` is/is not a subtype of
+  // `typeIndex`.
+  void branchGcObjectType(RegRef object, uint32_t typeIndex, Label* label,
+                          bool succeedOnNull, bool onSuccess);
   RegPtr emitGcArrayGetData(RegRef rp);
   template <typename NullCheckPolicy>
   RegI32 emitGcArrayGetNumElements(RegRef rp);

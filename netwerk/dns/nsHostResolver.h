@@ -27,11 +27,25 @@
 #include "mozilla/net/NetworkConnectivityService.h"
 #include "mozilla/net/DNSByTypeRecord.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_network.h"
 
 namespace mozilla {
 namespace net {
 class TRR;
 class TRRQuery;
+
+static inline uint32_t MaxResolverThreadsAnyPriority() {
+  return StaticPrefs::network_dns_max_any_priority_threads();
+}
+
+static inline uint32_t MaxResolverThreadsHighPriority() {
+  return StaticPrefs::network_dns_max_high_priority_threads();
+}
+
+static inline uint32_t MaxResolverThreads() {
+  return MaxResolverThreadsAnyPriority() + MaxResolverThreadsHighPriority();
+}
+
 }  // namespace net
 }  // namespace mozilla
 
@@ -41,13 +55,7 @@ class TRRQuery;
 
 extern mozilla::Atomic<bool, mozilla::Relaxed> gNativeIsLocalhost;
 
-#define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY 3
-#define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 5
 #define MAX_NON_PRIORITY_REQUESTS 150
-
-#define MAX_RESOLVER_THREADS               \
-  (MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY + \
-   MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY)
 
 class AHostResolver {
  public:
@@ -70,8 +78,8 @@ class AHostResolver {
       uint32_t aTtl, bool pb) = 0;
   virtual nsresult GetHostRecord(const nsACString& host,
                                  const nsACString& aTrrServer, uint16_t type,
-                                 uint16_t flags, uint16_t af, bool pb,
-                                 const nsCString& originSuffix,
+                                 nsIDNSService::DNSFlags flags, uint16_t af,
+                                 bool pb, const nsCString& originSuffix,
                                  nsHostRecord** result) {
     return NS_ERROR_FAILURE;
   }
@@ -123,7 +131,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   nsresult ResolveHost(const nsACString& aHost, const nsACString& trrServer,
                        int32_t aPort, uint16_t type,
                        const mozilla::OriginAttributes& aOriginAttributes,
-                       uint16_t flags, uint16_t af,
+                       nsIDNSService::DNSFlags flags, uint16_t af,
                        nsResolveHostCallback* callback);
 
   nsHostRecord* InitRecord(const nsHostKey& key);
@@ -147,7 +155,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   void DetachCallback(const nsACString& hostname, const nsACString& trrServer,
                       uint16_t type,
                       const mozilla::OriginAttributes& aOriginAttributes,
-                      uint16_t flags, uint16_t af,
+                      nsIDNSService::DNSFlags flags, uint16_t af,
                       nsResolveHostCallback* callback, nsresult status);
 
   /**
@@ -160,7 +168,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   void CancelAsyncRequest(const nsACString& host, const nsACString& trrServer,
                           uint16_t type,
                           const mozilla::OriginAttributes& aOriginAttributes,
-                          uint16_t flags, uint16_t af,
+                          nsIDNSService::DNSFlags flags, uint16_t af,
                           nsIDNSListener* aListener, nsresult status);
   /**
    * values for the flags parameter passed to ResolveHost and DetachCallback
@@ -199,8 +207,8 @@ class nsHostResolver : public nsISupports, public AHostResolver {
                                     mozilla::net::TypeRecordResultType& aResult,
                                     uint32_t aTtl, bool pb) override;
   nsresult GetHostRecord(const nsACString& host, const nsACString& trrServer,
-                         uint16_t type, uint16_t flags, uint16_t af, bool pb,
-                         const nsCString& originSuffix,
+                         uint16_t type, nsIDNSService::DNSFlags flags,
+                         uint16_t af, bool pb, const nsCString& originSuffix,
                          nsHostRecord** result) override;
   nsresult TrrLookup_unlocked(nsHostRecord*,
                               mozilla::net::TRR* pushedTRR = nullptr) override;
@@ -281,8 +289,9 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   // Called to check if we have an AF_UNSPEC entry in the cache.
   already_AddRefed<nsHostRecord> FromUnspecEntry(
       nsHostRecord* aRec, const nsACString& aHost, const nsACString& aTrrServer,
-      const nsACString& aOriginSuffix, uint16_t aType, uint16_t aFlags,
-      uint16_t af, bool aPb, nsresult& aStatus) MOZ_REQUIRES(mLock);
+      const nsACString& aOriginSuffix, uint16_t aType,
+      nsIDNSService::DNSFlags aFlags, uint16_t af, bool aPb, nsresult& aStatus)
+      MOZ_REQUIRES(mLock);
 
   enum {
     METHOD_HIT = 1,

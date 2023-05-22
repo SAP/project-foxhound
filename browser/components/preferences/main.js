@@ -304,14 +304,6 @@ var gMainPane = {
     this.initBrowserContainers();
     this.buildContentProcessCountMenuList();
 
-    let performanceSettingsLink = document.getElementById(
-      "performanceSettingsLearnMore"
-    );
-    let performanceSettingsUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "performance";
-    performanceSettingsLink.setAttribute("href", performanceSettingsUrl);
-
     this.updateDefaultPerformanceSettingsPref();
 
     let defaultPerformancePref = Preferences.get(
@@ -322,13 +314,6 @@ var gMainPane = {
     });
     this.updatePerformanceSettingsBox({ duringChangeEvent: false });
     this.displayUseSystemLocale();
-    let connectionSettingsLink = document.getElementById(
-      "connectionSettingsLearnMore"
-    );
-    let connectionSettingsUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "prefs-connection-settings";
-    connectionSettingsLink.setAttribute("href", connectionSettingsUrl);
     this.updateProxySettingsUI();
     initializeProxyUI(gMainPane);
 
@@ -341,26 +326,12 @@ var gMainPane = {
     // listener for future menu changes.
     gMainPane.initDefaultZoomValues();
 
-    let cfrLearnMoreUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "extensionrecommendations";
-    for (const id of ["cfrLearnMore", "cfrFeaturesLearnMore"]) {
-      let link = document.getElementById(id);
-      link.setAttribute("href", cfrLearnMoreUrl);
-    }
-
     if (
       Services.prefs.getBoolPref(
         "media.videocontrols.picture-in-picture.enabled"
       )
     ) {
       document.getElementById("pictureInPictureBox").hidden = false;
-
-      let pipLearnMoreUrl =
-        Services.urlFormatter.formatURLPref("app.support.baseURL") +
-        "picture-in-picture";
-      let link = document.getElementById("pictureInPictureLearnMore");
-      link.setAttribute("href", pipLearnMoreUrl);
     }
 
     if (AppConstants.platform == "win") {
@@ -511,11 +482,6 @@ var gMainPane = {
       AppConstants.MOZ_WIDGET_GTK
     ) {
       document.getElementById("mediaControlBox").hidden = false;
-      let mediaControlLearnMoreUrl =
-        Services.urlFormatter.formatURLPref("app.support.baseURL") +
-        "media-keyboard-control";
-      let link = document.getElementById("mediaControlLearnMore");
-      link.setAttribute("href", mediaControlLearnMoreUrl);
     }
 
     // Initializes the fonts dropdowns displayed in this pane.
@@ -544,12 +510,6 @@ var gMainPane = {
       fxtranslationRow.hidden = false;
     }
 
-    let drmInfoURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "drm-content";
-    document
-      .getElementById("playDRMContentLink")
-      .setAttribute("href", drmInfoURL);
     let emeUIEnabled = Services.prefs.getBoolPref("browser.eme.ui.enabled");
     // Force-disable/hide on WinXP:
     if (navigator.platform.toLowerCase().startsWith("win")) {
@@ -826,6 +786,15 @@ var gMainPane = {
     });
   },
 
+  handleSubcategory(subcategory) {
+    if (subcategory == "migrate") {
+      this.showMigrationWizardDialog();
+      return true;
+    }
+
+    return false;
+  },
+
   // CONTAINERS
 
   /*
@@ -871,10 +840,6 @@ var gMainPane = {
       return;
     }
     Services.prefs.addObserver(PREF_CONTAINERS_EXTENSION, this);
-
-    const link = document.getElementById("browserContainersLearnMore");
-    link.href =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") + "containers";
 
     document.getElementById("browserContainersbox").hidden = false;
     this.readBrowserContainersCheckbox();
@@ -1743,7 +1708,31 @@ var gMainPane = {
           preference.setElementValue(element);
         }
       }
-    })().catch(Cu.reportError);
+    })().catch(console.error);
+  },
+
+  /**
+   * Displays the migration wizard dialog in an HTML dialog.
+   */
+  async showMigrationWizardDialog() {
+    let migrationWizardDialog = document.getElementById(
+      "migrationWizardDialog"
+    );
+
+    if (migrationWizardDialog.open) {
+      return;
+    }
+
+    await customElements.whenDefined("migration-wizard");
+
+    // If we've been opened before, remove the old wizard and insert a
+    // new one to put it back into its starting state.
+    migrationWizardDialog.firstElementChild?.remove();
+    let wizard = document.createElement("migration-wizard");
+    wizard.toggleAttribute("dialog-mode", true);
+    migrationWizardDialog.appendChild(wizard);
+
+    migrationWizardDialog.showModal();
   },
 
   /**
@@ -2956,7 +2945,7 @@ var gMainPane = {
    * response to the choice, if one is made.
    */
   chooseFolder() {
-    return this.chooseFolderTask().catch(Cu.reportError);
+    return this.chooseFolderTask().catch(console.error);
   },
   async chooseFolderTask() {
     let [title] = await document.l10n.formatValues([
@@ -2999,7 +2988,7 @@ var gMainPane = {
    * preferences.
    */
   displayDownloadDirPref() {
-    this.displayDownloadDirPrefTask().catch(Cu.reportError);
+    this.displayDownloadDirPrefTask().catch(console.error);
 
     // don't override the preference's value in UI
     return undefined;
@@ -3707,6 +3696,12 @@ const AppearanceChooser = {
       });
 
     this.warning = document.getElementById("web-appearance-override-warning");
+
+    document
+      .getElementById("migrationWizardDialog")
+      .addEventListener("MigrationWizard:Close", function(e) {
+        e.currentTarget.close();
+      });
 
     FORCED_COLORS_QUERY.addEventListener("change", this);
     Services.prefs.addObserver(PREF_USE_SYSTEM_COLORS, this);

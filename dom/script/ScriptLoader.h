@@ -276,12 +276,12 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
                                  Document* aDocument, char16_t*& aBufOut,
                                  size_t& aLengthOut);
 
-  static inline nsresult ConvertToUTF16(nsIChannel* aChannel,
-                                        const uint8_t* aData, uint32_t aLength,
-                                        const nsAString& aHintCharset,
-                                        Document* aDocument,
-                                        JS::UniqueTwoByteChars& aBufOut,
-                                        size_t& aLengthOut) {
+  static nsresult ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
+                                 uint32_t aLength,
+                                 const nsAString& aHintCharset,
+                                 Document* aDocument,
+                                 JS::UniqueTwoByteChars& aBufOut,
+                                 size_t& aLengthOut) {
     char16_t* bufOut;
     nsresult rv = ConvertToUTF16(aChannel, aData, aLength, aHintCharset,
                                  aDocument, bufOut, aLengthOut);
@@ -315,6 +315,19 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
                                 uint32_t aLength, const nsAString& aHintCharset,
                                 Document* aDocument, Utf8Unit*& aBufOut,
                                 size_t& aLengthOut);
+
+  static inline nsresult ConvertToUTF8(
+      nsIChannel* aChannel, const uint8_t* aData, uint32_t aLength,
+      const nsAString& aHintCharset, Document* aDocument,
+      UniquePtr<Utf8Unit[], JS::FreePolicy>& aBufOut, size_t& aLengthOut) {
+    Utf8Unit* bufOut;
+    nsresult rv = ConvertToUTF8(aChannel, aData, aLength, aHintCharset,
+                                aDocument, bufOut, aLengthOut);
+    if (NS_SUCCEEDED(rv)) {
+      aBufOut.reset(bufOut);
+    }
+    return rv;
+  };
 
   /**
    * Handle the completion of a stream.  This is called by the
@@ -563,8 +576,18 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   void ReportPreloadErrorsToConsole(ScriptLoadRequest* aRequest);
 
-  nsresult AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
-                                     bool* aCouldCompileOut);
+  nsresult AttemptOffThreadScriptCompile(ScriptLoadRequest* aRequest,
+                                         bool* aCouldCompileOut);
+
+  nsresult StartOffThreadCompilation(JSContext* aCx,
+                                     ScriptLoadRequest* aRequest,
+                                     JS::CompileOptions& aOptions,
+                                     Runnable* aRunnable,
+                                     JS::OffThreadToken** aTokenOut);
+
+  static void OffThreadCompilationCompleteCallback(JS::OffThreadToken* aToken,
+                                                   void* aCallbackData);
+
   nsresult ProcessRequest(ScriptLoadRequest* aRequest);
   nsresult CompileOffThreadOrProcessRequest(ScriptLoadRequest* aRequest);
   void FireScriptAvailable(nsresult aResult, ScriptLoadRequest* aRequest);
@@ -675,10 +698,10 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   void RunScriptWhenSafe(ScriptLoadRequest* aRequest);
 
   /**
-   *  Wait for any unused off thread compilations to finish and then
-   *  cancel them.
+   * Cancel and remove all outstanding load requests, including waiting for any
+   * off thread compilations to finish.
    */
-  void CancelScriptLoadRequests();
+  void CancelAndClearScriptLoadRequests();
 
   Document* mDocument;  // [WEAK]
   nsCOMArray<nsIScriptLoaderObserver> mObservers;

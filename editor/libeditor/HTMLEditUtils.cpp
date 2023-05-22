@@ -21,11 +21,13 @@
 #include "mozilla/dom/Element.h"  // for Element, nsINode
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/ServoCSSParser.h"  // for ServoCSSParser
 #include "mozilla/dom/StaticRange.h"
 #include "mozilla/dom/Text.h"  // for Text
 
-#include "nsAString.h"  // for nsAString::IsEmpty
-#include "nsAtom.h"     // for nsAtom
+#include "nsAString.h"    // for nsAString::IsEmpty
+#include "nsAtom.h"       // for nsAtom
+#include "nsAttrValue.h"  // nsAttrValue
 #include "nsCaseTreatment.h"
 #include "nsCOMPtr.h"            // for nsCOMPtr, operator==, etc.
 #include "nsComputedDOMStyle.h"  // for nsComputedDOMStyle
@@ -36,8 +38,10 @@
 #include "nsHTMLTags.h"
 #include "nsLiteralString.h"     // for NS_LITERAL_STRING
 #include "nsNameSpaceManager.h"  // for kNameSpaceID_None
+#include "nsPrintfCString.h"     // nsPringfCString
 #include "nsString.h"            // for nsAutoString
 #include "nsStyledElement.h"
+#include "nsStyleUtil.h"     // for nsStyleUtil
 #include "nsTextFragment.h"  // for nsTextFragment
 #include "nsTextFrame.h"     // for nsTextFrame
 
@@ -88,6 +92,11 @@ template EditorRawDOMPoint HTMLEditUtils::GetNextEditablePoint(
     InvisibleWhiteSpaces aInvisibleWhiteSpaces,
     TableBoundary aHowToTreatTableBoundary);
 
+template nsIContent* HTMLEditUtils::GetContentToPreserveInlineStyles(
+    const EditorDOMPoint& aPoint, const Element& aEditingHost);
+template nsIContent* HTMLEditUtils::GetContentToPreserveInlineStyles(
+    const EditorRawDOMPoint& aPoint, const Element& aEditingHost);
+
 template EditorDOMPoint HTMLEditUtils::GetBetterInsertionPointFor(
     const nsIContent& aContentToInsert, const EditorDOMPoint& aPointToInsert,
     const Element& aEditingHost);
@@ -101,6 +110,15 @@ template EditorRawDOMPoint HTMLEditUtils::GetBetterInsertionPointFor(
     const nsIContent& aContentToInsert, const EditorDOMPoint& aPointToInsert,
     const Element& aEditingHost);
 
+template EditorDOMPoint HTMLEditUtils::GetBetterCaretPositionToInsertText(
+    const EditorDOMPoint& aPoint, const Element& aEditingHost);
+template EditorDOMPoint HTMLEditUtils::GetBetterCaretPositionToInsertText(
+    const EditorRawDOMPoint& aPoint, const Element& aEditingHost);
+template EditorRawDOMPoint HTMLEditUtils::GetBetterCaretPositionToInsertText(
+    const EditorDOMPoint& aPoint, const Element& aEditingHost);
+template EditorRawDOMPoint HTMLEditUtils::GetBetterCaretPositionToInsertText(
+    const EditorRawDOMPoint& aPoint, const Element& aEditingHost);
+
 template Result<EditorDOMPoint, nsresult>
 HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
     const Element& aElement, const EditorDOMPoint& aCurrentPoint);
@@ -113,24 +131,49 @@ HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
 template Result<EditorRawDOMPoint, nsresult>
 HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
     const Element& aElement, const EditorRawDOMPoint& aCurrentPoint);
+
+template bool HTMLEditUtils::IsSameCSSColorValue(const nsAString& aColorA,
+                                                 const nsAString& aColorB);
+template bool HTMLEditUtils::IsSameCSSColorValue(const nsACString& aColorA,
+                                                 const nsACString& aColorB);
 
 bool HTMLEditUtils::CanContentsBeJoined(const nsIContent& aLeftContent,
-                                        const nsIContent& aRightContent,
-                                        StyleDifference aStyleDifference) {
+                                        const nsIContent& aRightContent) {
   if (aLeftContent.NodeInfo()->NameAtom() !=
       aRightContent.NodeInfo()->NameAtom()) {
     return false;
   }
-  if (aStyleDifference == StyleDifference::Ignore ||
-      !aLeftContent.IsElement()) {
-    return true;
+
+  if (!aLeftContent.IsElement()) {
+    return true;  // can join text nodes, etc
   }
-  if (aStyleDifference == StyleDifference::CompareIfSpanElements &&
-      !aLeftContent.IsHTMLElement(nsGkAtoms::span)) {
-    return true;
-  }
-  if (!aLeftContent.IsElement() || !aRightContent.IsElement()) {
-    return false;
+  MOZ_ASSERT(aRightContent.IsElement());
+
+  if (aLeftContent.NodeInfo()->NameAtom() == nsGkAtoms::font) {
+    const nsAttrValue* const leftSize =
+        aLeftContent.AsElement()->GetParsedAttr(nsGkAtoms::size);
+    const nsAttrValue* const rightSize =
+        aRightContent.AsElement()->GetParsedAttr(nsGkAtoms::size);
+    if (!leftSize ^ !rightSize || (leftSize && !leftSize->Equals(*rightSize))) {
+      return false;
+    }
+
+    const nsAttrValue* const leftColor =
+        aLeftContent.AsElement()->GetParsedAttr(nsGkAtoms::color);
+    const nsAttrValue* const rightColor =
+        aRightContent.AsElement()->GetParsedAttr(nsGkAtoms::color);
+    if (!leftColor ^ !rightColor ||
+        (leftColor && !leftColor->Equals(*rightColor))) {
+      return false;
+    }
+
+    const nsAttrValue* const leftFace =
+        aLeftContent.AsElement()->GetParsedAttr(nsGkAtoms::face);
+    const nsAttrValue* const rightFace =
+        aRightContent.AsElement()->GetParsedAttr(nsGkAtoms::face);
+    if (!leftFace ^ !rightFace || (leftFace && !leftFace->Equals(*rightFace))) {
+      return false;
+    }
   }
   nsStyledElement* leftStyledElement =
       nsStyledElement::FromNode(const_cast<nsIContent*>(&aLeftContent));
@@ -211,6 +254,16 @@ bool HTMLEditUtils::IsDisplayOutsideInline(const Element& aElement) {
   }
   return elementStyle->StyleDisplay()->DisplayOutside() ==
          StyleDisplayOutside::Inline;
+}
+
+bool HTMLEditUtils::IsDisplayInsideFlowRoot(const Element& aElement) {
+  RefPtr<const ComputedStyle> elementStyle =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(&aElement);
+  if (!elementStyle) {
+    return false;
+  }
+  return elementStyle->StyleDisplay()->DisplayInside() ==
+         StyleDisplayInside::FlowRoot;
 }
 
 bool HTMLEditUtils::IsRemovableInlineStyleElement(Element& aElement) {
@@ -1920,6 +1973,42 @@ EditAction HTMLEditUtils::GetEditActionForAlignment(
   return EditAction::eSetAlignment;
 }
 
+// static
+template <typename EditorDOMPointType>
+nsIContent* HTMLEditUtils::GetContentToPreserveInlineStyles(
+    const EditorDOMPointType& aPoint, const Element& aEditingHost) {
+  MOZ_ASSERT(aPoint.IsSetAndValid());
+  if (MOZ_UNLIKELY(!aPoint.IsInContentNode())) {
+    return nullptr;
+  }
+  // If it points middle of a text node, use it.  Otherwise, scan next visible
+  // thing and use the style of following text node if there is.
+  if (aPoint.IsInTextNode() && !aPoint.IsEndOfContainer()) {
+    return aPoint.template ContainerAs<nsIContent>();
+  }
+  for (auto point = aPoint.template To<EditorRawDOMPoint>(); point.IsSet();) {
+    WSScanResult nextVisibleThing =
+        WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(&aEditingHost, point);
+    if (nextVisibleThing.InVisibleOrCollapsibleCharacters()) {
+      return nextVisibleThing.TextPtr();
+    }
+    // Ignore empty inline container elements because it's not visible for
+    // users so that using the style will appear suddenly from point of
+    // view of users.
+    if (nextVisibleThing.ReachedSpecialContent() &&
+        nextVisibleThing.IsContentEditable() &&
+        nextVisibleThing.GetContent()->IsElement() &&
+        !nextVisibleThing.GetContent()->HasChildNodes() &&
+        HTMLEditUtils::IsContainerNode(*nextVisibleThing.ElementPtr())) {
+      point.SetAfter(nextVisibleThing.ElementPtr());
+      continue;
+    }
+    // Otherwise, we should use style of the container of the start point.
+    break;
+  }
+  return aPoint.template ContainerAs<nsIContent>();
+}
+
 template <typename EditorDOMPointType, typename EditorDOMPointTypeInput>
 EditorDOMPointType HTMLEditUtils::GetBetterInsertionPointFor(
     const nsIContent& aContentToInsert,
@@ -1983,7 +2072,44 @@ EditorDOMPointType HTMLEditUtils::GetBetterInsertionPointFor(
       .template PointAfterContent<EditorDOMPointType>();
 }
 
-//  static
+// static
+template <typename EditorDOMPointType, typename EditorDOMPointTypeInput>
+EditorDOMPointType HTMLEditUtils::GetBetterCaretPositionToInsertText(
+    const EditorDOMPointTypeInput& aPoint, const Element& aEditingHost) {
+  MOZ_ASSERT(aPoint.IsSetAndValid());
+  MOZ_ASSERT(
+      aPoint.GetContainer()->IsInclusiveFlatTreeDescendantOf(&aEditingHost));
+
+  if (aPoint.IsInTextNode()) {
+    return aPoint.template To<EditorDOMPointType>();
+  }
+  if (!aPoint.IsEndOfContainer() && aPoint.GetChild() &&
+      aPoint.GetChild()->IsText()) {
+    return EditorDOMPointType(aPoint.GetChild(), 0u);
+  }
+  if (aPoint.IsEndOfContainer()) {
+    WSRunScanner scanner(&aEditingHost, aPoint);
+    WSScanResult previousThing =
+        scanner.ScanPreviousVisibleNodeOrBlockBoundaryFrom(aPoint);
+    if (previousThing.InVisibleOrCollapsibleCharacters()) {
+      return EditorDOMPointType::AtEndOf(*previousThing.TextPtr());
+    }
+  }
+  if (HTMLEditUtils::CanNodeContain(*aPoint.GetContainer(),
+                                    *nsGkAtoms::textTagName)) {
+    return aPoint.template To<EditorDOMPointType>();
+  }
+  if (MOZ_UNLIKELY(aPoint.GetContainer() == &aEditingHost ||
+                   !aPoint.template GetContainerParentAs<nsIContent>() ||
+                   !HTMLEditUtils::CanNodeContain(
+                       *aPoint.template ContainerParentAs<nsIContent>(),
+                       *nsGkAtoms::textTagName))) {
+    return EditorDOMPointType();
+  }
+  return aPoint.ParentPoint().template To<EditorDOMPointType>();
+}
+
+// static
 template <typename EditorDOMPointType, typename EditorDOMPointTypeInput>
 Result<EditorDOMPointType, nsresult>
 HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
@@ -2149,7 +2275,9 @@ size_t HTMLEditUtils::CollectEmptyInlineContainerDescendants(
 
 // static
 bool HTMLEditUtils::ElementHasAttributeExcept(const Element& aElement,
-                                              const nsAtom& aAttribute) {
+                                              const nsAtom& aAttribute1,
+                                              const nsAtom& aAttribute2,
+                                              const nsAtom& aAttribute3) {
   // FYI: This was moved from
   // https://searchfox.org/mozilla-central/rev/0b1543e85d13c30a13c57e959ce9815a3f0fa1d3/editor/libeditor/HTMLStyleEditor.cpp#1626
   for (auto i : IntegerRange<uint32_t>(aElement.GetAttrCount())) {
@@ -2158,8 +2286,21 @@ bool HTMLEditUtils::ElementHasAttributeExcept(const Element& aElement,
       return true;
     }
 
-    if (name->LocalName() == &aAttribute) {
+    if (name->LocalName() == &aAttribute1 ||
+        name->LocalName() == &aAttribute2 ||
+        name->LocalName() == &aAttribute3) {
       continue;  // Ignore the given attribute
+    }
+
+    // Ignore empty style, class and id attributes because those attributes are
+    // not meaningful with empty value.
+    if (name->LocalName() == nsGkAtoms::style ||
+        name->LocalName() == nsGkAtoms::_class ||
+        name->LocalName() == nsGkAtoms::id) {
+      if (aElement.HasNonEmptyAttr(name->LocalName())) {
+        return true;
+      }
+      continue;
     }
 
     // Ignore special _moz attributes
@@ -2172,6 +2313,148 @@ bool HTMLEditUtils::ElementHasAttributeExcept(const Element& aElement,
   // if we made it through all of them without finding a real attribute
   // other than aAttribute, then return true
   return false;
+}
+
+bool HTMLEditUtils::GetNormalizedHTMLColorValue(const nsAString& aColorValue,
+                                                nsAString& aNormalizedValue) {
+  nsAttrValue value;
+  if (!value.ParseColor(aColorValue)) {
+    aNormalizedValue = aColorValue;
+    return false;
+  }
+  nscolor color = NS_RGB(0, 0, 0);
+  MOZ_ALWAYS_TRUE(value.GetColorValue(color));
+  aNormalizedValue = NS_ConvertASCIItoUTF16(nsPrintfCString(
+      "#%02x%02x%02x", NS_GET_R(color), NS_GET_G(color), NS_GET_B(color)));
+  return true;
+}
+
+bool HTMLEditUtils::IsSameHTMLColorValue(
+    const nsAString& aColorA, const nsAString& aColorB,
+    TransparentKeyword aTransparentKeyword) {
+  if (aTransparentKeyword == TransparentKeyword::Allowed) {
+    const bool isATransparent = aColorA.LowerCaseEqualsLiteral("transparent");
+    const bool isBTransparent = aColorB.LowerCaseEqualsLiteral("transparent");
+    if (isATransparent || isBTransparent) {
+      return isATransparent && isBTransparent;
+    }
+  }
+  nsAttrValue valueA, valueB;
+  if (!valueA.ParseColor(aColorA) || !valueB.ParseColor(aColorB)) {
+    return false;
+  }
+  nscolor colorA = NS_RGB(0, 0, 0), colorB = NS_RGB(0, 0, 0);
+  MOZ_ALWAYS_TRUE(valueA.GetColorValue(colorA));
+  MOZ_ALWAYS_TRUE(valueB.GetColorValue(colorB));
+  return colorA == colorB;
+}
+
+bool HTMLEditUtils::MaybeCSSSpecificColorValue(const nsAString& aColorValue) {
+  if (aColorValue.IsEmpty() || aColorValue.First() == '#') {
+    return false;  // Quick return for the most cases.
+  }
+
+  nsAutoString colorValue(aColorValue);
+  colorValue.CompressWhitespace(true, true);
+  if (colorValue.LowerCaseEqualsASCII("transparent")) {
+    return true;
+  }
+  nscolor color = NS_RGB(0, 0, 0);
+  if (colorValue.IsEmpty() || colorValue.First() == '#' ||
+      NS_ColorNameToRGB(colorValue, &color)) {
+    return false;
+  }
+  if (colorValue.LowerCaseEqualsASCII("initial") ||
+      colorValue.LowerCaseEqualsASCII("inherit") ||
+      colorValue.LowerCaseEqualsASCII("unset") ||
+      colorValue.LowerCaseEqualsASCII("revert") ||
+      colorValue.LowerCaseEqualsASCII("currentcolor")) {
+    return true;
+  }
+  return ServoCSSParser::IsValidCSSColor(NS_ConvertUTF16toUTF8(colorValue));
+}
+
+static bool ComputeColor(const nsAString& aColorValue, nscolor* aColor,
+                         bool* aIsCurrentColor) {
+  return ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0),
+                                      NS_ConvertUTF16toUTF8(aColorValue),
+                                      aColor, aIsCurrentColor);
+}
+
+static bool ComputeColor(const nsACString& aColorValue, nscolor* aColor,
+                         bool* aIsCurrentColor) {
+  return ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0), aColorValue,
+                                      aColor, aIsCurrentColor);
+}
+
+bool HTMLEditUtils::CanConvertToHTMLColorValue(const nsAString& aColorValue) {
+  bool isCurrentColor = false;
+  nscolor color = NS_RGB(0, 0, 0);
+  return ComputeColor(aColorValue, &color, &isCurrentColor) &&
+         !isCurrentColor && NS_GET_A(color) == 0xFF;
+}
+
+bool HTMLEditUtils::ConvertToNormalizedHTMLColorValue(
+    const nsAString& aColorValue, nsAString& aNormalizedValue) {
+  bool isCurrentColor = false;
+  nscolor color = NS_RGB(0, 0, 0);
+  if (!ComputeColor(aColorValue, &color, &isCurrentColor) || isCurrentColor ||
+      NS_GET_A(color) != 0xFF) {
+    aNormalizedValue = aColorValue;
+    return false;
+  }
+  aNormalizedValue.Truncate();
+  aNormalizedValue.AppendPrintf("#%02x%02x%02x", NS_GET_R(color),
+                                NS_GET_G(color), NS_GET_B(color));
+  return true;
+}
+
+bool HTMLEditUtils::GetNormalizedCSSColorValue(const nsAString& aColorValue,
+                                               ZeroAlphaColor aZeroAlphaColor,
+                                               nsAString& aNormalizedValue) {
+  bool isCurrentColor = false;
+  nscolor color = NS_RGB(0, 0, 0);
+  if (!ComputeColor(aColorValue, &color, &isCurrentColor)) {
+    aNormalizedValue = aColorValue;
+    return false;
+  }
+
+  // If it's currentcolor, let's return it as-is since we cannot resolve it
+  // without ancestors.
+  if (isCurrentColor) {
+    aNormalizedValue = aColorValue;
+    return true;
+  }
+
+  if (aZeroAlphaColor == ZeroAlphaColor::TransparentKeyword &&
+      NS_GET_A(color) == 0) {
+    aNormalizedValue.AssignLiteral("transparent");
+    return true;
+  }
+
+  // Get serialized color value (i.e., "rgb()" or "rgba()").
+  aNormalizedValue.Truncate();
+  nsStyleUtil::GetSerializedColorValue(color, aNormalizedValue);
+  return true;
+}
+
+template <typename CharType>
+bool HTMLEditUtils::IsSameCSSColorValue(const nsTSubstring<CharType>& aColorA,
+                                        const nsTSubstring<CharType>& aColorB) {
+  bool isACurrentColor = false;
+  nscolor colorA = NS_RGB(0, 0, 0);
+  if (!ComputeColor(aColorA, &colorA, &isACurrentColor)) {
+    return false;
+  }
+  bool isBCurrentColor = false;
+  nscolor colorB = NS_RGB(0, 0, 0);
+  if (!ComputeColor(aColorB, &colorB, &isBCurrentColor)) {
+    return false;
+  }
+  if (isACurrentColor || isBCurrentColor) {
+    return isACurrentColor && isBCurrentColor;
+  }
+  return colorA == colorB;
 }
 
 /******************************************************************************

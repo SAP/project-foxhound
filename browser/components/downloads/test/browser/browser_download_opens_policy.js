@@ -11,12 +11,8 @@ ChromeUtils.defineESModuleGetters(this, {
   DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
 });
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
-const { DownloadIntegration } = ChromeUtils.importESModule(
-  "resource://gre/modules/DownloadIntegration.sys.mjs"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 add_task(async function test_download_opens_on_click() {

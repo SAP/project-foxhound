@@ -42,7 +42,6 @@
 #include "wasm/WasmConstants.h"
 #include "wasm/WasmException.h"
 #include "wasm/WasmExprType.h"
-#include "wasm/WasmInstanceData.h"
 #include "wasm/WasmMemory.h"
 #include "wasm/WasmModuleTypes.h"
 #include "wasm/WasmTypeDecls.h"
@@ -330,8 +329,7 @@ class WasmInstanceObject : public NativeObject {
       const wasm::ElemSegmentVector& elemSegments, uint32_t globalDataLength,
       Handle<WasmMemoryObject*> memory,
       Vector<RefPtr<wasm::Table>, 0, SystemAllocPolicy>&& tables,
-      const JSFunctionVector& funcImports,
-      const wasm::GlobalDescVector& globals,
+      const JSObjectVector& funcImports, const wasm::GlobalDescVector& globals,
       const wasm::ValVector& globalImportValues,
       const WasmGlobalObjectVector& globalObjs,
       const WasmTagObjectVector& tagObjs, HandleObject proto,

@@ -112,10 +112,6 @@ export function getPrettySource(state, id) {
   return getOriginalSourceByURL(state, getPrettySourceURL(source.url));
 }
 
-export function hasPrettySource(state, id) {
-  return !!getPrettySource(state, id);
-}
-
 // This is only used externaly by tabs and breakpointSources selectors
 export function getSourcesMap(state) {
   return state.sources.sources;
@@ -177,12 +173,12 @@ export function getFirstSourceActorForGeneratedSource(
   sourceId,
   threadId
 ) {
-  const source = getSource(state, sourceId);
+  let source = getSource(state, sourceId);
   if (source.isOriginal) {
-    return null;
+    source = getSource(state, originalToGeneratedId(source.id));
   }
-  let actorsInfo = state.sources.actors[sourceId];
-  if (!actorsInfo.length) {
+  let actorsInfo = state.sources.actors[source.id];
+  if (!actorsInfo || !actorsInfo.length) {
     return null;
   }
   if (threadId) {

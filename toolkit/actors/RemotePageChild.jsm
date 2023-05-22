@@ -109,7 +109,7 @@ class RemotePageChild extends JSWindowActorChild {
       try {
         listener(clonedMessage);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
   }
@@ -138,6 +138,10 @@ class RemotePageChild extends JSWindowActorChild {
     }
 
     return true;
+  }
+
+  addPage(aUrl, aFunctionMap) {
+    lazy.RemotePageAccessManager.addPage(aUrl, aFunctionMap);
   }
 
   // Implementation of functions that are exported into the page.

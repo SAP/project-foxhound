@@ -78,6 +78,11 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     GetHTMLAttr(nsGkAtoms::lang, aLang);
   }
   void SetLang(const nsAString& aLang) { SetHTMLAttr(nsGkAtoms::lang, aLang); }
+  bool Translate() const override;
+  void SetTranslate(bool aTranslate, mozilla::ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::translate, aTranslate ? u"yes"_ns : u"no"_ns,
+                aError);
+  }
   void GetDir(nsAString& aDir) { GetHTMLEnumAttr(nsGkAtoms::dir, aDir); }
   void SetDir(const nsAString& aDir, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::dir, aDir, aError);
@@ -274,6 +279,11 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   // Returns true if the event should not be handled from GetEventTargetParent.
   virtual bool IsDisabledForEvents(mozilla::WidgetEvent* aEvent) {
     return false;
+  }
+
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aVal, ErrorResult& aRv) {
+    SetHTMLBoolAttr(nsGkAtoms::autofocus, aVal, aRv);
   }
 
  protected:
@@ -1180,12 +1190,6 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
   void UpdateRequiredState(bool aIsRequired, bool aNotify);
 
   bool IsAutocapitalizeInheriting() const;
-
-  /**
-   * Returns whether this is a auto-focusable form control.
-   * @return whether this is a auto-focusable form control.
-   */
-  inline bool IsAutofocusable() const;
 
   /**
    * Save to presentation state.  The form control will determine whether it

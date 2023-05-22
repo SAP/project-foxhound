@@ -29,7 +29,7 @@ using mozilla::TimeDuration from "mozilla/TimeStamp.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::ScreenRotation from "mozilla/WidgetUtils.h";
 using nsCSSPropertyID from "nsCSSPropertyID.h";
-using hal::ScreenOrientation from "mozilla/HalIPCUtils.h";
+using mozilla::hal::ScreenOrientation from "mozilla/HalIPCUtils.h";
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
 using mozilla::CSSPoint from "Units.h";
 using mozilla::CSSRect from "Units.h";
@@ -295,25 +295,15 @@ struct OpUseRemoteTexture {
   TextureFlags textureFlags;
 };
 
-struct OpEnableAsyncCompositable {
-  bool enable;
+struct OpEnableRemoteTexturePushCallback {
+  RemoteTextureOwnerId ownerId;
+  IntSize size;
+  TextureFlags textureFlags;
 };
 
 struct OpNotifyNotUsed {
   uint64_t TextureId;
   uint64_t fwdTransactionId;
-};
-
-struct OpDeliverAcquireFence {
-  PTexture texture;
-  FileDescriptor fenceFd;
-};
-
-struct OpDeliverReleaseFence {
-  FileDescriptor? fenceFd;
-  uint64_t bufferId;
-  uint64_t fwdTransactionId;
-  bool usesImageBridge;
 };
 
 union CompositableOperationDetail {
@@ -323,9 +313,7 @@ union CompositableOperationDetail {
 
   OpUseRemoteTexture;
 
-  OpEnableAsyncCompositable;
-
-  OpDeliverAcquireFence;
+  OpEnableRemoteTexturePushCallback;
 };
 
 struct CompositableOperation {
@@ -361,7 +349,6 @@ struct ImageCompositeNotification {
 
 union AsyncParentMessageData {
   OpNotifyNotUsed;
-  OpDeliverReleaseFence;
 };
 
 union OMTAValue {

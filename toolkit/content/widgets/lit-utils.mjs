@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { LitElement } from "./vendor/lit.all.mjs";
+import { LitElement } from "chrome://global/content/vendor/lit.all.mjs";
 
 /**
  * Helper for our replacement of @query. Used with `static queries` property.
@@ -98,21 +98,6 @@ export class MozLitElement extends LitElement {
         }
       }
     }
-  }
-
-  /**
-   * The URL for this component's styles. To make development in Storybook
-   * easier this will use the chrome:// URL when in product and a relative path
-   * for Storybook.
-   *
-   * LOCAL_NAME should be the kebab-cased name of the element. It is added by
-   * the `./mach addwidget` command.
-   */
-  static get stylesheetUrl() {
-    if (window.IS_STORYBOOK) {
-      return `./${this.LOCAL_NAME}/${this.LOCAL_NAME}.css`;
-    }
-    return `chrome://global/content/elements/${this.LOCAL_NAME}.css`;
   }
 
   connectedCallback() {

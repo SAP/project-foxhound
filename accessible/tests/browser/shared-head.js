@@ -32,6 +32,7 @@ const MOCHITESTS_DIR =
 /**
  * A base URL for test files used in content.
  */
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const CURRENT_CONTENT_DIR = `http://example.com${CURRENT_FILE_DIR}`;
 
 const LOADED_CONTENT_SCRIPTS = new Map();
@@ -355,6 +356,7 @@ function wrapWithIFrame(doc, options = {}) {
     ...iframeDocBodyAttrs,
   };
   if (options.remoteIframe) {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     const srcURL = new URL(`http://example.net/document-builder.sjs`);
     if (doc.endsWith("html")) {
       srcURL.searchParams.append("file", `${CURRENT_FILE_DIR}${doc}`);
@@ -885,6 +887,21 @@ async function waitForContentPaint(browser) {
   });
 }
 
+// Returns true if both number arrays match within `FUZZ`.
+function areBoundsFuzzyEqual(actual, expected) {
+  const FUZZ = 1;
+  return actual
+    .map((val, i) => Math.abs(val - expected[i]) <= FUZZ)
+    .reduce((a, b) => a && b, true);
+}
+
+function assertBoundsFuzzyEqual(actual, expected) {
+  ok(
+    areBoundsFuzzyEqual(actual, expected),
+    `${actual} fuzzily matches expected ${expected}`
+  );
+}
+
 async function testBoundsWithContent(iframeDocAcc, id, browser) {
   // Retrieve layout bounds from content
   let expectedBounds = await invokeContentTask(browser, [id], _id => {
@@ -894,12 +911,8 @@ async function testBoundsWithContent(iframeDocAcc, id, browser) {
     return LayoutUtils.getBoundsForDOMElm(_id, content.document);
   });
 
-  // Returns true if both number arrays match within `FUZZ`.
   function isWithinExpected(bounds) {
-    const FUZZ = 1;
-    return bounds
-      .map((val, i) => Math.abs(val - expectedBounds[i]) <= FUZZ)
-      .reduce((a, b) => a && b, true);
+    return areBoundsFuzzyEqual(bounds, expectedBounds);
   }
 
   const acc = findAccessibleChildByID(iframeDocAcc, id);
@@ -907,8 +920,7 @@ async function testBoundsWithContent(iframeDocAcc, id, browser) {
     getBounds(acc),
   ]);
 
-  ok(
-    isWithinExpected(accBounds),
-    `${accBounds} fuzzily matches expected ${expectedBounds}`
-  );
+  assertBoundsFuzzyEqual(accBounds, expectedBounds);
+
+  return accBounds;
 }

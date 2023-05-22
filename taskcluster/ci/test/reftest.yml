@@ -45,16 +45,10 @@ crashtest:
             default: 1
     variants:
         - no-fission
-        - wayland
         - webrender-sw+no-fission
         - webrender-sw
     run-on-projects:
         by-variant:
-            wayland:
-                by-test-platform:
-                    linux1804-64-qr/debug: built-projects
-                    linux1804-64(-tsan|-asan)-qr/opt: built-projects
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug: built-projects
@@ -83,7 +77,6 @@ crashtest:
     max-run-time: 3600
     tier:
         by-test-platform:
-            windows10-aarch64-qr.*: 2
             android-hw-.*-qr/.*: 2
             android-em-7.0-x86_64-qr/debug-isolated-process: 3
             default: default
@@ -119,6 +112,7 @@ jsreftest:
             linux1804-64-qr/opt: 4
             linux1804-64-qr/debug: 5
             linux1804-64/debug: 5
+            .*-tsan-qr/opt: 8
             macosx.*-64-ccov.*/.*: 5
             macosx.*-64(-shippable)?/opt: 2
             default: 3
@@ -164,7 +158,6 @@ reftest:
             default: 8
     variants:
         - no-fission
-        - wayland
         - webrender-dcomp-disabled
         - webrender-dcomp-present
         - webrender-dcomp-overlays
@@ -173,11 +166,6 @@ reftest:
         - webrender-sw
     run-on-projects:
         by-variant:
-            wayland:
-                by-test-platform:
-                    linux1804-64-qr/debug: built-projects
-                    linux1804-64(-asan|-tsan)-qr/opt: built-projects
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug: built-projects
@@ -203,7 +191,6 @@ reftest:
                 by-test-platform:
                     android.*/.*: []
                     linux.*asan/opt: []
-                    windows10-aarch64-qr/opt: []
                     default: built-projects
     max-run-time:
         by-test-platform:
@@ -221,7 +208,6 @@ reftest:
                 default: true
     tier:
         by-test-platform:
-            windows10-aarch64-qr.*: 2
             android-hw-.*-qr/.*: 2
             android-em-7.0-x86_64-qr/debug-isolated-process: 3
             default: default
@@ -238,7 +224,7 @@ reftest-qr:
         by-variant:
             webrender-sw+no-fission:
                 by-test-platform:
-                    android-hw-p2-8-0-android-aarch64-qr/debug: built-projects
+                    android-hw-p5-13-0-android-aarch64-qr/debug: built-projects
                     default: []
             no-fission: built-projects
     max-run-time: 2400

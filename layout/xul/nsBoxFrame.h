@@ -115,8 +115,6 @@ class nsBoxFrame : public nsContainerFrame {
   virtual void DidReflow(nsPresContext* aPresContext,
                          const ReflowInput* aReflowInput) override;
 
-  virtual bool HonorPrintBackgroundSettings() const override;
-
   // virtual so nsButtonBoxFrame, nsSliderFrame and nsMenuFrame
   // can override it
   virtual void BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
@@ -127,15 +125,6 @@ class nsBoxFrame : public nsContainerFrame {
 
   static nsresult LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
                                 const nsRect& aRect);
-
-  /**
-   * Utility method to redirect events on descendants to this frame.
-   * Supports 'allowevents' attribute on descendant elements to allow those
-   * elements and their descendants to receive events.
-   */
-  void WrapListsInRedirector(nsDisplayListBuilder* aBuilder,
-                             const nsDisplayListSet& aIn,
-                             const nsDisplayListSet& aOut);
 
   // Gets a next / prev sibling accounting for ordinal group. Slow, please avoid
   // usage if possible.

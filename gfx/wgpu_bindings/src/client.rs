@@ -8,7 +8,7 @@ use crate::{
 };
 
 use wgc::{hub::IdentityManager, id};
-use wgt::Backend;
+use wgt::{Backend, TextureFormat};
 
 pub use wgc::command::{compute_ffi::*, render_ffi::*};
 
@@ -18,7 +18,7 @@ use nsstring::nsACString;
 
 use std::{
     borrow::Cow,
-    num::{NonZeroU32, NonZeroU8},
+    num::NonZeroU8,
     ptr,
 };
 
@@ -247,9 +247,9 @@ pub struct TextureViewDescriptor<'a> {
     dimension: Option<&'a wgt::TextureViewDimension>,
     aspect: wgt::TextureAspect,
     base_mip_level: u32,
-    mip_level_count: Option<NonZeroU32>,
+    mip_level_count: Option<&'a u32>,
     base_array_layer: u32,
-    array_layer_count: Option<NonZeroU32>,
+    array_layer_count: Option<&'a u32>,
 }
 
 #[repr(C)]
@@ -477,7 +477,7 @@ pub extern "C" fn wgpu_client_make_buffer_id(
 pub extern "C" fn wgpu_client_create_texture(
     client: &Client,
     device_id: id::DeviceId,
-    desc: &wgt::TextureDescriptor<Option<&nsACString>>,
+    desc: &wgt::TextureDescriptor<Option<&nsACString>, crate::FfiSlice<TextureFormat>>,
     bb: &mut ByteBuf,
 ) -> id::TextureId {
     let label = wgpu_string(desc.label);
@@ -490,8 +490,11 @@ pub extern "C" fn wgpu_client_create_texture(
         .textures
         .alloc(backend);
 
-    let action = DeviceAction::CreateTexture(id, desc.map_label(|_| label));
+    let view_formats = unsafe { desc.view_formats.as_slice() }.to_vec();
+
+    let action = DeviceAction::CreateTexture(id, desc.map_label_and_view_formats(|_| label, |_| view_formats));
     *bb = make_byte_buf(&action);
+
     id
 }
 
@@ -519,9 +522,9 @@ pub extern "C" fn wgpu_client_create_texture_view(
         range: wgt::ImageSubresourceRange {
             aspect: desc.aspect,
             base_mip_level: desc.base_mip_level,
-            mip_level_count: desc.mip_level_count,
+            mip_level_count: desc.mip_level_count.map(|ptr| *ptr),
             base_array_layer: desc.base_array_layer,
-            array_layer_count: desc.array_layer_count,
+            array_layer_count: desc.array_layer_count.map(|ptr| *ptr),
         },
     };
 

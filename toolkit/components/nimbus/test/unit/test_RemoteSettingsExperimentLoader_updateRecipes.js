@@ -12,8 +12,8 @@ const { NimbusFeatures } = ChromeUtils.import(
 const { PanelTestProvider } = ChromeUtils.import(
   "resource://activity-stream/lib/PanelTestProvider.jsm"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 const { TelemetryEvents } = ChromeUtils.import(
   "resource://normandy/lib/TelemetryEvents.jsm"
@@ -233,7 +233,7 @@ add_task(async function test_updateRecipes_invalidRecipeAfterUpdate() {
 
 add_task(async function test_updateRecipes_invalidBranchAfterUpdate() {
   const message = await PanelTestProvider.getMessages().then(msgs =>
-    msgs.find(m => m.id === "SPOTLIGHT_MESSAGE_93")
+    msgs.find(m => m.id === "MULTISTAGE_SPOTLIGHT_MESSAGE")
   );
 
   const manager = ExperimentFakes.manager();
@@ -820,7 +820,7 @@ add_task(async function test_updateRecipes_featureValidationOptOut() {
   });
 
   const message = await PanelTestProvider.getMessages().then(msgs =>
-    msgs.find(m => m.id === "SPOTLIGHT_MESSAGE_93")
+    msgs.find(m => m.id === "MULTISTAGE_SPOTLIGHT_MESSAGE")
   );
   delete message.template;
 

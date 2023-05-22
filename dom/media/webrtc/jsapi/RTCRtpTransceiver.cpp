@@ -169,7 +169,8 @@ RTCRtpTransceiver::RTCRtpTransceiver(
       mCallWrapper(aCallWrapper),
       mSendTrack(aSendTrack),
       mIdGenerator(aIdGenerator),
-      mPrivacyNeeded(aPrivacyNeeded),
+      mPrincipalPrivacy(aPrivacyNeeded ? PrincipalPrivacy::Private
+                                       : PrincipalPrivacy::NonPrivate),
       mIsVideo(aIsVideo),
       INIT_CANONICAL(mMid, std::string()),
       INIT_CANONICAL(mSyncGroup, std::string()) {}
@@ -213,13 +214,13 @@ void RTCRtpTransceiver::Init(const RTCRtpTransceiverInit& aInit,
     return;
   }
 
-  mReceiver = new RTCRtpReceiver(mWindow, mPrivacyNeeded, mPc,
+  mReceiver = new RTCRtpReceiver(mWindow, mPrincipalPrivacy, mPc,
                                  mTransportHandler, mCallWrapper->mCallThread,
                                  mStsThread, mConduit, this, trackingId);
 
   mSender = new RTCRtpSender(mWindow, mPc, mTransportHandler,
                              mCallWrapper->mCallThread, mStsThread, mConduit,
-                             mSendTrack, this);
+                             mSendTrack, aInit.mSendEncodings, this);
 
   if (mConduit) {
     InitConduitControl();
@@ -236,7 +237,6 @@ void RTCRtpTransceiver::Init(const RTCRtpTransceiverInit& aInit,
             self.get(), &RTCRtpTransceiver::UpdateDtlsTransportState);
       }));
 
-  // TODO(bug 1401592): apply aInit.mSendEncodings to mSender
   mSender->SetStreams(aInit.mStreams);
   mDirection = aInit.mDirection;
 }
@@ -255,8 +255,8 @@ void RTCRtpTransceiver::RollbackToStableDtlsTransport() {
 
 void RTCRtpTransceiver::UpdateDtlsTransportState(
     const std::string& aTransportId, TransportLayer::State aState) {
-  if (!GetMainThreadEventTarget()->IsOnCurrentThread()) {
-    GetMainThreadEventTarget()->Dispatch(
+  if (!GetMainThreadSerialEventTarget()->IsOnCurrentThread()) {
+    GetMainThreadSerialEventTarget()->Dispatch(
         WrapRunnable(this, &RTCRtpTransceiver::UpdateDtlsTransportState,
                      aTransportId, aState),
         NS_DISPATCH_NORMAL);
@@ -396,9 +396,18 @@ nsresult RTCRtpTransceiver::UpdateConduit() {
   }
 
   mReceiver->UpdateConduit();
-  mSender->UpdateConduit();
+  mSender->MaybeUpdateConduit();
 
   return NS_OK;
+}
+
+void RTCRtpTransceiver::UpdatePrincipalPrivacy(PrincipalPrivacy aPrivacy) {
+  if (mPrincipalPrivacy == aPrivacy) {
+    return;
+  }
+
+  mPrincipalPrivacy = aPrivacy;
+  mReceiver->UpdatePrincipalPrivacy(mPrincipalPrivacy);
 }
 
 void RTCRtpTransceiver::ResetSync() { mSyncGroup = std::string(); }
@@ -585,8 +594,6 @@ void RTCRtpTransceiver::SetDirectionInternal(
 }
 
 void RTCRtpTransceiver::SetAddTrackMagic() {
-  // TODO(bug 1767820): Refactor this to only forbid removal, not to set the
-  // magic bit
   // We do this immediately, without waiting for a SyncToJsep, because this is
   // set at transceiver creation time.
   GetJsepTransceiver()->SetAddTrackMagic();
@@ -835,7 +842,6 @@ void RTCRtpTransceiver::NegotiatedDetailsToVideoCodecConfigs(
         if (jsepEncoding.HasFormat(video.mDefaultPt)) {
           VideoCodecConfig::Encoding encoding;
           encoding.rid = jsepEncoding.mRid;
-          encoding.constraints = jsepEncoding.mConstraints;
           config->mEncodings.push_back(encoding);
         }
       }
@@ -859,8 +865,6 @@ void RTCRtpTransceiver::StopImpl() {
   if (mStopped) {
     return;
   }
-  mSender->Stop();
-  mReceiver->Stop();
 
   if (mCallWrapper) {
     auto conduit = std::move(mConduit);
@@ -877,6 +881,10 @@ void RTCRtpTransceiver::StopImpl() {
   }
   mStopped = true;
   mCurrentDirection.SetNull();
+
+  mSender->Stop();
+  mReceiver->Stop();
+
   auto self = nsMainThreadPtrHandle<RTCRtpTransceiver>(
       new nsMainThreadPtrHolder<RTCRtpTransceiver>(
           "RTCRtpTransceiver::StopImpl::self", this, false));

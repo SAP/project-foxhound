@@ -8,6 +8,11 @@ include PrefsTypes;
 
 include protocol PProfiler;
 include protocol PUtilityAudioDecoder;
+include protocol PJSOracle;
+
+#if defined(XP_WIN)
+include protocol PWindowsUtils;
+#endif
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 include protocol PSandboxTesting;
@@ -81,6 +86,12 @@ child:
   async TestTelemetryProbes();
 
   async StartUtilityAudioDecoderService(Endpoint<PUtilityAudioDecoderParent> aEndpoint);
+
+  async StartJSOracleService(Endpoint<PJSOracleChild> aEndpoint);
+
+#if defined(XP_WIN)
+  async StartWindowsUtilsService(Endpoint<PWindowsUtilsChild> aEndpoint);
+#endif
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
   async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);

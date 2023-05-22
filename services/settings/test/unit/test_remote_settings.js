@@ -17,8 +17,8 @@ const { Utils } = ChromeUtils.import("resource://services-settings/Utils.jsm");
 const { UptakeTelemetry, Policy } = ChromeUtils.import(
   "resource://services-common/uptake-telemetry.js"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const IS_ANDROID = AppConstants.platform == "android";
@@ -731,6 +731,24 @@ add_task(async function test_inspect_method() {
 });
 add_task(clear_state);
 
+add_task(async function test_inspect_method_uses_a_random_cache_bust() {
+  const backup = Utils.fetchLatestChanges;
+  const cacheBusts = [];
+  Utils.fetchLatestChanges = (url, options) => {
+    cacheBusts.push(options.expected);
+    return { changes: [] };
+  };
+
+  await RemoteSettings.inspect();
+  await RemoteSettings.inspect();
+  await RemoteSettings.inspect();
+
+  notEqual(cacheBusts[0], cacheBusts[1]);
+  notEqual(cacheBusts[1], cacheBusts[2]);
+  notEqual(cacheBusts[0], cacheBusts[2]);
+  Utils.fetchLatestChanges = backup;
+});
+
 add_task(async function test_clearAll_method() {
   // Make sure we have some local data.
   await client.maybeSync(2000);
@@ -1179,6 +1197,28 @@ add_task(async function test_get_can_be_called_from_sync_event_callback() {
 
   Assert.ok(fromGet, "sync callback was called");
   Assert.deepEqual(fromGet, fromEvent, ".get() gives current records list");
+});
+add_task(clear_state);
+
+add_task(async function test_attachments_are_pruned_when_sync_from_timer() {
+  await client.db.saveAttachment("bar", {
+    record: { id: "bar" },
+    blob: new Blob(["456"]),
+  });
+
+  await client.maybeSync(2000, { trigger: "broadcast" });
+
+  Assert.ok(
+    await client.attachments.cacheImpl.get("bar"),
+    "Extra attachment was not deleted on broadcast"
+  );
+
+  await client.maybeSync(3001, { trigger: "timer" });
+
+  Assert.ok(
+    !(await client.attachments.cacheImpl.get("bar")),
+    "Extra attachment was deleted on timer"
+  );
 });
 add_task(clear_state);
 

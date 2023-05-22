@@ -50,6 +50,7 @@ class ServiceWorker;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 class StorageManager;
+enum class CallerType : uint32_t;
 }  // namespace dom
 namespace ipc {
 class PrincipalInfo;
@@ -256,13 +257,10 @@ class nsIGlobalObject : public nsISupports,
    */
   virtual bool ShouldResistFingerprinting() const = 0;
 
-  RTPCallerType GetRTPCallerType() const;
+  // CallerType::System callers never have to resist fingerprinting.
+  bool ShouldResistFingerprinting(mozilla::dom::CallerType aCallerType) const;
 
-  /**
-   * Threadsafe way to get nsIPrincipal::GetHashValue for the associated
-   * principal.
-   */
-  virtual uint32_t GetPrincipalHashValue() const { return 0; }
+  RTPCallerType GetRTPCallerType() const;
 
   /**
    * Get the module loader to use for this global, if any. By default this
@@ -283,8 +281,6 @@ class nsIGlobalObject : public nsISupports,
 
  protected:
   virtual ~nsIGlobalObject();
-
-  virtual bool IsSystemPrincipal() const;
 
   void StartDying() { mIsDying = true; }
 

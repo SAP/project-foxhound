@@ -627,13 +627,13 @@ def _cxxTypeNeedsMoveForData(ipdltype, context="root", visited=None):
 
     visited.add(ipdltype)
 
-    if ipdltype.isUniquePtr():
-        return True
-
     if ipdltype.isCxx():
         return ipdltype.isDataMoveOnly()
 
     if ipdltype.isIPDL():
+        if ipdltype.isUniquePtr():
+            return True
+
         # When nested within a maybe or array, arrays are no longer copyable.
         if context == "wrapper" and ipdltype.isArray():
             return True
@@ -1786,6 +1786,10 @@ class _GenerateProtocolCode(ipdl.ast.Visitor):
 
 # --------------------------------------------------
 
+cppPriorityList = list(
+    map(lambda src: src.upper() + "_PRIORITY", ipdl.ast.priorityList)
+)
+
 
 def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
     if forReply:
@@ -1798,8 +1802,10 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
         replyEnum = "NOT_REPLY"
 
     nested = md.decl.type.nested
-    prio = md.decl.type.prio
+    prioEnum = cppPriorityList[md.decl.type.prio]
+
     compress = md.decl.type.compress
+    lazySend = md.decl.type.lazySend
 
     routingId = ExprVar("routingId")
 
@@ -1819,6 +1825,11 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
         assert compress.value is None
         compression = "COMPRESSION_ENABLED"
 
+    if lazySend:
+        lazySendEnum = "LAZY_SEND"
+    else:
+        lazySendEnum = "EAGER_SEND"
+
     if nested == ipdl.ast.NOT_NESTED:
         nestedEnum = "NOT_NESTED"
     elif nested == ipdl.ast.INSIDE_SYNC_NESTED:
@@ -1826,17 +1837,6 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
     else:
         assert nested == ipdl.ast.INSIDE_CPOW_NESTED
         nestedEnum = "NESTED_INSIDE_CPOW"
-
-    if prio == ipdl.ast.NORMAL_PRIORITY:
-        prioEnum = "NORMAL_PRIORITY"
-    elif prio == ipdl.ast.INPUT_PRIORITY:
-        prioEnum = "INPUT_PRIORITY"
-    elif prio == ipdl.ast.VSYNC_PRIORITY:
-        prioEnum = "VSYNC_PRIORITY"
-    elif prio == ipdl.ast.MEDIUMHIGH_PRIORITY:
-        prioEnum = "MEDIUMHIGH_PRIORITY"
-    else:
-        prioEnum = "CONTROL_PRIORITY"
 
     if md.decl.type.isSync():
         syncEnum = "SYNC"
@@ -1867,6 +1867,7 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
             messageEnum(nestedEnum),
             messageEnum(prioEnum),
             messageEnum(compression),
+            messageEnum(lazySendEnum),
             messageEnum(ctorEnum),
             messageEnum(syncEnum),
             messageEnum(replyEnum),
@@ -1989,7 +1990,7 @@ class _ParamTraits:
         return " | ".join(f.basename for f in fields)
 
     @classmethod
-    def checkedBulkWrite(cls, size, fields):
+    def checkedBulkWrite(cls, var, size, fields):
         block = Block()
         first = fields[0]
 
@@ -2000,7 +2001,7 @@ class _ParamTraits:
                         ExprSelect(cls.writervar, "->", "WriteBytes"),
                         args=[
                             ExprAddrOf(
-                                ExprCall(first.getMethod(thisexpr=cls.var, sel="."))
+                                ExprCall(first.getMethod(thisexpr=var, sel="."))
                             ),
                             ExprLiteral.Int(size * len(fields)),
                         ],
@@ -2013,26 +2014,28 @@ class _ParamTraits:
         return block
 
     @classmethod
-    def checkedBulkRead(cls, size, fields):
+    def checkedBulkRead(cls, var, size, fields):
         block = Block()
         first = fields[0]
 
         readbytes = ExprCall(
             ExprSelect(cls.readervar, "->", "ReadBytesInto"),
             args=[
-                ExprAddrOf(ExprCall(first.getMethod(thisexpr=cls.var, sel="->"))),
+                ExprAddrOf(ExprCall(first.getMethod(thisexpr=var, sel="."))),
                 ExprLiteral.Int(size * len(fields)),
             ],
         )
         ifbad = StmtIf(ExprNot(readbytes))
         errmsg = "Error bulk reading fields from %s" % first.ipdltype.name()
-        ifbad.addifstmts([cls.fatalError(cls.readervar, errmsg), StmtReturn.FALSE])
+        ifbad.addifstmts(
+            [cls.fatalError(cls.readervar, errmsg), StmtReturn(ExprNothing())]
+        )
         block.addstmt(ifbad)
         block.addstmts(
             cls.readSentinel(
                 cls.readervar,
                 cls.bulkSentinelKey(fields),
-                errfnSentinel()(errmsg),
+                errfnSentinel(ExprNothing())(errmsg),
             )
         )
 
@@ -2042,19 +2045,39 @@ class _ParamTraits:
     def checkedRead(
         cls,
         ipdltype,
+        cxxtype,
         var,
         readervar,
         errfn,
         paramtype,
         sentinelKey,
         errfnSentinel,
+        varIsMaybe=True,
     ):
-        block = Block()
+        block = StmtBlock()
 
         # Read the data
-        ifbad = StmtIf(
-            ExprNot(ExprCall(ExprVar("IPC::ReadParam"), args=[readervar, var]))
-        )
+        maybeVar = var
+        if varIsMaybe:
+            block.addcode(
+                """
+                ${var} = IPC::ReadParam<${ty}>(${reader});
+                """,
+                var=var,
+                ty=cxxtype,
+                reader=readervar,
+            )
+        else:
+            block.addcode(
+                """
+                auto tmp = IPC::ReadParam<${ty}>(${reader});
+                """,
+                ty=cxxtype,
+                reader=readervar,
+            )
+            maybeVar = ExprVar("tmp")
+
+        ifbad = StmtIf(ExprNot(maybeVar))
         if not isinstance(paramtype, list):
             paramtype = ["Error deserializing " + paramtype]
         ifbad.addifstmts(errfn(*paramtype))
@@ -2067,7 +2090,7 @@ class _ParamTraits:
             and ipdltype.isActor()
             and not ipdltype.nullable
         ):
-            ifnull = StmtIf(ExprNot(ExprDeref(var)))
+            ifnull = StmtIf(ExprNot(ExprDeref(maybeVar)))
             ifnull.addifstmts(errfn(*paramtype))
             block.addstmt(ifnull)
 
@@ -2075,22 +2098,33 @@ class _ParamTraits:
             cls.readSentinel(readervar, sentinelKey, errfnSentinel(*paramtype))
         )
 
+        # Move the read value into the target.
+        if not varIsMaybe:
+            block.addcode(
+                """
+                ${var} = tmp.extract();
+                """,
+                var=var,
+            )
+
         return block
 
     # Helper wrapper for checkedRead for use within _ParamTraits
     @classmethod
-    def _checkedRead(cls, ipdltype, var, sentinelKey, what):
+    def _checkedRead(cls, ipdltype, cxxtype, var, sentinelKey, what, varIsMaybe=True):
         def errfn(msg):
-            return [cls.fatalError(cls.readervar, msg), StmtReturn.FALSE]
+            return [cls.fatalError(cls.readervar, msg), StmtReturn(ExprNothing())]
 
         return cls.checkedRead(
             ipdltype,
+            cxxtype,
             var,
             cls.readervar,
             errfn=errfn,
             paramtype=what,
             sentinelKey=sentinelKey,
-            errfnSentinel=errfnSentinel(),
+            errfnSentinel=errfnSentinel(ExprNothing()),
+            varIsMaybe=varIsMaybe,
         )
 
     @classmethod
@@ -2125,16 +2159,15 @@ class _ParamTraits:
         writemthd.addstmts(write)
         pt.addstmt(writemthd)
 
-        # static bool Read(const Message*, PickleIterator*, T*);
+        # static Maybe<T> Read(MessageReader*);
         outtype = Type("paramType", ptr=True)
         readmthd = MethodDefn(
             MethodDecl(
                 "Read",
                 params=[
                     Decl(Type("IPC::MessageReader", ptr=True), cls.readervar.name),
-                    Decl(outtype, cls.var.name),
                 ],
-                ret=Type.BOOL,
+                ret=Type("mozilla::Maybe<paramType>"),
                 methodspec=MethodSpec.STATIC,
             )
         )
@@ -2192,20 +2225,13 @@ class _ParamTraits:
             MOZ_RELEASE_ASSERT(
                 ${readervar}->GetActor(),
                 "Cannot deserialize managed actors without an actor");
-
-            mozilla::Maybe<mozilla::ipc::IProtocol*> actor =
-                ${readervar}->GetActor()->ReadActor(${readervar}, true, ${actortype}, ${protocolid});
-            if (actor.isNothing()) {
-                return false;
-            }
-
-            *${var} = static_cast<${cxxtype}>(actor.value());
-            return true;
+            return ${readervar}->GetActor()
+              ->ReadActor(${readervar}, true, ${actortype}, ${protocolid})
+              .map([](mozilla::ipc::IProtocol* actor) { return static_cast<${cxxtype}>(actor); });
             """,
             readervar=cls.readervar,
             actortype=ExprLiteral.String(actortype.name()),
             protocolid=_protocolId(actortype),
-            var=cls.var,
             cxxtype=cxxtype,
         )
 
@@ -2217,11 +2243,16 @@ class _ParamTraits:
         # NOTE: Not using _cxxBareType here as we don't have a side
         cxxtype = Type(structtype.fullname())
 
-        def get(sel, f):
-            return ExprCall(f.getMethod(thisexpr=cls.var, sel=sel))
-
         write = []
         read = []
+
+        readparam = ExprVar("param")
+        read.append(StmtDecl(Decl(Type("paramType"), readparam.name)))
+
+        writeparam = cls.var
+
+        def get(f, var):
+            return ExprCall(f.getMethod(thisexpr=var, sel="."))
 
         # If any field is special, make sure we have an actor
         for f in sd.fields_ipdl_order():
@@ -2255,13 +2286,14 @@ class _ParamTraits:
                 for f in fields:
                     writefield = cls.checkedWrite(
                         f.ipdltype,
-                        get(".", f),
+                        get(f, writeparam),
                         cls.writervar,
                         sentinelKey=f.basename,
                     )
                     readfield = cls._checkedRead(
                         f.ipdltype,
-                        ExprAddrOf(get("->", f)),
+                        f.bareType(f.side, fq=True),
+                        get(f, readparam),
                         f.basename,
                         "'"
                         + f.getMethod().name
@@ -2272,6 +2304,7 @@ class _ParamTraits:
                         + "'"
                         + structtype.name()
                         + "'",
+                        varIsMaybe=False,
                     )
 
                     # Wrap the read/write in a side check if the field is special.
@@ -2285,13 +2318,13 @@ class _ParamTraits:
                 for f in fields:
                     assert not f.special
 
-                writefield = cls.checkedBulkWrite(size, fields)
-                readfield = cls.checkedBulkRead(size, fields)
+                writefield = cls.checkedBulkWrite(writeparam, size, fields)
+                readfield = cls.checkedBulkRead(readparam, size, fields)
 
                 write.append(writefield)
                 read.append(readfield)
 
-        read.append(StmtReturn.TRUE)
+        read.append(StmtReturn(ExprSome(ExprMove(readparam))))
 
         return cls.generateDecl(
             cxxtype, write, read, needsmove=_cxxTypeNeedsMoveForSend(structtype)
@@ -2326,9 +2359,11 @@ class _ParamTraits:
             StmtDecl(Decl(Type.INT, typevar.name), init=ExprLiteral.ZERO),
             cls._checkedRead(
                 None,
-                ExprAddrOf(typevar),
+                Type.INT,
+                typevar,
                 uniontype.name(),
                 "type of union " + uniontype.name(),
+                varIsMaybe=False,
             ),
             Whitespace.NL,
             readswitch,
@@ -2395,7 +2430,7 @@ class _ParamTraits:
                             StmtBlock(
                                 [
                                     cls.fatalError(cls.readervar, "wrong side!"),
-                                    StmtReturn.FALSE,
+                                    StmtReturn(ExprNothing()),
                                 ]
                             ),
                         ),
@@ -2403,20 +2438,18 @@ class _ParamTraits:
                 )
                 c = c.other
             tmpvar = ExprVar("tmp")
-            ct = c.bareType(fq=True)
+            ct = _cxxMaybeType(c.bareType(fq=True))
             readcase.addstmts(
                 [
-                    StmtDecl(Decl(ct, tmpvar.name), init=c.defaultValue(fq=True)),
-                    StmtExpr(ExprAssn(ExprDeref(cls.var), ExprMove(tmpvar))),
+                    StmtDecl(Decl(ct, tmpvar.name)),
                     cls._checkedRead(
                         c.ipdltype,
-                        ExprAddrOf(
-                            ExprCall(ExprSelect(cls.var, "->", c.getTypeName()))
-                        ),
+                        c.bareType(fq=True),
+                        tmpvar,
                         origenum,
                         "variant " + origenum + " of union " + uniontype.name(),
                     ),
-                    StmtReturn.TRUE,
+                    StmtReturn(tmpvar),
                 ]
             )
             readswitch.addcase(caselabel, readcase)
@@ -2440,7 +2473,7 @@ class _ParamTraits:
                     cls.fatalError(
                         cls.readervar, "unknown variant of union " + uniontype.name()
                     ),
-                    StmtReturn.FALSE,
+                    StmtReturn(ExprNothing()),
                 ]
             ),
         )
@@ -3550,7 +3583,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         if using.header is None:
             return
 
-        if using.canBeForwardDeclared() and not using.decl.type.isUniquePtr():
+        if using.canBeForwardDeclared():
             spec = using.type.spec
 
             self.usingDecls.extend(
@@ -5188,27 +5221,27 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             reads = [
                 _ParamTraits.checkedRead(
                     None,
-                    ExprAddrOf(handlevar),
+                    handletype,
+                    handlevar,
                     ExprAddrOf(readervar),
                     errfn,
                     "'%s'" % handletype.name,
                     sentinelKey="actor",
                     errfnSentinel=errfnSent,
+                    varIsMaybe=False,
                 )
             ]
             start = 1
 
+        def maybeTainted(p, side):
+            if md.decl.type.tainted and "NoTaint" not in p.attributes:
+                return Type("Tainted", T=p.bareType(side))
+            return p.bareType(side)
+
         decls.extend(
             [
                 StmtDecl(
-                    Decl(
-                        (
-                            Type("Tainted", T=p.bareType(side))
-                            if md.decl.type.tainted and "NoTaint" not in p.attributes
-                            else p.bareType(side)
-                        ),
-                        p.var().name,
-                    ),
+                    Decl(maybeTainted(p, side), p.var().name),
                     initargs=[],
                 )
                 for p in md.params[start:]
@@ -5218,12 +5251,14 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             [
                 _ParamTraits.checkedRead(
                     p.ipdltype,
-                    ExprAddrOf(p.var()),
+                    maybeTainted(p, side),
+                    p.var(),
                     ExprAddrOf(readervar),
                     errfn,
                     "'%s'" % p.ipdltype.name(),
                     sentinelKey=p.name,
                     errfnSentinel=errfnSent,
+                    varIsMaybe=False,
                 )
                 for p in md.params[start:]
             ]
@@ -5311,12 +5346,14 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             reads = [
                 _ParamTraits.checkedRead(
                     None,
-                    ExprAddrOf(handlevar),
+                    handletype,
+                    handlevar,
                     ExprAddrOf(readervar),
                     errfn,
                     "'%s'" % handletype.name,
                     sentinelKey="actor",
                     errfnSentinel=errfnSent,
+                    varIsMaybe=False,
                 )
             ]
             start = 1
@@ -5332,12 +5369,14 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             + [
                 _ParamTraits.checkedRead(
                     p.ipdltype,
-                    ExprAddrOf(p.var()),
+                    p.bareType(side),
+                    p.var(),
                     ExprAddrOf(readervar),
                     errfn,
                     "'%s'" % p.ipdltype.name(),
                     sentinelKey=p.name,
                     errfnSentinel=errfnSent,
+                    varIsMaybe=False,
                 )
                 for p in md.returns[start:]
             ]
@@ -5376,12 +5415,14 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             + [
                 _ParamTraits.checkedRead(
                     r.ipdltype,
-                    r.var(),
+                    r.bareType(self.side),
+                    ExprDeref(r.var()),
                     ExprAddrOf(readervar),
                     errfn,
                     "'%s'" % r.ipdltype.name(),
                     sentinelKey=r.name,
                     errfnSentinel=errfnSentinel,
+                    varIsMaybe=False,
                 )
                 for r in md.returns
             ]

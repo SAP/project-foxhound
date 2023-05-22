@@ -188,17 +188,15 @@ void Theme::LookAndFeelChanged() {
   }
 }
 
-/* static */
 auto Theme::GetDPIRatio(nsPresContext* aPc, StyleAppearance aAppearance)
     -> DPIRatio {
   // Widgets react to zoom, except scrollbars.
   if (IsWidgetScrollbarPart(aAppearance)) {
-    return ScrollbarDrawing::GetDPIRatioForScrollbarPart(aPc);
+    return GetScrollbarDrawing().GetDPIRatioForScrollbarPart(aPc);
   }
   return DPIRatio(float(AppUnitsPerCSSPixel()) / aPc->AppUnitsPerDevPixel());
 }
 
-/* static */
 auto Theme::GetDPIRatio(nsIFrame* aFrame, StyleAppearance aAppearance)
     -> DPIRatio {
   return GetDPIRatio(aFrame->PresContext(), aAppearance);
@@ -1132,15 +1130,11 @@ bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
   const DocumentState docState = pc->Document()->GetDocumentState();
   ElementState elementState = GetContentState(aFrame, aAppearance);
   if (aAppearance == StyleAppearance::MozMenulistArrowButton) {
-    bool isHTML = IsHTMLContent(aFrame);
-    nsIFrame* parentFrame = aFrame->GetParent();
-    bool isMenulist = !isHTML && parentFrame->IsMenuFrame();
     // HTML select and XUL menulist dropdown buttons get state from the
     // parent.
-    if (isHTML || isMenulist) {
-      aFrame = parentFrame;
-      elementState = GetContentState(parentFrame, aAppearance);
-    }
+    nsIFrame* parentFrame = aFrame->GetParent();
+    aFrame = parentFrame;
+    elementState = GetContentState(parentFrame, aAppearance);
   }
 
   // Paint the outline iff we're asked to draw overflow and we have
@@ -1504,11 +1498,10 @@ bool Theme::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
   return true;
 }
 
-auto Theme::GetScrollbarSizes(nsPresContext* aPresContext,
-                              StyleScrollbarWidth aWidth, Overlay aOverlay)
-    -> ScrollbarSizes {
-  return GetScrollbarDrawing().GetScrollbarSizes(aPresContext, aWidth,
-                                                 aOverlay);
+LayoutDeviceIntCoord Theme::GetScrollbarSize(const nsPresContext* aPresContext,
+                                             StyleScrollbarWidth aWidth,
+                                             Overlay aOverlay) {
+  return GetScrollbarDrawing().GetScrollbarSize(aPresContext, aWidth, aOverlay);
 }
 
 nscoord Theme::GetCheckboxRadioPrefSize() {

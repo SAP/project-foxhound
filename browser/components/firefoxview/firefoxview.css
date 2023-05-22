@@ -39,9 +39,6 @@
   font-size: 15px;
   /* override --in-content-page-background from common-shared.css */
   background-color: transparent;
-}
-
-body {
   --fxview-background-color: var(--newtab-background-color, var(--in-content-page-background));
   --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
   --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
@@ -58,7 +55,9 @@ body {
   --in-content-button-background-hover: var(--fxview-element-background-hover);
   --in-content-button-background-active: var(--fxview-element-background-active);
   --in-content-button-text-color-hover: var(--fxview-text-color-hover);
+}
 
+body {
   display: flex;
   justify-content: center;
   padding-block: var(--header-spacing) var(--footer-spacing);
@@ -69,12 +68,12 @@ body {
   color: var(--newtab-text-primary-color);
 }
 
-body:not([lwt-newtab]) {
+:root:not([lwt-newtab]) {
   --in-content-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
 }
 
 @media (prefers-color-scheme: dark) {
-  body {
+  :root {
     --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 80%, white);
     --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 60%, white);
     --newtab-background-color-secondary: #42414d;
@@ -82,7 +81,7 @@ body:not([lwt-newtab]) {
 }
 
 @media (prefers-contrast) {
-  body {
+  :root {
     --fxview-element-background-hover: ButtonText;
     --fxview-element-background-active: ButtonText;
     --fxview-text-color-hover: ButtonFace;
@@ -427,6 +426,9 @@ details[open] > .page-section-header > .twisty {
 .page-section-header > .section-description {
   grid-area: desc;
   margin-block: 4px 8px;
+  font-weight: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .card-body {
@@ -454,7 +456,7 @@ details[open] > .page-section-header > .twisty {
 
 .setup-step {
   padding: var(--card-padding);
-  margin: 0 0 8px;
+  margin-block: 0.5em 1em;
 }
 
 /* Bug 1770534 - Only use the zap-gradient for built-in, color-neutral themes */
@@ -1018,6 +1020,10 @@ details[open] > .page-section-header > .twisty {
   text-align: center;
   padding: 0.3em 1em;
   font-size: 0.75em;
+}
+
+.synced-tab-li:not(:first-child) .last-active-badge {
+  display: none;
 }
 
 .dot {

@@ -11,9 +11,6 @@ const isEveryFrameTargetEnabled = Services.prefs.getBoolPref(
   "devtools.every-frame-target.enabled",
   false
 );
-const { getAllBrowsingContextsForContext } = ChromeUtils.importESModule(
-  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
-);
 const {
   WILL_NAVIGATE_TIME_SHIFT,
 } = require("resource://devtools/server/actors/webconsole/listeners/document-events.js");
@@ -51,9 +48,9 @@ class ParentProcessDocumentEventWatcher {
     this._onceWillNavigate = new Map();
 
     // Filter browsing contexts to only have the top BrowsingContext of each tree of BrowsingContexts…
-    const topLevelBrowsingContexts = getAllBrowsingContextsForContext(
-      this.watcherActor.sessionContext
-    ).filter(browsingContext => browsingContext.top == browsingContext);
+    const topLevelBrowsingContexts = this.watcherActor
+      .getAllBrowsingContexts()
+      .filter(browsingContext => browsingContext.top == browsingContext);
 
     // Only register one WebProgressListener per BrowsingContext tree.
     // We will be notified about children BrowsingContext navigations/state changes via the top level BrowsingContextWebProgressListener,
@@ -120,12 +117,18 @@ class ParentProcessDocumentEventWatcher {
         return;
       }
 
-      // Ignore remote iframe targets which are restoring from the bfcache.
-      // onStateChange is called before the related target is instantiated
-      // and this isn't quite a navigation, we will respawn a new target.
+      // Only emit will-navigate for top-level targets.
+      if (
+        this.watcherActor.sessionContext.type == "all" &&
+        browsingContext.isContent
+      ) {
+        // Never emit will-navigate for content browsing contexts in the Browser Toolbox.
+        // They might verify `browsingContext.top == browsingContext` because of the chrome/content
+        // boundary, but they do not represent a top-level target for this DevTools session.
+        return;
+      }
       const isTopLevel = browsingContext.top == browsingContext;
-      const isRestoring = flag & Ci.nsIWebProgressListener.STATE_RESTORING;
-      if (!isTopLevel && isRestoring) {
+      if (!isTopLevel) {
         return;
       }
 

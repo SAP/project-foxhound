@@ -22,10 +22,6 @@ ChromeUtils.defineModuleGetter(
   "resource:///modules/BrowserUsageTelemetry.jsm"
 );
 
-const { SessionStore } = ChromeUtils.importESModule(
-  "resource:///modules/sessionstore/SessionStore.sys.mjs"
-);
-
 // Reset internal URI counter in case URIs were opened by other tests.
 Services.obs.notifyObservers(null, TELEMETRY_SUBSESSION_TOPIC);
 
@@ -338,7 +334,7 @@ add_task(async function test_tabsHistogram() {
   );
   openedTabs.push(tab);
   BrowserUsageTelemetry._lastRecordTabCount = 0;
-  BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   checkTabCountHistogram(
     tabCountHist.snapshot(),
@@ -414,7 +410,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - MINIMUM_TAB_COUNT_INTERVAL_MS / 2;
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -432,7 +428,7 @@ add_task(async function test_tabsHistogram() {
     Date.now() - (MINIMUM_TAB_COUNT_INTERVAL_MS + 1000);
   {
     let oldLastRecordTabCount = BrowserUsageTelemetry._lastRecordTabCount;
-    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
     checkTabCountHistogram(
       tabCountHist.snapshot(),
@@ -538,7 +534,10 @@ add_task(async function test_loadedTabsHistogram() {
   resetTimestamps();
 
   await Promise.all([
-    BrowserTestUtils.loadURI(lazyTab.linkedBrowser, "http://example.com/"),
+    BrowserTestUtils.loadURIString(
+      lazyTab.linkedBrowser,
+      "http://example.com/"
+    ),
     BrowserTestUtils.browserLoaded(
       lazyTab.linkedBrowser,
       false,

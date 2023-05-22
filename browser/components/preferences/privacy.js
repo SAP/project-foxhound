@@ -42,10 +42,6 @@ const PREF_PASSWORD_GENERATION_AVAILABLE = "signon.generation.available";
 const { BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN } = Ci.nsICookieService;
 
 const PASSWORD_MANAGER_PREF_ID = "services.passwordSavingEnabled";
-const PREF_PASSWORD_MANAGER_ENABLED = "signon.rememberSignons";
-
-const PREF_DFPI_ENABLED_BY_DEFAULT =
-  "privacy.restrict3rdpartystorage.rollout.enabledByDefault";
 
 XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
   try {
@@ -87,17 +83,6 @@ Preferences.addAll([
 
   // Tracker list
   { id: "urlclassifier.trackingTable", type: "string" },
-
-  // TCP rollout
-  {
-    id: "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
-    type: "bool",
-  },
-  {
-    id:
-      "privacy.restrict3rdpartystorage.rollout.preferences.TCPToggleInStandard",
-    type: "bool",
-  },
 
   // Button prefs
   { id: "pref.privacy.disable_button.cookie_exceptions", type: "bool" },
@@ -156,6 +141,7 @@ Preferences.addAll([
   { id: "signon.generation.enabled", type: "bool" },
   { id: "signon.autofillForms", type: "bool" },
   { id: "signon.management.page.breach-alerts.enabled", type: "bool" },
+  { id: "signon.firefoxRelay.feature", type: "string" },
 
   // Buttons
   { id: "pref.privacy.disable_button.view_passwords", type: "bool" },
@@ -207,6 +193,11 @@ Preferences.addAll([
   // Quick Actions
   { id: "browser.urlbar.quickactions.showPrefs", type: "bool" },
   { id: "browser.urlbar.suggest.quickactions", type: "bool" },
+
+  // Cookie Banner Handling
+  { id: "cookiebanners.ui.desktop.enabled", type: "bool" },
+  { id: "cookiebanners.service.mode", type: "int" },
+  { id: "cookiebanners.service.detectOnly", type: "bool" },
 ]);
 
 // Study opt out
@@ -283,79 +274,19 @@ function setUpContentBlockingWarnings() {
   document.getElementById(
     "fpiIncompatibilityWarning"
   ).hidden = !gIsFirstPartyIsolated;
-
-  let links = document.querySelectorAll(".contentBlockWarningLink");
-  let contentBlockingWarningUrl =
-    Services.urlFormatter.formatURLPref("app.support.baseURL") +
-    "turn-off-etp-desktop";
-  for (let link of links) {
-    link.setAttribute("href", contentBlockingWarningUrl);
-  }
 }
 
 function initTCPStandardSection() {
-  document
-    .getElementById("tcp-learn-more-link")
-    .setAttribute(
-      "href",
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-        Services.prefs.getStringPref(
-          "privacy.restrict3rdpartystorage.preferences.learnMoreURLSuffix"
-        )
-    );
-
   let cookieBehaviorPref = Preferences.get("network.cookie.cookieBehavior");
   let updateTCPSectionVisibilityState = () => {
     document.getElementById("etpStandardTCPBox").hidden =
-      // Hide this section if we show the rollout section already.
-      !document.getElementById("etpStandardTCPRolloutBox").hidden ||
       cookieBehaviorPref.value !=
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
   };
 
   cookieBehaviorPref.on("change", updateTCPSectionVisibilityState);
 
   updateTCPSectionVisibilityState();
-}
-
-function initTCPRolloutSection() {
-  document
-    .getElementById("tcp-rollout-learn-more-link")
-    .setAttribute(
-      "href",
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-        Services.prefs.getStringPref(
-          "privacy.restrict3rdpartystorage.rollout.preferences.learnMoreURLSuffix"
-        )
-    );
-
-  let dfpiPref = Preferences.get(PREF_DFPI_ENABLED_BY_DEFAULT);
-  let updateTCPRolloutSectionVisibilityState = () => {
-    // For phase 2 we always hide the TCP preferences section. TCP will be
-    // enabled by default in "standard" ETP mode.
-    if (NimbusFeatures.tcpByDefault.getVariable("enabled")) {
-      document.getElementById("etpStandardTCPRolloutBox").hidden = true;
-      return;
-    }
-
-    let onboardingEnabled =
-      NimbusFeatures.tcpPreferences.getVariable("enabled") ||
-      (dfpiPref.value && dfpiPref.hasUserValue);
-    document.getElementById(
-      "etpStandardTCPRolloutBox"
-    ).hidden = !onboardingEnabled;
-  };
-
-  NimbusFeatures.tcpPreferences.onUpdate(
-    updateTCPRolloutSectionVisibilityState
-  );
-  NimbusFeatures.tcpByDefault.onUpdate(updateTCPRolloutSectionVisibilityState);
-  window.addEventListener("unload", () => {
-    NimbusFeatures.tcpPreferences.off(updateTCPRolloutSectionVisibilityState);
-    NimbusFeatures.tcpByDefault.off(updateTCPRolloutSectionVisibilityState);
-  });
-
-  updateTCPRolloutSectionVisibilityState();
 }
 
 var gPrivacyPane = {
@@ -480,10 +411,6 @@ var gPrivacyPane = {
     };
     showPref.on("change", showQuickActionsGroup);
     showQuickActionsGroup();
-
-    document
-      .getElementById("quickActionsLink")
-      .setAttribute("href", UrlbarProviderQuickActions.helpUrl);
   },
 
   syncFromHttpsOnlyPref() {
@@ -533,12 +460,6 @@ var gPrivacyPane = {
    * Init HTTPS-Only mode and corresponding prefs
    */
   initHttpsOnly() {
-    let link = document.getElementById("httpsOnlyLearnMore");
-    let httpsOnlyURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "https-only-prefs";
-    link.setAttribute("href", httpsOnlyURL);
-
     // Set radio-value based on the pref value
     this.syncFromHttpsOnlyPref();
 
@@ -691,17 +612,10 @@ var gPrivacyPane = {
     this._pane = document.getElementById("panePrivacy");
 
     this._initPasswordGenerationUI();
+    this._initRelayIntegrationUI();
     this._initMasterPasswordUI();
 
     this.initListenersForExtensionControllingPasswordManager();
-    // set up the breach alerts Learn More link with the correct URL
-    const breachAlertsLearnMoreLink = document.getElementById(
-      "breachAlertsLearnMoreLink"
-    );
-    const breachAlertsLearnMoreUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "lockwise-alerts";
-    breachAlertsLearnMoreLink.setAttribute("href", breachAlertsLearnMoreUrl);
 
     this._initSafeBrowsing();
 
@@ -804,25 +718,8 @@ var gPrivacyPane = {
       "command",
       gPrivacyPane.showSiteDataSettings
     );
-    let url =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "storage-permissions";
-    document.getElementById("siteDataLearnMoreLink").setAttribute("href", url);
 
-    let notificationInfoURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") + "push";
-    document
-      .getElementById("notificationPermissionsLearnMore")
-      .setAttribute("href", notificationInfoURL);
-
-    if (AppConstants.platform == "win") {
-      let windowsSSOURL =
-        Services.urlFormatter.formatURLPref("app.support.baseURL") +
-        "windows-sso";
-      document
-        .getElementById("windowsSSOLearnMoreLink")
-        .setAttribute("href", windowsSSOURL);
-    }
+    this.initCookieBannerHandling();
 
     this.initDataCollection();
 
@@ -976,12 +873,6 @@ var gPrivacyPane = {
     this.highlightCBCategory();
     this.readBlockCookies();
 
-    let link = document.getElementById("contentBlockingLearnMore");
-    let contentBlockingUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "enhanced-tracking-protection";
-    link.setAttribute("href", contentBlockingUrl);
-
     // Toggles the text "Cross-site and social media trackers" based on the
     // social tracking pref. If the pref is false, the text reads
     // "Cross-site trackers".
@@ -999,7 +890,6 @@ var gPrivacyPane = {
 
     setUpContentBlockingWarnings();
 
-    initTCPRolloutSection();
     initTCPStandardSection();
   },
 
@@ -1043,22 +933,6 @@ var gPrivacyPane = {
             rulesArray.push("cookieBehavior4");
             break;
           case BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
-            // If the default cookie behavior is updated by the TCP rollout
-            // pref, don't update the UI for dFPI. That means for dFPI enabled
-            // and disabled the bulleted list in the "standard" category
-            // description will be the same. This is a compromise to avoid
-            // layout shifting when toggling the checkbox. The layout can
-            // otherwise shift, because dFPI on / off changes the bulleted list
-            // in the ETP category description.
-            if (
-              Services.prefs.getBoolPref(
-                "privacy.restrict3rdpartystorage.rollout.enabledByDefault",
-                false
-              )
-            ) {
-              rulesArray.push("cookieBehavior4");
-              break;
-            }
             rulesArray.push(
               gIsFirstPartyIsolated ? "cookieBehavior4" : "cookieBehavior5"
             );
@@ -2054,6 +1928,110 @@ var gPrivacyPane = {
     );
   },
 
+  /**
+   * Initializes the cookie banner handling subgroup on the privacy pane.
+   *
+   * This UI is shown if the "cookiebanners.ui.desktop.enabled" pref is true.
+   *
+   * The cookie banner handling checkbox reflects the cookie banner feature
+   * state. It is enabled when the service enabled via the
+   * cookiebanners.service.mode pref. If detection-only mode is enabled the
+   * checkbox is unchecked, since in this mode no banners are handled. It is
+   * only used for detection for banners which means we may prompt the user to
+   * enable the feature via other UI surfaces such as the onboarding doorhanger.
+   *
+   * If the user checks the checkbox, the pref value is set to
+   * nsICookieBannerService.MODE_REJECT_OR_ACCEPT.
+   *
+   * If the user unchecks the checkbox, the mode pref value is set to
+   * nsICookieBannerService.MODE_DISABLED.
+   *
+   * Advanced users can choose other int-valued modes via about:config.
+   */
+  initCookieBannerHandling() {
+    this._initCookieBannerHandlingLearnMore();
+
+    setSyncFromPrefListener("handleCookieBanners", () =>
+      this.readCookieBannerMode()
+    );
+    setSyncToPrefListener("handleCookieBanners", () =>
+      this.writeCookieBannerMode()
+    );
+
+    let preference = Preferences.get("cookiebanners.ui.desktop.enabled");
+    preference.on("change", () => this.updateCookieBannerHandlingVisibility());
+
+    this.updateCookieBannerHandlingVisibility();
+  },
+
+  _initCookieBannerHandlingLearnMore() {
+    let url =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "cookie-banner-reduction";
+    let learnMore = document.getElementById("cookieBannerHandlingLearnMore");
+    learnMore.setAttribute("href", url);
+  },
+
+  /**
+   * Reads the cookiebanners.service.mode and detectOnly preference value and
+   * updates the cookie banner handling checkbox accordingly.
+   */
+  readCookieBannerMode() {
+    if (Preferences.get("cookiebanners.service.detectOnly").value) {
+      return false;
+    }
+    return (
+      Preferences.get("cookiebanners.service.mode").value !=
+      Ci.nsICookieBannerService.MODE_DISABLED
+    );
+  },
+
+  /**
+   * Translates user clicks on the cookie banner handling checkbox to the
+   * corresponding integer-valued cookie banner mode preference.
+   */
+  writeCookieBannerMode() {
+    let checkbox = document.getElementById("handleCookieBanners");
+    let mode;
+    if (checkbox.checked) {
+      mode = Ci.nsICookieBannerService.MODE_REJECT;
+
+      // Also unset the detect-only mode pref, just in case the user enabled
+      // the feature via about:preferences, not the onboarding doorhanger.
+      Services.prefs.setBoolPref("cookiebanners.service.detectOnly", false);
+    } else {
+      mode = Ci.nsICookieBannerService.MODE_DISABLED;
+    }
+
+    /**
+     * There is a second service.mode pref for private browsing,
+     * but for now we want it always be the same as service.mode
+     * more info: https://bugzilla.mozilla.org/show_bug.cgi?id=1817201
+     */
+    Services.prefs.setIntPref(
+      "cookiebanners.service.mode.privateBrowsing",
+      mode
+    );
+    return mode;
+  },
+
+  /**
+   * Shows or hides the cookie banner handling section based on the value of
+   * the "cookiebanners.ui.desktop.enabled" pref.
+   */
+  updateCookieBannerHandlingVisibility() {
+    let groupbox = document.getElementById("cookieBannerHandlingGroup");
+    let isEnabled = Preferences.get("cookiebanners.ui.desktop.enabled").value;
+
+    // Because the top-level pane showing code unsets the hidden attribute, we
+    // manually hide the section when cookie banner handling is preffed off.
+    if (isEnabled) {
+      groupbox.removeAttribute("style");
+    } else {
+      groupbox.setAttribute("style", "display: none !important");
+    }
+  },
+
   // ADDRESS BAR
 
   /**
@@ -2078,18 +2056,6 @@ var gPrivacyPane = {
       Preferences.get(pref).on("change", () =>
         this._updateFirefoxSuggestInfoBox()
       );
-    }
-
-    // Set the URL of the learn-more link for Firefox Suggest best match.
-    const bestMatchLearnMoreLink = document.getElementById(
-      "firefoxSuggestBestMatchLearnMore"
-    );
-    bestMatchLearnMoreLink.setAttribute("href", QuickSuggest.HELP_URL);
-
-    // Set the URL of the Firefox Suggest learn-more links.
-    let links = document.querySelectorAll(".firefoxSuggestLearnMore");
-    for (let link of links) {
-      link.setAttribute("href", QuickSuggest.HELP_URL);
     }
 
     this._updateFirefoxSuggestSection(true);
@@ -2378,12 +2344,6 @@ var gPrivacyPane = {
     checkbox.disabled =
       (noMP && !Services.policies.isAllowed("createMasterPassword")) ||
       (!noMP && !Services.policies.isAllowed("removeMasterPassword"));
-
-    let learnMoreLink = document.getElementById("primaryPasswordLearnMoreLink");
-    let learnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "primary-password-stored-logins";
-    learnMoreLink.setAttribute("href", learnMoreURL);
   },
 
   /**
@@ -2485,6 +2445,42 @@ var gPrivacyPane = {
     document.getElementById("generatePasswordsBox").hidden = !prefValue;
   },
 
+  toggleRelayIntegration() {
+    const checkbox = document.getElementById("relayIntegration");
+
+    if (checkbox.checked) {
+      FirefoxRelay.markAsEnabled();
+    } else {
+      FirefoxRelay.markAsDisabled();
+    }
+  },
+
+  _updateRelayIntegrationUI() {
+    document.getElementById(
+      "relayIntegrationBox"
+    ).hidden = !FirefoxRelay.isAvailable;
+    document.getElementById("relayIntegration").checked =
+      FirefoxRelay.isEnabled;
+  },
+
+  _initRelayIntegrationUI() {
+    document
+      .getElementById("relayIntegrationLearnMoreLink")
+      .setAttribute("href", FirefoxRelay.learnMoreUrl);
+
+    setEventListener(
+      "relayIntegration",
+      "command",
+      gPrivacyPane.toggleRelayIntegration.bind(gPrivacyPane)
+    );
+    Preferences.get("signon.firefoxRelay.feature").on(
+      "change",
+      gPrivacyPane._updateRelayIntegrationUI.bind(gPrivacyPane)
+    );
+
+    this._updateRelayIntegrationUI();
+  },
+
   /**
    * Shows the sites where the user has saved passwords and the associated login
    * information.
@@ -2506,6 +2502,7 @@ var gPrivacyPane = {
     document.getElementById("passwordExceptions").disabled = !prefValue;
     document.getElementById("generatePasswords").disabled = !prefValue;
     document.getElementById("passwordAutofillCheckbox").disabled = !prefValue;
+    document.getElementById("relayIntegration").disabled = !prefValue;
 
     // don't override pref value in UI
     return undefined;
@@ -2576,12 +2573,6 @@ var gPrivacyPane = {
     let blockUncommonPref = Preferences.get(
       "browser.safebrowsing.downloads.remote.block_uncommon"
     );
-
-    let learnMoreLink = document.getElementById("enableSafeBrowsingLearnMore");
-    let phishingUrl =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "phishing-malware";
-    learnMoreLink.setAttribute("href", phishingUrl);
 
     enableSafeBrowsing.addEventListener("command", function() {
       safeBrowsingPhishingPref.value = enableSafeBrowsing.checked;
@@ -2902,14 +2893,6 @@ var gPrivacyPane = {
   },
 
   initAddonRecommendationsCheckbox() {
-    // Setup the learn more link.
-    const url =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "personalized-addons";
-    document
-      .getElementById("addonRecommendationLearnMore")
-      .setAttribute("href", url);
-
     // Setup the checkbox.
     dataCollectionCheckboxHandler({
       checkbox: document.getElementById("addonRecommendationEnabled"),

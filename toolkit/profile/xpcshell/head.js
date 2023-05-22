@@ -8,8 +8,8 @@ const { FileUtils } = ChromeUtils.importESModule(
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const NS_ERROR_START_PROFILE_MANAGER = 0x805800c9;
@@ -62,12 +62,6 @@ const ShellService = {
 ShellService.register();
 
 let gIsLegacy = false;
-
-function simulateSnapEnvironment() {
-  Services.env.set("SNAP_INSTANCE_NAME", AppConstants.MOZ_APP_NAME);
-
-  gIsLegacy = true;
-}
 
 function enableLegacyProfiles() {
   Services.env.set("MOZ_LEGACY_PROFILES", "1");
@@ -579,7 +573,7 @@ function checkProfileService(
     }
   }
 
-  if (gIsLegacy) {
+  if (gIsLegacy || Services.env.get("SNAP_NAME")) {
     Assert.equal(
       service.defaultProfile,
       legacyProfile,

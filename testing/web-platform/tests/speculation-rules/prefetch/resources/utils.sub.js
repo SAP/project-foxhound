@@ -94,6 +94,12 @@ class PrefetchAgent extends RemoteContext {
       document.head.append(meta);
     }, [referrerPolicy]);
   }
+
+  async getDeliveryType(){
+    return this.execute_script(() => {
+      return performance.getEntriesByType("navigation")[0].deliveryType;
+    });
+  }
 }
 
 // Produces a URL with a UUID which will record when it's prefetched.
@@ -151,6 +157,7 @@ function insertDocumentRule(predicate, extra_options={}) {
   insertSpeculationRules({
     prefetch: [{
       source: 'document',
+      eagerness: 'eager',
       where: predicate,
       ...extra_options
     }]

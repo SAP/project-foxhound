@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "api/task_queue/task_queue_factory.h"
@@ -59,7 +60,7 @@ namespace webrtc {
 // an event indicating that the test was OK.
 static const size_t kNumCallbacks = 10;
 // Max amount of time we wait for an event to be set while counting callbacks.
-static const int kTestTimeOutInMilliseconds = 10 * 1000;
+static constexpr TimeDelta kTestTimeOut = TimeDelta::Seconds(10);
 // Average number of audio callbacks per second assuming 10ms packet size.
 static const size_t kNumCallbacksPerSecond = 100;
 // Play out a test file during this time (unit is in seconds).
@@ -68,7 +69,7 @@ static const size_t kBitsPerSample = 16;
 static const size_t kBytesPerSample = kBitsPerSample / 8;
 // Run the full-duplex test during this time (unit is in seconds).
 // Note that first `kNumIgnoreFirstCallbacks` are ignored.
-static const int kFullDuplexTimeInSec = 5;
+static constexpr TimeDelta kFullDuplexTime = TimeDelta::Seconds(5);
 // Wait for the callback sequence to stabilize by ignoring this amount of the
 // initial callbacks (avoids initial FIFO access).
 // Only used in the RunPlayoutAndRecordingInFullDuplex test.
@@ -76,8 +77,8 @@ static const size_t kNumIgnoreFirstCallbacks = 50;
 // Sets the number of impulses per second in the latency test.
 static const int kImpulseFrequencyInHz = 1;
 // Length of round-trip latency measurements. Number of transmitted impulses
-// is kImpulseFrequencyInHz * kMeasureLatencyTimeInSec - 1.
-static const int kMeasureLatencyTimeInSec = 11;
+// is kImpulseFrequencyInHz * kMeasureLatencyTime - 1.
+static constexpr TimeDelta kMeasureLatencyTime = TimeDelta::Seconds(11);
 // Utilized in round-trip latency measurements to avoid capturing noise samples.
 static const int kImpulseThreshold = 1000;
 static const char kTag[] = "[..........] ";
@@ -104,7 +105,7 @@ class AudioStreamInterface {
 class FileAudioStream : public AudioStreamInterface {
  public:
   FileAudioStream(size_t num_callbacks,
-                  const std::string& file_name,
+                  absl::string_view file_name,
                   int sample_rate)
       : file_size_in_bytes_(0), sample_rate_(sample_rate), file_pos_(0) {
     file_size_in_bytes_ = test::GetFileSize(file_name);
@@ -114,7 +115,7 @@ class FileAudioStream : public AudioStreamInterface {
     const size_t num_16bit_samples =
         test::GetFileSize(file_name) / kBytesPerSample;
     file_.reset(new int16_t[num_16bit_samples]);
-    FILE* audio_file = fopen(file_name.c_str(), "rb");
+    FILE* audio_file = fopen(std::string(file_name).c_str(), "rb");
     EXPECT_NE(audio_file, nullptr);
     size_t num_samples_read =
         fread(file_.get(), sizeof(int16_t), num_16bit_samples, audio_file);
@@ -567,7 +568,7 @@ class AudioDeviceTest : public ::testing::Test {
     return active;
   }
 
-  bool DisableTestForThisDevice(const std::string& model) {
+  bool DisableTestForThisDevice(absl::string_view model) {
     return (build_info_->GetDeviceModel() == model);
   }
 
@@ -876,7 +877,7 @@ TEST_F(AudioDeviceTest, StartPlayoutVerifyCallbacks) {
       .Times(AtLeast(kNumCallbacks));
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   StartPlayout();
-  test_is_done_.Wait(kTestTimeOutInMilliseconds);
+  test_is_done_.Wait(kTestTimeOut);
   StopPlayout();
 }
 
@@ -895,7 +896,7 @@ TEST_F(AudioDeviceTest, StartRecordingVerifyCallbacks) {
 
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   StartRecording();
-  test_is_done_.Wait(kTestTimeOutInMilliseconds);
+  test_is_done_.Wait(kTestTimeOut);
   StopRecording();
 }
 
@@ -916,7 +917,7 @@ TEST_F(AudioDeviceTest, StartPlayoutAndRecordingVerifyCallbacks) {
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   StartPlayout();
   StartRecording();
-  test_is_done_.Wait(kTestTimeOutInMilliseconds);
+  test_is_done_.Wait(kTestTimeOut);
   StopRecording();
   StopPlayout();
 }
@@ -936,7 +937,7 @@ TEST_F(AudioDeviceTest, RunPlayoutWithFileAsSource) {
   // SetMaxPlayoutVolume();
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   StartPlayout();
-  test_is_done_.Wait(kTestTimeOutInMilliseconds);
+  test_is_done_.Wait(kTestTimeOut);
   StopPlayout();
 }
 
@@ -966,13 +967,12 @@ TEST_F(AudioDeviceTest, DISABLED_RunPlayoutAndRecordingInFullDuplex) {
   std::unique_ptr<FifoAudioStream> fifo_audio_stream(
       new FifoAudioStream(playout_frames_per_10ms_buffer()));
   mock.HandleCallbacks(&test_is_done_, fifo_audio_stream.get(),
-                       kFullDuplexTimeInSec * kNumCallbacksPerSecond);
+                       kFullDuplexTime.seconds() * kNumCallbacksPerSecond);
   SetMaxPlayoutVolume();
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   StartRecording();
   StartPlayout();
-  test_is_done_.Wait(
-      std::max(kTestTimeOutInMilliseconds, 1000 * kFullDuplexTimeInSec));
+  test_is_done_.Wait(std::max(kTestTimeOut, kFullDuplexTime));
   StopPlayout();
   StopRecording();
 
@@ -999,20 +999,19 @@ TEST_F(AudioDeviceTest, DISABLED_MeasureLoopbackLatency) {
   std::unique_ptr<LatencyMeasuringAudioStream> latency_audio_stream(
       new LatencyMeasuringAudioStream(playout_frames_per_10ms_buffer()));
   mock.HandleCallbacks(&test_is_done_, latency_audio_stream.get(),
-                       kMeasureLatencyTimeInSec * kNumCallbacksPerSecond);
+                       kMeasureLatencyTime.seconds() * kNumCallbacksPerSecond);
   EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
   SetMaxPlayoutVolume();
   DisableBuiltInAECIfAvailable();
   StartRecording();
   StartPlayout();
-  test_is_done_.Wait(
-      std::max(kTestTimeOutInMilliseconds, 1000 * kMeasureLatencyTimeInSec));
+  test_is_done_.Wait(std::max(kTestTimeOut, kMeasureLatencyTime));
   StopPlayout();
   StopRecording();
   // Verify that the correct number of transmitted impulses are detected.
   EXPECT_EQ(latency_audio_stream->num_latency_values(),
             static_cast<size_t>(
-                kImpulseFrequencyInHz * kMeasureLatencyTimeInSec - 1));
+                kImpulseFrequencyInHz * kMeasureLatencyTime.seconds() - 1));
   latency_audio_stream->PrintResults();
 }
 

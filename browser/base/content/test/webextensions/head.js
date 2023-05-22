@@ -9,9 +9,6 @@ const BASE = getRootDirectory(gTestPath).replace(
   "https://example.com/"
 );
 
-var { ExtensionsUI } = ChromeUtils.import(
-  "resource:///modules/ExtensionsUI.jsm"
-);
 XPCOMUtils.defineLazyGetter(this, "Management", () => {
   // eslint-disable-next-line no-shadow
   const { Management } = ChromeUtils.import(
@@ -520,7 +517,7 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
 
   // Navigate away from the starting page to force about:addons to load
   // in a new tab during the tests below.
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, "about:mozilla");
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
   // Install version 1.0 of the test extension

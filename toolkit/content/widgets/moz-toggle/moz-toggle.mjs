@@ -5,11 +5,28 @@
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import { MozLitElement } from "../lit-utils.mjs";
 
+/**
+ * A simple toggle element that can be used to switch between two states.
+ *
+ * @tagname moz-toggle
+ * @property {boolean} pressed - Whether or not the element is pressed.
+ * @property {boolean} disabled - Whether or not the element is disabled.
+ * @property {string} label - The label text.
+ * @property {string} description - The description text.
+ * @property {string} ariaLabel
+ *  The aria-label text for cases where there is no visible label.
+ * @slot support-link - Used to append a moz-support-link to the description.
+ * @fires toggle
+ *  Custom event indicating that the toggle's pressed state has changed.
+ */
 export default class MozToggle extends MozLitElement {
-  static LOCAL_NAME = "moz-toggle";
+  static shadowRootOptions = {
+    ...MozLitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
 
   static properties = {
-    checked: { type: Boolean, reflect: true },
+    pressed: { type: Boolean, reflect: true },
     disabled: { type: Boolean, reflect: true },
     label: { type: String },
     description: { type: String },
@@ -18,34 +35,47 @@ export default class MozToggle extends MozLitElement {
 
   static get queries() {
     return {
-      inputEl: "#moz-toggle-input",
+      buttonEl: "#moz-toggle-button",
       labelEl: "#moz-toggle-label",
       descriptionEl: "#moz-toggle-description",
     };
   }
 
+  // Use a relative URL in storybook to get faster reloads on style changes.
+  static stylesheetUrl = window.IS_STORYBOOK
+    ? "./moz-toggle/moz-toggle.css"
+    : "chrome://global/content/elements/moz-toggle.css";
+
   constructor() {
     super();
-    this.checked = false;
+    this.pressed = false;
     this.disabled = false;
   }
 
-  handleChange() {
-    this.checked = this.inputEl.checked;
-    this.dispatchEvent(
-      new Event("change", {
+  handleClick() {
+    this.pressed = !this.pressed;
+    this.dispatchOnUpdateComplete(
+      new CustomEvent("toggle", {
         bubbles: true,
         composed: true,
       })
     );
   }
 
+  // Delegate clicks on the host to the input element
+  click() {
+    this.buttonEl.click();
+  }
+
   labelTemplate() {
     if (this.label) {
       return html`
-        <label id="moz-toggle-label" part="label" for="moz-toggle-input">
-          ${this.label}
-        </label>
+        <span class="label-wrapper">
+          <label id="moz-toggle-label" part="label" for="moz-toggle-button">
+            ${this.label}
+          </label>
+          ${!this.description ? this.supportLinkTemplate() : ""}
+        </span>
       `;
     }
     return "";
@@ -54,34 +84,43 @@ export default class MozToggle extends MozLitElement {
   descriptionTemplate() {
     if (this.description) {
       return html`
-        <p id="moz-toggle-description" part="description">
-          ${this.description}
+        <p
+          id="moz-toggle-description"
+          class="description-wrapper"
+          part="description"
+        >
+          ${this.description} ${this.supportLinkTemplate()}
         </p>
       `;
     }
     return "";
   }
 
+  supportLinkTemplate() {
+    return html`
+      <slot name="support-link"></slot>
+    `;
+  }
+
   render() {
-    const { checked, disabled, description, ariaLabel, handleChange } = this;
+    const { pressed, disabled, description, ariaLabel, handleClick } = this;
     return html`
       <link rel="stylesheet" href=${this.constructor.stylesheetUrl} />
-      ${this.labelTemplate()} ${this.descriptionTemplate()}
-      <input
-        id="moz-toggle-input"
-        part="input"
-        type="checkbox"
-        role="switch"
+      ${this.labelTemplate()}
+      <button
+        id="moz-toggle-button"
+        part="button"
+        type="button"
         class="toggle-button"
-        .checked=${checked}
         ?disabled=${disabled}
-        aria-checked=${checked}
+        aria-pressed=${pressed}
         aria-label=${ifDefined(ariaLabel ?? undefined)}
         aria-describedby=${ifDefined(
           description ? "moz-toggle-description" : undefined
         )}
-        @change=${handleChange}
-      />
+        @click=${handleClick}
+      ></button>
+      ${this.descriptionTemplate()}
     `;
   }
 }

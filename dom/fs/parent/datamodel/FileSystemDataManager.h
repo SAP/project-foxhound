@@ -7,6 +7,7 @@
 #ifndef DOM_FS_PARENT_DATAMODEL_FILESYSTEMDATAMANAGER_H_
 #define DOM_FS_PARENT_DATAMODEL_FILESYSTEMDATAMANAGER_H_
 
+#include "ResultConnection.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/ThreadBound.h"
@@ -27,6 +28,7 @@ class Result;
 
 namespace dom {
 
+class FileSystemAccessHandle;
 class FileSystemManagerParent;
 
 namespace fs {
@@ -35,6 +37,7 @@ class FileSystemChildMetadata;
 
 namespace quota {
 class DirectoryLock;
+class QuotaManager;
 }  // namespace quota
 
 namespace fs::data {
@@ -52,6 +55,7 @@ class FileSystemDataManager
   enum struct State : uint8_t { Initial = 0, Opening, Open, Closing, Closed };
 
   FileSystemDataManager(const quota::OriginMetadata& aOriginMetadata,
+                        RefPtr<quota::QuotaManager> aQuotaManager,
                         MovingNotNull<nsCOMPtr<nsIEventTarget>> aIOTarget,
                         MovingNotNull<RefPtr<TaskQueue>> aIOTaskQueue);
 
@@ -69,15 +73,21 @@ class FileSystemDataManager
 
   static bool IsShutdownCompleted();
 
-  NS_INLINE_DECL_REFCOUNTING(FileSystemDataManager)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileSystemDataManager)
 
   void AssertIsOnIOTarget() const;
+
+  const quota::OriginMetadata& OriginMetadataRef() const {
+    return mOriginMetadata;
+  }
 
   nsISerialEventTarget* MutableBackgroundTargetPtr() const {
     return mBackgroundTarget.get();
   }
 
-  nsISerialEventTarget* MutableIOTargetPtr() const {
+  nsIEventTarget* MutableIOTargetPtr() const { return mIOTarget.get(); }
+
+  nsISerialEventTarget* MutableIOTaskQueuePtr() const {
     return mIOTaskQueue.get();
   }
 
@@ -99,6 +109,10 @@ class FileSystemDataManager
 
   void UnregisterActor(NotNull<FileSystemManagerParent*> aActor);
 
+  void RegisterAccessHandle(NotNull<FileSystemAccessHandle*> aAccessHandle);
+
+  void UnregisterAccessHandle(NotNull<FileSystemAccessHandle*> aAccessHandle);
+
   bool IsOpen() const { return mState == State::Open; }
 
   RefPtr<BoolPromise> OnOpen();
@@ -107,11 +121,11 @@ class FileSystemDataManager
 
   bool IsLocked(const EntryId& aEntryId) const;
 
-  bool LockExclusive(const EntryId& aEntryId);
+  nsresult LockExclusive(const EntryId& aEntryId);
 
   void UnlockExclusive(const EntryId& aEntryId);
 
-  bool LockShared(const EntryId& aEntryId);
+  nsresult LockShared(const EntryId& aEntryId);
 
   void UnlockShared(const EntryId& aEntryId);
 
@@ -133,11 +147,14 @@ class FileSystemDataManager
   // Things touched on background thread only.
   struct BackgroundThreadAccessible {
     nsTHashSet<FileSystemManagerParent*> mActors;
+    nsTHashSet<FileSystemAccessHandle*> mAccessHandles;
   };
   ThreadBound<BackgroundThreadAccessible> mBackgroundThreadAccessible;
 
   const quota::OriginMetadata mOriginMetadata;
   nsTHashSet<EntryId> mExclusiveLocks;
+  NS_DECL_OWNINGEVENTTARGET
+  const RefPtr<quota::QuotaManager> mQuotaManager;
   const NotNull<nsCOMPtr<nsISerialEventTarget>> mBackgroundTarget;
   const NotNull<nsCOMPtr<nsIEventTarget>> mIOTarget;
   const NotNull<RefPtr<TaskQueue>> mIOTaskQueue;

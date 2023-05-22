@@ -9,14 +9,15 @@ import re
 import sys
 
 import attr
+from taskgraph.util.treeherder import join_symbol
+from taskgraph.util.verify import VerificationSequence
+
 from gecko_taskgraph import GECKO
 from gecko_taskgraph.util.attributes import (
     ALL_PROJECTS,
     RELEASE_PROJECTS,
     RUN_ON_PROJECT_ALIASES,
 )
-from taskgraph.util.treeherder import join_symbol
-from taskgraph.util.verify import VerificationSequence
 
 logger = logging.getLogger(__name__)
 doc_base_path = os.path.join(GECKO, "taskcluster", "docs")
@@ -274,10 +275,9 @@ def verify_required_signoffs(task, taskgraph, scratch_pad, graph_config, paramet
         def printable_signoff(signoffs):
             if len(signoffs) == 1:
                 return "required signoff {}".format(*signoffs)
-            elif signoffs:
+            if signoffs:
                 return "required signoffs {}".format(", ".join(signoffs))
-            else:
-                return "no required signoffs"
+            return "no required signoffs"
 
         for task in taskgraph.tasks.values():
             required_signoffs = all_required_signoffs[task.label]

@@ -495,6 +495,10 @@ enum class GcOp {
   BrOnCast = 0x46,
   BrOnCastFail = 0x47,
 
+  // Dart compatibility instruction
+  RefAsStruct = 0x59,
+  BrOnNonStruct = 0x64,
+
   // Extern/any coercion operations
   ExternInternalize = 0x70,
   ExternExternalize = 0x71,
@@ -985,6 +989,38 @@ struct OpBytes {
     b1 = 0;
   }
   OpBytes() = default;
+
+  // Whether this opcode should have a breakpoint site inserted directly before
+  // the opcode in baseline when debugging. We use this as a heuristic to
+  // reduce the number of breakpoint sites.
+  bool shouldHaveBreakpoint() const {
+    switch (Op(b0)) {
+      // Block-like instructions don't get their own breakpoint site, a
+      // breakpoint can be used on instructions in the block.
+      case Op::Block:
+      case Op::Loop:
+      case Op::If:
+      case Op::Else:
+      case Op::Try:
+      case Op::Delegate:
+      case Op::Catch:
+      case Op::CatchAll:
+      case Op::End:
+      // Effect-less instructions without inputs are leaf nodes in expressions,
+      // a breakpoint can be used on instructions that consume these values.
+      case Op::LocalGet:
+      case Op::GlobalGet:
+      case Op::I32Const:
+      case Op::I64Const:
+      case Op::F32Const:
+      case Op::F64Const:
+      case Op::RefNull:
+      case Op::Drop:
+        return false;
+      default:
+        return true;
+    }
+  }
 };
 
 static const char NameSectionName[] = "name";
@@ -1032,15 +1068,8 @@ static const unsigned MaxFunctionBytes = 7654321;
 // These limits pertain to our WebAssembly implementation only, but may make
 // sense to get into the shared limits spec eventually.
 
-// See PackedTypeCode for exact bits available for these fields depending on
-// platform
-#ifdef JS_64BIT
-static const unsigned MaxTypeIndex = 1000000;
-#else
-static const unsigned MaxTypeIndex = 15000;
-#endif
-
 static const unsigned MaxRecGroups = 1000000;
+static const unsigned MaxSubTypingDepth = 31;
 static const unsigned MaxTags = 1000000;
 
 // Maximum payload size, in bytes, of a gc-proposal Array.  Puts it fairly

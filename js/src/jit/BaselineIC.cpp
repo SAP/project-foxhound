@@ -1853,12 +1853,12 @@ bool DoGetIteratorFallback(JSContext* cx, BaselineFrame* frame,
 
   TryAttachStub<GetIteratorIRGenerator>("GetIterator", cx, frame, stub, value);
 
-  JSObject* iterobj = ValueToIterator(cx, value);
-  if (!iterobj) {
+  PropertyIteratorObject* iterObj = ValueToIterator(cx, value);
+  if (!iterObj) {
     return false;
   }
 
-  res.setObject(*iterobj);
+  res.setObject(*iterObj);
   return true;
 }
 

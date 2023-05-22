@@ -124,12 +124,12 @@ aboutprivatebrowsing:
     record_in_processes: ["content"]
     description: >
       This is recorded when a user clicks a link on the private browsing newtab.
-    bug_numbers: [1709344, 1754635]
+    bug_numbers: [1709344, 1754635, 1781973, 1811146]
     notification_emails:
       - "dmosedale@mozilla.com"
       - "barret@mozilla.com"
       - "omc@mozilla.com"
-    expiry_version: "112"
+    expiry_version: "118"
     products:
       - "firefox"
 
@@ -474,11 +474,11 @@ blocklist:
         This field is documented in more detail in the definition of the blocklist.mlbf_source scalar.
         Possible values are "dump_match", "cache_match", "remote_match", "dump_fallback", "cache_fallback", "unknown".
     notification_emails: ["addons-dev-internal@mozilla.com", "rwu@mozilla.com"]
-    expiry_version: "112"
+    expiry_version: "122"
     products:
       - "firefox"
     record_in_processes: ["main"]
-    bug_numbers: [1662857, 1730037, 1763529]
+    bug_numbers: [1662857, 1730037, 1763529, 1811159]
     release_channel_collection: opt-out
 
 downloads:
@@ -520,6 +520,102 @@ form_autocomplete:
     record_in_processes: ["main"]
     release_channel_collection: opt-out
 
+address:
+  doorhanger:
+    description: >-
+      User interactions for the browser address autofill doorhanger.
+    objects:
+      - "capture_doorhanger"
+      - "update_doorhanger"
+    methods:
+      - "show"
+      - "save"
+      - "update"
+      - "cancel"
+      - "disable"
+      - "pref"
+    bug_numbers: [1801039]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
+    expiry_version: never
+    products:
+      - "firefox"
+    record_in_processes: ["main"]
+    release_channel_collection: opt-out
+  manage:
+    description: >-
+      User interactions for address autofill preferences management UI.
+    objects:
+      - "manage"
+    methods:
+      - "show"
+      - "add"
+      - "delete"
+      - "show_entry"
+      - "edit"
+    bug_numbers: [1801039]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
+    expiry_version: never
+    products:
+      - "firefox"
+    record_in_processes: ["main"]
+    release_channel_collection: opt-out
+  address_form:
+    description: >-
+      User interactions for address autofill forms
+        'detected': Recorded when a form is recognized as a credit card form.
+                    The possible value of cc_* in extra_keys are "true", "false", or 0
+                    When the value is "true", the field is identified via autocomplete attribute
+                    When the value is "false", the field is not detected in the form
+                    When the value is an 0, then the field is identified by regexp-based heuristic
+        'popup_shown': Recorded when autofill popup is shown. Using field_name to record the field
+                       that triggers this event
+        'filled': Recorded when a form is autofiled. Possible values are
+                  `filled`, `not_filled`, `user_filled` or `unavailable`
+        'filled_modified': Recorded when a field is autofilled and then modified by the user.
+                           Using field_name to record the field that triggers this event.
+        'submitted': Recorded when a form is submitted. Possible values are `autofilled`, `not_filled`, `user_filled` or `unavailable`
+        'cleared' Recorded when a form is cleared . Using field_name to record the field that triggers this event
+    objects: ["address_form"]
+    methods: ["detected", "popup_shown", "filled", "filled_modified", "submitted", "cleared"]
+    bug_numbers: [1804901]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
+    expiry_version: never
+    products:
+      - "firefox"
+    record_in_processes: ["content"]
+    release_channel_collection: opt-out
+    extra_keys:
+      street_address: street address result, filled when method is `detected`, `filled`, or `filled_modified`
+      address_line1: address_line1 result, filled when method is `detected`, `filled`, or `filled_modified`.
+      address_line2: address_line2 result, filled when method is `detected`, `filled`, or `filled_modified`.
+      address_line3: address_line3 result, filled when method is `detected`, `filled`, or `filled_modified`.
+      address_level1: address_level1 result, filled when method is `detected`, `filled`, or `filled_modified`.
+      address_level2: address_level2 result, filled when method is `detected`, `filled`, or `filled_modified`.
+      postal_code: postal_code result, filled when method is `detected`, `filled`, or `filled_modified`.
+      country: country result, filled when method is `detected`, `filled`, or `filled_modified`.
+      field_name: Name of the field being affected by the method, filled when method is `popup_shown` or `filled_modified`.
+  address_form_ext:
+    description: >-
+      Address has too many fields so we cannot cover them all in the above `address_form` telemetry
+      This telemetry is used to record address fields that are not listed in `address_form`
+    objects: ["address_form_ext"]
+    methods: ["detected", "filled", "submitted"]
+    bug_numbers: [1804901]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
+    expiry_version: never
+    products:
+      - "firefox"
+    record_in_processes: ["content"]
+    release_channel_collection: opt-out
+    extra_keys:
+      name: name
+      given_name: give_name
+      additional_name: additional_name
+      family_name: family_name
+      email: email
+      organization: organization
+      tel: telephone
+
 creditcard:
   doorhanger:
     description: >-
@@ -534,7 +630,7 @@ creditcard:
       - "cancel"
       - "disable"
     bug_numbers: [1653073, 1653083, 1720608, 1767907]
-    notification_emails: ["sgalich@mozilla.com", "dlee@mozilla.com"]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
     expiry_version: never
     products:
       - "firefox"
@@ -552,7 +648,7 @@ creditcard:
       - "show_entry"
       - "edit"
     bug_numbers: [1653073, 1654167, 1720608, 1767907]
-    notification_emails: ["sgalich@mozilla.com", "dlee@mozilla.com"]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
     expiry_version: never
     products:
       - "firefox"
@@ -570,7 +666,7 @@ creditcard:
       - "filled_modified"
       - "submitted"
     bug_numbers: [1653073, 1653162, 1720608, 1767907]
-    notification_emails: ["sgalich@mozilla.com", "dlee@mozilla.com"]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
     expiry_version: never
     products:
       - "firefox"
@@ -618,7 +714,7 @@ creditcard:
       - "submitted"
       - "cleared"
     bug_numbers: [1757731]
-    notification_emails: ["tgiles@mozilla.com", "dlee@mozilla.com"]
+    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
     expiry_version: never
     products:
       - "firefox"
@@ -659,9 +755,9 @@ extensions.data:
       the value of this event is the addon id.
   storageLocalError:
     objects: ["get", "set", "remove", "clear"]
-    bug_numbers: [1606903, 1649948, 1689255, 1730038, 1763523]
+    bug_numbers: [1606903, 1649948, 1689255, 1730038, 1763523, 1811148]
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "112"
+    expiry_version: "122"
     products:
       - "firefox"
     record_in_processes: ["main", "content"]
@@ -1201,7 +1297,7 @@ pwmgr:
       not impact the sent object.
     objects: ["save", "update"]
     bug_numbers: [1650929, 1650941, 1678200, 1714252, 1754637]
-    expiry_version: "112"
+    expiry_version: "120"
     release_channel_collection: opt-out
     products: ["firefox"]
     record_in_processes: [main]
@@ -2438,54 +2534,6 @@ network.dns:
       time: >
         Time from first confirmation attempt to event being recorded
 
-networking.captive_portal:
-  login_infobar_shown:
-    objects: ["infobar"]
-    bug_numbers:
-      - 1722834
-      - 1777396
-    description: >
-      An event fired when the captive portal login infobar is displayed.
-    notification_emails:
-      - omc@mozilla.com
-      - dmose@mozilla.com
-    release_channel_collection: opt-out
-    products: ["firefox"]
-    record_in_processes: ["main"]
-    expiry_version: "112"
-
-  login_button_pressed:
-    objects: ["login_button"]
-    bug_numbers:
-      - 1722834
-      - 1777396
-    description: >
-      An event fired when the login button on the captive portal login infobar
-      is clicked.
-    notification_emails:
-      - omc@mozilla.com
-      - dmose@mozilla.com
-    release_channel_collection: opt-out
-    products: ["firefox"]
-    record_in_processes: ["main"]
-    expiry_version: "112"
-
-  login_successful:
-    objects: ["detector"]
-    bug_numbers:
-      - 1722834
-      - 1777396
-    description: >
-      An event fired when the captive portal detector detects that the user has
-      successfully logged in to a captive portal.
-    notification_emails:
-      - omc@mozilla.com
-      - dmose@mozilla.com
-    release_channel_collection: opt-out
-    products: ["firefox"]
-    record_in_processes: ["main"]
-    expiry_version: "112"
-
 security:
   prefUsage:
     objects: ["contentProcess"]
@@ -2989,28 +3037,6 @@ slow_script_warning:
       uri_type: The kind of script URL that hung.
       uptime: How long the notification was up (ms).
 
-page_load:
-  toplevel:
-    bug_numbers:
-      - 1759744
-    description: >
-      Recorded when a top level content document has been loaded.
-    products:
-      - "firefox"
-    record_in_processes: ["content"]
-    release_channel_collection: opt-out
-    expiry_version: "never"
-    notification_emails:
-      - dpalmeiro@mozilla.com
-      - perf-telemetry-alerts@mozilla.com
-    objects: ["content"]
-    extra_keys:
-      load_time: Time between loadEventStart and navigationStart, in ms.
-      response_time: Time between responseStart and navigationStart, in ms.
-      fcp_time: Time between firstContentfulPaint and navigationStart, in ms.
-      js_exec_time: Time spent executing JS during page load, in ms.
-      load_type: One of normal,reload,stop,link,history,error or other.
-
 webrtc.ui:
   share_display:
     objects:
@@ -3313,7 +3339,8 @@ contextservices.quicksuggest:
       position: >
         The index of the suggestion in the list of results (1-based).
       suggestion_type: >
-        The type of suggestion, one of: "sponsored", "nonsponsored", "dynamic-wikipedia"
+        The type of suggestion, one of: "sponsored", "nonsponsored",
+        "dynamic-wikipedia", "weather"
       source: >
         Where the suggestion came from, one of: "remote-settings", "merino"
     release_channel_collection: opt-out
@@ -3653,3 +3680,25 @@ search:
       new_name: The display name of the new default engine.
       new_load_path: The path relating to where the new default engine was installed/loaded from.
       new_sub_url: The new submission URL of the new default engine.
+
+cookie_banner:
+  reload:
+    objects: ["browser"]
+    description: >
+      Recorded when the top-level page is reloaded. We use this event metric to
+      know whether or not the reloading domain has cookie banner rule.
+    record_in_processes: ["main"]
+    products:
+      - "firefox"
+      - "fennec"
+    release_channel_collection: opt-out
+    notification_emails:
+      - pbz@mozilla.com
+      - tihuang@mozilla.com
+    bug_numbers:
+      - 1797079
+    expiry_version: "115"
+    extra_keys:
+      no_rule: There is no cookie banner rule for the reloading domain.
+      has_cookie_rule: There is a matching cookie rule for the reloading domain.
+      has_click_rule: There is a matching click rule for the reloading domain.

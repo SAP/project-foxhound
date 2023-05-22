@@ -15,6 +15,7 @@
 
 #include "rtc_base/event.h"
 #include "rtc_base/task_queue.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -123,7 +124,7 @@ TEST(SimulatedTimeControllerTest, DelayTaskRunOnTime) {
   EXPECT_TRUE(delay_task_executed);
 }
 
-TEST(SimulatedTimeControllerTest, ThreadYeildsOnInvoke) {
+TEST(SimulatedTimeControllerTest, ThreadYeildsOnSynchronousCall) {
   GlobalSimulatedTimeController sim(kStartTime);
   auto main_thread = sim.GetMainThread();
   auto t2 = sim.CreateThread("thread", nullptr);
@@ -131,12 +132,12 @@ TEST(SimulatedTimeControllerTest, ThreadYeildsOnInvoke) {
   // Posting a task to the main thread, this should not run until AdvanceTime is
   // called.
   main_thread->PostTask([&] { task_has_run = true; });
-  t2->Invoke<void>(RTC_FROM_HERE, [] {
+  SendTask(t2.get(), [] {
     rtc::Event yield_event;
     // Wait() triggers YieldExecution() which will runs message processing on
     // all threads that are not in the yielded set.
 
-    yield_event.Wait(0);
+    yield_event.Wait(TimeDelta::Zero());
   });
   // Since we are doing an invoke from the main thread, we don't expect the main
   // thread message loop to be processed.

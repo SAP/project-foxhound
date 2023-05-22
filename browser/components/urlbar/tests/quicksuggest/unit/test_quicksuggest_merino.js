@@ -13,7 +13,7 @@ const PREF_REMOTE_SETTINGS_ENABLED = "quicksuggest.remoteSettings.enabled";
 
 const SEARCH_STRING = "frab";
 
-const REMOTE_SETTINGS_DATA = [
+const REMOTE_SETTINGS_RESULTS = [
   {
     id: 1,
     url: "http://test.com/q=frabbits",
@@ -25,7 +25,7 @@ const REMOTE_SETTINGS_DATA = [
   },
 ];
 
-const EXPECTED_REMOTE_SETTINGS_RESULT = {
+const EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT = {
   type: UrlbarUtils.RESULT_TYPE.URL,
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
@@ -41,15 +41,23 @@ const EXPECTED_REMOTE_SETTINGS_RESULT = {
     sponsoredAdvertiser: "TestAdvertiser",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    helpL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+        : "firefox-suggest-urlbar-learn-more",
+    },
     isBlockable: false,
-    blockL10n: { id: "firefox-suggest-urlbar-block" },
+    blockL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-dismiss-firefox-suggest"
+        : "firefox-suggest-urlbar-block",
+    },
     displayUrl: "http://test.com/q=frabbits",
     source: "remote-settings",
   },
 };
 
-const EXPECTED_MERINO_RESULT = {
+const EXPECTED_MERINO_URLBAR_RESULT = {
   type: UrlbarUtils.RESULT_TYPE.URL,
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
@@ -65,21 +73,29 @@ const EXPECTED_MERINO_RESULT = {
     sponsoredAdvertiser: "advertiser",
     isSponsored: true,
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    helpL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+        : "firefox-suggest-urlbar-learn-more",
+    },
     isBlockable: false,
-    blockL10n: { id: "firefox-suggest-urlbar-block" },
+    blockL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-dismiss-firefox-suggest"
+        : "firefox-suggest-urlbar-block",
+    },
     displayUrl: "url",
     requestId: "request_id",
     source: "merino",
   },
 };
 
-// `UrlbarProviderQuickSuggest._merino` is lazily created on the first Merino
+// `UrlbarProviderQuickSuggest.#merino` is lazily created on the first Merino
 // fetch, so it's easiest to create `gClient` lazily too.
 XPCOMUtils.defineLazyGetter(
   this,
   "gClient",
-  () => UrlbarProviderQuickSuggest._merino
+  () => UrlbarProviderQuickSuggest._test_merino
 );
 
 add_task(async function init() {
@@ -91,7 +107,9 @@ add_task(async function init() {
   await MerinoTestUtils.server.start();
 
   // Set up the remote settings client with the test data.
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(REMOTE_SETTINGS_DATA);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults: REMOTE_SETTINGS_RESULTS,
+  });
 
   Assert.equal(
     typeof RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
@@ -119,7 +137,7 @@ add_task(async function oneEnabled_merino() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_MERINO_RESULT],
+    matches: [EXPECTED_MERINO_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -147,7 +165,7 @@ add_task(async function oneEnabled_remoteSettings() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -172,7 +190,7 @@ add_task(async function dataCollectionDisabled() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 });
 
@@ -194,7 +212,7 @@ add_task(async function higherScore() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_MERINO_RESULT],
+    matches: [EXPECTED_MERINO_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -226,7 +244,7 @@ add_task(async function lowerScore() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -258,7 +276,7 @@ add_task(async function sameScore() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -294,7 +312,7 @@ add_task(async function noMerinoScore() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -323,7 +341,7 @@ add_task(async function noSuggestion_remoteSettings() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_MERINO_RESULT],
+    matches: [EXPECTED_MERINO_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
@@ -354,12 +372,12 @@ add_task(async function noSuggestion_merino() {
   });
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   MerinoTestUtils.checkAndClearHistograms({
     histograms,
-    response: "success",
+    response: "no_suggestion",
     latencyRecorded: true,
     client: gClient,
   });
@@ -461,9 +479,17 @@ add_task(async function multipleMerinoSuggestions() {
           sponsoredAdvertiser: "multipleMerinoSuggestions 1 advertiser",
           isSponsored: true,
           helpUrl: QuickSuggest.HELP_URL,
-          helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+          helpL10n: {
+            id: UrlbarPrefs.get("resultMenu")
+              ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+              : "firefox-suggest-urlbar-learn-more",
+          },
           isBlockable: false,
-          blockL10n: { id: "firefox-suggest-urlbar-block" },
+          blockL10n: {
+            id: UrlbarPrefs.get("resultMenu")
+              ? "urlbar-result-menu-dismiss-firefox-suggest"
+              : "firefox-suggest-urlbar-block",
+          },
           displayUrl: "multipleMerinoSuggestions 1 url",
           requestId: "request_id",
           source: "merino",
@@ -593,7 +619,7 @@ add_task(async function block() {
 
   await check_results({
     context,
-    matches: [EXPECTED_REMOTE_SETTINGS_RESULT],
+    matches: [EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT],
   });
 
   await QuickSuggest.blockedSuggestions.clear();
@@ -613,8 +639,8 @@ add_task(async function bestMatch() {
   UrlbarPrefs.set("bestMatch.enabled", true);
   UrlbarPrefs.set("suggest.bestmatch", true);
 
-  let expectedResult = { ...EXPECTED_MERINO_RESULT };
-  expectedResult.payload = { ...EXPECTED_MERINO_RESULT.payload };
+  let expectedResult = { ...EXPECTED_MERINO_URLBAR_RESULT };
+  expectedResult.payload = { ...EXPECTED_MERINO_URLBAR_RESULT.payload };
   expectedResult.isBestMatch = true;
   delete expectedResult.payload.qsSuggestion;
 
@@ -680,9 +706,17 @@ add_task(async function topPick() {
           sponsoredAdvertiser: "multipleMerinoSuggestions 2 advertiser",
           isSponsored: true,
           helpUrl: QuickSuggest.HELP_URL,
-          helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+          helpL10n: {
+            id: UrlbarPrefs.get("resultMenu")
+              ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+              : "firefox-suggest-urlbar-learn-more",
+          },
           isBlockable: false,
-          blockL10n: { id: "firefox-suggest-urlbar-block" },
+          blockL10n: {
+            id: UrlbarPrefs.get("resultMenu")
+              ? "urlbar-result-menu-dismiss-firefox-suggest"
+              : "firefox-suggest-urlbar-block",
+          },
           displayUrl: "multipleMerinoSuggestions 2 url",
           requestId: "request_id",
           source: "merino",

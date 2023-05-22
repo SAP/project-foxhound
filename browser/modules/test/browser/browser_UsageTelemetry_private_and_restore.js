@@ -1,7 +1,5 @@
 "use strict";
-const { E10SUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/E10SUtils.sys.mjs"
-);
+
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
@@ -35,7 +33,7 @@ add_task(async function test_privateMode() {
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     privateWin.gBrowser.selectedBrowser,
     "http://example.com/"
   );

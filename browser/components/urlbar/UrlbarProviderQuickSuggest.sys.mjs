@@ -16,7 +16,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
 });
 
@@ -75,14 +74,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
     return { ...TELEMETRY_SCALARS };
   }
 
-  getPriority(context) {
-    if (!context.searchString) {
-      // Zero-prefix suggestions have the same priority as top sites.
-      return lazy.UrlbarProviderTopSites.PRIORITY;
-    }
-    return super.getPriority(context);
-  }
-
   /**
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
@@ -92,7 +83,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
   isActive(queryContext) {
-    this._resultFromLastQuery = null;
+    this.#resultFromLastQuery = null;
 
     // If the sources don't include search or the user used a restriction
     // character other than search, don't allow any suggestions.
@@ -114,11 +105,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     // Trim only the start of the search string because a trailing space can
     // affect the suggestions.
-    this._searchString = queryContext.searchString.trimStart();
-
-    if (!this._searchString) {
-      return !!lazy.QuickSuggest.weather.suggestion;
+    let trimmedSearchString = queryContext.searchString.trimStart();
+    if (!trimmedSearchString) {
+      return false;
     }
+    this._trimmedSearchString = trimmedSearchString;
+
     return (
       lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") ||
       lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored") ||
@@ -137,16 +129,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
-    let searchString = this._searchString;
-
-    if (!searchString) {
-      let result = this._makeWeatherResult();
-      if (result) {
-        addCallback(this, result);
-        this._resultFromLastQuery = result;
-      }
-      return;
-    }
+    let searchString = this._trimmedSearchString;
 
     // There are two sources for quick suggest: remote settings and Merino.
     let promises = [];
@@ -203,16 +186,23 @@ class ProviderQuickSuggest extends UrlbarProvider {
       sponsoredIabCategory: suggestion.iab_category,
       isSponsored: suggestion.is_sponsored,
       helpUrl: lazy.QuickSuggest.HELP_URL,
-      helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+      helpL10n: {
+        id: lazy.UrlbarPrefs.get("resultMenu")
+          ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+          : "firefox-suggest-urlbar-learn-more",
+      },
+      blockL10n: {
+        id: lazy.UrlbarPrefs.get("resultMenu")
+          ? "urlbar-result-menu-dismiss-firefox-suggest"
+          : "firefox-suggest-urlbar-block",
+      },
       source: suggestion.source,
       requestId: suggestion.request_id,
     };
 
     // Determine if the suggestion itself is a best match.
     let isSuggestionBestMatch = false;
-    if (typeof suggestion._test_is_best_match == "boolean") {
-      isSuggestionBestMatch = suggestion._test_is_best_match;
-    } else if (suggestion?.is_top_pick) {
+    if (suggestion.is_top_pick) {
       isSuggestionBestMatch = true;
     } else if (lazy.QuickSuggest.remoteSettings.config.best_match) {
       let { best_match } = lazy.QuickSuggest.remoteSettings.config;
@@ -231,13 +221,11 @@ class ProviderQuickSuggest extends UrlbarProvider {
       // `full_keyword`, and the user's search string is highlighted.
       payload.title = [suggestion.title, UrlbarUtils.HIGHLIGHT.TYPED];
       payload.isBlockable = lazy.UrlbarPrefs.get("bestMatchBlockingEnabled");
-      payload.blockL10n = { id: "firefox-suggest-urlbar-block" };
     } else {
       // Show the result as a usual quick suggest. Include the `full_keyword`
       // and highlight the parts that aren't in the search string.
       payload.title = suggestion.title;
       payload.isBlockable = lazy.UrlbarPrefs.get("quickSuggestBlockingEnabled");
-      payload.blockL10n = { id: "firefox-suggest-urlbar-block" };
       payload.qsSuggestion = [
         suggestion.full_keyword,
         UrlbarUtils.HIGHLIGHT.SUGGESTED,
@@ -272,7 +260,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     addCallback(this, result);
 
-    this._resultFromLastQuery = result;
+    this.#resultFromLastQuery = result;
 
     // The user triggered a suggestion. Depending on the experiment the user is
     // enrolled in (if any), we may need to record the Nimbus exposure event.
@@ -316,12 +304,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   Whether the result was blocked.
    */
   blockResult(queryContext, result) {
-    if (result.payload.merinoProvider == "accuweather") {
-      this.logger.info("Blocking weather result");
-      lazy.UrlbarPrefs.set("suggest.weather", false);
-      return true;
-    }
-
     if (
       (!result.isBestMatch &&
         !lazy.UrlbarPrefs.get("quickSuggestBlockingEnabled")) ||
@@ -355,15 +337,15 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   it describes the search string and picked result.
    */
   onEngagement(isPrivate, state, queryContext, details) {
-    let result = this._resultFromLastQuery;
-    this._resultFromLastQuery = null;
+    let result = this.#resultFromLastQuery;
+    this.#resultFromLastQuery = null;
 
     // Reset the Merino session ID when an engagement ends. Per spec, for the
     // user's privacy, we don't keep it around between engagements. It wouldn't
     // hurt to do this on start too, it's just not necessary if we always do it
     // on end.
     if (state != "start") {
-      this._merino?.resetSession();
+      this.#merino?.resetSession();
     }
 
     // Impression and clicked telemetry are both recorded on engagement. We
@@ -458,7 +440,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
         1
       );
     }
-
     if (result.isBestMatch) {
       Services.telemetry.keyedScalarAdd(
         result.payload.isSponsored
@@ -537,11 +518,13 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     // engagement event
     let match_type = result.isBestMatch ? "best-match" : "firefox-suggest";
-    let suggestion_type = result.payload.isSponsored
-      ? "sponsored"
-      : "nonsponsored";
+    let suggestion_type;
     if (isDynamicWikipedia) {
       suggestion_type = "dynamic-wikipedia";
+    } else {
+      suggestion_type = result.payload.isSponsored
+        ? "sponsored"
+        : "nonsponsored";
     }
     Services.telemetry.recordEvent(
       lazy.QuickSuggest.TELEMETRY_EVENT_CATEGORY,
@@ -556,56 +539,72 @@ class ProviderQuickSuggest extends UrlbarProvider {
       }
     );
 
-    // custom pings
+    // custom engagement pings
     if (!isPrivate) {
-      // `is_clicked` is whether the user clicked the suggestion. `selType` will
-      // be "quicksuggest" in that case. See this method's JSDoc for all
-      // possible `selType` values.
-      let is_clicked = selType == "quicksuggest";
-      let payload = {
+      this._sendEngagementPings({
+        selType,
         match_type,
-        // Always use lowercase to make the reporting consistent
-        advertiser: result.payload.sponsoredAdvertiser.toLocaleLowerCase(),
-        block_id: result.payload.sponsoredBlockId,
-        improve_suggest_experience_checked: lazy.UrlbarPrefs.get(
-          "quicksuggest.dataCollection.enabled"
-        ),
-        position: telemetryResultIndex,
-        request_id: result.payload.requestId,
-        source: result.payload.source,
-      };
+        result,
+        telemetryResultIndex,
+      });
+    }
+  }
 
-      // impression
+  _sendEngagementPings({ selType, match_type, result, telemetryResultIndex }) {
+    // Custom engagement pings are sent only for the main sponsored and non-
+    // sponsored suggestions with an advertiser in their payload, not for other
+    // types of suggestions like navigational suggestions.
+    if (!result.payload.sponsoredAdvertiser) {
+      return;
+    }
+
+    // `is_clicked` is whether the user clicked the suggestion. `selType` will
+    // be "quicksuggest" in that case. See this method's JSDoc for all
+    // possible `selType` values.
+    let is_clicked = selType == "quicksuggest";
+    let payload = {
+      match_type,
+      // Always use lowercase to make the reporting consistent
+      advertiser: result.payload.sponsoredAdvertiser.toLocaleLowerCase(),
+      block_id: result.payload.sponsoredBlockId,
+      improve_suggest_experience_checked: lazy.UrlbarPrefs.get(
+        "quicksuggest.dataCollection.enabled"
+      ),
+      position: telemetryResultIndex,
+      request_id: result.payload.requestId,
+      source: result.payload.source,
+    };
+
+    // impression
+    lazy.PartnerLinkAttribution.sendContextualServicesPing(
+      {
+        ...payload,
+        is_clicked,
+        reporting_url: result.payload.sponsoredImpressionUrl,
+      },
+      lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
+    );
+
+    // click
+    if (is_clicked) {
       lazy.PartnerLinkAttribution.sendContextualServicesPing(
         {
           ...payload,
-          is_clicked,
-          reporting_url: result.payload.sponsoredImpressionUrl,
+          reporting_url: result.payload.sponsoredClickUrl,
         },
-        lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
+        lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION
       );
+    }
 
-      // click
-      if (is_clicked) {
-        lazy.PartnerLinkAttribution.sendContextualServicesPing(
-          {
-            ...payload,
-            reporting_url: result.payload.sponsoredClickUrl,
-          },
-          lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION
-        );
-      }
-
-      // block
-      if (selType == "block") {
-        lazy.PartnerLinkAttribution.sendContextualServicesPing(
-          {
-            ...payload,
-            iab_category: result.payload.sponsoredIabCategory,
-          },
-          lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK
-        );
-      }
+    // block
+    if (selType == "block") {
+      lazy.PartnerLinkAttribution.sendContextualServicesPing(
+        {
+          ...payload,
+          iab_category: result.payload.sponsoredIabCategory,
+        },
+        lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK
+      );
     }
   }
 
@@ -618,7 +617,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
   cancelQuery(queryContext) {
     // Cancel the Merino timeout timer so it doesn't fire and record a timeout.
     // If it's already canceled or has fired, this is a no-op.
-    this._merino?.cancelTimeoutTimer();
+    this.#merino?.cancelTimeoutTimer();
 
     // Don't abort the Merino fetch if one is ongoing. By design we allow
     // fetches to finish so we can record their latency.
@@ -636,8 +635,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   response.
    */
   async _fetchMerinoSuggestions(queryContext, searchString) {
-    if (!this._merino) {
-      this._merino = new lazy.MerinoClient(this.name);
+    if (!this.#merino) {
+      this.#merino = new lazy.MerinoClient(this.name);
     }
 
     let providers;
@@ -651,59 +650,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
       providers = [];
     }
 
-    let suggestions = await this._merino.fetch({
+    let suggestions = await this.#merino.fetch({
       providers,
       query: searchString,
     });
 
     return suggestions;
-  }
-
-  /**
-   * Returns a UrlbarResult for the current prefetched weather suggestion if
-   * there is one.
-   *
-   * @returns {UrlbarResult}
-   *   A result or null if there's no weather suggestion.
-   */
-  _makeWeatherResult() {
-    let { suggestion } = lazy.QuickSuggest.weather;
-    if (!suggestion) {
-      return null;
-    }
-
-    let unit = Services.locale.appLocaleAsBCP47 == "en-US" ? "f" : "c";
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-      {
-        title:
-          suggestion.city_name +
-          " • " +
-          suggestion.current_conditions.temperature[unit] +
-          "° " +
-          suggestion.current_conditions.summary +
-          " • " +
-          suggestion.forecast.summary +
-          " • H " +
-          suggestion.forecast.high[unit] +
-          "° • L " +
-          suggestion.forecast.low[unit] +
-          "°",
-        url: suggestion.url,
-        icon: "chrome://global/skin/icons/highlights.svg",
-        helpUrl: lazy.QuickSuggest.HELP_URL,
-        helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
-        isBlockable: true,
-        blockL10n: { id: "firefox-suggest-urlbar-block" },
-        requestId: suggestion.request_id,
-        source: suggestion.source,
-        merinoProvider: suggestion.provider,
-      }
-    );
-
-    result.suggestedIndex = 0;
-    return result;
   }
 
   /**
@@ -756,11 +708,15 @@ class ProviderQuickSuggest extends UrlbarProvider {
     return true;
   }
 
+  get _test_merino() {
+    return this.#merino;
+  }
+
   // The result we added during the most recent query.
-  _resultFromLastQuery = null;
+  #resultFromLastQuery = null;
 
   // The Merino client.
-  _merino = null;
+  #merino = null;
 }
 
 export var UrlbarProviderQuickSuggest = new ProviderQuickSuggest();

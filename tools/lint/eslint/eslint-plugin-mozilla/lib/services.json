@@ -18,6 +18,7 @@
     "nsIDAPTelemetry": "DAPTelemetry",
     "nsIDOMRequestService": "DOMRequest",
     "nsIDOMStorageManager": "domStorageManager",
+    "nsIDNSService": "dns",
     "nsIDirectoryService": "dirsvc",
     "nsIDroppedLinkHandler": "droppedLinkHandler",
     "nsIEffectiveTLDService": "eTLD",
@@ -56,5 +57,6 @@
     "nsIWindowMediator": "wm",
     "nsIWindowWatcher": "ww",
     "nsIXULAppInfo": "appinfo",
-    "nsIXULRuntime": "appinfo"
+    "nsIXULRuntime": "appinfo",
+    "nsIXULStore": "xulStore"
 }

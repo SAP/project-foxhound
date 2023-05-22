@@ -10,14 +10,9 @@ from functools import partial
 
 from taskgraph.util.taskcluster import get_artifact, get_task_definition
 
-from .registry import register_callback_action
-from .util import (
-    create_tasks,
-    fetch_graph_and_labels,
-    get_decision_task_id,
-    get_pushes,
-)
 from ..util.taskcluster import list_task_group_complete_tasks
+from .registry import register_callback_action
+from .util import create_tasks, fetch_graph_and_labels, get_decision_task_id, get_pushes
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +25,10 @@ def input_for_support_action(revision, base_revision, base_branch, task):
     """
     platform, test_name = task["metadata"]["name"].split("/opt-")
     new_branch = os.environ.get("GECKO_HEAD_REPOSITORY", "/try").split("/")[-1]
+    symbol = task["extra"]["treeherder"]["symbol"]
     input = {
         "label": "perftest-linux-side-by-side",
+        "symbol": symbol,
         "new_revision": revision,
         "base_revision": base_revision,
         "test_name": test_name,
@@ -41,6 +38,25 @@ def input_for_support_action(revision, base_revision, base_branch, task):
     }
 
     return input
+
+
+def side_by_side_modifier(task, input):
+    if task.label != input["label"]:
+        return task
+
+    # Make side-by-side job searchable by the platform and test name
+    # it was triggered for
+    task.task["metadata"][
+        "name"
+    ] = f"{input['platform']} {input['test_name']} {input['label']}"
+    # Use a job symbol to include the symbol of the job the side-by-side
+    # is running for
+    task.task["extra"]["treeherder"]["symbol"] += f"-{input['symbol']}"
+
+    cmd = task.task["payload"]["command"]
+    task.task["payload"]["command"][1][-1] = cmd[1][-1].format(**input)
+
+    return task
 
 
 @register_callback_action(
@@ -152,15 +168,6 @@ def side_by_side_action(parameters, graph_config, input, task_group_id, task_id)
                 "Could not find a side-by-side comparable task within a depth of 30 revisions."
             )
 
-    def modifier(task, input):
-        if task.label != input["label"]:
-            return task
-
-        cmd = task.task["payload"]["command"]
-        task.task["payload"]["command"][1][-1] = cmd[1][-1].format(**input)
-
-        return task
-
     try:
         create_tasks(
             graph_config,
@@ -169,7 +176,7 @@ def side_by_side_action(parameters, graph_config, input, task_group_id, task_id)
             label_to_taskid,
             parameters,
             decision_task_id,
-            modifier=partial(modifier, input=input_for_action),
+            modifier=partial(side_by_side_modifier, input=input_for_action),
         )
     except Exception as e:
         logger.exception(f"Failed to trigger action: {e}.")

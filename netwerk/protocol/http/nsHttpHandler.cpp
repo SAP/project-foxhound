@@ -26,6 +26,7 @@
 #include "nsPrintfCString.h"
 #include "nsCOMPtr.h"
 #include "nsNetCID.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/Printf.h"
@@ -325,6 +326,14 @@ nsresult nsHttpHandler::Init() {
   LOG(("nsHttpHandler::Init\n"));
   MOZ_ASSERT(NS_IsMainThread());
 
+  // We should not create nsHttpHandler during shutdown, but we have some
+  // xpcshell tests doing this.
+  if (MOZ_UNLIKELY(AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown) &&
+                   !PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR"))) {
+    MOZ_DIAGNOSTIC_ASSERT(false, "Try to init HttpHandler after shutdown");
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+  }
+
   rv = nsHttp::CreateAtomTable();
   if (NS_FAILED(rv)) return rv;
 
@@ -385,9 +394,6 @@ nsresult nsHttpHandler::Init() {
   nsAutoCString uaVersion;
   GetFirefoxVersionForUserAgent(uaVersion);
 
-  mMisc.AssignLiteral("rv:");
-  mMisc.Append(uaVersion);
-
   mCompatFirefox.AssignLiteral("Firefox/");
   mCompatFirefox.Append(uaVersion);
 
@@ -405,6 +411,16 @@ nsresult nsHttpHandler::Init() {
     mAppName.StripChars(R"( ()<>@,;:\"/[]?={})");
   } else {
     mAppVersion.AssignLiteral(MOZ_APP_UA_VERSION);
+  }
+
+  mMisc.AssignLiteral("rv:");
+  bool isFirefox = mAppName.EqualsLiteral("Firefox");
+  uint32_t forceVersion =
+      mozilla::StaticPrefs::network_http_useragent_forceRVOnly();
+  if (forceVersion && (isFirefox || mCompatFirefoxEnabled)) {
+    mMisc.Append(nsPrintfCString("%u.0", forceVersion));
+  } else {
+    mMisc.Append(uaVersion);
   }
 
   // Generate the spoofed User Agent for fingerprinting resistance.
@@ -2259,8 +2275,12 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   if (mDebugObservations && obsService) {
     // this is basically used for test coverage of an otherwise 'hintable'
     // feature
+
+    // This is used to test if the `crossOrigin` attribute is parsed correctly.
+    nsPrintfCString debugURL("%s%s", aURI->GetSpecOrDefault().get(),
+                             anonymous ? "anonymous" : "use-credentials");
     obsService->NotifyObservers(nullptr, "speculative-connect-request",
-                                nullptr);
+                                NS_ConvertUTF8toUTF16(debugURL).get());
     for (auto* cp :
          dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
       PNeckoParent* neckoParent =

@@ -11,7 +11,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/SVGDocument.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGObserverUtils.h"
@@ -100,6 +99,7 @@ static void SetupInheritablePaint(const DrawTarget* aDrawTarget,
                                   SVGContextPaint* aOuterContextPaint,
                                   SVGContextPaintImpl::Paint& aTargetPaint,
                                   StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+                                  nscolor aDefaultFallbackColor,
                                   imgDrawingParams& aImgParams) {
   const nsStyleSVG* style = aFrame->StyleSVG();
   SVGPaintServerFrame* ps =
@@ -138,8 +138,8 @@ static void SetupInheritablePaint(const DrawTarget* aDrawTarget,
     }
   }
 
-  nscolor color =
-      SVGUtils::GetFallbackOrPaintColor(*aFrame->Style(), aFillOrStroke);
+  nscolor color = SVGUtils::GetFallbackOrPaintColor(
+      *aFrame->Style(), aFillOrStroke, aDefaultFallbackColor);
   aTargetPaint.SetColor(color);
 }
 
@@ -161,7 +161,7 @@ DrawMode SVGContextPaintImpl::Init(const DrawTarget* aDrawTarget,
 
     SetupInheritablePaint(aDrawTarget, aContextMatrix, aFrame, opacity,
                           aOuterContextPaint, mFillPaint, &nsStyleSVG::mFill,
-                          aImgParams);
+                          NS_RGB(0, 0, 0), aImgParams);
 
     SetFillOpacity(opacity);
 
@@ -175,9 +175,9 @@ DrawMode SVGContextPaintImpl::Init(const DrawTarget* aDrawTarget,
     float opacity =
         SVGUtils::GetOpacity(style->mStrokeOpacity, aOuterContextPaint);
 
-    SetupInheritablePaint(aDrawTarget, aContextMatrix, aFrame, opacity,
-                          aOuterContextPaint, mStrokePaint,
-                          &nsStyleSVG::mStroke, aImgParams);
+    SetupInheritablePaint(
+        aDrawTarget, aContextMatrix, aFrame, opacity, aOuterContextPaint,
+        mStrokePaint, &nsStyleSVG::mStroke, NS_RGBA(0, 0, 0, 0), aImgParams);
 
     SetStrokeOpacity(opacity);
 
@@ -199,15 +199,10 @@ void SVGContextPaint::InitStrokeGeometry(gfxContext* aContext,
 
 SVGContextPaint* SVGContextPaint::GetContextPaint(nsIContent* aContent) {
   dom::Document* ownerDoc = aContent->OwnerDoc();
-  if (!ownerDoc->IsSVGDocument()) {
-    return nullptr;
-  }
 
-  const auto* contextPaint =
-      ownerDoc->AsSVGDocument()->GetCurrentContextPaint();
-  MOZ_ASSERT_IF(contextPaint, ownerDoc->IsBeingUsedAsImage());
+  const auto* contextPaint = ownerDoc->GetCurrentContextPaint();
 
-  // XXX The SVGContextPaint that SVGDocument keeps around is const. We could
+  // XXX The SVGContextPaint that Document keeps around is const. We could
   // and should keep that constness to the SVGContextPaint that we get here
   // (SVGImageContext is never changed after it is initialized).
   //
@@ -299,17 +294,14 @@ already_AddRefed<gfxPattern> SVGContextPaintImpl::Paint::GetPattern(
 }
 
 AutoSetRestoreSVGContextPaint::AutoSetRestoreSVGContextPaint(
-    const SVGContextPaint& aContextPaint, dom::SVGDocument& aSVGDocument)
-    : mSVGDocument(aSVGDocument),
-      mOuterContextPaint(aSVGDocument.GetCurrentContextPaint()) {
-  MOZ_ASSERT(aSVGDocument.IsBeingUsedAsImage(),
-             "SVGContextPaint::GetContextPaint assumes this");
-
-  mSVGDocument.SetCurrentContextPaint(&aContextPaint);
+    const SVGContextPaint* aContextPaint, dom::Document* aDocument)
+    : mDocument(aDocument),
+      mOuterContextPaint(aDocument->GetCurrentContextPaint()) {
+  mDocument->SetCurrentContextPaint(aContextPaint);
 }
 
 AutoSetRestoreSVGContextPaint::~AutoSetRestoreSVGContextPaint() {
-  mSVGDocument.SetCurrentContextPaint(mOuterContextPaint);
+  mDocument->SetCurrentContextPaint(mOuterContextPaint);
 }
 
 // SVGEmbeddingContextPaint

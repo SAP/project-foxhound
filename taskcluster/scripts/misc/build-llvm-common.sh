@@ -63,11 +63,11 @@ case "$target" in
     -DCMAKE_LIPO=$MOZ_FETCHES_DIR/clang/bin/llvm-lipo
     -DCMAKE_SYSTEM_NAME=Darwin
     -DCMAKE_SYSTEM_VERSION=$MACOSX_DEPLOYMENT_TARGET
-    -DCMAKE_OSX_SYSROOT=$MOZ_FETCHES_DIR/MacOSX11.3.sdk
+    -DCMAKE_OSX_SYSROOT=$MOZ_FETCHES_DIR/MacOSX13.0.sdk
     -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
     -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
     -DDARWIN_osx_ARCHS=$arch
-    -DDARWIN_osx_SYSROOT=$MOZ_FETCHES_DIR/MacOSX11.3.sdk
+    -DDARWIN_osx_SYSROOT=$MOZ_FETCHES_DIR/MacOSX13.0.sdk
     -DDARWIN_macosx_OVERRIDE_SDK_VERSION=11.0
     -DDARWIN_osx_BUILTIN_ARCHS=$arch
     -DLLVM_DEFAULT_TARGET_TRIPLE=$target
@@ -76,6 +76,12 @@ case "$target" in
   # Give it a fake one.
   echo "#!/bin/sh" > codesign
   chmod +x codesign
+  # cmake makes decisions based on the output of the mac-only sw_vers, which is
+  # obviously missing when cross-compiling, so create a fake one. The exact
+  # version doesn't really matter: as of writing, cmake checks at most for 10.5.
+  echo "#!/bin/sh" > sw_vers
+  echo echo 10.12 >> sw_vers
+  chmod +x sw_vers
   PATH="$PATH:$PWD"
   ;;
 *-linux-android)
@@ -126,8 +132,6 @@ case "$target" in
   "
   ;;
 *-pc-windows-msvc)
-  export LD_PRELOAD="/builds/worker/fetches/liblowercase/liblowercase.so"
-  export LOWERCASE_DIRS="/builds/worker/fetches/vs"
   EXTRA_CMAKE_FLAGS="
     $EXTRA_CMAKE_FLAGS
     -DCMAKE_TOOLCHAIN_FILE=$MOZ_FETCHES_DIR/llvm-project/llvm/cmake/platforms/WinMsvc.cmake

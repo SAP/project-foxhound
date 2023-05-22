@@ -868,14 +868,18 @@ class HTMLEditor final : public EditorBase,
    * SplitAncestorStyledInlineElementsAtRangeEdges() splits all ancestor inline
    * elements in the block at aRange if given style matches with some of them.
    *
-   * @param aRange      Ancestor inline elements of the start and end boundaries
-   *                    will be split.
-   * @param aStyle      The style which you want to split. RemoveAllStyles
-   *                    instance is allowed to split any inline elements.
+   * @param aRange              Ancestor inline elements of the start and end
+   *                            boundaries will be split.
+   * @param aStyle              The style which you want to split.
+   *                            RemoveAllStyles instance is allowed to split any
+   *                            inline elements.
+   * @param aSplitAtEdges       Whether this should split elements at start or
+   *                            end of inline elements or not.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitRangeOffResult, nsresult>
-  SplitAncestorStyledInlineElementsAtRangeEdges(
-      const EditorDOMRange& aRange, const EditorInlineStyle& aStyle);
+  SplitAncestorStyledInlineElementsAtRangeEdges(const EditorDOMRange& aRange,
+                                                const EditorInlineStyle& aStyle,
+                                                SplitAtEdges aSplitAtEdges);
 
   /**
    * SplitAncestorStyledInlineElementsAt() splits ancestor inline elements at
@@ -1079,10 +1083,12 @@ class HTMLEditor final : public EditorBase,
    * PendingStyles to proper element node.
    *
    * @param aPointToInsertText  The point to insert text.
+   * @param aEditingHost        The editing host.
    * @return                    A suggest point to put caret or unset point.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  CreateStyleForInsertText(const EditorDOMPoint& aPointToInsertText);
+  CreateStyleForInsertText(const EditorDOMPoint& aPointToInsertText,
+                           const Element& aEditingHost);
 
   /**
    * GetMostDistantAncestorMailCiteElement() returns most-ancestor mail cite
@@ -1137,18 +1143,23 @@ class HTMLEditor final : public EditorBase,
                        const Element& aEditingHost);
 
   /**
-   * SplitParentInlineElementsAtRangeEdges() splits parent inline nodes at both
-   * start and end of aRangeItem.  If this splits at every point, this modifies
-   * aRangeItem to point each split point (typically, right node).
+   * Splits parent inline nodes at both start and end of aRangeItem.  If this
+   * splits at every point, this modifies aRangeItem to point each split point
+   * (typically, at right node).
    *
    * @param aRangeItem          [in/out] One or two DOM points where should be
    *                            split.  Will be modified to split point if
    *                            they're split.
+   * @param aEditingHost        [in] The editing host.
+   * @param aAncestorLimiter    [in/optional] If specified, this stops splitting
+   *                            ancestors when meets this node.
    * @return                    A suggest point to put caret if succeeded, but
    *                            it may be unset.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  SplitParentInlineElementsAtRangeEdges(RangeItem& aRangeItem);
+  SplitParentInlineElementsAtRangeBoundaries(
+      RangeItem& aRangeItem, const Element& aEditingHost,
+      const nsIContent* aAncestorLimiter = nullptr);
 
   /**
    * SplitElementsAtEveryBRElement() splits before all <br> elements in
@@ -1933,45 +1944,6 @@ class HTMLEditor final : public EditorBase,
                                  ErrorResult& aError);
 
   /**
-   * MoveOneHardLineContentsWithTransaction() moves the content in a hard line
-   * which contains aPointInHardLine to aPointToInsert or end of
-   * aPointToInsert's container.
-   *
-   * @param aPointInHardLine            A point in a hard line.  All nodes in
-   *                                    same hard line will be moved.
-   * @param aPointToInsert              Point to insert contents of the hard
-   *                                    line.
-   * @param aEditingHost                The editing host.
-   * @param aMoveToEndOfContainer       If `Yes`, aPointToInsert.Offset() will
-   *                                    be ignored and instead, all contents
-   *                                    will be appended to the container of
-   *                                    aPointToInsert.  The result may be
-   *                                    different from setting this to `No`
-   *                                    and aPointToInsert points end of the
-   *                                    container because mutation event
-   *                                    listeners may modify children of the
-   *                                    container while we're moving nodes.
-   */
-  enum class MoveToEndOfContainer { Yes, No };
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
-  MoveOneHardLineContentsWithTransaction(
-      const EditorDOMPoint& aPointInHardLine,
-      const EditorDOMPoint& aPointToInsert, const Element& aEditingHost,
-      MoveToEndOfContainer aMoveToEndOfContainer = MoveToEndOfContainer::No);
-
-  /**
-   * CanMoveOrDeleteSomethingInHardLine() returns true if there are some content
-   * nodes which can be moved to another place or deleted.  Note that if there
-   * is only a padding `<br>` element in empty block element, this returns
-   * false even though it may be deleted.
-   *
-   * @param aPointInHardLine    A point in a hard line.
-   */
-  Result<bool, nsresult> CanMoveOrDeleteSomethingInHardLine(
-      const EditorDOMPoint& aPointInHardLine,
-      const Element& aEditingHost) const;
-
-  /**
    * SplitNodeWithTransaction() creates a transaction to create a new node
    * (left node) identical to an existing node (right node), and split the
    * contents between the same point in both nodes, then, execute the
@@ -2189,6 +2161,7 @@ class HTMLEditor final : public EditorBase,
                         nsIEditor::EStripWrappers aStripWrappers) final;
 
   class AutoDeleteRangesHandler;
+  class AutoMoveOneLineHandler;
 
   /**
    * DeleteMostAncestorMailCiteElementIfEmpty() deletes most ancestor
@@ -3267,6 +3240,16 @@ class HTMLEditor final : public EditorBase,
       const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet);
 
   /**
+   * SetInlinePropertiesAroundRanges() applying the styles to the ranges even if
+   * the ranges are collapsed.
+   */
+  template <size_t N>
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult SetInlinePropertiesAroundRanges(
+      AutoRangeArray& aRanges,
+      const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet,
+      const Element& aEditingHost);
+
+  /**
    * RemoveInlinePropertiesAsSubAction() removes specified styles from
    * mPendingStylesToApplyToNewContent if `Selection` is collapsed.  Otherwise,
    * removing the style.
@@ -3871,8 +3854,18 @@ class HTMLEditor final : public EditorBase,
   SetFontSizeOfFontElementChildren(nsIContent& aContent,
                                    FontSize aIncrementOrDecrement);
 
-  nsresult PromoteInlineRange(nsRange& aRange);
-  nsresult PromoteRangeIfStartsOrEndsInNamedAnchor(nsRange& aRange);
+  /**
+   * Get extended range to select element whose all children are selected by
+   * aRange.
+   */
+  EditorRawDOMRange GetExtendedRangeWrappingEntirelySelectedElements(
+      const EditorRawDOMRange& aRange) const;
+
+  /**
+   * Get extended range to select ancestor <a name> elements.
+   */
+  EditorRawDOMRange GetExtendedRangeWrappingNamedAnchor(
+      const EditorRawDOMRange& aRange) const;
 
   // Declared in HTMLEditorNestedClasses.h and defined in HTMLStyleEditor.cpp
   class AutoInlineStyleSetter;
@@ -3912,15 +3905,6 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT Result<bool, nsresult>
   IsRemovableParentStyleWithNewSpanElement(
       nsIContent& aContent, const EditorInlineStyle& aStyle) const;
-
-  /**
-   * XXX These methods seem odd and except the only caller,
-   *     `PromoteInlineRange()`, cannot use them.
-   */
-  bool IsStartOfContainerOrBeforeFirstEditableChild(
-      const EditorRawDOMPoint& aPoint) const;
-  bool IsEndOfContainerOrEqualsOrAfterLastEditableChild(
-      const EditorRawDOMPoint& aPoint) const;
 
   /**
    * HasStyleOrIdOrClassAttribute() returns true when at least one of
@@ -4474,7 +4458,7 @@ class HTMLEditor final : public EditorBase,
   friend class AlignStateAtSelection;  // CollectEditableTargetNodes,
                                        // CollectNonEditableNodes
   friend class AutoRangeArray;  // RangeUpdaterRef, SplitNodeWithTransaction,
-                                // SplitParentInlineElementsAtRangeEdges
+                                // SplitParentInlineElementsAtRangeBoundaries
   friend class AutoSelectionSetterAfterTableEdit;  // SetSelectionAfterEdit
   friend class
       AutoSetTemporaryAncestorLimiter;  // InitializeSelectionAncestorLimit
@@ -4510,15 +4494,13 @@ class HTMLEditor final : public EditorBase,
   friend class TransactionManager;  // DidDoTransaction, DidRedoTransaction,
                                     // DidUndoTransaction
   friend class
-      WhiteSpaceVisibilityKeeper;  // CanMoveChildren,
-                                   // CanMoveOrDeleteSomethingInHardLine,
+      WhiteSpaceVisibilityKeeper;  // AutoMoveOneLineHandler
+                                   // CanMoveChildren,
                                    // ChangeListElementType,
                                    // DeleteNodeWithTransaction,
                                    // DeleteTextAndTextNodesWithTransaction,
                                    // JoinNearestEditableNodesWithTransaction,
                                    // MoveChildrenWithTransaction,
-                                   // MoveOneHardLineContentsWithTransaction,
-                                   // MoveToEndOfContainer,
                                    // SplitAncestorStyledInlineElementsAt,
                                    // TreatEmptyTextNodes
 };

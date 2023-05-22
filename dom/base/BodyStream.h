@@ -46,15 +46,21 @@ class BodyStreamHolder : public nsISupports {
 
   BodyStreamHolder();
 
-  virtual void NullifyStream() = 0;
+  virtual void NullifyStream() { mReadableStreamBody = nullptr; }
 
-  virtual void MarkAsRead() = 0;
+  virtual void MarkAsRead() {}
 
-  virtual void SetReadableStreamBody(ReadableStream* aBody) = 0;
-  virtual ReadableStream* GetReadableStreamBody() = 0;
+  void SetReadableStreamBody(ReadableStream* aBody) {
+    mReadableStreamBody = aBody;
+  }
+  ReadableStream* GetReadableStreamBody() { return mReadableStreamBody; }
 
  protected:
   virtual ~BodyStreamHolder() = default;
+
+  // This is the ReadableStream exposed to content. It's underlying source is a
+  // BodyStream object.
+  RefPtr<ReadableStream> mReadableStreamBody;
 
  private:
   void StoreBodyStream(BodyStream* aBodyStream);
@@ -114,11 +120,6 @@ class BodyStream final : public nsIInputStreamCallback,
 #endif
 
  public:
-  // Cancel Callback
-  already_AddRefed<Promise> CancelCallback(
-      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv);
-
   // Pull Callback
   already_AddRefed<Promise> PullCallback(JSContext* aCx,
                                          ReadableStreamController& aController,
@@ -135,7 +136,7 @@ class BodyStream final : public nsIInputStreamCallback,
   // This is a script boundary until Bug 1750605 is resolved and allows us
   // to replace this with MOZ_CAN_RUN_SCRIPT.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void EnqueueChunkWithSizeIntoStream(
-      JSContext* aCx, ReadableStream* aStream, uint64_t bytes,
+      JSContext* aCx, ReadableStream* aStream, uint64_t aAvailableData,
       ErrorResult& aRv);
 
   void ErrorPropagation(JSContext* aCx,

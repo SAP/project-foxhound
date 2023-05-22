@@ -111,21 +111,6 @@ const AVAILABLE_INJECTIONS = [
     customFunc: "noSniffFix",
   },
   {
-    id: "bug1768243",
-    platform: "desktop",
-    domain: "cloud.google.com",
-    bug: "1768243",
-    contentScripts: {
-      matches: ["*://cloud.google.com/terms/*"],
-      css: [
-        {
-          file:
-            "injections/css/bug1768243-cloud.google.com-allow-table-scrolling.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1570328",
     platform: "android",
     domain: "developer.apple.com",
@@ -414,20 +399,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1743614",
-    platform: "android",
-    domain: "storytel.com",
-    bug: "1743614",
-    contentScripts: {
-      matches: ["*://*.storytel.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1743614-storytel.com-flex-min-width.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1754473",
     platform: "android",
     domain: "m.intl.taobao.com",
@@ -491,20 +462,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug11769762",
-    platform: "all",
-    domain: "tiktok.com",
-    bug: "1769762",
-    contentScripts: {
-      matches: ["https://www.tiktok.com/*"],
-      js: [
-        {
-          file: "injections/js/bug1769762-tiktok.com-plugins-shim.js",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1770962",
     platform: "all",
     domain: "coldwellbankerhomes.com",
@@ -558,9 +515,10 @@ const AVAILABLE_INJECTIONS = [
         "*://*.pixiv.net/*", // Bug 1774006
         "*://*.webex.com/*", // Bug 1788934
         "*://business.help.royalmail.com/app/webforms/*", // Bug 1786404
+        "*://ifcinema.institutfrancais.com/*", // Bug 1806423
+        "*://mobilevikings.be/*/registration/*", // Bug 1797400
         "*://www.northcountrypublicradio.org/contact/subscribe.html*", // Bug 1778382,
         "*://www.schoolnutritionandfitness.com/*", // Bug 1793761
-        "*://mobilevikings.be/*/registration/*", // Bug 1797400
       ],
       js: [
         {
@@ -672,35 +630,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1784195",
-    platform: "android",
-    domain: "nutmeg.morrisons.com",
-    bug: "1784195",
-    contentScripts: {
-      matches: ["*://nutmeg.morrisons.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1784195-nutmeg.morrisons.com-overflow.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1784351",
-    platform: "desktop",
-    domain: "movistar.com.ar",
-    bug: "1784351",
-    contentScripts: {
-      matches: ["*://*.movistar.com.ar/*"],
-      css: [
-        {
-          file:
-            "injections/css/bug1784351-movistar.com.ar-overflow-overlay-fix.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1784199",
     platform: "all",
     domain: "Sites based on Entrata Platform",
@@ -708,11 +637,12 @@ const AVAILABLE_INJECTIONS = [
     contentScripts: {
       matches: [
         "*://*.aptsovation.com/*",
+        "*://*.liveatlasathens.com/*", // #111189
+        "*://*.liveobserverpark.com/*", // #105244
         "*://*.nhcalaska.com/*",
+        "*://*.prospectportal.com/*", // #115206
         "*://*.securityproperties.com/*",
         "*://*.theloftsorlando.com/*",
-        "*://*.liveobserverpark.com/*", // #105244
-        "*://*.liveatlasathens.com/*", // #111189
       ],
       css: [
         {
@@ -867,6 +797,16 @@ const AVAILABLE_INJECTIONS = [
             "injections/js/bug1803976-www.youtube.com-performance-now-precision.js",
         },
       ],
+    },
+  },
+  {
+    id: "bug1811325",
+    platform: "all",
+    domain: "www.bdo.com.ph",
+    bug: "1811325",
+    customFunc: "acceptLanguageFix",
+    data: {
+      urls: ["*://www.bdo.com.ph/*", "*://www.inmac-wstore.com/*"],
     },
   },
 ];

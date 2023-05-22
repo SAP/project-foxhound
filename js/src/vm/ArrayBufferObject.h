@@ -56,8 +56,8 @@ bool ExtendBufferMapping(void* dataStart, size_t mappedSize,
 // the mapping, and `mappedSize` the size of that mapping.
 void UnmapBufferMemory(wasm::IndexType t, void* dataStart, size_t mappedSize);
 
-// Return the number of currently live mapped buffers.
-int32_t LiveMappedBufferCount();
+// Return the number of bytes currently reserved for WebAssembly memory
+uint64_t WasmReservedBytes();
 
 // The inheritance hierarchy for the various classes relating to typed arrays
 // is as follows.
@@ -182,21 +182,15 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
                 "self-hosted code with burned-in constants must get the "
                 "right flags slot");
 
-  static bool supportLargeBuffers;
-
+  // The length of an ArrayBuffer or SharedArrayBuffer can be at most INT32_MAX
+  // on 32-bit platforms. Allow a larger limit on 64-bit platforms.
   static constexpr size_t MaxByteLengthForSmallBuffer = INT32_MAX;
-
-  // The length of an ArrayBuffer or SharedArrayBuffer can be at most
-  // INT32_MAX. Allow a larger limit on friendly 64-bit platforms if the
-  // experimental large-buffers flag is used.
-  static size_t maxBufferByteLength() {
 #ifdef JS_64BIT
-    if (supportLargeBuffers) {
-      return size_t(8) * 1024 * 1024 * 1024;  // 8 GB.
-    }
+  static constexpr size_t MaxByteLength =
+      size_t(8) * 1024 * 1024 * 1024;  // 8 GB.
+#else
+  static constexpr size_t MaxByteLength = MaxByteLengthForSmallBuffer;
 #endif
-    return MaxByteLengthForSmallBuffer;
-  }
 
   /** The largest number of bytes that can be stored inline. */
   static constexpr size_t MaxInlineBytes =

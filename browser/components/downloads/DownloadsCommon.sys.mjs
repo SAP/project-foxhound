@@ -127,7 +127,6 @@ var PrefObserver = {
 
 PrefObserver.register({
   // prefName: defaultValue
-  animateNotifications: true,
   openInSystemViewerContextMenuItem: true,
   alwaysOpenInSystemViewerContextMenuItem: true,
 });
@@ -185,14 +184,6 @@ export var DownloadsCommon = {
     }
     delete this.strings;
     return (this.strings = strings);
-  },
-
-  /**
-   * Indicates whether we should show visual notification on the indicator
-   * when a download event is triggered.
-   */
-  get animateNotifications() {
-    return PrefObserver.animateNotifications;
   },
 
   /**
@@ -375,7 +366,7 @@ export var DownloadsCommon = {
     }
     await download.manuallyRemoveData();
     if (clearHistory < 2) {
-      lazy.DownloadHistory.updateMetaData(download).catch(Cu.reportError);
+      lazy.DownloadHistory.updateMetaData(download).catch(console.error);
     }
   },
 
@@ -870,7 +861,7 @@ DownloadsDataCtor.prototype = {
       this._isPrivate ? lazy.Downloads.PRIVATE : lazy.Downloads.PUBLIC
     )
       .then(list => list.removeFinished())
-      .catch(Cu.reportError);
+      .catch(console.error);
   },
 
   // Integration with the asynchronous Downloads back-end
@@ -907,7 +898,7 @@ DownloadsDataCtor.prototype = {
 
         // This state transition code should actually be located in a Downloads
         // API module (bug 941009).
-        lazy.DownloadHistory.updateMetaData(download).catch(Cu.reportError);
+        lazy.DownloadHistory.updateMetaData(download).catch(console.error);
       }
 
       if (
@@ -941,7 +932,7 @@ DownloadsDataCtor.prototype = {
    *        removeView before termination.
    */
   addView(aView) {
-    this._promiseList.then(list => list.addView(aView)).catch(Cu.reportError);
+    this._promiseList.then(list => list.addView(aView)).catch(console.error);
   },
 
   /**
@@ -951,9 +942,7 @@ DownloadsDataCtor.prototype = {
    *        DownloadsView object to be removed.
    */
   removeView(aView) {
-    this._promiseList
-      .then(list => list.removeView(aView))
-      .catch(Cu.reportError);
+    this._promiseList.then(list => list.removeView(aView)).catch(console.error);
   },
 
   // Notifications sent to the most recent browser window only
@@ -1281,8 +1270,6 @@ function DownloadsIndicatorDataCtor(aPrivate) {
   this._views = [];
 }
 DownloadsIndicatorDataCtor.prototype = {
-  __proto__: DownloadsViewPrototype,
-
   /**
    * Map of the relative severities of different attention states.
    * Used in sorting the map of active downloads' attention states
@@ -1484,6 +1471,10 @@ DownloadsIndicatorDataCtor.prototype = {
     }
   },
 };
+Object.setPrototypeOf(
+  DownloadsIndicatorDataCtor.prototype,
+  DownloadsViewPrototype
+);
 
 XPCOMUtils.defineLazyGetter(lazy, "PrivateDownloadsIndicatorData", function() {
   return new DownloadsIndicatorDataCtor(true);
@@ -1544,8 +1535,6 @@ function DownloadsSummaryData(aIsPrivate, aNumToExclude) {
 }
 
 DownloadsSummaryData.prototype = {
-  __proto__: DownloadsViewPrototype,
-
   /**
    * Removes an object previously added using addView.
    *
@@ -1664,3 +1653,4 @@ DownloadsSummaryData.prototype = {
     }
   },
 };
+Object.setPrototypeOf(DownloadsSummaryData.prototype, DownloadsViewPrototype);

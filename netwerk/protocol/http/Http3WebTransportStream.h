@@ -64,11 +64,13 @@ class Http3WebTransportStream final : public Http3StreamBase,
   void Reset(uint8_t aErrorCode);
   void SendStopSending(uint8_t aErrorCode);
 
-  already_AddRefed<nsIAsyncOutputStream> GetWriter();
   already_AddRefed<nsIWebTransportSendStreamStats> GetSendStreamStats();
-
-  already_AddRefed<nsIAsyncInputStream> GetReader();
   already_AddRefed<nsIWebTransportReceiveStreamStats> GetReceiveStreamStats();
+  void GetWriterAndReader(nsIAsyncOutputStream** aOutOutputStream,
+                          nsIAsyncInputStream** aOutInputStream);
+
+  // When mRecvState is RECV_DONE, this means we already received the FIN.
+  bool RecvDone() const { return mRecvState == RECV_DONE; }
 
  private:
   friend class Http3WebTransportSession;
@@ -81,7 +83,6 @@ class Http3WebTransportStream final : public Http3StreamBase,
                                    uint32_t, uint32_t*);
   nsresult InitOutputPipe();
   nsresult InitInputPipe();
-  void ResetInternal(bool aDispatch);
 
   uint64_t mSessionId{UINT64_MAX};
   WebTransportStreamType mStreamType{WebTransportStreamType::BiDi};
@@ -93,16 +94,13 @@ class Http3WebTransportStream final : public Http3StreamBase,
 
   enum SendStreamState {
     WAITING_TO_ACTIVATE,
+    WAITING_DATA,
     SENDING,
     SEND_DONE,
   } mSendState{WAITING_TO_ACTIVATE};
 
-  enum RecvStreamState {
-    BEFORE_READING,
-    READING,
-    RECEIVED_FIN,
-    RECV_DONE
-  } mRecvState{BEFORE_READING};
+  enum RecvStreamState { BEFORE_READING, READING, RECEIVED_FIN, RECV_DONE };
+  Atomic<RecvStreamState> mRecvState{BEFORE_READING};
 
   nsresult mSocketOutCondition = NS_ERROR_NOT_INITIALIZED;
   nsresult mSocketInCondition = NS_ERROR_NOT_INITIALIZED;
@@ -126,6 +124,9 @@ class Http3WebTransportStream final : public Http3StreamBase,
   Maybe<uint8_t> mResetError;
   // The error code used for STOP_SENDING. Should be only set once.
   Maybe<uint8_t> mStopSendingError;
+
+  // This is used when SendFin or Reset is called when mSendState is SENDING.
+  nsTArray<std::function<void()>> mPendingTasks;
 };
 
 }  // namespace mozilla::net

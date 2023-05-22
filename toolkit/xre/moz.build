@@ -31,7 +31,6 @@ XPIDL_MODULE = "xulapp"
 
 EXPORTS += [
     "nsAppRunner.h",
-    "nsIAppStartupNotifier.h",
 ]
 
 EXPORTS.mozilla += [
@@ -138,7 +137,6 @@ UNIFIED_SOURCES += [
     "Bootstrap.cpp",
     "CmdLineAndEnvUtils.cpp",
     "CreateAppData.cpp",
-    "nsAppStartupNotifier.cpp",
     "nsConsoleWriter.cpp",
     "nsNativeAppSupportBase.cpp",
     "nsSigHandlers.cpp",
@@ -221,6 +219,8 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
     DEFINES["ANDROID_PACKAGE_NAME"] = '"%s"' % CONFIG["ANDROID_PACKAGE_NAME"]
+
+DEFINES["MOZ_DISTRIBUTION_ID"] = '"%s"' % CONFIG["MOZ_DISTRIBUTION_ID"]
 
 if CONFIG["TARGET_XPCOM_ABI"]:
     DEFINES["TARGET_OS_ABI"] = '"%s_%s"' % (

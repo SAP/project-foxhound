@@ -494,9 +494,11 @@ using VFromD = decltype(Set(D(), TFromD<D>()));
 
 // ------------------------------ Zero
 
-template <typename T, size_t N, int kPow2>
-HWY_API VFromD<Simd<T, N, kPow2>> Zero(Simd<T, N, kPow2> d) {
-  return Set(d, T(0));
+template <class D>
+HWY_API VFromD<D> Zero(D d) {
+  // Cast to support bfloat16_t.
+  const RebindToUnsigned<decltype(d)> du;
+  return BitCast(d, Set(du, 0));
 }
 
 // ------------------------------ Undefined
@@ -772,21 +774,24 @@ HWY_API V Xor(const V a, const V b) {
 }
 
 // ------------------------------ AndNot
-
 template <class V>
 HWY_API V AndNot(const V not_a, const V b) {
   return And(Not(not_a), b);
 }
 
-// ------------------------------ Or3
+// ------------------------------ Xor3
+template <class V>
+HWY_API V Xor3(V x1, V x2, V x3) {
+  return Xor(x1, Xor(x2, x3));
+}
 
+// ------------------------------ Or3
 template <class V>
 HWY_API V Or3(V o1, V o2, V o3) {
   return Or(o1, Or(o2, o3));
 }
 
 // ------------------------------ OrAnd
-
 template <class V>
 HWY_API V OrAnd(const V o, const V a1, const V a2) {
   return Or(o, And(a1, a2));
@@ -1109,6 +1114,9 @@ HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGMM, Or, or)
 // ------------------------------ Xor
 HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGMM, Xor, xor)
 
+// ------------------------------ ExclusiveNeither
+HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGMM, ExclusiveNeither, xnor)
+
 #undef HWY_RVV_RETM_ARGMM
 
 // ------------------------------ IfThenElse
@@ -1117,7 +1125,7 @@ HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGMM, Xor, xor)
   HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                           \
       NAME(HWY_RVV_M(MLEN) m, HWY_RVV_V(BASE, SEW, LMUL) yes,                  \
            HWY_RVV_V(BASE, SEW, LMUL) no) {                                    \
-    return v##OP##_vvm_##CHAR##SEW##LMUL(m, no, yes, HWY_RVV_AVL(SEW, SHIFT)); \
+    return v##OP##_vvm_##CHAR##SEW##LMUL(no, yes, m, HWY_RVV_AVL(SEW, SHIFT)); \
   }
 
 HWY_RVV_FOREACH(HWY_RVV_IF_THEN_ELSE, IfThenElse, merge, _ALL)
@@ -1136,7 +1144,7 @@ HWY_API V IfThenElseZero(const M mask, const V yes) {
                                   LMULH, SHIFT, MLEN, NAME, OP)             \
   HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                        \
       NAME(HWY_RVV_M(MLEN) m, HWY_RVV_V(BASE, SEW, LMUL) no) {              \
-    return v##OP##_##CHAR##SEW##LMUL(m, no, 0, HWY_RVV_AVL(SEW, SHIFT));    \
+    return v##OP##_##CHAR##SEW##LMUL(no, 0, m, HWY_RVV_AVL(SEW, SHIFT));    \
   }
 
 HWY_RVV_FOREACH_UI(HWY_RVV_IF_THEN_ZERO_ELSE, IfThenZeroElse, merge_vxm, _ALL)
@@ -1219,14 +1227,19 @@ HWY_API V IfNegativeThenElse(V v, V yes, V no) {
 
 // ------------------------------ FindFirstTrue
 
-#define HWY_RVV_FIND_FIRST_TRUE(SEW, SHIFT, MLEN, NAME, OP) \
-  template <class D>                                        \
-  HWY_API intptr_t FindFirstTrue(D d, HWY_RVV_M(MLEN) m) {  \
-    static_assert(MLenFromD(d) == MLEN, "Type mismatch");   \
-    return vfirst_m_b##MLEN(m, Lanes(d));                   \
+#define HWY_RVV_FIND_FIRST_TRUE(SEW, SHIFT, MLEN, NAME, OP)    \
+  template <class D>                                           \
+  HWY_API intptr_t FindFirstTrue(D d, HWY_RVV_M(MLEN) m) {     \
+    static_assert(MLenFromD(d) == MLEN, "Type mismatch");      \
+    return vfirst_m_b##MLEN(m, Lanes(d));                      \
+  }                                                            \
+  template <class D>                                           \
+  HWY_API size_t FindKnownFirstTrue(D d, HWY_RVV_M(MLEN) m) {  \
+    static_assert(MLenFromD(d) == MLEN, "Type mismatch");      \
+    return static_cast<size_t>(vfirst_m_b##MLEN(m, Lanes(d))); \
   }
 
-HWY_RVV_FOREACH_B(HWY_RVV_FIND_FIRST_TRUE, _, _)
+HWY_RVV_FOREACH_B(HWY_RVV_FIND_FIRST_TRUE, , _)
 #undef HWY_RVV_FIND_FIRST_TRUE
 
 // ------------------------------ AllFalse
@@ -2423,6 +2436,13 @@ HWY_API V ReverseBlocks(D d, V v) {
 
 // ------------------------------ Compress
 
+// RVV supports all lane types natively.
+#ifdef HWY_NATIVE_COMPRESS8
+#undef HWY_NATIVE_COMPRESS8
+#else
+#define HWY_NATIVE_COMPRESS8
+#endif
+
 template <typename T>
 struct CompressIsPartition {
   enum { value = 0 };
@@ -2432,11 +2452,10 @@ struct CompressIsPartition {
                          SHIFT, MLEN, NAME, OP)                               \
   HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                          \
       NAME(HWY_RVV_V(BASE, SEW, LMUL) v, HWY_RVV_M(MLEN) mask) {              \
-    return v##OP##_vm_##CHAR##SEW##LMUL(mask, v, v, HWY_RVV_AVL(SEW, SHIFT)); \
+    return v##OP##_vm_##CHAR##SEW##LMUL(v, v, mask, HWY_RVV_AVL(SEW, SHIFT)); \
   }
 
-HWY_RVV_FOREACH_UI163264(HWY_RVV_COMPRESS, Compress, compress, _ALL)
-HWY_RVV_FOREACH_F(HWY_RVV_COMPRESS, Compress, compress, _ALL)
+HWY_RVV_FOREACH(HWY_RVV_COMPRESS, Compress, compress, _ALL)
 #undef HWY_RVV_COMPRESS
 
 // ------------------------------ CompressNot
@@ -2642,9 +2661,10 @@ HWY_API V ShiftLeftLanes(const D d, const V v) {
   using TI = TFromD<decltype(di)>;
   const auto shifted = detail::SlideUp(v, v, kLanes);
   // Match x86 semantics by zeroing lower lanes in 128-bit blocks
-  const auto idx_mod = detail::AndS(
-      detail::Iota0(di), static_cast<TI>(detail::LanesPerBlock(di) - 1));
-  const auto clear = detail::LtS(BitCast(di, idx_mod), static_cast<TI>(kLanes));
+  const auto idx_mod =
+      detail::AndS(BitCast(di, detail::Iota0(di)),
+                   static_cast<TI>(detail::LanesPerBlock(di) - 1));
+  const auto clear = detail::LtS(idx_mod, static_cast<TI>(kLanes));
   return IfThenZeroElse(clear, shifted);
 }
 
@@ -2681,9 +2701,8 @@ HWY_API V ShiftRightLanes(const Simd<T, N, kPow2> d, V v) {
   // Match x86 semantics by zeroing upper lanes in 128-bit blocks
   const size_t lpb = detail::LanesPerBlock(di);
   const auto idx_mod =
-      detail::AndS(detail::Iota0(di), static_cast<TI>(lpb - 1));
-  const auto keep =
-      detail::LtS(BitCast(di, idx_mod), static_cast<TI>(lpb - kLanes));
+      detail::AndS(BitCast(di, detail::Iota0(di)), static_cast<TI>(lpb - 1));
+  const auto keep = detail::LtS(idx_mod, static_cast<TI>(lpb - kLanes));
   return IfThenElseZero(keep, shifted);
 }
 
@@ -2827,12 +2846,14 @@ HWY_API V PopulationCount(V v) {
 
 // ------------------------------ LoadDup128
 
-template <class D, typename T = TFromD<D>>
-HWY_API VFromD<D> LoadDup128(D d, const T* const HWY_RESTRICT p) {
-  const auto loaded = Load(d, p);
-  // Broadcast the first block
-  const auto idx = detail::AndS(detail::Iota0(d),
-                                static_cast<T>(detail::LanesPerBlock(d) - 1));
+template <class D>
+HWY_API VFromD<D> LoadDup128(D d, const TFromD<D>* const HWY_RESTRICT p) {
+  const VFromD<D> loaded = Load(d, p);
+  // idx must be unsigned for TableLookupLanes.
+  using TU = MakeUnsigned<TFromD<D>>;
+  const TU mask = static_cast<TU>(detail::LanesPerBlock(d) - 1);
+  // Broadcast the first block.
+  const VFromD<RebindToUnsigned<D>> idx = detail::AndS(detail::Iota0(d), mask);
   return TableLookupLanes(loaded, idx);
 }
 
@@ -3086,7 +3107,7 @@ HWY_INLINE V MulOdd(const V a, const V b) {
   return OddEven(hi, detail::Slide1Down(lo));
 }
 
-// ------------------------------ ReorderDemote2To (OddEven)
+// ------------------------------ ReorderDemote2To (OddEven, Combine)
 
 template <size_t N, int kPow2>
 HWY_API VFromD<Simd<uint16_t, N, kPow2>> ReorderDemote2To(
@@ -3099,34 +3120,149 @@ HWY_API VFromD<Simd<uint16_t, N, kPow2>> ReorderDemote2To(
   return BitCast(dbf16, OddEven(BitCast(du16, a), BitCast(du16, b_in_even)));
 }
 
+// If LMUL is not the max, Combine first to avoid another DemoteTo.
+template <size_t N, int kPow2, hwy::EnableIf<(kPow2 < 3)>* = nullptr,
+          class D32 = RepartitionToWide<Simd<int16_t, N, kPow2>>>
+HWY_API VFromD<Simd<int16_t, N, kPow2>> ReorderDemote2To(
+    Simd<int16_t, N, kPow2> d16, VFromD<D32> a, VFromD<D32> b) {
+  const Twice<D32> d32t;
+  const VFromD<decltype(d32t)> ab = Combine(d32t, a, b);
+  return DemoteTo(d16, ab);
+}
+
+// Max LMUL: must DemoteTo first, then Combine.
+template <size_t N, class V32 = VFromD<RepartitionToWide<Simd<int16_t, N, 3>>>>
+HWY_API VFromD<Simd<int16_t, N, 3>> ReorderDemote2To(Simd<int16_t, N, 3> d16,
+                                                     V32 a, V32 b) {
+  const Half<decltype(d16)> d16h;
+  const VFromD<decltype(d16h)> a16 = DemoteTo(d16h, a);
+  const VFromD<decltype(d16h)> b16 = DemoteTo(d16h, b);
+  return Combine(d16, a16, b16);
+}
+
 // ------------------------------ ReorderWidenMulAccumulate (MulAdd, ZipLower)
 
-template <class DF>
-using DU16FromDF = RepartitionToNarrow<RebindToUnsigned<DF>>;
+namespace detail {
 
-template <size_t N, int kPow2>
-HWY_API auto ReorderWidenMulAccumulate(Simd<float, N, kPow2> df32,
-                                       VFromD<DU16FromDF<decltype(df32)>> a,
-                                       VFromD<DU16FromDF<decltype(df32)>> b,
-                                       const VFromD<decltype(df32)> sum0,
-                                       VFromD<decltype(df32)>& sum1)
-    -> VFromD<decltype(df32)> {
-  const DU16FromDF<decltype(df32)> du16;
-  const RebindToUnsigned<decltype(df32)> du32;
+// Non-overloaded wrapper function so we can define DF32 in template args.
+template <
+    size_t N, int kPow2, class DF32 = Simd<float, N, kPow2>,
+    class VF32 = VFromD<DF32>,
+    class DU16 = RepartitionToNarrow<RebindToUnsigned<Simd<float, N, kPow2>>>>
+HWY_API VF32 ReorderWidenMulAccumulateBF16(Simd<float, N, kPow2> df32,
+                                           VFromD<DU16> a, VFromD<DU16> b,
+                                           const VF32 sum0, VF32& sum1) {
+  const RebindToUnsigned<DF32> du32;
   using VU32 = VFromD<decltype(du32)>;
-  const VFromD<decltype(du16)> zero = Zero(du16);
-  const VU32 a0 = ZipLower(du32, zero, BitCast(du16, a));
-  const VU32 a1 = ZipUpper(du32, zero, BitCast(du16, a));
-  const VU32 b0 = ZipLower(du32, zero, BitCast(du16, b));
-  const VU32 b1 = ZipUpper(du32, zero, BitCast(du16, b));
-  sum1 = MulAdd(BitCast(df32, a1), BitCast(df32, b1), sum1);
-  return MulAdd(BitCast(df32, a0), BitCast(df32, b0), sum0);
+  const VU32 odd = Set(du32, 0xFFFF0000u);  // bfloat16 is the upper half of f32
+  // Using shift/and instead of Zip leads to the odd/even order that
+  // RearrangeToOddPlusEven prefers.
+  const VU32 ae = ShiftLeft<16>(BitCast(du32, a));
+  const VU32 ao = And(BitCast(du32, a), odd);
+  const VU32 be = ShiftLeft<16>(BitCast(du32, b));
+  const VU32 bo = And(BitCast(du32, b), odd);
+  sum1 = MulAdd(BitCast(df32, ao), BitCast(df32, bo), sum1);
+  return MulAdd(BitCast(df32, ae), BitCast(df32, be), sum0);
+}
+
+#define HWY_RVV_WIDEN_MACC(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH,    \
+                           SHIFT, MLEN, NAME, OP)                              \
+  template <size_t N>                                                          \
+  HWY_API HWY_RVV_V(BASE, SEWD, LMULD) NAME(                                   \
+      HWY_RVV_D(BASE, SEWD, N, SHIFT + 1) d, HWY_RVV_V(BASE, SEWD, LMULD) sum, \
+      HWY_RVV_V(BASE, SEW, LMUL) a, HWY_RVV_V(BASE, SEW, LMUL) b) {            \
+    return OP##CHAR##SEWD##LMULD(sum, a, b, Lanes(d));                         \
+  }
+
+HWY_RVV_FOREACH_I16(HWY_RVV_WIDEN_MACC, WidenMulAcc, vwmacc_vv_, _EXT_VIRT)
+#undef HWY_RVV_WIDEN_MACC
+
+// If LMUL is not the max, we can WidenMul first (3 instructions).
+template <size_t N, int kPow2, hwy::EnableIf<(kPow2 < 3)>* = nullptr,
+          class D32 = Simd<int32_t, N, kPow2>, class V32 = VFromD<D32>,
+          class D16 = RepartitionToNarrow<D32>>
+HWY_API VFromD<D32> ReorderWidenMulAccumulateI16(Simd<int32_t, N, kPow2> d32,
+                                                 VFromD<D16> a, VFromD<D16> b,
+                                                 const V32 sum0, V32& sum1) {
+  const Twice<decltype(d32)> d32t;
+  using V32T = VFromD<decltype(d32t)>;
+  V32T sum = Combine(d32t, sum1, sum0);
+  sum = detail::WidenMulAcc(d32t, sum, a, b);
+  sum1 = UpperHalf(d32, sum);
+  return LowerHalf(d32, sum);
+}
+
+// Max LMUL: must LowerHalf first (4 instructions).
+template <size_t N, class D32 = Simd<int32_t, N, 3>, class V32 = VFromD<D32>,
+          class D16 = RepartitionToNarrow<D32>>
+HWY_API VFromD<D32> ReorderWidenMulAccumulateI16(Simd<int32_t, N, 3> d32,
+                                                 VFromD<D16> a, VFromD<D16> b,
+                                                 const V32 sum0, V32& sum1) {
+  const Half<D16> d16h;
+  using V16H = VFromD<decltype(d16h)>;
+  const V16H a0 = LowerHalf(d16h, a);
+  const V16H a1 = UpperHalf(d16h, a);
+  const V16H b0 = LowerHalf(d16h, b);
+  const V16H b1 = UpperHalf(d16h, b);
+  sum1 = detail::WidenMulAcc(d32, sum1, a1, b1);
+  return detail::WidenMulAcc(d32, sum0, a0, b0);
+}
+
+}  // namespace detail
+
+template <size_t N, int kPow2, class VN, class VW>
+HWY_API VW ReorderWidenMulAccumulate(Simd<float, N, kPow2> d32, VN a, VN b,
+                                     const VW sum0, VW& sum1) {
+  return detail::ReorderWidenMulAccumulateBF16(d32, a, b, sum0, sum1);
+}
+
+template <size_t N, int kPow2, class VN, class VW>
+HWY_API VW ReorderWidenMulAccumulate(Simd<int32_t, N, kPow2> d32, VN a, VN b,
+                                     const VW sum0, VW& sum1) {
+  return detail::ReorderWidenMulAccumulateI16(d32, a, b, sum0, sum1);
+}
+
+// ------------------------------ RearrangeToOddPlusEven
+
+template <class VW, HWY_IF_SIGNED_V(VW)>  // vint32_t*
+HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
+  // vwmacc doubles LMUL, so we require a pairwise sum here. This op is
+  // expected to be less frequent than ReorderWidenMulAccumulate, hence it's
+  // preferable to do the extra work here rather than do manual odd/even
+  // extraction there.
+  const DFromV<VW> di32;
+  const RebindToUnsigned<decltype(di32)> du32;
+  const Twice<decltype(di32)> di32x2;
+  const RepartitionToWide<decltype(di32x2)> di64x2;
+  const RebindToUnsigned<decltype(di64x2)> du64x2;
+  const auto combined = BitCast(di64x2, Combine(di32x2, sum1, sum0));
+  // Isolate odd/even int32 in int64 lanes.
+  const auto even = ShiftRight<32>(ShiftLeft<32>(combined));  // sign extend
+  const auto odd = ShiftRight<32>(combined);
+  return BitCast(di32, TruncateTo(du32, BitCast(du64x2, Add(even, odd))));
+}
+
+// For max LMUL, we cannot Combine again and instead manually unroll.
+HWY_API vint32m8_t RearrangeToOddPlusEven(vint32m8_t sum0, vint32m8_t sum1) {
+  const DFromV<vint32m8_t> d;
+  const Half<decltype(d)> dh;
+  const vint32m4_t lo =
+      RearrangeToOddPlusEven(LowerHalf(sum0), UpperHalf(dh, sum0));
+  const vint32m4_t hi =
+      RearrangeToOddPlusEven(LowerHalf(sum1), UpperHalf(dh, sum1));
+  return Combine(d, hi, lo);
+}
+
+template <class VW, HWY_IF_FLOAT_V(VW)>  // vfloat*
+HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
+  return Add(sum0, sum1);  // invariant already holds
 }
 
 // ------------------------------ Lt128
 template <class D>
 HWY_INLINE MFromD<D> Lt128(D d, const VFromD<D> a, const VFromD<D> b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8, "Use u64");
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
   // Truth table of Eq and Compare for Hi and Lo u64.
   // (removed lines with (=H && cH) or (=L && cL) - cannot both be true)
   // =H =L cH cL  | out = cH | (=H & cL)
@@ -3152,7 +3288,8 @@ HWY_INLINE MFromD<D> Lt128(D d, const VFromD<D> a, const VFromD<D> b) {
 // ------------------------------ Lt128Upper
 template <class D>
 HWY_INLINE MFromD<D> Lt128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8, "Use u64");
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
   const VFromD<D> ltHL = VecFromMask(d, Lt(a, b));
   // Replicate H to its neighbor.
   return MaskFromVec(OddEven(ltHL, detail::Slide1Down(ltHL)));
@@ -3161,7 +3298,8 @@ HWY_INLINE MFromD<D> Lt128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
 // ------------------------------ Eq128
 template <class D>
 HWY_INLINE MFromD<D> Eq128(D d, const VFromD<D> a, const VFromD<D> b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8, "Use u64");
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
   const VFromD<D> eqHL = VecFromMask(d, Eq(a, b));
   const VFromD<D> eqLH = Reverse2(d, eqHL);
   return MaskFromVec(And(eqHL, eqLH));
@@ -3170,10 +3308,31 @@ HWY_INLINE MFromD<D> Eq128(D d, const VFromD<D> a, const VFromD<D> b) {
 // ------------------------------ Eq128Upper
 template <class D>
 HWY_INLINE MFromD<D> Eq128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8, "Use u64");
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
   const VFromD<D> eqHL = VecFromMask(d, Eq(a, b));
   // Replicate H to its neighbor.
   return MaskFromVec(OddEven(eqHL, detail::Slide1Down(eqHL)));
+}
+
+// ------------------------------ Ne128
+template <class D>
+HWY_INLINE MFromD<D> Ne128(D d, const VFromD<D> a, const VFromD<D> b) {
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
+  const VFromD<D> neHL = VecFromMask(d, Ne(a, b));
+  const VFromD<D> neLH = Reverse2(d, neHL);
+  return MaskFromVec(Or(neHL, neLH));
+}
+
+// ------------------------------ Ne128Upper
+template <class D>
+HWY_INLINE MFromD<D> Ne128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
+  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
+                "D must be u64");
+  const VFromD<D> neHL = VecFromMask(d, Ne(a, b));
+  // Replicate H to its neighbor.
+  return MaskFromVec(OddEven(neHL, detail::Slide1Down(neHL)));
 }
 
 // ------------------------------ Min128, Max128 (Lt128)

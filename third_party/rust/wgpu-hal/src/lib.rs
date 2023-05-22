@@ -14,6 +14,7 @@
  *  - secondary backends (DX11/GLES): 0.5 each
  */
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![allow(
     // for `if_then_panic` until it reaches stable
     unknown_lints,
@@ -37,32 +38,50 @@
     clippy::non_send_fields_in_send_ty,
     // TODO!
     clippy::missing_safety_doc,
+    // Clashes with clippy::pattern_type_mismatch
+    clippy::needless_borrowed_reference,
 )]
 #![warn(
     trivial_casts,
     trivial_numeric_casts,
+    unsafe_op_in_unsafe_fn,
     unused_extern_crates,
     unused_qualifications,
     // We don't match on a reference, unless required.
     clippy::pattern_type_mismatch,
 )]
 
+#[cfg(not(any(
+    feature = "dx11",
+    feature = "dx12",
+    feature = "gles",
+    feature = "metal",
+    feature = "vulkan"
+)))]
+compile_error!("No back ends enabled in `wgpu-hal`. Enable at least one backend feature.");
+
 #[cfg(all(feature = "metal", not(any(target_os = "macos", target_os = "ios"))))]
 compile_error!("Metal API enabled on non-Apple OS. If your project is not using resolver=\"2\" in Cargo.toml, it should.");
 #[cfg(all(feature = "dx12", not(windows)))]
 compile_error!("DX12 API enabled on non-Windows OS. If your project is not using resolver=\"2\" in Cargo.toml, it should.");
 
+/// DirectX11 API internals.
 #[cfg(all(feature = "dx11", windows))]
-mod dx11;
+pub mod dx11;
+/// DirectX12 API internals.
 #[cfg(all(feature = "dx12", windows))]
-mod dx12;
-mod empty;
+pub mod dx12;
+/// A dummy API implementation.
+pub mod empty;
+/// GLES API internals.
 #[cfg(all(feature = "gles"))]
-mod gles;
+pub mod gles;
+/// Metal API internals.
 #[cfg(all(feature = "metal"))]
-mod metal;
+pub mod metal;
+/// Vulkan API internals.
 #[cfg(feature = "vulkan")]
-mod vulkan;
+pub mod vulkan;
 
 pub mod auxil;
 pub mod api {
@@ -78,9 +97,6 @@ pub mod api {
     #[cfg(feature = "vulkan")]
     pub use super::vulkan::Api as Vulkan;
 }
-
-#[cfg(feature = "vulkan")]
-pub use vulkan::UpdateAfterBindTypes;
 
 use std::{
     borrow::{Borrow, Cow},
@@ -106,7 +122,10 @@ pub type Label<'a> = Option<&'a str>;
 pub type MemoryRange = Range<wgt::BufferAddress>;
 pub type FenceValue = u64;
 
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
+/// Drop guard to signal wgpu-hal is no longer using an externally created object.
+pub type DropGuard = Box<dyn std::any::Any + Send + Sync>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum DeviceError {
     #[error("out of memory")]
     OutOfMemory,
@@ -228,6 +247,11 @@ pub trait Adapter<A: Api>: Send + Sync {
     ///
     /// `None` means presentation is not supported for it.
     unsafe fn surface_capabilities(&self, surface: &A::Surface) -> Option<SurfaceCapabilities>;
+
+    /// Creates a [`PresentationTimestamp`] using the adapter's WSI.
+    ///
+    /// [`PresentationTimestamp`]: wgt::PresentationTimestamp
+    unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp;
 }
 
 pub trait Device<A: Api>: Send + Sync {
@@ -378,6 +402,20 @@ pub trait CommandEncoder<A: Api>: Send + Sync + fmt::Debug {
     unsafe fn copy_buffer_to_buffer<T>(&mut self, src: &A::Buffer, dst: &A::Buffer, regions: T)
     where
         T: Iterator<Item = BufferCopy>;
+
+    /// Copy from an external image to an internal texture.
+    /// Works with a single array layer.
+    /// Note: `dst` current usage has to be `TextureUses::COPY_DST`.
+    /// Note: the copy extent is in physical size (rounded to the block size)
+    #[cfg(all(target_arch = "wasm32", not(feature = "emscripten")))]
+    unsafe fn copy_external_image_to_texture<T>(
+        &mut self,
+        src: &wgt::ImageCopyExternalImage,
+        dst: &A::Texture,
+        dst_premultiplication: bool,
+        regions: T,
+    ) where
+        T: Iterator<Item = TextureCopy>;
 
     /// Copy from one texture to another.
     /// Works with a single array layer.
@@ -578,15 +616,20 @@ bitflags!(
         /// Format can be used as depth-stencil and input attachment.
         const DEPTH_STENCIL_ATTACHMENT = 1 << 8;
 
-        /// Format can be multisampled.
-        const MULTISAMPLE = 1 << 9;
+        /// Format can be multisampled by x2.
+        const MULTISAMPLE_X2   = 1 << 9;
+        /// Format can be multisampled by x4.
+        const MULTISAMPLE_X4   = 1 << 10;
+        /// Format can be multisampled by x8.
+        const MULTISAMPLE_X8   = 1 << 11;
+
         /// Format can be used for render pass resolve targets.
-        const MULTISAMPLE_RESOLVE = 1 << 10;
+        const MULTISAMPLE_RESOLVE = 1 << 12;
 
         /// Format can be copied from.
-        const COPY_SRC = 1 << 11;
+        const COPY_SRC = 1 << 13;
         /// Format can be copied to.
-        const COPY_DST = 1 << 12;
+        const COPY_DST = 1 << 14;
     }
 );
 
@@ -612,7 +655,7 @@ impl From<wgt::TextureAspect> for FormatAspects {
 impl From<wgt::TextureFormat> for FormatAspects {
     fn from(format: wgt::TextureFormat) -> Self {
         match format {
-            //wgt::TextureFormat::Stencil8 => Self::STENCIL,
+            wgt::TextureFormat::Stencil8 => Self::STENCIL,
             wgt::TextureFormat::Depth16Unorm => Self::DEPTH,
             wgt::TextureFormat::Depth32Float | wgt::TextureFormat::Depth24Plus => Self::DEPTH,
             wgt::TextureFormat::Depth32FloatStencil8 | wgt::TextureFormat::Depth24PlusStencil8 => {
@@ -719,6 +762,7 @@ bitflags::bitflags! {
 pub struct InstanceDescriptor<'a> {
     pub name: &'a str,
     pub flags: InstanceFlags,
+    pub dx12_shader_compiler: wgt::Dx12Compiler,
 }
 
 #[derive(Clone, Debug)]
@@ -823,6 +867,29 @@ pub struct TextureDescriptor<'a> {
     pub format: wgt::TextureFormat,
     pub usage: TextureUses,
     pub memory_flags: MemoryFlags,
+    /// Allows views of this texture to have a different format
+    /// than the texture does.
+    pub view_formats: Vec<wgt::TextureFormat>,
+}
+
+impl TextureDescriptor<'_> {
+    pub fn copy_extent(&self) -> CopyExtent {
+        CopyExtent::map_extent_to_copy_size(&self.size, self.dimension)
+    }
+
+    pub fn is_cube_compatible(&self) -> bool {
+        self.dimension == wgt::TextureDimension::D2
+            && self.size.depth_or_array_layers % 6 == 0
+            && self.sample_count == 1
+            && self.size.width == self.size.height
+    }
+
+    pub fn array_layer_count(&self) -> u32 {
+        match self.dimension {
+            wgt::TextureDimension::D1 | wgt::TextureDimension::D3 => 1,
+            wgt::TextureDimension::D2 => self.size.depth_or_array_layers,
+        }
+    }
 }
 
 /// TextureView descriptor.
@@ -875,8 +942,27 @@ pub struct PipelineLayoutDescriptor<'a, A: Api> {
 
 #[derive(Debug)]
 pub struct BufferBinding<'a, A: Api> {
+    /// The buffer being bound.
     pub buffer: &'a A::Buffer,
+
+    /// The offset at which the bound region starts.
+    ///
+    /// This must be less than the size of the buffer. Some back ends
+    /// cannot tolerate zero-length regions; for example, see
+    /// [VUID-VkDescriptorBufferInfo-offset-00340][340] and
+    /// [VUID-VkDescriptorBufferInfo-range-00341][341], or the
+    /// documentation for GLES's [glBindBufferRange][bbr].
+    ///
+    /// [340]: https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkDescriptorBufferInfo-offset-00340
+    /// [341]: https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkDescriptorBufferInfo-range-00341
+    /// [bbr]: https://registry.khronos.org/OpenGL-Refpages/es3.0/html/glBindBufferRange.xhtml
     pub offset: wgt::BufferAddress,
+
+    /// The size of the region bound, in bytes.
+    ///
+    /// If `None`, the region extends from `offset` to the end of the
+    /// buffer. Given the restrictions on `offset`, this means that
+    /// the size is always greater than zero.
     pub size: Option<wgt::BufferSize>,
 }
 
@@ -1049,6 +1135,9 @@ pub struct SurfaceConfiguration {
     pub extent: wgt::Extent3d,
     /// Allowed usage of surface textures,
     pub usage: TextureUses,
+    /// Allows views of swapchain texture to have a different format
+    /// than the texture does.
+    pub view_formats: Vec<wgt::TextureFormat>,
 }
 
 #[derive(Debug, Clone)]

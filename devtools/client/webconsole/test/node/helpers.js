@@ -21,7 +21,7 @@ const {
 } = require("resource://devtools/client/webconsole/utils/prefs.js");
 const prefsService = getPrefsService({});
 const { PREFS } = require("resource://devtools/client/webconsole/constants.js");
-const Telemetry = require("resource://devtools/client/shared/telemetry.js");
+const Telemetry = require("resource://devtools/client/shared/test-helpers/jest-fixtures/telemetry.js");
 const {
   getSerializedPacket,
   parsePacketAndCreateFronts,
@@ -58,7 +58,7 @@ function setupStore(
   }
   const store = configureStore(webConsoleUI, {
     ...storeOptions,
-    thunkArgs: { toolbox: { sessionId: -1 } },
+    thunkArgs: { toolbox: {} },
     telemetry: new Telemetry(),
   });
 
@@ -146,9 +146,7 @@ function getWebConsoleUiMock(hud) {
     clearNetworkRequests: () => {},
     clearMessagesCache: () => {},
     inspectObjectActor: () => {},
-    toolbox: {
-      sessionId: 1,
-    },
+    toolbox: {},
     watchCssMessages: () => {},
   };
 }

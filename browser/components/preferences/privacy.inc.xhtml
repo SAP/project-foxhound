@@ -22,7 +22,12 @@
       <image id="trackingProtectionShield"/>
       <description class="description-with-side-element" flex="1">
         <html:span id="contentBlockingDescription" class="tail-with-learn-more" data-l10n-id="content-blocking-section-top-level-description"></html:span>
-        <label id="contentBlockingLearnMore" class="learnMore" data-l10n-id="content-blocking-learn-more" is="text-link"/>
+        <html:a is="moz-support-link"
+                id="contentBlockingLearnMore"
+                class="learnMore"
+                data-l10n-id="content-blocking-learn-more"
+                support-page="enhanced-tracking-protection"
+        />
       </description>
       <button id="trackingProtectionExceptions"
               is="highlightable-button"
@@ -40,7 +45,7 @@
     </hbox>
     <hbox id="fpiIncompatibilityWarning" class="info-box-container" hidden="true">
       <vbox class="info-icon-container">
-        <image class="info-icon"></image>
+        <html:img class="info-icon"></html:img>
       </vbox>
       <vbox flex="1">
         <description>
@@ -91,7 +96,7 @@
                   <label class="content-blocking-label" data-l10n-id="content-blocking-all-windows-tracking-content"/>
                 </hbox>
                 <hbox class="extra-information-label all-third-party-cookies-option" hidden="true">
-                  <label class="content-blocking-label" data-l10n-id="content-blocking-all-third-party-cookies"/>
+                  <label class="content-blocking-label" data-l10n-id="content-blocking-all-cross-site-cookies"/>
                 </hbox>
                 <hbox class="extra-information-label all-cookies-option" hidden="true">
                   <label class="content-blocking-label" data-l10n-id="content-blocking-all-cookies"/>
@@ -112,27 +117,18 @@
                 </hbox>
                 <description>
                   <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-etp-standard-tcp-rollout-description"></html:span>
-                  <label id="tcp-learn-more-link" class="learnMore" data-l10n-id="content-blocking-etp-standard-tcp-rollout-learn-more" is="text-link"/>
-                </description>
-              </vbox>
-              <vbox id="etpStandardTCPRolloutBox" class="content-blocking-warning info-box-container">
-                <hbox>
-                  <checkbox id="etpStandardTCPRollout"
-                            class="content-blocking-warning-title"
-                            data-l10n-id="content-blocking-etp-standard-tcp-rollout-checkbox"
-                            preference="privacy.restrict3rdpartystorage.rollout.enabledByDefault"
-                            flex="1" />
-
-                </hbox>
-                <description class="indent">
-                  <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-etp-standard-tcp-rollout-description"></html:span>
-                  <label id="tcp-rollout-learn-more-link" class="learnMore" data-l10n-id="content-blocking-etp-standard-tcp-rollout-learn-more" is="text-link"/>
+                  <html:a is="moz-support-link"
+                          id="tcp-learn-more-link"
+                          class="learnMore"
+                          data-l10n-id="content-blocking-etp-standard-tcp-rollout-learn-more"
+                          support-page="total-cookie-protection"
+                  />
                 </description>
               </vbox>
               <html:div class="content-blocking-warning info-box-container reload-tabs" hidden="true">
                 <html:div class="content-blocking-reload-desc-container">
                   <html:div class="info-icon-container">
-                    <image class="info-icon"/>
+                    <html:img class="info-icon"/>
                   </html:div>
                   <html:span data-l10n-id="content-blocking-reload-description"
                              class="content-blocking-reload-description" />
@@ -180,7 +176,7 @@
                   <label class="content-blocking-label" data-l10n-id="content-blocking-all-windows-tracking-content"/>
                 </hbox>
                 <hbox class="extra-information-label all-third-party-cookies-option" hidden="true">
-                  <label class="content-blocking-label" data-l10n-id="content-blocking-all-third-party-cookies"/>
+                  <label class="content-blocking-label" data-l10n-id="content-blocking-all-cross-site-cookies"/>
                 </hbox>
                 <hbox class="extra-information-label all-cookies-option" hidden="true">
                   <label class="content-blocking-label" data-l10n-id="content-blocking-all-cookies"/>
@@ -201,7 +197,7 @@
               <html:div class="content-blocking-warning info-box-container reload-tabs" hidden="true">
                 <html:div class="content-blocking-reload-desc-container">
                   <html:div class="info-icon-container">
-                    <image class="info-icon"/>
+                    <html:img class="info-icon"/>
                   </html:div>
                   <html:span data-l10n-id="content-blocking-reload-description"
                              class="content-blocking-reload-description" />
@@ -217,7 +213,11 @@
                 </hbox>
                 <description class="indent">
                   <html:span class="tail-with-learn-more content-blocking-warning-description" data-l10n-id="content-blocking-and-isolating-etp-warning-description-2"></html:span>
-                  <label id="" class="learnMore contentBlockWarningLink" data-l10n-id="content-blocking-warning-learn-how" is="text-link"/>
+                  <html:a is="moz-support-link"
+                          class="learnMore"
+                          data-l10n-id="content-blocking-warning-learn-how"
+                          support-page="turn-off-etp-desktop"
+                  />
                 </description>
               </vbox>
             </vbox>
@@ -252,7 +252,7 @@
                         <menuitem id="blockCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-trackers" value="trackers"/>
                         <menuitem id="isolateCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-cookies" value="trackers-plus-isolate"/>
                         <menuitem data-l10n-id="sitedata-option-block-unvisited" value="unvisited"/>
-                        <menuitem data-l10n-id="sitedata-option-block-all-third-party" value="all-third-parties"/>
+                        <menuitem data-l10n-id="sitedata-option-block-all-cross-site-cookies" value="all-third-parties"/>
                         <menuitem data-l10n-id="sitedata-option-block-all" value="always"/>
                       </menupopup>
                     </menulist>
@@ -302,7 +302,7 @@
               <html:div class="content-blocking-warning info-box-container reload-tabs" hidden="true">
                 <html:div class="content-blocking-reload-desc-container">
                   <html:div class="info-icon-container">
-                    <image class="info-icon"/>
+                    <html:img class="info-icon"/>
                   </html:div>
                   <html:span data-l10n-id="content-blocking-reload-description"
                              class="content-blocking-reload-description" />
@@ -318,7 +318,11 @@
                 </hbox>
                 <description class="indent">
                   <html:span class="tail-with-learn-more content-blocking-warning-description" data-l10n-id="content-blocking-and-isolating-etp-warning-description-2"></html:span>
-                  <label id="" class="learnMore contentBlockWarningLink" data-l10n-id="content-blocking-warning-learn-how" is="text-link"/>
+                  <html:a is="moz-support-link"
+                          class="learnMore"
+                          data-l10n-id="content-blocking-warning-learn-how"
+                          support-page="turn-off-etp-desktop"
+                  />
                 </description>
               </vbox>
             </vbox>
@@ -327,9 +331,14 @@
       </radiogroup>
     </vbox>
     <vbox id="doNotTrackLearnMoreBox">
-      <label><label class="tail-with-learn-more" data-l10n-id="do-not-track-description" id="doNotTrackDesc"></label><label
-      class="learnMore" is="text-link" href="https://www.mozilla.org/dnt"
-      data-l10n-id="do-not-track-learn-more"></label></label>
+      <label>
+        <label class="tail-with-learn-more" data-l10n-id="do-not-track-description" id="doNotTrackDesc"></label>
+      <html:a is="moz-support-link"
+              class="learnMore"
+              data-l10n-id="do-not-track-learn-more"
+              support-page="how-do-i-turn-do-not-track-feature"
+      />
+      </label>
       <radiogroup id="doNotTrackRadioGroup" aria-labelledby="doNotTrackDesc" preference="privacy.donottrackheader.enabled">
         <radio value="true" data-l10n-id="do-not-track-option-always"/>
         <radio value="false" data-l10n-id="do-not-track-option-default-content-blocking-known"/>
@@ -346,12 +355,15 @@
     <vbox flex="1">
       <description class="description-with-side-element" flex="1">
         <html:span id="totalSiteDataSize" class="tail-with-learn-more"></html:span>
-        <label id="siteDataLearnMoreLink"
-          class="learnMore" is="text-link" data-l10n-id="sitedata-learn-more"/>
+        <html:a is="moz-support-link"
+                id="siteDataLearnMoreLink"
+                data-l10n-id="sitedata-learn-more"
+                support-page="storage-permissions"
+        />
       </description>
       <hbox flex="1" id="deleteOnCloseNote" class="info-box-container smaller-font-size">
         <hbox class="info-icon-container">
-          <image class="info-icon"></image>
+          <html:img class="info-icon"></html:img>
         </hbox>
         <description flex="1" data-l10n-id="sitedata-delete-on-close-private-browsing" />
       </hbox>
@@ -395,6 +407,25 @@
               " />
     </vbox>
   </hbox>
+</groupbox>
+
+<!-- Cookie Banner Handling -->
+<groupbox id="cookieBannerHandlingGroup" data-category="panePrivacy" data-subcategory="cookiebanner" hidden="true">
+  <label><html:h2 data-l10n-id="cookie-banner-handling-header" /></label>
+  <vbox flex="1">
+    <hbox>
+      <description>
+        <html:span id="cookieBannerReductionExplanation" class="tail-with-learn-more" data-l10n-id="cookie-banner-handling-description" ></html:span>
+        <label id="cookieBannerHandlingLearnMore" class="learnMore" is="text-link" data-l10n-id="cookie-banner-learn-more"></label>
+      </description>
+    </hbox>
+    <hbox>
+      <checkbox id="handleCookieBanners"
+                preference="cookiebanners.service.mode"
+                data-l10n-id="forms-handle-cookie-banners"
+                flex="1" />
+    </hbox>
+  </vbox>
 </groupbox>
 
 <!-- Passwords -->
@@ -455,14 +486,25 @@
                 preference="pref.privacy.disable_button.view_passwords"/>
       </vbox>
     </hbox>
+    <hbox class="indent" id="relayIntegrationBox" flex="1" align="center">
+      <checkbox id="relayIntegration"
+                class="tail-with-learn-more"
+                data-l10n-id="relay-integration"
+                search-l10n-ids="relay-integration.label" />
+      <html:a id="relayIntegrationLearnMoreLink" class="learnMore"
+             data-l10n-id="relay-integration-learn-more-link"/>
+    </hbox>
     <hbox class="indent" id="breachAlertsBox" flex="1" align="center">
       <checkbox id="breachAlerts"
                 class="tail-with-learn-more"
                 data-l10n-id="forms-breach-alerts"
                 search-l10n-ids="breach-alerts.label"
                 preference="signon.management.page.breach-alerts.enabled"/>
-      <label id="breachAlertsLearnMoreLink" class="learnMore" is="text-link"
-              data-l10n-id="forms-breach-alerts-learn-more-link"/>
+      <html:a is="moz-support-link"
+              id="breachAlertsLearnMoreLink"
+              data-l10n-id="forms-breach-alerts-learn-more-link"
+              support-page="lockwise-alerts"
+      />
     </hbox>
   </vbox>
   <vbox>
@@ -470,8 +512,11 @@
       <checkbox id="useMasterPassword"
                 data-l10n-id="forms-primary-pw-use"
                 class="tail-with-learn-more"/>
-      <label id="primaryPasswordLearnMoreLink" class="learnMore" is="text-link"
-             data-l10n-id="forms-primary-pw-learn-more-link"/>
+      <html:a is="moz-support-link"
+              id="primaryPasswordLearnMoreLink"
+              data-l10n-id="forms-primary-pw-learn-more-link"
+              support-page="primary-password-stored-logins"
+      />
       <spacer flex="1"/>
       <button id="changeMasterPassword"
               is="highlightable-button"
@@ -488,9 +533,11 @@
       <checkbox data-l10n-id="forms-windows-sso"
                 preference="network.http.windows-sso.enabled"
                 class="tail-with-learn-more"/>
-      <label id="windowsSSOLearnMoreLink" class="learnMore" is="text-link"
-             flex="1"
-             data-l10n-id="forms-windows-sso-learn-more-link"/>
+      <html:a is="moz-support-link"
+              id="windowsSSOLearnMoreLink"
+              data-l10n-id="forms-windows-sso-learn-more-link"
+              support-page="windows-sso"
+      />
     </hbox>
     <description id="windows-sso-caption" class="indent tip-caption"
            data-l10n-id="forms-windows-sso-desc"/>
@@ -628,90 +675,62 @@
               class="tail-with-learn-more"
               data-l10n-id="addressbar-firefox-suggest-best-match-option"
               preference="browser.urlbar.suggest.bestmatch"/>
-    <label id="firefoxSuggestBestMatchLearnMore"
-           class="learnMore"
-           is="text-link"
-           data-l10n-id="addressbar-best-match-learn-more"/>
+    <html:a is="moz-support-link"
+            id="firefoxSuggestBestMatchLearnMore"
+            class="learnMore"
+            data-l10n-id="addressbar-best-match-learn-more"
+            support-page="firefox-suggest"
+    />
   </hbox>
   <hbox id="quickActionsBox" align="center" hidden="true">
     <checkbox id="enableQuickActions"
               class="tail-with-learn-more"
               data-l10n-id="addressbar-locbar-quickactions-option"
               preference="browser.urlbar.suggest.quickactions" />
-    <label id="quickActionsLink"
-           class="learnMore"
-           is="text-link"
-           data-l10n-id="addressbar-quickactions-learn-more" />
+    <html:a is="moz-support-link"
+            id="quickActionsLink"
+            data-l10n-id="addressbar-quickactions-learn-more"
+            support-page="quick-actions-firefox-search-bar"
+    />
   </hbox>
   <vbox id="firefoxSuggestContainer" hidden="true">
-    <!-- This form[autocomplete="off"] is necessary to prevent the inputs from
-         participating in session restore. autocomplete="off" is ignored on the
-         inputs themselves. -->
-    <html:form id="firefoxSuggestForm" autocomplete="off" hidden="true"/>
     <vbox class="firefoxSuggestOptionBox">
-      <hbox align="center">
-        <label id="firefoxSuggestNonsponsoredLabel"
-               flex="1"
-               data-l10n-id="addressbar-firefox-suggest-nonsponsored"/>
-        <html:input id="firefoxSuggestNonsponsoredToggle"
-                    type="checkbox"
-                    class="toggle-button firefoxSuggestToggle"
-                    preference="browser.urlbar.suggest.quicksuggest.nonsponsored"
-                    form="firefoxSuggestForm"
-                    aria-labelledby="firefoxSuggestNonsponsoredLabel"
-                    aria-describedby="firefoxSuggestNonsponsoredDescription"/>
-      </hbox>
-      <description id="firefoxSuggestNonsponsoredDescription"
-                   class="tip-caption firefoxSuggestOptionDescription"
-                   data-l10n-id="addressbar-firefox-suggest-nonsponsored-description"/>
+      <html:moz-toggle id="firefoxSuggestNonsponsoredToggle"
+                       preference="browser.urlbar.suggest.quicksuggest.nonsponsored"
+                       data-l10n-id="addressbar-firefox-suggest-nonsponsored"
+                       data-l10n-attrs="label, description" />
     </vbox>
     <vbox class="firefoxSuggestOptionBox">
-      <hbox align="center">
-        <label id="firefoxSuggestSponsoredLabel"
-               flex="1"
-               data-l10n-id="addressbar-firefox-suggest-sponsored"/>
-        <html:input id="firefoxSuggestSponsoredToggle"
-                    type="checkbox"
-                    class="toggle-button firefoxSuggestToggle"
-                    preference="browser.urlbar.suggest.quicksuggest.sponsored"
-                    form="firefoxSuggestForm"
-                    aria-labelledby="firefoxSuggestSponsoredLabel"
-                    aria-describedby="firefoxSuggestSponsoredDescription"/>
-      </hbox>
-      <description id="firefoxSuggestSponsoredDescription"
-                   class="tip-caption firefoxSuggestOptionDescription"
-                   data-l10n-id="addressbar-firefox-suggest-sponsored-description"/>
+      <html:moz-toggle id="firefoxSuggestSponsoredToggle"
+                       preference="browser.urlbar.suggest.quicksuggest.sponsored"
+                       data-l10n-id="addressbar-firefox-suggest-sponsored"
+                       data-l10n-attrs="label, description" />
     </vbox>
     <vbox class="firefoxSuggestOptionBox">
-      <hbox align="center">
-        <label id="firefoxSuggestDataCollectionLabel"
-               flex="1"
-               data-l10n-id="addressbar-firefox-suggest-data-collection"/>
-        <html:input id="firefoxSuggestDataCollectionToggle"
-                    type="checkbox"
-                    class="toggle-button firefoxSuggestToggle"
-                    preference="browser.urlbar.quicksuggest.dataCollection.enabled"
-                    form="firefoxSuggestForm"
-                    aria-labelledby="firefoxSuggestDataCollectionLabel"
-                    aria-describedby="firefoxSuggestDataCollectionDescription"/>
-      </hbox>
-      <description class="tip-caption firefoxSuggestOptionDescription">
-        <html:span id="firefoxSuggestDataCollectionDescription"
-                   class="tail-with-learn-more"
-                   data-l10n-id="addressbar-firefox-suggest-data-collection-description"/>
-      <label id="firefoxSuggestDataCollectionLearnMore"
-             class="learnMore firefoxSuggestLearnMore" is="text-link"
-             data-l10n-id="addressbar-locbar-firefox-suggest-learn-more"/>
-      </description>
+      <html:moz-toggle id="firefoxSuggestDataCollectionToggle"
+                       preference="browser.urlbar.quicksuggest.dataCollection.enabled"
+                       data-l10n-id="addressbar-firefox-suggest-data-collection"
+                       data-l10n-attrs="label, description">
+        <html:a slot="support-link"
+                is="moz-support-link"
+                id="firefoxSuggestDataCollectionLearnMore"
+                class="learnMore firefoxSuggestLearnMore"
+                data-l10n-id="addressbar-locbar-firefox-suggest-learn-more"
+                support-page="firefox-suggest"
+        />
+      </html:moz-toggle>
     </vbox>
     <hbox id="firefoxSuggestInfoBox" class="info-box-container" align="start"
           hidden="true">
-      <image class="info-icon"/>
+      <html:img class="info-icon"/>
       <description class="tip-caption" flex="1">
         <html:span id="firefoxSuggestInfoText" class="tail-with-learn-more"/>
-        <label id="firefoxSuggestInfoBoxLearnMore"
-               class="learnMore firefoxSuggestLearnMore" is="text-link"
-               data-l10n-id="addressbar-locbar-firefox-suggest-learn-more"/>
+        <html:a is="moz-support-link"
+                id="firefoxSuggestInfoBoxLearnMore"
+                class="learnMore firefoxSuggestLearnMore"
+                data-l10n-id="addressbar-locbar-firefox-suggest-learn-more"
+                support-page="firefox-suggest"
+        />
       </description>
     </hbox>
   </vbox>
@@ -801,10 +820,12 @@
         <label id="notificationPermissionsLabel"
                class="tail-with-learn-more"
                data-l10n-id="permissions-notification"/>
-        <label id="notificationPermissionsLearnMore"
-               class="learnMore"
-               is="text-link"
-               data-l10n-id="permissions-notification-link"/>
+        <html:a is="moz-support-link"
+                id="notificationPermissionsLearnMore"
+                class="learnMore"
+                data-l10n-id="permissions-notification-link"
+                support-page="push"
+        />
       </description>
       <hbox pack="end">
         <button id="notificationSettingsButton"
@@ -920,15 +941,15 @@
 
   <description>
     <label class="tail-with-learn-more" data-l10n-id="collection-description"/>
-    <label id="dataCollectionPrivacyNotice"
-           class="learnMore" is="text-link"
+    <html:a id="dataCollectionPrivacyNotice"
+           class="learnMore"
            data-l10n-id="collection-privacy-notice"/>
   </description>
 #ifdef MOZ_DATA_REPORTING
   <description>
     <hbox id="telemetry-container" class="info-box-container smaller-font-size" hidden="true">
       <hbox class="info-icon-container">
-        <image class="info-icon"></image>
+        <html:img class="info-icon"></html:img>
       </hbox>
       <hbox align="center" flex="1">
         <html:span id="telemetryDisabledDescription" class="tail-with-learn-more"
@@ -944,17 +965,20 @@
       <checkbox id="submitHealthReportBox"
                 data-l10n-id="collection-health-report"
                 class="tail-with-learn-more"/>
-      <label id="FHRLearnMore"
-             class="learnMore" is="text-link"
+      <html:a id="FHRLearnMore"
+             class="learnMore"
              data-l10n-id="collection-health-report-link"/>
       <vbox class="indent">
         <hbox align="center">
           <checkbox id="addonRecommendationEnabled"
                     class="tail-with-learn-more"
                     data-l10n-id="addon-recommendations"/>
-          <label id="addonRecommendationLearnMore"
-                 class="learnMore" is="text-link"
-                 data-l10n-id="addon-recommendations-link"/>
+          <html:a is="moz-support-link"
+                  id="addonRecommendationLearnMore"
+                  class="learnMore"
+                  data-l10n-id="addon-recommendations-link"
+                  support-page="personalized-addons"
+          />
         </hbox>
       </vbox>
     </description>
@@ -969,10 +993,10 @@
       <checkbox id="optOutStudiesEnabled"
                 class="tail-with-learn-more"
                 data-l10n-id="collection-studies"/>
-      <label id="viewShieldStudies"
+      <html:a id="viewShieldStudies"
               href="about:studies"
               useoriginprincipal="true"
-              class="learnMore" is="text-link"
+              class="learnMore"
               data-l10n-id="collection-studies-link"/>
     </hbox>
 #endif
@@ -1021,8 +1045,12 @@
     <checkbox id="enableSafeBrowsing"
               data-l10n-id="security-enable-safe-browsing"
               class="tail-with-learn-more"/>
-    <label id="enableSafeBrowsingLearnMore"
-           class="learnMore" is="text-link" data-l10n-id="security-enable-safe-browsing-link"/>
+    <html:a is="moz-support-link"
+            id="enableSafeBrowsingLearnMore"
+            class="learnMore"
+            data-l10n-id="security-enable-safe-browsing-link"
+            support-page="phishing-malware"
+    />
   </hbox>
   <vbox class="indent">
     <checkbox id="blockDownloads"
@@ -1086,7 +1114,12 @@
   <label><html:h2 data-l10n-id="httpsonly-header"/></label>
   <vbox data-subcategory="httpsonly" flex="1">
     <label id="httpsOnlyDescription" data-l10n-id="httpsonly-description"/>
-    <label id="httpsOnlyLearnMore" data-l10n-id="httpsonly-learn-more" class="learnMore" is="text-link"/>
+    <html:a is="moz-support-link"
+            id="httpsOnlyLearnMore"
+            class="learnMore"
+            data-l10n-id="httpsonly-learn-more"
+            support-page="https-only-prefs"
+    />
   </vbox>
   <hbox>
     <radiogroup flex="1" id="httpsOnlyRadioGroup">

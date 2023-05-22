@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import datetime
 import os
 import shutil
@@ -15,8 +13,9 @@ from pathlib import Path
 from string import Template
 
 import mozpack.path as mozpath
-from mozbuild.repackaging.application_ini import get_application_ini_values
 from mozpack.files import FileFinder
+
+from mozbuild.repackaging.application_ini import get_application_ini_values
 
 
 class NoPackageFound(Exception):
@@ -110,6 +109,21 @@ def repackage_deb(infile, output, template_dir, arch):
             mozpath.join(extract_dir, app_name.lower(), "is-packaged-app"), "w"
         ) as f:
             f.write("This is a packaged app.\n")
+
+        distro_dir_checkout = mozpath.join(tmpdir, "deb")
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "https://github.com/mozilla-partners/deb.git",
+                distro_dir_checkout,
+            ],
+            check=True,
+        )
+        shutil.copytree(
+            mozpath.join(distro_dir_checkout, "desktop/deb/distribution"),
+            mozpath.join(extract_dir, app_name.lower(), "distribution"),
+        )
 
         if os.path.isdir(f"/srv/{_DEB_DIST}-{deb_arch}"):
             subprocess.check_call(

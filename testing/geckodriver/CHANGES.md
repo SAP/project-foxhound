@@ -3,6 +3,24 @@
 
 All notable changes to this program are documented in this file.
 
+## 0.32.2  (2023-02-08, `602aa16c20d4`)
+
+### Fixed
+
+- With the release of geckodriver 0.32.1 the marionette crate was inappropriately
+  bumped to a semver incompatible version and caused `cargo install geckodriver`
+  to fail for older releases.
+
+## 0.32.1  (2023-02-02, `b7f075124503`)
+
+### Fixed
+
+- When using the boolean capability `moz:debuggerAddress` with a value of `true`
+  the site-isolation feature in Firefox will no longer accidentally be turned off.
+  This behavior affected all users of WebDriver clients especially Selenium, which
+  set this capability by default, and caused Firefox on desktop systems to be
+  launched in an unsupported mode.
+
 ## 0.32.0  (2022-10-13, `4563dd583110`)
 
 ### Added

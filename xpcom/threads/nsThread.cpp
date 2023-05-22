@@ -85,6 +85,7 @@ using GetCurrentThreadStackLimitsFn = void(WINAPI*)(PULONG_PTR LowLimit,
 #ifdef XP_MACOSX
 #  include <mach/mach.h>
 #  include <mach/thread_policy.h>
+#  include <sys/qos.h>
 #endif
 
 #ifdef MOZ_CANARY
@@ -544,15 +545,16 @@ int sCanaryOutputFD = -1;
 #endif
 
 nsThread::nsThread(NotNull<SynchronizedEventQueue*> aQueue,
-                   MainThreadFlag aMainThread, uint32_t aStackSize)
+                   MainThreadFlag aMainThread,
+                   nsIThreadManager::ThreadCreationOptions aOptions)
     : mEvents(aQueue.get()),
-      mEventTarget(
-          new ThreadEventTarget(mEvents.get(), aMainThread == MAIN_THREAD)),
+      mEventTarget(new ThreadEventTarget(
+          mEvents.get(), aMainThread == MAIN_THREAD, aOptions.blockDispatch)),
       mOutstandingShutdownContexts(0),
       mShutdownContext(nullptr),
       mScriptObserver(nullptr),
       mThreadName("<uninitialized>"),
-      mStackSize(aStackSize),
+      mStackSize(aOptions.stackSize),
       mNestedEventLoopDepth(0),
       mShutdownRequired(false),
       mPriority(PRIORITY_NORMAL),
@@ -908,7 +910,7 @@ nsThread::HasPendingEvents(bool* aResult) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  if (mIsMainThread && !mIsInLocalExecutionMode) {
+  if (mIsMainThread) {
     *aResult = TaskController::Get()->HasMainThreadPendingTasks();
   } else {
     *aResult = mEvents->HasPendingEvent();
@@ -943,6 +945,33 @@ nsThread::DispatchToQueue(already_AddRefed<nsIRunnable> aEvent,
     return NS_ERROR_UNEXPECTED;
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsThread::SetThreadQoS(nsIThread::QoSPriority aPriority) {
+  if (!StaticPrefs::threads_use_low_power_enabled()) {
+    return NS_OK;
+  }
+  // The approach here is to have a thread set itself for its QoS level,
+  // so we assert if we aren't on the current thread.
+  MOZ_ASSERT(IsOnCurrentThread(), "Can only change the current thread's QoS");
+
+#if defined(XP_MACOSX)
+  // Only arm64 macs may possess heterogeneous cores. On these, we can tell
+  // a thread to set its own QoS status. On intel macs things should behave
+  // normally, and the OS will ignore the QoS state of the thread.
+  if (aPriority == nsIThread::QOS_PRIORITY_LOW) {
+    pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0);
+  } else if (NS_IsMainThread()) {
+    // MacOS documentation specifies that a main thread should be initialized at
+    // the USER_INTERACTIVE priority, so when we restore thread priorities the
+    // main thread should be setting itself to this.
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+  } else {
+    pthread_set_qos_class_self_np(QOS_CLASS_DEFAULT, 0);
+  }
+#endif
+  // Do nothing if an OS-specific implementation is unavailable.
   return NS_OK;
 }
 
@@ -1075,18 +1104,6 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
   // event loop since its state change hasn't happened yet.
   bool reallyWait = aMayWait && (mNestedEventLoopDepth > 0 || !ShuttingDown());
 
-  if (mIsInLocalExecutionMode) {
-    if (nsCOMPtr<nsIRunnable> event = mEvents->GetEvent(reallyWait)) {
-      *aResult = true;
-      LogRunnable::Run log(event);
-      event->Run();
-      event = nullptr;
-    } else {
-      *aResult = false;
-    }
-    return NS_OK;
-  }
-
   Maybe<dom::AutoNoJSAPI> noJSAPI;
 
   if (mUseHangMonitor && reallyWait) {
@@ -1108,6 +1125,8 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
     mScriptObserver->BeforeProcessTask(reallyWait);
   }
 
+  DrainDirectTasks();
+
 #ifdef EARLY_BETA_OR_EARLIER
   // Need to capture mayWaitForWakeup state before OnProcessNextEvent,
   // since on the main thread OnProcessNextEvent ends up waiting for the new
@@ -1122,6 +1141,8 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
 
   NOTIFY_EVENT_OBSERVERS(EventQueue()->EventObservers(), OnProcessNextEvent,
                          (this, reallyWait));
+
+  DrainDirectTasks();
 
 #ifdef MOZ_CANARY
   Canary canary;
@@ -1382,13 +1403,6 @@ void nsThread::DoMainThreadSpecificProcessing() const {
   }
 }
 
-NS_IMETHODIMP
-nsThread::GetEventTarget(nsIEventTarget** aEventTarget) {
-  nsCOMPtr<nsIEventTarget> target = this;
-  target.forget(aEventTarget);
-  return NS_OK;
-}
-
 //-----------------------------------------------------------------------------
 // nsIDirectTaskDispatcher
 
@@ -1416,33 +1430,6 @@ NS_IMETHODIMP nsThread::HaveDirectTasks(bool* aValue) {
 
   *aValue = mDirectTasks.HaveTasks();
   return NS_OK;
-}
-
-nsIEventTarget* nsThread::EventTarget() { return this; }
-
-nsISerialEventTarget* nsThread::SerialEventTarget() { return this; }
-
-nsLocalExecutionRecord nsThread::EnterLocalExecution() {
-  MOZ_RELEASE_ASSERT(!mIsInLocalExecutionMode);
-  MOZ_ASSERT(IsOnCurrentThread());
-  MOZ_ASSERT(EventQueue());
-  return nsLocalExecutionRecord(*EventQueue(), mIsInLocalExecutionMode);
-}
-
-nsLocalExecutionGuard::nsLocalExecutionGuard(
-    nsLocalExecutionRecord&& aLocalExecutionRecord)
-    : mEventQueueStack(aLocalExecutionRecord.mEventQueueStack),
-      mLocalEventTarget(mEventQueueStack.PushEventQueue()),
-      mLocalExecutionFlag(aLocalExecutionRecord.mLocalExecutionFlag) {
-  MOZ_ASSERT(mLocalEventTarget);
-  MOZ_ASSERT(!mLocalExecutionFlag);
-  mLocalExecutionFlag = true;
-}
-
-nsLocalExecutionGuard::~nsLocalExecutionGuard() {
-  MOZ_ASSERT(mLocalExecutionFlag);
-  mLocalExecutionFlag = false;
-  mEventQueueStack.PopEventQueue(mLocalEventTarget);
 }
 
 NS_IMPL_ISUPPORTS(nsThreadShutdownContext, nsIThreadShutdown)
@@ -1577,7 +1564,9 @@ void PerformanceCounterState::MaybeReportAccumulatedTime(TimeStamp aNow) {
         static MarkerSchema MarkerTypeDisplay() {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-          schema.AddKeyLabelFormat("category", "Type", MS::Format::String);
+          schema.AddKeyLabelFormatSearchable("category", "Type",
+                                             MS::Format::String,
+                                             MS::Searchable::Searchable);
           return schema;
         }
       };

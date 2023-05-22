@@ -128,6 +128,8 @@ const EXPORTED_SYMBOLS = [
   "FormAutofillStorageBase",
   "CreditCardsBase",
   "AddressesBase",
+  "ADDRESS_SCHEMA_VERSION",
+  "CREDIT_CARD_SCHEMA_VERSION",
 ];
 
 const { XPCOMUtils } = ChromeUtils.importESModule(
@@ -145,6 +147,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AutofillTelemetry: "resource://autofill/AutofillTelemetry.jsm",
   FormAutofillNameUtils: "resource://autofill/FormAutofillNameUtils.jsm",
   FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
   PhoneNumber: "resource://autofill/phonenumberutils/PhoneNumber.jsm",
@@ -157,7 +160,19 @@ const CryptoHash = Components.Constructor(
 );
 
 const STORAGE_SCHEMA_VERSION = 1;
+
+// NOTE: It's likely this number can never change.
+// Please talk to the sync team before changing this!
+// (And if it did ever change, it must never be "4" due to the reconcile hacks
+// below which repairs credit-cards with version=4)
 const ADDRESS_SCHEMA_VERSION = 1;
+
+// Version 2: Bug 1486954 - Encrypt `cc-number`
+// Version 3: Bug 1639795 - Update keystore name
+// Version 4: (deprecated!!! See Bug 1812235): Bug 1667257 - Do not store `cc-type` field
+// Next version should be 5
+// NOTE: It's likely this number can never change.
+// Please talk to the sync team before changing this!
 const CREDIT_CARD_SCHEMA_VERSION = 3;
 
 const VALID_ADDRESS_FIELDS = [
@@ -225,7 +240,7 @@ function sha512(string) {
   if (string == null) {
     return null;
   }
-  let encoder = new TextEncoder("utf-8");
+  let encoder = new TextEncoder();
   let bytes = encoder.encode(string);
   let hash = new CryptoHash("sha512");
   hash.update(bytes, bytes.length);
@@ -274,6 +289,8 @@ class AutofillRecords {
     this._schemaVersion = schemaVersion;
 
     this._initialize();
+
+    Services.obs.addObserver(this, "formautofill-storage-changed");
   }
 
   _initialize() {
@@ -287,6 +304,23 @@ class AutofillRecords {
         this._store.saveSoon();
       }
     });
+  }
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "formautofill-storage-changed":
+        let collectionName = subject.wrappedJSObject.collectionName;
+        if (collectionName != this._collectionName) {
+          return;
+        }
+        const telemetryType =
+          subject.wrappedJSObject.collectionName == "creditCards"
+            ? lazy.AutofillTelemetry.CREDIT_CARD
+            : lazy.AutofillTelemetry.ADDRESS;
+        const count = this._data.filter(entry => !entry.deleted).length;
+        lazy.AutofillTelemetry.recordAutofillProfileCount(telemetryType, count);
+        break;
+    }
   }
 
   /**
@@ -553,7 +587,14 @@ class AutofillRecords {
     );
   }
 
-  updateUseCountTelemetry() {}
+  updateUseCountTelemetry() {
+    const telemetryType =
+      this._collectionName == "creditCards"
+        ? lazy.AutofillTelemetry.CREDIT_CARD
+        : lazy.AutofillTelemetry.ADDRESS;
+    let records = this._data.filter(r => !r.deleted);
+    lazy.AutofillTelemetry.recordNumberOfUse(telemetryType, records);
+  }
 
   /**
    * Removes the specified record. No error occurs if the record isn't found.
@@ -938,6 +979,30 @@ class AutofillRecords {
 
     let forkedGUID = null;
 
+    // NOTE: This implies a credit-card - so it's critical ADDRESS_SCHEMA_VERSION
+    // never equals 4 while this code exists!
+    let requiresForceUpdate =
+      localRecord.version != remoteRecord.version && remoteRecord.version == 4;
+
+    if (requiresForceUpdate) {
+      // Another desktop device that is still using version=4 has created or
+      // modified a remote record. Here we downgrade it to version=3 so we can
+      // treat it normally, then cause it to be re-uploaded so other desktop
+      // or mobile devices can still see it.
+      // That device still using version=4 *will* again see it, and again
+      // upgrade it, but thankfully that 3->4 migration doesn't force a reupload
+      // of all records, or we'd be going back and forward on every sync.
+      // Once that version=4 device gets updated to roll back to version=3, it
+      // will then yet again re-upload it, this time with version=3, but the
+      // content will be the same here, so everything should work out in the end.
+      //
+      // If we just ignored this incoming record, it would remain on the server
+      // with version=4. If the device that wrote that went away (ie, never
+      // synced again) nothing would ever repair it back to 3, which would
+      // be bad because mobile would remain broken until the user edited the
+      // card somewhere.
+      remoteRecord = await this._computeMigratedRecord(remoteRecord);
+    }
     if (sync.changeCounter === 0) {
       // Local not modified. Replace local with remote.
       await this._replaceRecordAt(localIndex, remoteRecord, {
@@ -968,6 +1033,18 @@ class AutofillRecords {
           keepSyncMetadata: false,
         });
       }
+    }
+
+    if (requiresForceUpdate) {
+      // The incoming record was version=4 and we want to re-upload it as version=3.
+      // We need to reach directly into self._data[] so we can poke at the
+      // sync metadata directly.
+      let indexToUpdate = this._findIndexByGUID(remoteRecord.guid);
+      let toUpdate = this._data[indexToUpdate];
+      this._getSyncMetaData(toUpdate, true).changeCounter += 1;
+      this.log.info(
+        `Flagging record ${toUpdate.guid} for re-upload after record version downgrade`
+      );
     }
 
     this._store.saveSoon();
@@ -1281,7 +1358,7 @@ class AutofillRecords {
       record.version = 0;
     }
 
-    if (record.version < this.version) {
+    if (this._isMigrationNeeded(record.version)) {
       hasChanges = true;
 
       record = await this._computeMigratedRecord(record);
@@ -1370,6 +1447,10 @@ class AutofillRecords {
       "formautofill-storage-changed",
       "removeAll"
     );
+  }
+
+  _isMigrationNeeded(recordVersion) {
+    return recordVersion < this.version;
   }
 
   /**
@@ -1671,19 +1752,6 @@ class CreditCardsBase extends AutofillRecords {
       VALID_CREDIT_CARD_COMPUTED_FIELDS,
       CREDIT_CARD_SCHEMA_VERSION
     );
-    Services.obs.addObserver(this, "formautofill-storage-changed");
-  }
-
-  observe(subject, topic, data) {
-    switch (topic) {
-      case "formautofill-storage-changed":
-        let count = this._data.filter(entry => !entry.deleted).length;
-        Services.telemetry.scalarSet(
-          "formautofill.creditCards.autofill_profiles_count",
-          count
-        );
-        break;
-    }
   }
 
   async computeFields(creditCard) {
@@ -1700,11 +1768,9 @@ class CreditCardsBase extends AutofillRecords {
       return hasNewComputedFields;
     }
 
-    if ("cc-number" in creditCard && !("cc-type" in creditCard)) {
-      let type = lazy.CreditCard.getType(creditCard["cc-number"]);
-      if (type) {
-        creditCard["cc-type"] = type;
-      }
+    let type = lazy.CreditCard.getType(creditCard["cc-number"]);
+    if (type) {
+      creditCard["cc-type"] = type;
     }
 
     // Compute split names
@@ -1741,17 +1807,19 @@ class CreditCardsBase extends AutofillRecords {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 
-  async _computeMigratedRecord(creditCard) {
-    if (creditCard["cc-number-encrypted"]) {
-      switch (creditCard.version) {
-        case 1:
-        case 2: {
-          // We cannot decrypt the data, so silently remove the record for
-          // the user.
-          if (creditCard.deleted) {
-            break;
-          }
+  _isMigrationNeeded(recordVersion) {
+    return (
+      // version 4 is deprecated and is rolled back to version 3
+      recordVersion == 4 || recordVersion < this.version
+    );
+  }
 
+  async _computeMigratedRecord(creditCard) {
+    if (creditCard.version <= 2) {
+      if (creditCard["cc-number-encrypted"]) {
+        // We cannot decrypt the data, so silently remove the record for
+        // the user.
+        if (!creditCard.deleted) {
           this.log.warn(
             "Removing version",
             creditCard.version,
@@ -1772,15 +1840,22 @@ class CreditCardsBase extends AutofillRecords {
             creditCard._sync = existingSync;
             existingSync.changeCounter++;
           }
-          break;
         }
-
-        default:
-          throw new Error(
-            "Unknown credit card version to migrate: " + creditCard.version
-          );
       }
     }
+
+    // Do not remove the migration code until we're sure no users have version 4
+    // credit card records (created in Fx110 or Fx111)
+    if (creditCard.version == 4) {
+      // Version 4 is deprecated, so downgrade or upgrade to the current version
+      // Since the only change made in version 4 is deleting `cc-type` field, so
+      // nothing else need to be done here expect flagging sync needed
+      let existingSync = this._getSyncMetaData(creditCard);
+      if (existingSync) {
+        existingSync.changeCounter++;
+      }
+    }
+
     return super._computeMigratedRecord(creditCard);
   }
 
@@ -1871,7 +1946,11 @@ class CreditCardsBase extends AutofillRecords {
       );
     }
 
-    if (record.version < this.version) {
+    if (record.version == 4) {
+      // Version 4 is deprecated, we need to force downloading it from sync
+      // and let migration do the work to downgrade it back to the current version.
+      return true;
+    } else if (record.version < this.version) {
       switch (record.version) {
         case 1:
         case 2:
@@ -1903,32 +1982,66 @@ class CreditCardsBase extends AutofillRecords {
   }
 
   /**
-   * Normalize the given record and return the first matched guid if storage has the same record.
+   * Find a match credit card record in storage that is either exactly the same
+   * as the given record or a superset of the given record.
    *
-   * @param {object} targetCreditCard
-   *        The credit card for duplication checking.
-   * @returns {Promise<string|null>}
-   *          Return the first guid if storage has the same credit card and null otherwise.
+   * See the comments in `getDuplicateRecord` to see the difference between
+   * `getDuplicateRecord` and `getMatchRecord`
+   *
+   * @param {object} record
+   *        The credit card for match checking. please make sure the
+   *        record is normalized.
+   * @returns {object}
+   *          Return the first matched record found in storage, null otherwise.
    */
-  async getDuplicateGuid(targetCreditCard) {
-    let clonedTargetCreditCard = this._clone(targetCreditCard);
-    this._normalizeRecord(clonedTargetCreditCard);
-    if (!clonedTargetCreditCard["cc-number"]) {
+  async *getMatchRecord(record) {
+    for await (const recordInStorage of this.getDuplicateRecord(record)) {
+      const fields = this.VALID_FIELDS.filter(f => f != "cc-number");
+      if (
+        fields.every(
+          field => !record[field] || record[field] == recordInStorage[field]
+        )
+      ) {
+        yield recordInStorage;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find a duplicate credit card record in the storage.
+   *
+   * A record is considered as a duplicate of another record when two records
+   * are the "same". This might be true even when some of their fields are
+   * different. For example, one record has the same credit card number but has
+   * different expiration date as the other record are still considered as
+   * "duplicate".
+   * This is different from `getMatchRecord`, which ensures all the fields with
+   * value in the the record is equal to the returned record.
+   *
+   * @param {object} record
+   *        The credit card for duplication checking. please make sure the
+   *        record is normalized.
+   * @returns {object}
+   *          Return the first duplicated record found in storage, null otherwise.
+   */
+  async *getDuplicateRecord(record) {
+    if (!record["cc-number"]) {
       return null;
     }
 
-    for (let creditCard of this._data) {
-      if (creditCard.deleted) {
+    for (const recordInStorage of this._data) {
+      if (recordInStorage.deleted) {
         continue;
       }
 
-      let decrypted = await lazy.OSKeyStore.decrypt(
-        creditCard["cc-number-encrypted"],
+      const decrypted = await lazy.OSKeyStore.decrypt(
+        recordInStorage["cc-number-encrypted"],
         false
       );
 
-      if (decrypted == clonedTargetCreditCard["cc-number"]) {
-        return creditCard.guid;
+      if (decrypted == record["cc-number"]) {
+        yield recordInStorage;
       }
     }
     return null;
@@ -1947,17 +2060,6 @@ class CreditCardsBase extends AutofillRecords {
    */
   async mergeIfPossible(guid, creditCard) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  }
-
-  updateUseCountTelemetry() {
-    let histogram = Services.telemetry.getHistogramById("CREDITCARD_NUM_USES");
-    histogram.clear();
-
-    let records = this._data.filter(r => !r.deleted);
-
-    for (let record of records) {
-      histogram.add(record.timesUsed);
-    }
   }
 }
 

@@ -14,6 +14,7 @@
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ServoCSSParser.h"
 #include "mozilla/StaticPrefs_editor.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
@@ -208,6 +209,11 @@ const CSSEditUtils::CSSEquivTable fontFaceEquivTable[] = {
      ProcessSameValue, nullptr, nullptr, nullptr},
     CSS_EQUIV_TABLE_NONE};
 
+const CSSEditUtils::CSSEquivTable fontSizeEquivTable[] = {
+    {CSSEditUtils::eCSSEditableProperty_font_size, true, false,
+     ProcessSameValue, nullptr, nullptr, nullptr},
+    CSS_EQUIV_TABLE_NONE};
+
 const CSSEditUtils::CSSEquivTable bgcolorEquivTable[] = {
     {CSSEditUtils::eCSSEditableProperty_background_color, true, false,
      ProcessSameValue, nullptr, nullptr, nullptr},
@@ -284,13 +290,21 @@ const CSSEditUtils::CSSEquivTable hrAlignEquivTable[] = {
 // static
 bool CSSEditUtils::IsCSSEditableStyle(const Element& aElement,
                                       const EditorElementStyle& aStyle) {
+  return CSSEditUtils::IsCSSEditableStyle(*aElement.NodeInfo()->NameAtom(),
+                                          aStyle);
+}
+
+// static
+bool CSSEditUtils::IsCSSEditableStyle(const nsAtom& aTagName,
+                                      const EditorElementStyle& aStyle) {
   nsStaticAtom* const htmlProperty =
       aStyle.IsInlineStyle() ? aStyle.AsInlineStyle().mHTMLProperty : nullptr;
   nsAtom* const attributeOrStyle = aStyle.IsInlineStyle()
                                        ? aStyle.AsInlineStyle().mAttribute.get()
                                        : aStyle.Style();
 
-  // html inline styles B I TT U STRIKE and COLOR/FACE on FONT
+  // HTML inline styles <b>, <i>, <tt> (chrome only), <u>, <strike>, <font
+  // color> and <font style>.
   if (nsGkAtoms::b == htmlProperty || nsGkAtoms::i == htmlProperty ||
       nsGkAtoms::tt == htmlProperty || nsGkAtoms::u == htmlProperty ||
       nsGkAtoms::strike == htmlProperty ||
@@ -302,28 +316,31 @@ bool CSSEditUtils::IsCSSEditableStyle(const Element& aElement,
 
   // ALIGN attribute on elements supporting it
   if (attributeOrStyle == nsGkAtoms::align &&
-      aElement.IsAnyOfHTMLElements(
-          nsGkAtoms::div, nsGkAtoms::p, nsGkAtoms::h1, nsGkAtoms::h2,
-          nsGkAtoms::h3, nsGkAtoms::h4, nsGkAtoms::h5, nsGkAtoms::h6,
-          nsGkAtoms::td, nsGkAtoms::th, nsGkAtoms::table, nsGkAtoms::hr,
-          // For the above, why not use
-          // HTMLEditUtils::SupportsAlignAttr?
-          // It also checks for tbody, tfoot, thead.
-          // Let's add the following elements here even
-          // if "align" has a different meaning for them
-          nsGkAtoms::legend, nsGkAtoms::caption)) {
+      (&aTagName == nsGkAtoms::div || &aTagName == nsGkAtoms::p ||
+       &aTagName == nsGkAtoms::h1 || &aTagName == nsGkAtoms::h2 ||
+       &aTagName == nsGkAtoms::h3 || &aTagName == nsGkAtoms::h4 ||
+       &aTagName == nsGkAtoms::h5 || &aTagName == nsGkAtoms::h6 ||
+       &aTagName == nsGkAtoms::td || &aTagName == nsGkAtoms::th ||
+       &aTagName == nsGkAtoms::table || &aTagName == nsGkAtoms::hr ||
+       // For the above, why not use
+       // HTMLEditUtils::SupportsAlignAttr?
+       // It also checks for tbody, tfoot, thead.
+       // Let's add the following elements here even
+       // if "align" has a different meaning for them
+       &aTagName == nsGkAtoms::legend || &aTagName == nsGkAtoms::caption)) {
     return true;
   }
 
   if (attributeOrStyle == nsGkAtoms::valign &&
-      aElement.IsAnyOfHTMLElements(
-          nsGkAtoms::col, nsGkAtoms::colgroup, nsGkAtoms::tbody, nsGkAtoms::td,
-          nsGkAtoms::th, nsGkAtoms::tfoot, nsGkAtoms::thead, nsGkAtoms::tr)) {
+      (&aTagName == nsGkAtoms::col || &aTagName == nsGkAtoms::colgroup ||
+       &aTagName == nsGkAtoms::tbody || &aTagName == nsGkAtoms::td ||
+       &aTagName == nsGkAtoms::th || &aTagName == nsGkAtoms::tfoot ||
+       &aTagName == nsGkAtoms::thead || &aTagName == nsGkAtoms::tr)) {
     return true;
   }
 
-  // attributes TEXT, BACKGROUND and BGCOLOR on BODY
-  if (aElement.IsHTMLElement(nsGkAtoms::body) &&
+  // attributes TEXT, BACKGROUND and BGCOLOR on <body>
+  if (&aTagName == nsGkAtoms::body &&
       (attributeOrStyle == nsGkAtoms::text ||
        attributeOrStyle == nsGkAtoms::background ||
        attributeOrStyle == nsGkAtoms::bgcolor)) {
@@ -335,48 +352,46 @@ bool CSSEditUtils::IsCSSEditableStyle(const Element& aElement,
     return true;
   }
 
-  // attributes HEIGHT, WIDTH and NOWRAP on TD and TH
-  if (aElement.IsAnyOfHTMLElements(nsGkAtoms::td, nsGkAtoms::th) &&
+  // attributes HEIGHT, WIDTH and NOWRAP on <td> and <th>
+  if ((&aTagName == nsGkAtoms::td || &aTagName == nsGkAtoms::th) &&
       (attributeOrStyle == nsGkAtoms::height ||
        attributeOrStyle == nsGkAtoms::width ||
        attributeOrStyle == nsGkAtoms::nowrap)) {
     return true;
   }
 
-  // attributes HEIGHT and WIDTH on TABLE
-  if (aElement.IsHTMLElement(nsGkAtoms::table) &&
-      (attributeOrStyle == nsGkAtoms::height ||
-       attributeOrStyle == nsGkAtoms::width)) {
+  // attributes HEIGHT and WIDTH on <table>
+  if (&aTagName == nsGkAtoms::table && (attributeOrStyle == nsGkAtoms::height ||
+                                        attributeOrStyle == nsGkAtoms::width)) {
     return true;
   }
 
-  // attributes SIZE and WIDTH on HR
-  if (aElement.IsHTMLElement(nsGkAtoms::hr) &&
-      (attributeOrStyle == nsGkAtoms::size ||
-       attributeOrStyle == nsGkAtoms::width)) {
+  // attributes SIZE and WIDTH on <hr>
+  if (&aTagName == nsGkAtoms::hr && (attributeOrStyle == nsGkAtoms::size ||
+                                     attributeOrStyle == nsGkAtoms::width)) {
     return true;
   }
 
-  // attribute TYPE on OL UL LI
-  if (aElement.IsAnyOfHTMLElements(nsGkAtoms::ol, nsGkAtoms::ul,
-                                   nsGkAtoms::li) &&
-      attributeOrStyle == nsGkAtoms::type) {
+  // attribute TYPE on <ol>, <ul> and <li>
+  if (attributeOrStyle == nsGkAtoms::type &&
+      (&aTagName == nsGkAtoms::ol || &aTagName == nsGkAtoms::ul ||
+       &aTagName == nsGkAtoms::li)) {
     return true;
   }
 
-  if (aElement.IsHTMLElement(nsGkAtoms::img) &&
-      (attributeOrStyle == nsGkAtoms::border ||
-       attributeOrStyle == nsGkAtoms::width ||
-       attributeOrStyle == nsGkAtoms::height)) {
+  if (&aTagName == nsGkAtoms::img && (attributeOrStyle == nsGkAtoms::border ||
+                                      attributeOrStyle == nsGkAtoms::width ||
+                                      attributeOrStyle == nsGkAtoms::height)) {
     return true;
   }
 
   // other elements that we can align using CSS even if they
   // can't carry the html ALIGN attribute
   if (attributeOrStyle == nsGkAtoms::align &&
-      aElement.IsAnyOfHTMLElements(nsGkAtoms::ul, nsGkAtoms::ol, nsGkAtoms::dl,
-                                   nsGkAtoms::li, nsGkAtoms::dd, nsGkAtoms::dt,
-                                   nsGkAtoms::address, nsGkAtoms::pre)) {
+      (&aTagName == nsGkAtoms::ul || &aTagName == nsGkAtoms::ol ||
+       &aTagName == nsGkAtoms::dl || &aTagName == nsGkAtoms::li ||
+       &aTagName == nsGkAtoms::dd || &aTagName == nsGkAtoms::dt ||
+       &aTagName == nsGkAtoms::address || &aTagName == nsGkAtoms::pre)) {
     return true;
   }
 
@@ -585,7 +600,7 @@ CSSEditUtils::RemoveCSSInlineStyleWithTransaction(
   }
 
   if (!aStyledElement.IsHTMLElement(nsGkAtoms::span) ||
-      HTMLEditUtils::ElementHasAttributesExceptMozDirty(aStyledElement)) {
+      HTMLEditUtils::ElementHasAttribute(aStyledElement)) {
     return EditorDOMPoint();
   }
 
@@ -803,13 +818,17 @@ void CSSEditUtils::GetCSSDeclarations(
     if (!attributeOrStyle) {
       return nullptr;
     }
-    if (nsGkAtoms::font == htmlProperty &&
-        attributeOrStyle == nsGkAtoms::color) {
-      return fontColorEquivTable;
-    }
-    if (nsGkAtoms::font == htmlProperty &&
-        attributeOrStyle == nsGkAtoms::face) {
-      return fontFaceEquivTable;
+    if (nsGkAtoms::font == htmlProperty) {
+      if (attributeOrStyle == nsGkAtoms::color) {
+        return fontColorEquivTable;
+      }
+      if (attributeOrStyle == nsGkAtoms::face) {
+        return fontFaceEquivTable;
+      }
+      if (attributeOrStyle == nsGkAtoms::size) {
+        return fontSizeEquivTable;
+      }
+      MOZ_ASSERT(attributeOrStyle == nsGkAtoms::bgcolor);
     }
     if (attributeOrStyle == nsGkAtoms::bgcolor) {
       return bgcolorEquivTable;
@@ -868,7 +887,7 @@ Result<size_t, nsresult> CSSEditUtils::SetCSSEquivalentToStyle(
     WithTransaction aWithTransaction, HTMLEditor& aHTMLEditor,
     nsStyledElement& aStyledElement, const EditorElementStyle& aStyleToSet,
     const nsAString* aValue) {
-  MOZ_DIAGNOSTIC_ASSERT(aStyleToSet.IsCSSEditable(aStyledElement));
+  MOZ_DIAGNOSTIC_ASSERT(aStyleToSet.IsCSSSettable(aStyledElement));
 
   // we can apply the styles only if the node is an element and if we have
   // an equivalence for the requested HTML style in this implementation
@@ -896,7 +915,7 @@ nsresult CSSEditUtils::RemoveCSSEquivalentToStyle(
     WithTransaction aWithTransaction, HTMLEditor& aHTMLEditor,
     nsStyledElement& aStyledElement, const EditorElementStyle& aStyleToRemove,
     const nsAString* aValue) {
-  MOZ_DIAGNOSTIC_ASSERT(aStyleToRemove.IsCSSEditable(aStyledElement));
+  MOZ_DIAGNOSTIC_ASSERT(aStyleToRemove.IsCSSRemovable(aStyledElement));
 
   // we can apply the styles only if the node is an element and if we have
   // an equivalence for the requested HTML style in this implementation
@@ -932,7 +951,8 @@ nsresult CSSEditUtils::GetCSSEquivalentTo(Element& aElement,
                                           StyleType aStyleType) {
   MOZ_ASSERT_IF(aStyle.IsInlineStyle(),
                 !aStyle.AsInlineStyle().IsStyleToClearAllInlineStyles());
-  MOZ_DIAGNOSTIC_ASSERT(aStyle.IsCSSEditable(aElement));
+  MOZ_DIAGNOSTIC_ASSERT(aStyle.IsCSSSettable(aElement) ||
+                        aStyle.IsCSSRemovable(aElement));
 
   aOutValue.Truncate();
   AutoTArray<CSSDeclaration, 4> cssDeclarations;
@@ -1063,48 +1083,8 @@ Result<bool, nsresult> CSSEditUtils::IsCSSEquivalentTo(
     } else if ((nsGkAtoms::font == aStyle.mHTMLProperty &&
                 aStyle.mAttribute == nsGkAtoms::color) ||
                aStyle.mAttribute == nsGkAtoms::bgcolor) {
-      if (htmlValueString.IsEmpty()) {
-        isSet = true;
-      } else {
-        nscolor rgba;
-        nsAutoString subStr;
-        htmlValueString.Right(subStr, htmlValueString.Length() - 1);
-        if (NS_ColorNameToRGB(htmlValueString, &rgba) ||
-            NS_HexToRGBA(subStr, nsHexColorType::NoAlpha, &rgba)) {
-          nsAutoString htmlColor, tmpStr;
-
-          if (NS_GET_A(rgba) != 255) {
-            // This should only be hit by the "transparent" keyword, which
-            // currently serializes to "transparent" (not "rgba(0, 0, 0, 0)").
-            MOZ_ASSERT(NS_GET_R(rgba) == 0 && NS_GET_G(rgba) == 0 &&
-                       NS_GET_B(rgba) == 0 && NS_GET_A(rgba) == 0);
-            htmlColor.AppendLiteral(u"transparent");
-          } else {
-            htmlColor.AppendLiteral(u"rgb(");
-
-            constexpr auto comma = u", "_ns;
-
-            tmpStr.AppendInt(NS_GET_R(rgba), 10);
-            htmlColor.Append(tmpStr + comma);
-
-            tmpStr.Truncate();
-            tmpStr.AppendInt(NS_GET_G(rgba), 10);
-            htmlColor.Append(tmpStr + comma);
-
-            tmpStr.Truncate();
-            tmpStr.AppendInt(NS_GET_B(rgba), 10);
-            htmlColor.Append(tmpStr);
-
-            htmlColor.AppendLiteral(u")");
-          }
-
-          isSet =
-              htmlColor.Equals(aInOutValue, nsCaseInsensitiveStringComparator);
-        } else {
-          isSet = htmlValueString.Equals(aInOutValue,
-                                         nsCaseInsensitiveStringComparator);
-        }
-      }
+      isSet = htmlValueString.IsEmpty() ||
+              HTMLEditUtils::IsSameCSSColorValue(htmlValueString, aInOutValue);
     } else if (nsGkAtoms::tt == aStyle.mHTMLProperty) {
       isSet = StringBeginsWith(aInOutValue, u"monospace"_ns);
     } else if (nsGkAtoms::font == aStyle.mHTMLProperty &&
@@ -1121,6 +1101,27 @@ Result<bool, nsresult> CSSEditUtils::IsCSSEquivalentTo(
         isSet = true;
       }
       return isSet;
+    } else if (aStyle.IsStyleOfFontSize()) {
+      if (htmlValueString.IsEmpty()) {
+        return true;
+      }
+      switch (nsContentUtils::ParseLegacyFontSize(htmlValueString)) {
+        case 1:
+          return aInOutValue.EqualsLiteral("x-small");
+        case 2:
+          return aInOutValue.EqualsLiteral("small");
+        case 3:
+          return aInOutValue.EqualsLiteral("medium");
+        case 4:
+          return aInOutValue.EqualsLiteral("large");
+        case 5:
+          return aInOutValue.EqualsLiteral("x-large");
+        case 6:
+          return aInOutValue.EqualsLiteral("xx-large");
+        case 7:
+          return aInOutValue.EqualsLiteral("xxx-large");
+      }
+      return false;
     } else if (aStyle.mAttribute == nsGkAtoms::align) {
       isSet = true;
     } else {
@@ -1288,7 +1289,14 @@ bool CSSEditUtils::DoStyledElementsHaveSameStyle(
     NS_WARNING_ASSERTION(
         NS_SUCCEEDED(rvIgnored),
         "nsICSSDeclaration::GetPropertyValue() failed, but ignored");
-    if (!firstValue.Equals(otherValue)) {
+    // FIXME: We need to handle all properties whose values are color.
+    // However, it's too expensive if we keep using string property names.
+    if (propertyNameString.EqualsLiteral("color") ||
+        propertyNameString.EqualsLiteral("background-color")) {
+      if (!HTMLEditUtils::IsSameCSSColorValue(firstValue, otherValue)) {
+        return false;
+      }
+    } else if (!firstValue.Equals(otherValue)) {
       return false;
     }
   }
@@ -1305,7 +1313,14 @@ bool CSSEditUtils::DoStyledElementsHaveSameStyle(
     NS_WARNING_ASSERTION(
         NS_SUCCEEDED(rvIgnored),
         "nsICSSDeclaration::GetPropertyValue() failed, but ignored");
-    if (!firstValue.Equals(otherValue)) {
+    // FIXME: We need to handle all properties whose values are color.
+    // However, it's too expensive if we keep using string property names.
+    if (propertyNameString.EqualsLiteral("color") ||
+        propertyNameString.EqualsLiteral("background-color")) {
+      if (!HTMLEditUtils::IsSameCSSColorValue(firstValue, otherValue)) {
+        return false;
+      }
+    } else if (!firstValue.Equals(otherValue)) {
       return false;
     }
   }

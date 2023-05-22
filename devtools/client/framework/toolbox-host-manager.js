@@ -9,7 +9,6 @@ const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
 const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
-const Telemetry = require("resource://devtools/client/shared/telemetry.js");
 const { DOMHelpers } = require("resource://devtools/shared/dom-helpers.js");
 
 // The min-width of toolbox and browser toolbox.
@@ -81,9 +80,7 @@ function ToolboxHostManager(commands, hostType, hostOptions) {
   this.eventController = new AbortController();
   this.host = this.createHost(hostType, hostOptions);
   this.hostType = hostType;
-  this.telemetry = new Telemetry();
   this.setMinWidthWithZoom = this.setMinWidthWithZoom.bind(this);
-  this._onToolboxUnload = this._onToolboxUnload.bind(this);
   this._onMessage = this._onMessage.bind(this);
   Services.prefs.addObserver(ZOOM_VALUE_PREF, this.setMinWidthWithZoom);
 }
@@ -102,19 +99,14 @@ ToolboxHostManager.prototype = {
       { signal: this.eventController.signal }
     );
 
-    const msSinceProcessStart = parseInt(
-      this.telemetry.msSinceProcessStart(),
-      10
-    );
     const toolbox = new Toolbox(
       this.commands,
       toolId,
       this.host.type,
       this.host.frame.contentWindow,
-      this.frameId,
-      msSinceProcessStart
+      this.frameId
     );
-    toolbox.once("toolbox-unload", this._onToolboxUnload);
+    toolbox.once("destroyed", this._onToolboxDestroyed.bind(this));
 
     // Prevent reloading the toolbox when loading the tools in a tab
     // (e.g. from about:debugging)
@@ -122,10 +114,6 @@ ToolboxHostManager.prototype = {
     if (!location.href.startsWith("about:devtools-toolbox")) {
       this.host.frame.setAttribute("src", "about:devtools-toolbox");
     }
-
-    // We set an attribute on the toolbox iframe so that apps do not need
-    // access to the toolbox internals in order to get the session ID.
-    this.host.frame.setAttribute("session_id", msSinceProcessStart);
 
     this.setMinWidthWithZoom();
     return toolbox;
@@ -154,10 +142,10 @@ ToolboxHostManager.prototype = {
     }
   },
 
-  _onToolboxUnload() {
-    // The "toolbox-unload" event is currently emitted right before destroying
-    // the target. Run destroy() in the next tick to allow the target to be
-    // destroyed.
+  _onToolboxDestroyed() {
+    // Delay self-destruction to let the debugger complete async destruction.
+    // Otherwise it throws when running browser_dbg-breakpoints-in-evaled-sources.js
+    // because the promise middleware delay each promise action using setTimeout...
     DevToolsUtils.executeSoon(() => {
       this.destroy();
     });

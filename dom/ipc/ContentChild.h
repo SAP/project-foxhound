@@ -268,6 +268,8 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvSetConnectivity(const bool& connectivity);
   mozilla::ipc::IPCResult RecvSetCaptivePortalState(const int32_t& state);
+  mozilla::ipc::IPCResult RecvSetTRRMode(
+      const nsIDNSService::ResolverMode& mode);
 
   mozilla::ipc::IPCResult RecvBidiKeyboardNotify(const bool& isLangRTL,
                                                  const bool& haveBidiKeyboards);
@@ -411,6 +413,7 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvInvokeDragSession(
       const MaybeDiscarded<WindowContext>& aSourceWindowContext,
+      const MaybeDiscarded<WindowContext>& aSourceTopWindowContext,
       nsTArray<IPCDataTransfer>&& aTransfers, const uint32_t& aAction);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY

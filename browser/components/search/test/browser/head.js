@@ -8,6 +8,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
 });
 
@@ -16,7 +17,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
 });
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
@@ -212,4 +212,67 @@ async function searchInSearchbar(inputText, win = window) {
 function clearSearchbarHistory(win = window) {
   info("cleanup the search history");
   return FormHistory.update({ op: "remove", fieldname: "searchbar-history" });
+}
+
+/**
+ * Checks that the recorded Glean impression event has an impression_id property
+ * pointing to a valid UUID and that the impression_id is unique.
+ *
+ * @param {Array} recordedEvents The recorded Glean impression events whose
+ * impression_id properties we need to verify.
+ */
+function assertUUIDs(recordedEvents) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let impressionIdsSet = new Set();
+
+  for (let recordedEvent of recordedEvents) {
+    let impressionId = recordedEvent.extra.impression_id;
+
+    Assert.equal(
+      typeof impressionId,
+      "string",
+      "should be an impression_id on the event"
+    );
+    Assert.ok(
+      UUID_REGEX.test(impressionId),
+      "impression_id should be a valid UUID"
+    );
+
+    Assert.ok(
+      !impressionIdsSet.has(impressionId),
+      "Should not have found a duplicate impression_id"
+    );
+    impressionIdsSet.add(impressionId);
+  }
+}
+
+/**
+ * Checks that we get the correct number of recorded Glean impression events
+ * and that the recorded Glean impression events have the correct keys and
+ * values.
+ *
+ * @param {Array} expectedEvents The expected impression events whose keys and
+ * values we use to validate the recorded Glean impression events.
+ */
+function assertImpressionEvents(expectedEvents) {
+  let recordedEvents = Glean.serp.impression.testGetValue();
+
+  Assert.equal(
+    recordedEvents.length,
+    expectedEvents.length,
+    "should have the correct number of Glean events"
+  );
+
+  for (let [idx, expectedEvent] of expectedEvents.entries()) {
+    let recordedEvent = recordedEvents[idx].extra;
+    for (let key of Object.keys(expectedEvent)) {
+      Assert.equal(
+        recordedEvent[key],
+        expectedEvent[key],
+        `the value for recorded key "${key}" should match the value for expected key "${key}"`
+      );
+    }
+  }
+
+  assertUUIDs(recordedEvents);
 }

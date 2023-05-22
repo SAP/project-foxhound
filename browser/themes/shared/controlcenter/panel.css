@@ -106,8 +106,6 @@
 }
 
 #identity-popup-security-httpsonlymode-menulist {
-  text-overflow: ellipsis;
-  overflow: hidden;
   width: 11em;
   margin: 0.5em 0;
 }
@@ -123,6 +121,7 @@
 
 #permission-popup-permissions-content {
   padding-inline: 1.25em;
+  min-width: 0;
 }
 
 /* CONTENT */
@@ -821,4 +820,49 @@
 .protections-popup-list-host-shim-allow-indicator {
   margin-inline-start: 0.5em;
   min-width: 16px;
+}
+
+#cookieBannerView-disable-site,
+#cookieBannerView-enable-site {
+  font-weight: 600;
+}
+
+.protections-popup-cookieBannerView-footer {
+  margin-top: auto;
+}
+
+/* Cookie banner state toggles for the popup menu item */
+
+/* Cookie banner not supported for site */
+#protections-popup-cookie-banner-section:not([enabled]) description#protections-popup-cookie-banner-disabled,
+#protections-popup-cookie-banner-section:not([enabled]) description#protections-popup-cookie-banner-enabled {
+  display: none;
+}
+
+/* Cookie banner enabled for site */
+#protections-popup-cookie-banner-section[enabled]:not([hasException]) description#protections-popup-cookie-banner-disabled,
+#protections-popup-cookie-banner-section[enabled]:not([hasException]) description#protections-popup-cookie-banner-undetected {
+  display: none;
+}
+
+/* Cookie banner disabled for site by user */
+#protections-popup-cookie-banner-section[enabled][hasException] description#protections-popup-cookie-banner-enabled,
+#protections-popup-cookie-banner-section[enabled][hasException] description#protections-popup-cookie-banner-undetected {
+  display: none;
+}
+
+/* Cookie banner state toggles for the subview */
+
+/* Cookie banner enabled for site, so hide enable controls */
+#protections-popup-cookieBannerView:not([hasException]) #protections-popup-cookieBannerView-enable-button,
+#protections-popup-cookieBannerView:not([hasException]) description#cookieBannerView-enable-site,
+#protections-popup-cookieBannerView:not([hasException]) description#cookieBannerView-enable-site-description {
+  display: none;
+}
+
+/* Cookie banner disabled for site by user, so hide disable controls */
+#protections-popup-cookieBannerView[hasException] #protections-popup-cookieBannerView-disable-button,
+#protections-popup-cookieBannerView[hasException] description#cookieBannerView-disable-site,
+#protections-popup-cookieBannerView[hasException] description#cookieBannerView-disable-site-warning {
+  display: none;
 }

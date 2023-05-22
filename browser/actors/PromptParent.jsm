@@ -9,11 +9,10 @@ var EXPORTED_SYMBOLS = ["PromptParent"];
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PromptUtils",
-  "resource://gre/modules/SharedPromptUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+});
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
@@ -238,7 +237,7 @@ class PromptParent extends JSWindowActorParent {
 
       return promise;
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       onPromptClose(true);
     }
 
@@ -317,16 +316,62 @@ class PromptParent extends JSWindowActorParent {
           this.addTabSwitchCheckboxToArgs(dialogBox, args);
         }
 
+        let currentLocationsTabLabel;
+
+        let targetTab = win.gBrowser.getTabForBrowser(browser);
+        if (
+          !Services.prefs.getBoolPref(
+            "privacy.authPromptSpoofingProtection",
+            false
+          )
+        ) {
+          args.isTopLevelCrossDomainAuth = false;
+        }
+        // Auth prompt spoofing protection, see bug 791594.
+        if (args.isTopLevelCrossDomainAuth && targetTab) {
+          // Set up the url bar with the url of the cross domain resource.
+          // onLocationChange will change the url back to the current browsers
+          // if we do not hold the state here.
+          // onLocationChange will favour currentAuthPromptURI over the current browsers uri
+          browser.currentAuthPromptURI = args.channel.URI;
+          if (browser == win.gBrowser.selectedBrowser) {
+            win.gURLBar.setURI();
+          }
+          // Set up the tab title for the cross domain resource.
+          // We need to remember the original tab title in case
+          // the load does not happen after the prompt, then we need to reset the tab title manually.
+          currentLocationsTabLabel = targetTab.label;
+          win.gBrowser.setTabLabelForAuthPrompts(
+            targetTab,
+            lazy.BrowserUtils.formatURIForDisplay(args.channel.URI)
+          );
+        }
         bag = lazy.PromptUtils.objectToPropBag(args);
-        await dialogBox.open(
-          uri,
-          {
-            features: "resizable=no",
-            modalType: args.modalType,
-            allowFocusCheckbox: args.allowFocusCheckbox,
-          },
-          bag
-        ).closedPromise;
+        try {
+          await dialogBox.open(
+            uri,
+            {
+              features: "resizable=no",
+              modalType: args.modalType,
+              allowFocusCheckbox: args.allowFocusCheckbox,
+              hideContent: args.isTopLevelCrossDomainAuth,
+            },
+            bag
+          ).closedPromise;
+        } finally {
+          if (args.isTopLevelCrossDomainAuth) {
+            browser.currentAuthPromptURI = null;
+            // If the user is stopping the page load before answering the prompt, no navigation will happen after the prompt
+            // so we need to reset the uri and tab title here to the current browsers for that specific case
+            if (browser == win.gBrowser.selectedBrowser) {
+              win.gURLBar.setURI();
+            }
+            win.gBrowser.setTabLabelForAuthPrompts(
+              targetTab,
+              currentLocationsTabLabel
+            );
+          }
+        }
       } else {
         // Ensure we set the correct modal type at this point.
         // If we use window prompts as a fallback it may not be set.

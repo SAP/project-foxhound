@@ -1,10 +1,6 @@
-// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -101,13 +97,13 @@
 //! ```
 //!
 //! The log target is typically equal to the path of the module the message
-//! in question originated from, though it can be overriden.
+//! in question originated from, though it can be overridden.
 //!
 //! The path is rooted in the name of the crate it was compiled for, so if
 //! your program is in a file called, for example, `hello.rs`, the path would
 //! simply be be `hello`.
 //!
-//! Furthermore, the the log can be filtered using prefix-search based on the
+//! Furthermore, the log can be filtered using prefix-search based on the
 //! specified log target. A value of, for example, `RUST_LOG=example`, would
 //! match all of the messages with targets:
 //!
@@ -676,7 +672,7 @@ impl Builder {
     ///
     /// # Examples
     ///
-    /// Only include messages for info and above for logs in `path::to::module`:
+    /// Only include messages for info and above for logs globally:
     ///
     /// ```
     /// use env_logger::Builder;
@@ -911,7 +907,7 @@ impl Log for Logger {
     fn log(&self, record: &Record) {
         if self.matches(record) {
             // Log records are written to a thread-local buffer before being printed
-            // to the terminal. We clear these buffers afterwards, but they aren't shrinked
+            // to the terminal. We clear these buffers afterwards, but they aren't shrunk
             // so will always at least have capacity for the largest log record formatted
             // on that thread.
             //
@@ -1172,7 +1168,7 @@ pub fn init() {
 /// ```
 /// use env_logger::{Builder, Env};
 ///
-/// # fn run() -> Result<(), Box<::std::error::Error>> {
+/// # fn run() -> Result<(), Box<dyn ::std::error::Error>> {
 /// let env = Env::new().filter("MY_LOG").write_style("MY_LOG_STYLE");
 ///
 /// env_logger::try_init_from_env(env)?;

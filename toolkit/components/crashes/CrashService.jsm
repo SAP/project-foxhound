@@ -7,8 +7,8 @@
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 
 // Set to true if the application is quitting
@@ -31,7 +31,7 @@ async function maybeRunMinidumpAnalyzer(minidumpPath, allThreads) {
   }
 
   await runMinidumpAnalyzer(minidumpPath, allThreads).catch(e =>
-    Cu.reportError(e)
+    console.error(e)
   );
 }
 
@@ -123,7 +123,7 @@ function computeMinidumpHash(minidumpPath) {
 
       return hash;
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return null;
     }
   })();
@@ -146,7 +146,7 @@ function processExtraFile(extraPath) {
 
       return JSON.parse(decoder.decode(extraData));
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return {};
     }
   })();

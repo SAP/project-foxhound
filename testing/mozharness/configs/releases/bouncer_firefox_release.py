@@ -80,6 +80,26 @@ config = {
                 "win64",
             ],
         },
+        "langpack": {
+            "product-name": "Firefox-%(version)s-langpack-SSL",
+            "platforms": [
+                "linux",
+                "linux64",
+                "osx",
+                "win",
+                "win64",
+            ],
+        },
+        "langpack-latest": {
+            "product-name": "Firefox-langpack-latest-SSL",
+            "platforms": [
+                "linux",
+                "linux64",
+                "osx",
+                "win",
+                "win64",
+            ],
+        },
         "stub-installer": {
             "product-name": "Firefox-%(version)s-stub",
             "platforms": [
@@ -95,6 +115,14 @@ config = {
                 "win64",
                 "win64-aarch64",
             ],
+        },
+        "pkg": {
+            "product-name": "Firefox-%(version)s-pkg-SSL",
+            "platforms": ["osx"],
+        },
+        "pkg-latest": {
+            "product-name": "Firefox-pkg-latest-SSL",
+            "platforms": ["osx"],
         },
         "complete-mar": {
             "product-name": "Firefox-%(version)s-Complete",

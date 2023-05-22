@@ -3,8 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-
 import os
 import sys
 
@@ -13,6 +11,7 @@ from ipdl.ast import TypeSpec, UnionDecl, UsingStmt, Visitor, StringLiteral
 from ipdl.ast import ASYNC, SYNC, INTR
 from ipdl.ast import IN, OUT, INOUT
 from ipdl.ast import NOT_NESTED, INSIDE_SYNC_NESTED, INSIDE_CPOW_NESTED
+from ipdl.ast import priorityList
 import ipdl.builtin as builtin
 from ipdl.util import hash_str
 
@@ -121,9 +120,6 @@ class Type:
     def isRefcounted(self):
         return False
 
-    def isUniquePtr(self):
-        return False
-
     def typename(self):
         return self.__class__.__name__
 
@@ -221,6 +217,9 @@ class IPDLType(Type):
     def isMaybe(self):
         return False
 
+    def isUniquePtr(self):
+        return False
+
     def isAtom(self):
         return True
 
@@ -242,6 +241,15 @@ class IPDLType(Type):
     def isManagedEndpoint(self):
         return False
 
+    def hasBaseType(self):
+        return False
+
+
+class SendSemanticsType(IPDLType):
+    def __init__(self, nestedRange, sendSemantics):
+        self.nestedRange = nestedRange
+        self.sendSemantics = sendSemantics
+
     def isAsync(self):
         return self.sendSemantics == ASYNC
 
@@ -251,14 +259,7 @@ class IPDLType(Type):
     def isInterrupt(self):
         return self.sendSemantics is INTR
 
-    def hasReply(self):
-        return self.isSync() or self.isInterrupt()
-
-    def hasBaseType(self):
-        return False
-
-    @classmethod
-    def convertsTo(cls, lesser, greater):
+    def sendSemanticsSatisfiedBy(self, greater):
         def _unwrap(nr):
             if isinstance(nr, dict):
                 return _unwrap(nr["nested"])
@@ -267,6 +268,7 @@ class IPDLType(Type):
             else:
                 raise ValueError("Got unexpected nestedRange value: %s" % nr)
 
+        lesser = self
         lnr0, gnr0, lnr1, gnr1 = (
             _unwrap(lesser.nestedRange[0]),
             _unwrap(greater.nestedRange[0]),
@@ -290,11 +292,8 @@ class IPDLType(Type):
 
         return False
 
-    def needsMoreJuiceThan(self, o):
-        return not IPDLType.convertsTo(self, o)
 
-
-class MessageType(IPDLType):
+class MessageType(SendSemanticsType):
     def __init__(
         self,
         nested,
@@ -306,14 +305,14 @@ class MessageType(IPDLType):
         cdtype=None,
         compress=False,
         tainted=False,
+        lazySend=False,
     ):
         assert not (ctor and dtor)
         assert not (ctor or dtor) or cdtype is not None
 
+        SendSemanticsType.__init__(self, (nested, nested), sendSemantics)
         self.nested = nested
         self.prio = prio
-        self.nestedRange = (nested, nested)
-        self.sendSemantics = sendSemantics
         self.direction = direction
         self.params = []
         self.returns = []
@@ -322,6 +321,7 @@ class MessageType(IPDLType):
         self.cdtype = cdtype
         self.compress = compress
         self.tainted = tainted
+        self.lazySend = lazySend
 
     def isMessage(self):
         return True
@@ -345,17 +345,16 @@ class MessageType(IPDLType):
         return self.direction is INOUT
 
     def hasReply(self):
-        return len(self.returns) or IPDLType.hasReply(self)
+        return len(self.returns) or self.isSync() or self.isInterrupt()
 
     def hasImplicitActorParam(self):
         return self.isCtor() or self.isDtor()
 
 
-class ProtocolType(IPDLType):
+class ProtocolType(SendSemanticsType):
     def __init__(self, qname, nested, sendSemantics, refcounted, needsotherpid):
+        SendSemanticsType.__init__(self, (NOT_NESTED, nested), sendSemantics)
         self.qname = qname
-        self.nestedRange = (NOT_NESTED, nested)
-        self.sendSemantics = sendSemantics
         self.managers = []  # ProtocolType
         self.manages = []
         self.hasDelete = False
@@ -1290,10 +1289,11 @@ class GatherDecls(TcheckVisitor):
             {
                 "Tainted": None,
                 "Compress": (None, "all"),
-                "Priority": ("normal", "input", "vsync", "mediumhigh", "control"),
+                "Priority": priorityList,
                 "Nested": ("not", "inside_sync", "inside_cpow"),
                 "LegacyIntr": None,
                 "VirtualSendImpl": None,
+                "LazySend": None,
             },
         )
 
@@ -1309,6 +1309,9 @@ class GatherDecls(TcheckVisitor):
 
         if md.sendSemantics is INTR and "Nested" in md.attributes:
             self.error(loc, "intr message `%s' cannot specify [Nested]", msgname)
+
+        if md.sendSemantics is not ASYNC and "LazySend" in md.attributes:
+            self.error(loc, "non-async message `%s' cannot specify [LazySend]", msgname)
 
         isctor = False
         isdtor = False
@@ -1346,6 +1349,7 @@ class GatherDecls(TcheckVisitor):
             cdtype=cdtype,
             compress=md.attributes.get("Compress"),
             tainted="Tainted" in md.attributes,
+            lazySend="LazySend" in md.attributes,
         )
 
         # replace inparam Param nodes with proper Decls
@@ -1521,7 +1525,7 @@ class CheckTypes(TcheckVisitor):
         ptype, pname = p.decl.type, p.decl.shortname
 
         for mgrtype in ptype.managers:
-            if mgrtype is not None and ptype.needsMoreJuiceThan(mgrtype):
+            if mgrtype is not None and not ptype.sendSemanticsSatisfiedBy(mgrtype):
                 self.error(
                     p.decl.loc,
                     "protocol `%s' requires more powerful send semantics than its manager `%s' provides",  # NOQA: E501
@@ -1629,7 +1633,7 @@ class CheckTypes(TcheckVisitor):
                 pname,
             )
 
-        if mtype.needsMoreJuiceThan(ptype):
+        if not mtype.sendSemanticsSatisfiedBy(ptype):
             self.error(
                 loc,
                 "message `%s' requires more powerful send semantics than its protocol `%s' provides",  # NOQA: E501

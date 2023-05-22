@@ -52,6 +52,7 @@
 #include "nsDisplayList.h"
 #include "nsIFrame.h"
 #include "nsIMathMLFrame.h"
+#include "nsFirstLetterFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsTextFrameUtils.h"
 #include "nsTextRunTransformations.h"
@@ -436,17 +437,22 @@ class nsTextPaintStyle {
    */
   bool GetSelectionColors(nscolor* aForeColor, nscolor* aBackColor);
   void GetHighlightColors(nscolor* aForeColor, nscolor* aBackColor);
+  // Computes colors for custom highlights.
+  // Returns false if there are no rules associated with `aHighlightName`.
+  bool GetCustomHighlightColors(const nsAtom* aHighlightName,
+                                nscolor* aForeColor, nscolor* aBackColor);
   void GetURLSecondaryColor(nscolor* aForeColor);
   void GetIMESelectionColors(int32_t aIndex, nscolor* aForeColor,
                              nscolor* aBackColor);
   // if this returns false, we don't need to draw underline.
   bool GetSelectionUnderlineForPaint(int32_t aIndex, nscolor* aLineColor,
-                                     float* aRelativeSize, uint8_t* aStyle);
+                                     float* aRelativeSize,
+                                     StyleTextDecorationStyle* aStyle);
 
   // if this returns false, we don't need to draw underline.
   static bool GetSelectionUnderline(nsIFrame*, int32_t aIndex,
                                     nscolor* aLineColor, float* aRelativeSize,
-                                    uint8_t* aStyle);
+                                    StyleTextDecorationStyle* aStyle);
 
   // if this returns false, no text-shadow was specified for the selection
   // and the *aShadow parameter was not modified.
@@ -496,6 +502,8 @@ class nsTextPaintStyle {
   nscolor mSelectionTextColor;
   nscolor mSelectionBGColor;
   RefPtr<ComputedStyle> mSelectionPseudoStyle;
+  nsTHashMap<RefPtr<const nsAtom>, RefPtr<ComputedStyle>>
+      mCustomHighlightPseudoStyles;
 
   // Common data
 
@@ -513,7 +521,7 @@ class nsTextPaintStyle {
     nscolor mTextColor;
     nscolor mBGColor;
     nscolor mUnderlineColor;
-    uint8_t mUnderlineStyle;
+    StyleTextDecorationStyle mUnderlineStyle;
     float mUnderlineRelativeSize;
   };
   nsSelectionStyle mSelectionStyle[5];
@@ -2232,16 +2240,18 @@ static gfxFontGroup* GetFontGroupForFrame(
   return fontGroup;
 }
 
+nsFontMetrics* nsTextFrame::InflatedFontMetrics() const {
+  if (!mFontMetrics) {
+    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
+    mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(this, inflation);
+  }
+  return mFontMetrics;
+}
+
 static gfxFontGroup* GetInflatedFontGroupForFrame(nsTextFrame* aFrame) {
   gfxTextRun* textRun = aFrame->GetTextRun(nsTextFrame::eInflated);
   if (textRun) {
     return textRun->GetFontGroup();
-  }
-  if (!aFrame->InflatedFontMetrics()) {
-    float inflation = nsLayoutUtils::FontSizeInflationFor(aFrame);
-    RefPtr<nsFontMetrics> metrics =
-        nsLayoutUtils::GetFontMetricsForFrame(aFrame, inflation);
-    aFrame->SetInflatedFontMetrics(metrics);
   }
   return aFrame->InflatedFontMetrics()->GetThebesFontGroup();
 }
@@ -3931,13 +3941,7 @@ void nsTextFrame::PropertyProvider::SetupJustificationSpacing(
 void nsTextFrame::PropertyProvider::InitFontGroupAndFontMetrics() const {
   if (!mFontMetrics) {
     if (mWhichTextRun == nsTextFrame::eInflated) {
-      if (!mFrame->InflatedFontMetrics()) {
-        float inflation = mFrame->GetFontSizeInflation();
-        mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, inflation);
-        mFrame->SetInflatedFontMetrics(mFontMetrics);
-      } else {
-        mFontMetrics = mFrame->InflatedFontMetrics();
-      }
+      mFontMetrics = mFrame->InflatedFontMetrics();
     } else {
       mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, 1.0f);
     }
@@ -4147,6 +4151,33 @@ void nsTextPaintStyle::GetHighlightColors(nscolor* aForeColor,
   *aBackColor = NS_TRANSPARENT;
 }
 
+bool nsTextPaintStyle::GetCustomHighlightColors(const nsAtom* aHighlightName,
+                                                nscolor* aForeColor,
+                                                nscolor* aBackColor) {
+  NS_ASSERTION(aForeColor, "aForeColor is null");
+  NS_ASSERTION(aBackColor, "aBackColor is null");
+
+  // non-existing highlights will be stored as `aHighlightName->nullptr`,
+  // so subsequent calls only need a hashtable lookup and don't have
+  // to enter the style engine.
+  RefPtr<ComputedStyle> highlightStyle =
+      mCustomHighlightPseudoStyles.LookupOrInsertWith(
+          aHighlightName, [this, &aHighlightName] {
+            return mFrame->ComputeHighlightSelectionStyle(aHighlightName);
+          });
+  if (!highlightStyle) {
+    // highlight `aHighlightName` doesn't exist or has no style rules.
+    return false;
+  }
+  // this is just copied from here:
+  // `InitSelectionColorsAndShadow()`.
+  *aBackColor = highlightStyle->GetVisitedDependentColor(
+      &nsStyleBackground::mBackgroundColor);
+  *aForeColor = highlightStyle->GetVisitedDependentColor(
+      &nsStyleText::mWebkitTextFillColor);
+  return true;
+}
+
 void nsTextPaintStyle::GetURLSecondaryColor(nscolor* aForeColor) {
   NS_ASSERTION(aForeColor, "aForeColor is null");
 
@@ -4170,16 +4201,15 @@ void nsTextPaintStyle::GetIMESelectionColors(int32_t aIndex,
   *aBackColor = selectionStyle->mBGColor;
 }
 
-bool nsTextPaintStyle::GetSelectionUnderlineForPaint(int32_t aIndex,
-                                                     nscolor* aLineColor,
-                                                     float* aRelativeSize,
-                                                     uint8_t* aStyle) {
+bool nsTextPaintStyle::GetSelectionUnderlineForPaint(
+    int32_t aIndex, nscolor* aLineColor, float* aRelativeSize,
+    StyleTextDecorationStyle* aStyle) {
   NS_ASSERTION(aLineColor, "aLineColor is null");
   NS_ASSERTION(aRelativeSize, "aRelativeSize is null");
   NS_ASSERTION(aIndex >= 0 && aIndex < 5, "Index out of range");
 
   nsSelectionStyle* selectionStyle = GetSelectionStyle(aIndex);
-  if (selectionStyle->mUnderlineStyle == NS_STYLE_TEXT_DECORATION_STYLE_NONE ||
+  if (selectionStyle->mUnderlineStyle == StyleTextDecorationStyle::None ||
       selectionStyle->mUnderlineColor == NS_TRANSPARENT ||
       selectionStyle->mUnderlineRelativeSize <= 0.0f)
     return false;
@@ -4375,7 +4405,7 @@ void nsTextPaintStyle::InitSelectionStyle(int32_t aIndex) {
 
   nscolor lineColor;
   float relativeSize;
-  uint8_t lineStyle;
+  StyleTextDecorationStyle lineStyle;
   GetSelectionUnderline(mFrame, aIndex, &lineColor, &relativeSize, &lineStyle);
 
   if (mResolveColors) {
@@ -4394,7 +4424,7 @@ void nsTextPaintStyle::InitSelectionStyle(int32_t aIndex) {
 bool nsTextPaintStyle::GetSelectionUnderline(nsIFrame* aFrame, int32_t aIndex,
                                              nscolor* aLineColor,
                                              float* aRelativeSize,
-                                             uint8_t* aStyle) {
+                                             StyleTextDecorationStyle* aStyle) {
   NS_ASSERTION(aFrame, "aFrame is null");
   NS_ASSERTION(aRelativeSize, "aRelativeSize is null");
   NS_ASSERTION(aStyle, "aStyle is null");
@@ -4403,10 +4433,11 @@ bool nsTextPaintStyle::GetSelectionUnderline(nsIFrame* aFrame, int32_t aIndex,
   StyleIDs& styleID = SelectionStyleIDs[aIndex];
 
   nscolor color = LookAndFeel::Color(styleID.mLine, aFrame);
-  int32_t style = LookAndFeel::GetInt(styleID.mLineStyle);
-  if (style > NS_STYLE_TEXT_DECORATION_STYLE_MAX) {
+  const int32_t lineStyle = LookAndFeel::GetInt(styleID.mLineStyle);
+  auto style = static_cast<StyleTextDecorationStyle>(lineStyle);
+  if (lineStyle > static_cast<int32_t>(StyleTextDecorationStyle::Sentinel)) {
     NS_ERROR("Invalid underline style value is specified");
-    style = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
+    style = StyleTextDecorationStyle::Solid;
   }
   float size = LookAndFeel::GetFloat(styleID.mLineRelativeSize);
 
@@ -4418,8 +4449,8 @@ bool nsTextPaintStyle::GetSelectionUnderline(nsIFrame* aFrame, int32_t aIndex,
   *aRelativeSize = size;
   *aStyle = style;
 
-  return style != NS_STYLE_TEXT_DECORATION_STYLE_NONE &&
-         color != NS_TRANSPARENT && size > 0.0f;
+  return style != StyleTextDecorationStyle::None && color != NS_TRANSPARENT &&
+         size > 0.0f;
 }
 
 bool nsTextPaintStyle::GetSelectionShadow(
@@ -4920,10 +4951,6 @@ gfxTextRun* nsTextFrame::GetUninflatedTextRun() const {
   return GetProperty(UninflatedTextRunProperty());
 }
 
-void nsTextFrame::SetInflatedFontMetrics(nsFontMetrics* aFontMetrics) {
-  mFontMetrics = aFontMetrics;
-}
-
 void nsTextFrame::SetTextRun(gfxTextRun* aTextRun, TextRunType aWhichTextRun,
                              float aInflation) {
   NS_ASSERTION(aTextRun, "must have text run");
@@ -5279,7 +5306,7 @@ void nsTextFrame::GetTextDecorations(
 
     if (context->GetPseudoType() == PseudoStyleType::marker &&
         (context->StyleList()->mListStylePosition ==
-             NS_STYLE_LIST_STYLE_POSITION_OUTSIDE ||
+             StyleListStylePosition::Outside ||
          !context->StyleDisplay()->IsInlineOutsideStyle())) {
       // Outside ::marker pseudos, and inside markers that aren't inlines, don't
       // have text decorations.
@@ -5336,7 +5363,7 @@ void nsTextFrame::GetTextDecorations(
     physicalBlockStartOffset +=
         vertical ? f->GetNormalPosition().x : f->GetNormalPosition().y;
 
-    const uint8_t style = styleTextReset->mTextDecorationStyle;
+    const auto style = styleTextReset->mTextDecorationStyle;
     if (textDecorations) {
       nscolor color;
       if (useOverride) {
@@ -5675,13 +5702,13 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
     // The underline/overline drawable area must be contained in the overflow
     // rect when this is in floating first letter frame at *both* modes.
     // In this case, aBlock is the ::first-letter frame.
-    uint8_t decorationStyle =
+    auto decorationStyle =
         aBlock->Style()->StyleTextReset()->mTextDecorationStyle;
     // If the style is none, let's include decoration line rect as solid style
     // since changing the style from none to solid/dotted/dashed doesn't cause
     // reflow.
-    if (decorationStyle == NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
-      decorationStyle = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
+    if (decorationStyle == StyleTextDecorationStyle::None) {
+      decorationStyle = StyleTextDecorationStyle::Solid;
     }
     nsCSSRendering::DecorationRectParams params;
 
@@ -5780,8 +5807,8 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
             // If the style is solid, let's include decoration line rect of
             // solid style since changing the style from none to
             // solid/dotted/dashed doesn't cause reflow.
-            if (params.style == NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
-              params.style = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
+            if (params.style == StyleTextDecorationStyle::None) {
+              params.style = StyleTextDecorationStyle::Solid;
             }
 
             float inflation = GetInflationForTextDecorations(
@@ -5870,13 +5897,16 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
   AddStateBits(TEXT_SELECTION_UNDERLINE_OVERFLOWED);
 }
 
+nscoord nsTextFrame::ComputeLineHeight() const {
+  return ReflowInput::CalcLineHeight(GetContent(), Style(), PresContext(),
+                                     NS_UNCONSTRAINEDSIZE,
+                                     GetFontSizeInflation());
+}
+
 gfxFloat nsTextFrame::ComputeDescentLimitForSelectionUnderline(
     nsPresContext* aPresContext, const gfxFont::Metrics& aFontMetrics) {
-  gfxFloat app = aPresContext->AppUnitsPerDevPixel();
-  nscoord lineHeightApp =
-      ReflowInput::CalcLineHeight(GetContent(), Style(), PresContext(),
-                                  NS_UNCONSTRAINEDSIZE, GetFontSizeInflation());
-  gfxFloat lineHeight = gfxFloat(lineHeightApp) / app;
+  const gfxFloat lineHeight =
+      gfxFloat(ComputeLineHeight()) / aPresContext->AppUnitsPerDevPixel();
   if (lineHeight <= aFontMetrics.maxHeight) {
     return aFontMetrics.maxDescent;
   }
@@ -5964,23 +5994,23 @@ void nsTextFrame::PaintDecorationLine(
   }
 }
 
-static uint8_t ToStyleLineStyle(const TextRangeStyle& aStyle) {
+static StyleTextDecorationStyle ToStyleLineStyle(const TextRangeStyle& aStyle) {
   switch (aStyle.mLineStyle) {
     case TextRangeStyle::LineStyle::None:
-      return NS_STYLE_TEXT_DECORATION_STYLE_NONE;
+      return StyleTextDecorationStyle::None;
     case TextRangeStyle::LineStyle::Solid:
-      return NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
+      return StyleTextDecorationStyle::Solid;
     case TextRangeStyle::LineStyle::Dotted:
-      return NS_STYLE_TEXT_DECORATION_STYLE_DOTTED;
+      return StyleTextDecorationStyle::Dotted;
     case TextRangeStyle::LineStyle::Dashed:
-      return NS_STYLE_TEXT_DECORATION_STYLE_DASHED;
+      return StyleTextDecorationStyle::Dashed;
     case TextRangeStyle::LineStyle::Double:
-      return NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE;
+      return StyleTextDecorationStyle::Double;
     case TextRangeStyle::LineStyle::Wavy:
-      return NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
+      return StyleTextDecorationStyle::Wavy;
   }
   MOZ_ASSERT_UNREACHABLE("Invalid line style");
-  return NS_STYLE_TEXT_DECORATION_STYLE_NONE;
+  return StyleTextDecorationStyle::None;
 }
 
 /**
@@ -6019,7 +6049,8 @@ void nsTextFrame::DrawSelectionDecorations(
     case SelectionType::eIMESelectedRawClause:
     case SelectionType::eIMEConvertedClause:
     case SelectionType::eIMESelectedClause:
-    case SelectionType::eSpellCheck: {
+    case SelectionType::eSpellCheck:
+    case SelectionType::eHighlight: {
       int32_t index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
           aSelectionType);
       bool weDefineSelectionUnderline =
@@ -6038,7 +6069,8 @@ void nsTextFrame::DrawSelectionDecorations(
           styleText->mTextUnderlineOffset, aFontMetrics, appUnitsPerDevPixel,
           this, wm.IsCentralBaseline(), swapUnderline);
 
-      bool isIMEType = aSelectionType != SelectionType::eSpellCheck;
+      bool isIMEType = aSelectionType != SelectionType::eSpellCheck &&
+                       aSelectionType != SelectionType::eHighlight;
 
       if (isIMEType) {
         // IME decoration lines should not be drawn on the both ends, i.e., we
@@ -6083,8 +6115,8 @@ void nsTextFrame::DrawSelectionDecorations(
         else if (aRangeStyle.IsForegroundColorDefined() ||
                  aRangeStyle.IsBackgroundColorDefined()) {
           nscolor bg;
-          GetSelectionTextColors(aSelectionType, aTextPaintStyle, aRangeStyle,
-                                 &params.color, &bg);
+          GetSelectionTextColors(aSelectionType, nullptr, aTextPaintStyle,
+                                 aRangeStyle, &params.color, &bg);
         }
         // Otherwise, use the foreground color of the frame.
         else {
@@ -6107,7 +6139,7 @@ void nsTextFrame::DrawSelectionDecorations(
 
       relativeSize = 2.0f;
       aTextPaintStyle.GetURLSecondaryColor(&params.color);
-      params.style = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
+      params.style = StyleTextDecorationStyle::Solid;
       params.defaultLineThickness = metrics.strikeoutSize;
       params.lineSize.height = ComputeDecorationLineThickness(
           decThickness, params.defaultLineThickness, metrics,
@@ -6130,6 +6162,7 @@ void nsTextFrame::DrawSelectionDecorations(
 
 /* static */
 bool nsTextFrame::GetSelectionTextColors(SelectionType aSelectionType,
+                                         const nsAtom* aHighlightName,
                                          nsTextPaintStyle& aTextPaintStyle,
                                          const TextRangeStyle& aRangeStyle,
                                          nscolor* aForeground,
@@ -6140,6 +6173,9 @@ bool nsTextFrame::GetSelectionTextColors(SelectionType aSelectionType,
     case SelectionType::eFind:
       aTextPaintStyle.GetHighlightColors(aForeground, aBackground);
       return true;
+    case SelectionType::eHighlight:
+      return aTextPaintStyle.GetCustomHighlightColors(aHighlightName,
+                                                      aForeground, aBackground);
     case SelectionType::eURLSecondary:
       aTextPaintStyle.GetURLSecondaryColor(aForeground);
       *aBackground = NS_RGBA(0, 0, 0, 0);
@@ -6232,11 +6268,14 @@ class SelectionIterator {
    * @param aHyphenWidth if a hyphen is to be rendered after the text, the
    * width of the hyphen, otherwise zero
    * @param aSelectionType the selection type for this segment
+   * @param aHighlightName name of the custom highlight if
+   *  `aSelectionType == SelectionType::eHighlight`.
    * @param aStyle the selection style for this segment
    * @return false if there are no more segments
    */
   bool GetNextSegment(gfxFloat* aXOffset, gfxTextRun::Range* aRange,
                       gfxFloat* aHyphenWidth, SelectionType* aSelectionType,
+                      RefPtr<const nsAtom>* aHighlightName,
                       TextRangeStyle* aStyle);
   void UpdateWithAdvance(gfxFloat aAdvance) {
     mXOffset += aAdvance * mTextRun->GetDirection();
@@ -6268,6 +6307,7 @@ bool SelectionIterator::GetNextSegment(gfxFloat* aXOffset,
                                        gfxTextRun::Range* aRange,
                                        gfxFloat* aHyphenWidth,
                                        SelectionType* aSelectionType,
+                                       RefPtr<const nsAtom>* aHighlightName,
                                        TextRangeStyle* aStyle) {
   if (mIterator.GetOriginalOffset() >= int32_t(mOriginalRange.end))
     return false;
@@ -6308,6 +6348,7 @@ bool SelectionIterator::GetNextSegment(gfxFloat* aXOffset,
     *aHyphenWidth = mProvider.GetHyphenWidth();
   }
   *aSelectionType = selectionType;
+  *aHighlightName = sdptr ? sdptr->mHighlightName : nullptr;
   *aStyle = style;
   return true;
 }
@@ -6459,9 +6500,9 @@ bool nsTextFrame::PaintTextWithSelectionColors(
       allSelectionTypeMask |= ToSelectionTypeMask(selectionType);
       // Ignore selections that don't set colors
       nscolor foreground, background;
-      if (GetSelectionTextColors(selectionType, *aParams.textPaintStyle,
-                                 sdptr->mTextRangeStyle, &foreground,
-                                 &background)) {
+      if (GetSelectionTextColors(
+              selectionType, sdptr->mHighlightName, *aParams.textPaintStyle,
+              sdptr->mTextRangeStyle, &foreground, &background)) {
         if (NS_GET_A(background) > 0) {
           anyBackgrounds = true;
         }
@@ -6469,6 +6510,7 @@ bool nsTextFrame::PaintTextWithSelectionColors(
           // Favour normal selection over IME selections
           if (!prevailingSelections[i] ||
               selectionType < prevailingSelections[i]->mSelectionType) {
+            // TODO ordering of highlight selections!
             prevailingSelections[i] = sdptr;
           }
         }
@@ -6499,11 +6541,14 @@ bool nsTextFrame::PaintTextWithSelectionColors(
     SelectionIterator iterator(prevailingSelections, contentRange,
                                *aParams.provider, mTextRun, startIOffset);
     SelectionType selectionType;
+    RefPtr<const nsAtom> highlightName;
     while (iterator.GetNextSegment(&iOffset, &range, &hyphenWidth,
-                                   &selectionType, &rangeStyle)) {
+                                   &selectionType, &highlightName,
+                                   &rangeStyle)) {
       nscolor foreground, background;
-      GetSelectionTextColors(selectionType, *aParams.textPaintStyle, rangeStyle,
-                             &foreground, &background);
+      GetSelectionTextColors(selectionType, highlightName,
+                             *aParams.textPaintStyle, rangeStyle, &foreground,
+                             &background);
       // Draw background color
       gfxFloat advance =
           hyphenWidth + mTextRun->GetAdvanceWidth(range, aParams.provider);
@@ -6556,14 +6601,16 @@ bool nsTextFrame::PaintTextWithSelectionColors(
   SelectionIterator iterator(prevailingSelections, contentRange,
                              *aParams.provider, mTextRun, startIOffset);
   SelectionType selectionType;
+  RefPtr<const nsAtom> highlightName;
   while (iterator.GetNextSegment(&iOffset, &range, &hyphenWidth, &selectionType,
-                                 &rangeStyle)) {
+                                 &highlightName, &rangeStyle)) {
     nscolor foreground, background;
     if (aParams.IsGenerateTextMask()) {
       foreground = NS_RGBA(0, 0, 0, 255);
     } else {
-      GetSelectionTextColors(selectionType, *aParams.textPaintStyle, rangeStyle,
-                             &foreground, &background);
+      GetSelectionTextColors(selectionType, highlightName,
+                             *aParams.textPaintStyle, rangeStyle, &foreground,
+                             &background);
     }
 
     gfx::Point textBaselinePt =
@@ -6665,10 +6712,12 @@ void nsTextFrame::PaintTextSelectionDecorations(
     pt.y = (aParams.textBaselinePt.y - mAscent) / app;
   }
   SelectionType nextSelectionType;
+  RefPtr<const nsAtom> highlightName;
   TextRangeStyle selectedStyle;
 
   while (iterator.GetNextSegment(&iOffset, &range, &hyphenWidth,
-                                 &nextSelectionType, &selectedStyle)) {
+                                 &nextSelectionType, &highlightName,
+                                 &selectedStyle)) {
     gfxFloat advance =
         hyphenWidth + mTextRun->GetAdvanceWidth(range, aParams.provider);
     if (nextSelectionType == aSelectionType) {
@@ -6823,9 +6872,9 @@ nscolor nsTextFrame::GetCaretColorAt(int32_t aOffset) {
         (selectionType == SelectionType::eNone ||
          sdptr->mSelectionType < selectionType)) {
       nscolor foreground, background;
-      if (GetSelectionTextColors(sdptr->mSelectionType, textPaintStyle,
-                                 sdptr->mTextRangeStyle, &foreground,
-                                 &background)) {
+      if (GetSelectionTextColors(sdptr->mSelectionType, sdptr->mHighlightName,
+                                 textPaintStyle, sdptr->mTextRangeStyle,
+                                 &foreground, &background)) {
         if (!isSolidTextColor && NS_IS_SELECTION_SPECIAL_COLOR(foreground)) {
           result = NS_RGBA(0, 0, 0, 255);
         } else {
@@ -7306,7 +7355,7 @@ void nsTextFrame::DrawTextRunAndDecorations(
   auto paintDecorationLine = [&](const LineDecoration& dec,
                                  gfxFloat Metrics::*lineSize,
                                  StyleTextDecorationLine lineType) {
-    if (dec.mStyle == NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
+    if (dec.mStyle == StyleTextDecorationStyle::None) {
       return;
     }
 
@@ -7446,12 +7495,16 @@ void nsTextFrame::DrawText(Range aRange, const gfx::Point& aTextBaselinePt,
 NS_DECLARE_FRAME_PROPERTY_DELETABLE(WebRenderTextBounds, nsRect)
 
 nsRect nsTextFrame::WebRenderBounds() {
+  // WR text bounds is just our ink overflow rect but without shadows. So if we
+  // have no shadows, just use the layout bounds.
+  if (!StyleText()->HasTextShadow()) {
+    return InkOverflowRect();
+  }
   nsRect* cachedBounds = GetProperty(WebRenderTextBounds());
   if (!cachedBounds) {
     OverflowAreas overflowAreas;
     ComputeCustomOverflowInternal(overflowAreas, false);
-    cachedBounds = new nsRect();
-    *cachedBounds = overflowAreas.InkOverflow();
+    cachedBounds = new nsRect(overflowAreas.InkOverflow());
     SetProperty(WebRenderTextBounds(), cachedBounds);
   }
   return *cachedBounds;
@@ -9706,10 +9759,14 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
 
   // The metrics for the text go in here
   gfxTextRun::Metrics textMetrics;
-  gfxFont::BoundingBoxType boundingBoxType =
-      IsFloatingFirstLetterChild() || IsInitialLetterChild()
-          ? gfxFont::TIGHT_HINTED_OUTLINE_EXTENTS
-          : gfxFont::LOOSE_INK_EXTENTS;
+  gfxFont::BoundingBoxType boundingBoxType = gfxFont::LOOSE_INK_EXTENTS;
+  if (IsFloatingFirstLetterChild() || IsInitialLetterChild()) {
+    if (nsFirstLetterFrame* firstLetter = do_QueryFrame(GetParent())) {
+      if (firstLetter->UseTightBounds()) {
+        boundingBoxType = gfxFont::TIGHT_HINTED_OUTLINE_EXTENTS;
+      }
+    }
+  }
 
   int32_t limitLength = length;
   int32_t forceBreak = aLineLayout.GetForcedBreakPosition(this);

@@ -5,8 +5,9 @@
 use api::{ColorF, DebugFlags, FontRenderMode, PremultipliedColorF};
 use api::units::*;
 use plane_split::BspSplitter;
-use crate::batch::{BatchBuilder, AlphaBatchBuilder, AlphaBatchContainer, CommandBufferList};
+use crate::batch::{BatchBuilder, AlphaBatchBuilder, AlphaBatchContainer};
 use crate::clip::{ClipStore, ClipTree};
+use crate::command_buffer::CommandBufferList;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::composite::{CompositorKind, CompositeState, CompositeStatePreallocator};
 use crate::debug_item::DebugItem;
@@ -62,6 +63,7 @@ pub struct FrameBuilderConfig {
     pub force_invalidation: bool,
     pub is_software: bool,
     pub low_quality_pinch_zoom: bool,
+    pub uses_native_antialiasing: bool,
 }
 
 /// A set of common / global resources that are retained between
@@ -578,6 +580,7 @@ impl FrameBuilder {
                     globals: &self.globals,
                     tile_caches,
                     root_spatial_node_index: spatial_tree.root_reference_frame_index(),
+                    uses_native_antialiasing: scene.config.uses_native_antialiasing,
                 };
 
                 let pass = build_render_pass(
@@ -617,6 +620,7 @@ impl FrameBuilder {
                 globals: &self.globals,
                 tile_caches,
                 root_spatial_node_index: spatial_tree.root_reference_frame_index(),
+                uses_native_antialiasing: scene.config.uses_native_antialiasing,
             };
 
             self.build_composite_pass(

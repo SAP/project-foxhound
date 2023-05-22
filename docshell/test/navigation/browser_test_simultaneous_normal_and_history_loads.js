@@ -13,13 +13,14 @@ add_task(async function test_normal_and_history_loads() {
   let testPage =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       "http://example.com"
     ) + "blank.html";
   await BrowserTestUtils.withNewTab({ gBrowser, url: testPage }, async function(
     browser
   ) {
     for (let i = 0; i < 2; ++i) {
-      BrowserTestUtils.loadURI(browser, testPage + "?" + i);
+      BrowserTestUtils.loadURIString(browser, testPage + "?" + i);
       await BrowserTestUtils.browserLoaded(browser);
     }
 

@@ -123,7 +123,7 @@ impl ToComputedValue for LineHeight {
                     LengthPercentage::Calc(ref calc) => {
                         let computed_calc =
                             calc.to_computed_value_zoomed(context, FontBaseSize::CurrentStyle);
-                        let base = context.style().get_font().clone_font_size().size();
+                        let base = context.style().get_font().clone_font_size().computed_size();
                         computed_calc.resolve(base)
                     },
                 };
@@ -373,7 +373,7 @@ impl ToCss for TextTransform {
         if self.case_ != TextTransformCase::None {
             self.case_.to_css(dest)?;
             if !self.other_.is_empty() {
-                dest.write_str(" ")?;
+                dest.write_char(' ')?;
             }
         }
 

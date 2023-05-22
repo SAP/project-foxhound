@@ -43,7 +43,8 @@ class LoaderReusableStyleSheets;
 }
 namespace dom {
 enum class CompositeOperationOrAuto : uint8_t;
-}
+enum class ScreenColorGamut : uint8_t;
+}  // namespace dom
 }  // namespace mozilla
 
 #ifdef NIGHTLY_BUILD
@@ -388,6 +389,8 @@ void Gecko_EnsureImageLayersLength(nsStyleImageLayers* layers, size_t len,
 
 void Gecko_EnsureStyleAnimationArrayLength(void* array, size_t len);
 void Gecko_EnsureStyleTransitionArrayLength(void* array, size_t len);
+void Gecko_EnsureStyleScrollTimelineArrayLength(void* array, size_t len);
+void Gecko_EnsureStyleViewTimelineArrayLength(void* array, size_t len);
 
 // Searches from the beginning of |keyframes| for a Keyframe object with the
 // specified offset and timing function. If none is found, a new Keyframe object
@@ -580,6 +583,8 @@ bool Gecko_IsFontFormatSupported(
     mozilla::StyleFontFaceSourceFormatKeyword aFormat);
 bool Gecko_IsFontTechSupported(mozilla::StyleFontFaceSourceTechFlags aFlag);
 
+bool Gecko_IsKnownIconFontFamily(const nsAtom* aFamilyName);
+
 // Returns true if we're currently performing the servo traversal.
 bool Gecko_IsInServoTraversal();
 
@@ -601,6 +606,8 @@ bool Gecko_MediaFeatures_ShouldAvoidNativeTheme(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_UseOverlayScrollbars(const mozilla::dom::Document*);
 uint32_t Gecko_MediaFeatures_GetColorDepth(const mozilla::dom::Document*);
 uint32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
+    const mozilla::dom::Document*);
+mozilla::dom::ScreenColorGamut Gecko_MediaFeatures_ColorGamut(
     const mozilla::dom::Document*);
 
 void Gecko_MediaFeatures_GetDeviceSize(const mozilla::dom::Document*,

@@ -34,6 +34,7 @@ namespace mozilla::dom {
 NS_IMPL_CYCLE_COLLECTION_CLASS(BodyStreamHolder)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(BodyStreamHolder)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReadableStreamBody)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(BodyStreamHolder)
@@ -41,6 +42,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(BodyStreamHolder)
     tmp->mBodyStream->ReleaseObjects();
     MOZ_ASSERT(!tmp->mBodyStream);
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadableStreamBody);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(BodyStreamHolder)
@@ -87,6 +89,53 @@ class BodyStream::WorkerShutdown final : public WorkerControlRunnable {
 NS_IMPL_ISUPPORTS(BodyStream, nsIInputStreamCallback, nsIObserver,
                   nsISupportsWeakReference)
 
+class BodyStreamUnderlyingSourceAlgorithms final
+    : public UnderlyingSourceAlgorithmsWrapper {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(BodyStreamUnderlyingSourceAlgorithms,
+                                           UnderlyingSourceAlgorithmsBase)
+
+  BodyStreamUnderlyingSourceAlgorithms(nsIGlobalObject& aGlobal,
+                                       BodyStreamHolder& aUnderlyingSource)
+      : mGlobal(&aGlobal), mUnderlyingSource(&aUnderlyingSource) {}
+
+  already_AddRefed<Promise> PullCallbackImpl(
+      JSContext* aCx, ReadableStreamController& aController,
+      ErrorResult& aRv) override {
+    RefPtr<BodyStream> bodyStream = mUnderlyingSource->GetBodyStream();
+    return bodyStream->PullCallback(aCx, aController, aRv);
+  }
+
+  void ReleaseObjects() override {
+    RefPtr<BodyStreamHolder> holder = mUnderlyingSource.forget();
+    // BodyStream may not be available if this cleanup happened first from
+    // BodyStream side.
+    if (RefPtr<BodyStream> bodyStream = holder->GetBodyStream()) {
+      bodyStream->CloseInputAndReleaseObjects();
+    }
+  }
+
+  BodyStreamHolder* GetBodyStreamHolder() override { return mUnderlyingSource; }
+
+ protected:
+  ~BodyStreamUnderlyingSourceAlgorithms() override = default;
+
+ private:
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  RefPtr<BodyStreamHolder> mUnderlyingSource;
+};
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(BodyStreamUnderlyingSourceAlgorithms,
+                                   UnderlyingSourceAlgorithmsBase, mGlobal,
+                                   mUnderlyingSource)
+NS_IMPL_ADDREF_INHERITED(BodyStreamUnderlyingSourceAlgorithms,
+                         UnderlyingSourceAlgorithmsBase)
+NS_IMPL_RELEASE_INHERITED(BodyStreamUnderlyingSourceAlgorithms,
+                          UnderlyingSourceAlgorithmsBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BodyStreamUnderlyingSourceAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsBase)
+
 /* static */
 void BodyStream::Create(JSContext* aCx, BodyStreamHolder* aStreamHolder,
                         nsIGlobalObject* aGlobal, nsIInputStream* aInputStream,
@@ -130,8 +179,10 @@ void BodyStream::Create(JSContext* aCx, BodyStreamHolder* aStreamHolder,
     stream->mWorkerRef = std::move(workerRef);
   }
 
-  RefPtr<ReadableStream> body =
-      ReadableStream::Create(aCx, aGlobal, aStreamHolder, aRv);
+  auto algorithms = MakeRefPtr<BodyStreamUnderlyingSourceAlgorithms>(
+      *aGlobal, *aStreamHolder);
+  RefPtr<ReadableStream> body = ReadableStream::CreateByteNative(
+      aCx, aGlobal, *algorithms, Nothing(), aRv);
   if (aRv.Failed()) {
     return;
   }
@@ -150,12 +201,10 @@ void BodyStream::Create(JSContext* aCx, BodyStreamHolder* aStreamHolder,
 already_AddRefed<Promise> BodyStream::PullCallback(
     JSContext* aCx, ReadableStreamController& aController, ErrorResult& aRv) {
   MOZ_ASSERT(aController.IsByte());
-  ReadableStream* stream = aController.AsByte()->Stream();
+  ReadableStream* stream = aController.Stream();
   MOZ_ASSERT(stream);
 
-#if MOZ_DIAGNOSTIC_ASSERT_ENABLED
   MOZ_DIAGNOSTIC_ASSERT(stream->Disturbed());
-#endif
 
   AssertIsOnOwningThread();
 
@@ -279,13 +328,6 @@ void BodyStream::WriteIntoReadRequestBuffer(JSContext* aCx,
   // All good.
 }
 
-// UnderlyingSource.cancel callback, implemented for BodyStream.
-already_AddRefed<Promise> BodyStream::CancelCallback(
-    JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-    ErrorResult& aRv) {
-  return Promise::CreateResolvedWithUndefined(mGlobal, aRv);
-}
-
 void BodyStream::CloseInputAndReleaseObjects() {
   mMutex.AssertOnWritingThread();
 
@@ -350,12 +392,10 @@ void BodyStream::ErrorPropagation(JSContext* aCx,
 
   {
     MutexSingleWriterAutoUnlock unlock(mMutex);
-    // Don't re-error an already errored stream.
-    if (aStream->State() == ReadableStream::ReaderState::Readable) {
-      IgnoredErrorResult rv;
-      ReadableStreamError(aCx, aStream, errorValue, rv);
-      NS_WARNING_ASSERTION(!rv.Failed(), "Failed to error BodyStream");
-    }
+    // This will be ignored if it's already errored.
+    IgnoredErrorResult rv;
+    aStream->ErrorNative(aCx, errorValue, rv);
+    NS_WARNING_ASSERTION(!rv.Failed(), "Failed to error BodyStream");
   }
 
   if (mState == eInitializing) {
@@ -370,6 +410,10 @@ void BodyStream::ErrorPropagation(JSContext* aCx,
   ReleaseObjects(aProofOfLock);
 }
 
+// https://fetch.spec.whatwg.org/#concept-bodyinit-extract
+// Step 12.1: Whenever one or more bytes are available and stream is not
+// errored, enqueue a Uint8Array wrapping an ArrayBuffer containing the
+// available bytes into stream.
 void BodyStream::EnqueueChunkWithSizeIntoStream(JSContext* aCx,
                                                 ReadableStream* aStream,
                                                 uint64_t aAvailableData,
@@ -400,19 +444,15 @@ void BodyStream::EnqueueChunkWithSizeIntoStream(JSContext* aCx,
     }
 
     // If we don't read every byte we've allocated in the Uint8Array
-    // we risk enqueing a chunk that is padded with trailing zeros,
+    // we risk enqueuing a chunk that is padded with trailing zeros,
     // corrupting future processing of the chunks:
     MOZ_DIAGNOSTIC_ASSERT((ableToRead - bytesWritten) == 0);
   }
 
   MOZ_ASSERT(aStream->Controller()->IsByte());
-  RefPtr<ReadableByteStreamController> byteStreamController =
-      aStream->Controller()->AsByte();
-
-  ReadableByteStreamControllerEnqueue(aCx, byteStreamController, chunk, aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+  JS::Rooted<JS::Value> chunkValue(aCx);
+  chunkValue.setObject(*chunk);
+  aStream->EnqueueNative(aCx, chunkValue, aRv);
 }
 
 // thread-safety doesn't handle emplace well
@@ -549,7 +589,7 @@ void BodyStream::CloseAndReleaseObjects(
 
   if (aStream->State() == ReadableStream::ReaderState::Readable) {
     IgnoredErrorResult rv;
-    ReadableStreamClose(aCx, aStream, rv);
+    aStream->CloseNative(aCx, rv);
     NS_WARNING_ASSERTION(!rv.Failed(), "Failed to Close Stream");
   }
 }
@@ -596,11 +636,6 @@ void BodyStream::ReleaseObjects(const MutexSingleWriterAutoLock& aProofOfLock) {
     if (obs) {
       obs->RemoveObserver(this, DOM_WINDOW_DESTROYED_TOPIC);
     }
-  }
-
-  ReadableStream* stream = mStreamHolder->GetReadableStreamBody();
-  if (stream) {
-    stream->ReleaseObjectsFromBodyStream();
   }
 
   mWorkerRef = nullptr;

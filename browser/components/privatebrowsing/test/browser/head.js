@@ -1,13 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { PromiseUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/PromiseUtils.sys.mjs"
-);
 ChromeUtils.defineESModuleGetters(this, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -15,7 +13,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
 });
 
 function whenNewWindowLoaded(aOptions, aCallback) {

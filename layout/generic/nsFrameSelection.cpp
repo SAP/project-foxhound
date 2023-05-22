@@ -73,6 +73,7 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsError.h"
 #include "mozilla/AutoCopyListener.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/StaticRange.h"
@@ -90,7 +91,7 @@ using namespace mozilla::dom;
 
 static LazyLogModule sFrameSelectionLog("FrameSelection");
 
-//#define DEBUG_TABLE 1
+// #define DEBUG_TABLE 1
 
 /**
  * Add cells to the selection inside of the given cells range.
@@ -131,10 +132,10 @@ static void printRange(nsRange* aDomRange);
  * nsPeekOffsetStruct
  ******************************************************************************/
 
-//#define DEBUG_SELECTION // uncomment for printf describing every collapse and
-// extend. #define DEBUG_NAVIGATION
+// #define DEBUG_SELECTION // uncomment for printf describing every collapse and
+//  extend. #define DEBUG_NAVIGATION
 
-//#define DEBUG_TABLE_SELECTION 1
+// #define DEBUG_TABLE_SELECTION 1
 
 nsPeekOffsetStruct::nsPeekOffsetStruct(
     nsSelectionAmount aAmount, nsDirection aDirection, int32_t aStartOffset,
@@ -175,6 +176,7 @@ static const int8_t kIndexOfSelections[] = {
     7,   // SelectionType::eFind
     8,   // SelectionType::eURLSecondary
     9,   // SelectionType::eURLStrikeout
+    -1,  // SelectionType::eHighlight
 };
 
 inline int8_t GetIndexFromSelectionType(SelectionType aSelectionType) {
@@ -391,6 +393,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsFrameSelection)
   for (size_t i = 0; i < ArrayLength(tmp->mDomSelections); ++i) {
     tmp->mDomSelections[i] = nullptr;
   }
+  tmp->mHighlightSelections.Clear();
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(
       mTableSelection.mClosestInclusiveTableCellAncestor)
@@ -414,6 +417,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsFrameSelection)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDomSelections[i])
   }
 
+  for (const auto& value : tmp->mHighlightSelections.Values()) {
+    CycleCollectionNoteChild(cb, value.get(), "mHighlightSelections[]");
+  }
+
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(
       mTableSelection.mClosestInclusiveTableCellAncestor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTableSelection.mStartSelectedCell)
@@ -424,9 +431,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsFrameSelection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLimiters.mLimiter)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLimiters.mAncestorLimiter)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsFrameSelection, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsFrameSelection, Release)
 
 bool nsFrameSelection::Caret::IsVisualMovement(
     bool aContinueSelection, CaretMovementStyle aMovementStyle) const {
@@ -1536,6 +1540,12 @@ UniquePtr<SelectionDetails> nsFrameSelection::LookUpSelection(
           kPresentSelectionTypes[j], aSlowCheck);
     }
   }
+  for (auto const& highlightSelection : mHighlightSelections.Values()) {
+    details = highlightSelection->LookUpSelection(
+        aContent, static_cast<uint32_t>(aContentOffset),
+        static_cast<uint32_t>(aContentLength), std::move(details),
+        SelectionType::eHighlight, aSlowCheck);
+  }
 
   return details;
 }
@@ -1565,6 +1575,21 @@ Selection* nsFrameSelection::GetSelection(SelectionType aSelectionType) const {
   if (index < 0) return nullptr;
 
   return mDomSelections[index];
+}
+
+void nsFrameSelection::AddHighlightSelection(
+    const nsAtom* aHighlightName, const mozilla::dom::Highlight& aHighlight,
+    ErrorResult& aRv) {
+  RefPtr<Selection> selection =
+      aHighlight.CreateHighlightSelection(aHighlightName, this, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+  mHighlightSelections.InsertOrUpdate(aHighlightName, std::move(selection));
+}
+
+void nsFrameSelection::RemoveHighlightSelection(const nsAtom* aHighlightName) {
+  mHighlightSelections.Remove(aHighlightName);
 }
 
 nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,

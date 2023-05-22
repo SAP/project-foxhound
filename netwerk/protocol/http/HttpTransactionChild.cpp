@@ -116,7 +116,7 @@ nsresult HttpTransactionChild::InitInternal(
 
   nsresult rv = mTransaction->Init(
       caps, cinfo, requestHead, requestBody, requestContentLength,
-      requestBodyHasHeaders, GetCurrentEventTarget(),
+      requestBodyHasHeaders, GetCurrentSerialEventTarget(),
       nullptr,  // TODO: security callback, fix in bug 1512479.
       this, topLevelOuterContentWindowId,
       static_cast<HttpTrafficCategory>(httpTrafficCategory), rc, classOfService,
@@ -629,11 +629,12 @@ HttpTransactionChild::CheckListenerChain() {
 }
 
 NS_IMETHODIMP
-HttpTransactionChild::EarlyHint(const nsACString& value,
-                                const nsACString& referrerPolicy) {
+HttpTransactionChild::EarlyHint(const nsACString& aValue,
+                                const nsACString& aReferrerPolicy,
+                                const nsACString& aCSPHeader) {
   LOG(("HttpTransactionChild::EarlyHint"));
   if (CanSend()) {
-    Unused << SendEarlyHint(value, referrerPolicy);
+    Unused << SendEarlyHint(aValue, aReferrerPolicy, aCSPHeader);
   }
   return NS_OK;
 }

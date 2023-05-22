@@ -40,6 +40,8 @@
 #  include "jit/mips64/MacroAssembler-mips64-inl.h"
 #elif defined(JS_CODEGEN_LOONG64)
 #  include "jit/loong64/MacroAssembler-loong64-inl.h"
+#elif defined(JS_CODEGEN_RISCV64)
+#  include "jit/riscv64/MacroAssembler-riscv64-inl.h"
 #elif defined(JS_CODEGEN_WASM32)
 #  include "jit/wasm32/MacroAssembler-wasm32-inl.h"
 #elif !defined(JS_CODEGEN_NONE)
@@ -724,8 +726,13 @@ void MacroAssembler::branchTestClassIsProxy(bool proxy, Register clasp,
 
 void MacroAssembler::branchTestObjectIsProxy(bool proxy, Register object,
                                              Register scratch, Label* label) {
-  loadObjClassUnsafe(object, scratch);
-  branchTestClassIsProxy(proxy, scratch, label);
+  constexpr uint32_t ShiftedMask = (Shape::kindMask() << Shape::kindShift());
+  static_assert(uint32_t(Shape::Kind::Proxy) == 0,
+                "branchTest32 below depends on proxy kind being 0");
+  loadPtr(Address(object, JSObject::offsetOfShape()), scratch);
+  branchTest32(proxy ? Assembler::Zero : Assembler::NonZero,
+               Address(scratch, Shape::offsetOfImmutableFlags()),
+               Imm32(ShiftedMask), label);
 }
 
 void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,
@@ -735,8 +742,7 @@ void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,
                                                   Label* label) {
 #ifdef DEBUG
   Label ok;
-  loadObjClassUnsafe(proxy, scratch);
-  branchTestClassIsProxy(true, scratch, &ok);
+  branchTestObjectIsProxy(true, proxy, scratch, &ok);
   assumeUnreachable("Expected ProxyObject in branchTestProxyHandlerFamily");
   bind(&ok);
 #endif

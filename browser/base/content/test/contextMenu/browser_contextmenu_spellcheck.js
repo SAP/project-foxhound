@@ -8,6 +8,7 @@ let contextMenu;
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 const example_base =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/contextMenu/";
 const MAIN_URL = example_base + "subtst_contextmenu_input.html";
 
@@ -182,7 +183,7 @@ add_task(async function test_text_input_spellcheck_deadactor() {
   contextMenu.hidePopup();
 
   // Now go back to the input testcase:
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, MAIN_URL);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, MAIN_URL);
   await BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
@@ -203,7 +204,7 @@ add_task(async function test_text_input_spellcheck_deadactor() {
   wgp = gBrowser.selectedBrowser.browsingContext.currentWindowGlobal;
 
   const NEW_URL = MAIN_URL.replace(".com", ".org");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, NEW_URL);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, NEW_URL);
   await BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
@@ -226,7 +227,7 @@ add_task(async function test_text_input_spellcheck_deadactor() {
   // again; now the context menu stuff should be destroyed by the menu
   // hiding, nothing else.
   wgp = gBrowser.selectedBrowser.browsingContext.currentWindowGlobal;
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, NEW_URL);
+  BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, NEW_URL);
   await BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,

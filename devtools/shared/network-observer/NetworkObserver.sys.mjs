@@ -86,11 +86,13 @@ const HTTP_DOWNLOAD_ACTIVITIES = [
  *        This function will be called for every detected channel to decide if it
  *        should be monitored or not.
  * @param {Function(NetworkEvent): owner} options.onNetworkEvent
- *        This method is invoked once for every new network request with a single
- *        "networkEvent" argument, which is an object created by
- *        NetworkUtils:createNetworkEvent, containing initial network request
- *        information as an argument.
- *        onNetworkEvent() must return an "owner" object which holds several add*()
+ *        This method is invoked once for every new network request with two
+ *        arguments:
+ *        - {Object} networkEvent: object created by NetworkUtils:createNetworkEvent,
+ *          containing initial network request information as an argument.
+ *        - {nsIChannel} channel: the channel for which the request was detected
+ *
+ *        `onNetworkEvent()` must return an "owner" object which holds several add*()
  *        methods which are used to add further network request/response information.
  */
 export class NetworkObserver {
@@ -277,8 +279,7 @@ export class NetworkObserver {
         return;
       }
 
-      const blockedCode = channel.loadInfo.requestBlockingReason;
-      this.#httpResponseExaminer(subject, topic, blockedCode);
+      this.#httpResponseExaminer(subject, topic);
     }
   );
 
@@ -299,52 +300,31 @@ export class NetworkObserver {
 
       logPlatformEvent(topic, channel);
 
-      let id;
-      let reason;
-
-      try {
-        const request = subject.QueryInterface(Ci.nsIHttpChannel);
-        const properties = request.QueryInterface(Ci.nsIPropertyBag);
-        reason = request.loadInfo.requestBlockingReason;
-        id = properties.getProperty("cancelledByExtension");
-
-        // WebExtensionPolicy is not available for workers
-        if (typeof WebExtensionPolicy !== "undefined") {
-          id = WebExtensionPolicy.getByID(id).name;
-        }
-      } catch (err) {
-        // "cancelledByExtension" doesn't have to be available.
-      }
-
       const httpActivity = this.#createOrGetActivityObject(channel);
       const serverTimings = this.#extractServerTimings(channel);
+
       if (httpActivity.owner) {
         // Try extracting server timings. Note that they will be sent to the client
         // in the `_onTransactionClose` method together with network event timings.
         httpActivity.owner.addServerTimings(serverTimings);
-      } else {
+
         // If the owner isn't set we need to create the network event and send
         // it to the client. This happens in case where:
         // - the request has been blocked (e.g. CORS) and "http-on-stop-request" is the first notification.
         // - the NetworkObserver is start *after* the request started and we only receive the http-stop notification,
         //   but that doesn't mean the request is blocked, so check for its status.
-        const { status } = channel;
-        if (status == 0) {
-          // Do not pass any blocked reason, as this request is just fine.
-          // Bug 1489217 - Prevent watching for this request response content,
-          // as this request is already running, this is too late to watch for it.
-          this.#createNetworkEvent(subject, { inProgressRequest: true });
-        } else {
-          if (reason == 0) {
-            // If we get there, we have a non-zero status, but no clear blocking reason
-            // This is most likely a request that failed for some reason, so try to pass this reason
-            reason = ChromeUtils.getXPCOMErrorName(status);
-          }
-          this.#createNetworkEvent(subject, {
-            blockedReason: reason,
-            blockingExtension: id,
-          });
-        }
+      } else if (Components.isSuccessCode(channel.status)) {
+        // Do not pass any blocked reason, as this request is just fine.
+        // Bug 1489217 - Prevent watching for this request response content,
+        // as this request is already running, this is too late to watch for it.
+        this.#createNetworkEvent(subject, { inProgressRequest: true });
+      } else {
+        // Handles any early blockings e.g by Web Extensions or by CORS
+        const {
+          blockingExtension,
+          blockedReason,
+        } = lazy.NetworkUtils.getBlockedReason(channel);
+        this.#createNetworkEvent(subject, { blockedReason, blockingExtension });
       }
     }
   );
@@ -359,7 +339,7 @@ export class NetworkObserver {
    * @returns void
    */
   #httpResponseExaminer = DevToolsInfaillibleUtils.makeInfallible(
-    (subject, topic, blockedReason) => {
+    (subject, topic) => {
       // The httpResponseExaminer is used to retrieve the uncached response
       // headers.
       if (
@@ -386,7 +366,7 @@ export class NetworkObserver {
         topic,
         subject,
         blockedOrFailed
-          ? "blockedOrFailed:" + blockedReason
+          ? "blockedOrFailed:" + channel.loadInfo.requestBlockingReason
           : channel.responseStatus
       );
 
@@ -460,10 +440,13 @@ export class NetworkObserver {
         httpActivity.owner.addResponseStart(
           {
             httpVersion,
+            protocol: this.#getProtocol(httpActivity),
+            fromCache: this.#isFromCache(httpActivity),
             remoteAddress: "",
             remotePort: "",
             status,
             statusText,
+            bodySize: 0,
             headersSize: 0,
             waitingTime: 0,
           },
@@ -483,6 +466,7 @@ export class NetworkObserver {
           serverTimings
         );
       } else if (topic === "http-on-failed-opening-request") {
+        const { blockedReason } = lazy.NetworkUtils.getBlockedReason(channel);
         this.#createNetworkEvent(channel, { blockedReason });
       }
 
@@ -722,7 +706,7 @@ export class NetworkObserver {
     httpActivity.isXHR = event.isXHR;
     httpActivity.private = event.private;
     httpActivity.fromServiceWorker = fromServiceWorker;
-    httpActivity.owner = this.#onNetworkEvent(event);
+    httpActivity.owner = this.#onNetworkEvent(event, channel);
 
     // Bug 1489217 - Avoid watching for response content for blocked or in-progress requests
     // as it can't be observed and would throw if we try.
@@ -812,12 +796,18 @@ export class NetworkObserver {
 
       httpActivity = {
         id: gSequenceId(),
+        // The nsIChannel for which this activity object was created.
         channel,
-        // see #onRequestBodySent()
+        // See #onRequestBodySent()
         charset,
+        // The postData sent by this request.
         sentBody: null,
+        // The URL for the current channel.
         url: channel.URI.spec,
-        headersSize: null,
+        // The encoded response body size.
+        bodySize: 0,
+        // The response headers size.
+        headersSize: 0,
         // needed for host specific security info
         hostname: channel.URI.host,
         discardRequestBody: !this.#saveRequestAndResponseBodies,
@@ -920,7 +910,6 @@ export class NetworkObserver {
 
     // Add listener for the response body.
     const newListener = new lazy.NetworkResponseListener(
-      this,
       httpActivity,
       this.#decodedCertificateCache
     );
@@ -1004,20 +993,43 @@ export class NetworkObserver {
     // that is not trivial to do in an accurate manner. Hence, we save the
     // response headers in this.#httpResponseExaminer().
 
+    // Extract the protocol (called httpVersion here), response's status and
+    // statusText from the raw headers.
     const headers = extraStringData.split(/\r\n|\n|\r/);
     const statusLine = headers.shift();
     const statusLineArray = statusLine.split(" ");
+    httpActivity.httpVersion = statusLineArray.shift();
+    httpActivity.responseStatus = statusLineArray.shift();
+    httpActivity.responseStatusText = statusLineArray.join(" ");
+    httpActivity.headersSize = extraStringData.length;
 
+    // Discard the response body for known response statuses.
+    switch (parseInt(httpActivity.responseStatus, 10)) {
+      case HTTP_MOVED_PERMANENTLY:
+      case HTTP_FOUND:
+      case HTTP_SEE_OTHER:
+      case HTTP_TEMPORARY_REDIRECT:
+        httpActivity.discardResponseBody = true;
+        break;
+    }
+
+    // Build the response object
     const response = {};
-    response.httpVersion = statusLineArray.shift();
+    response.discardResponseBody = httpActivity.discardResponseBody;
+    response.httpVersion = httpActivity.httpVersion;
+    response.protocol = this.#getProtocol(httpActivity);
+    response.fromCache = this.#isFromCache(httpActivity);
     response.remoteAddress = httpActivity.channel.remoteAddress;
     response.remotePort = httpActivity.channel.remotePort;
-    response.status = statusLineArray.shift();
-    response.statusText = statusLineArray.join(" ");
-    response.headersSize = extraStringData.length;
+    response.status = httpActivity.responseStatus;
+    response.statusText = httpActivity.responseStatusText;
+    response.bodySize = httpActivity.bodySize;
+    response.headersSize = httpActivity.headersSize;
+    response.transferredSize = httpActivity.bodySize + httpActivity.headersSize;
     response.waitingTime = this.#convertTimeToMs(
       this.#getWaitTiming(httpActivity.timings)
     );
+
     // Mime type needs to be sent on response start for identifying an sse channel.
     const contentType = headers.find(header => {
       const lowerName = header.toLowerCase();
@@ -1027,21 +1039,6 @@ export class NetworkObserver {
     if (contentType) {
       response.mimeType = contentType.slice("Content-Type: ".length);
     }
-
-    httpActivity.responseStatus = response.status;
-    httpActivity.headersSize = response.headersSize;
-
-    // Discard the response body for known response statuses.
-    switch (parseInt(response.status, 10)) {
-      case HTTP_MOVED_PERMANENTLY:
-      case HTTP_FOUND:
-      case HTTP_SEE_OTHER:
-      case HTTP_TEMPORARY_REDIRECT:
-        httpActivity.discardResponseBody = true;
-        break;
-    }
-
-    response.discardResponseBody = httpActivity.discardResponseBody;
 
     httpActivity.owner.addResponseStart(response, extraStringData);
   }
@@ -1067,6 +1064,70 @@ export class NetworkObserver {
         serverTimings
       );
     }
+  }
+
+  /**
+   * Get the protocol for the provided httpActivity. Either the ALPN negotiated
+   * protocol or as a fallback a protocol computed from the scheme and the
+   * response status.
+   *
+   * TODO: The `protocol` is similar to another response property called
+   * `httpVersion`. `httpVersion` is uppercase and purely computed from the
+   * response status, whereas `protocol` uses nsIHttpChannel.protocolVersion by
+   * default and otherwise falls back on `httpVersion`. Ideally we should merge
+   * the two properties.
+   *
+   * @param {Object} httpActivity
+   *     The httpActivity object for which we need to get the protocol.
+   *
+   * @returns {string}
+   *     The protocol as a string.
+   */
+  #getProtocol(httpActivity) {
+    const { channel, httpVersion } = httpActivity;
+    let protocol = "";
+    try {
+      const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+      // protocolVersion corresponds to ALPN negotiated protocol.
+      protocol = httpChannel.protocolVersion;
+    } catch (e) {
+      // Ignore errors reading protocolVersion.
+    }
+
+    if (["", "unknown"].includes(protocol)) {
+      protocol = channel.URI.scheme;
+      if (
+        typeof httpVersion == "string" &&
+        (protocol === "http" || protocol === "https")
+      ) {
+        protocol = httpVersion.toLowerCase();
+      }
+    }
+
+    return protocol;
+  }
+
+  /**
+   * Check if the channel data for the provided http activity is loaded from the
+   * cache or not.
+   *
+   * @param {Object} httpActivity
+   *     The httpActivity object for which we need to check the cache status.
+   *
+   * @returns {boolean}
+   *     True if the channel data is loaded from the cache, false otherwise.
+   */
+  #isFromCache(httpActivity) {
+    const { channel } = httpActivity;
+    if (channel instanceof Ci.nsICacheInfoChannel) {
+      try {
+        return channel.isFromCache();
+      } catch (e) {
+        // Bug 1817750: isFromCache() can throw when called after onStopRequest.
+      }
+    }
+
+    return false;
   }
 
   #getBlockedTiming(timings) {

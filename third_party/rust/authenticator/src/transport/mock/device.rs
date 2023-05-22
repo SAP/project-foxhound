@@ -105,7 +105,7 @@ impl Hash for Device {
 }
 
 impl U2FDevice for Device {
-    fn get_cid<'a>(&'a self) -> &'a [u8; 4] {
+    fn get_cid(&self) -> &[u8; 4] {
         &self.cid
     }
 
@@ -122,7 +122,7 @@ impl U2FDevice for Device {
     }
 
     fn get_property(&self, prop_name: &str) -> io::Result<String> {
-        Ok(format!("{} not implemented", prop_name))
+        Ok(format!("{prop_name} not implemented"))
     }
     fn get_device_info(&self) -> U2FDeviceInfo {
         self.dev_info.clone().unwrap()

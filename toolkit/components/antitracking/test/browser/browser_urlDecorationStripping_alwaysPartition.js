@@ -3,8 +3,6 @@
 // eTLD+1 URL when tracking identifiers controlled by this service are
 // present in the referrer URI.
 
-/* import-globals-from antitracking_head.js */
-
 "use strict";
 
 const trackerBlocked = Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER;
@@ -14,9 +12,6 @@ const { RemoteSettings } = ChromeUtils.import(
 );
 const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
-);
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const COLLECTION_NAME = "anti-tracking-url-decoration";

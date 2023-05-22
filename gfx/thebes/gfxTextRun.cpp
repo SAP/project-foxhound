@@ -25,13 +25,12 @@
 #include "mozilla/Likely.h"
 #include "gfx2DGlue.h"
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalError
+#include "mozilla/intl/String.h"
 #include "mozilla/intl/UnicodeProperties.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "SharedFontList-impl.h"
 #include "TextDrawTarget.h"
-
-#include <unicode/unorm2.h>
 
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -2246,13 +2245,17 @@ already_AddRefed<gfxFont> gfxFontGroup::GetDefaultFont() {
       if (pfl->SharedFontList()->GetGeneration() != oldGeneration) {
         return GetDefaultFont();
       }
-    } else {
-      gfxFontEntry* fe = pfl->GetDefaultFontEntry();
-      if (fe) {
-        RefPtr<gfxFont> f = fe->FindOrMakeFont(&mStyle);
-        if (f) {
-          return f.forget();
-        }
+    }
+  }
+
+  if (!mDefaultFont) {
+    // We must have failed to find anything usable in our font-family list,
+    // or it's badly broken. One more last-ditch effort to make a font:
+    gfxFontEntry* fe = pfl->GetDefaultFontEntry();
+    if (fe) {
+      RefPtr<gfxFont> f = fe->FindOrMakeFont(&mStyle);
+      if (f) {
+        return f.forget();
       }
     }
   }
@@ -2284,12 +2287,29 @@ already_AddRefed<gfxFont> gfxFontGroup::GetDefaultFont() {
 }
 
 already_AddRefed<gfxFont> gfxFontGroup::GetFirstValidFont(
-    uint32_t aCh, StyleGenericFontFamily* aGeneric) {
+    uint32_t aCh, StyleGenericFontFamily* aGeneric, bool* aIsFirst) {
   // Ensure cached font instances are valid.
   CheckForUpdatedPlatformList();
 
   uint32_t count = mFonts.Length();
   bool loading = false;
+
+  // Check whether the font supports the given character, unless the char is
+  // SPACE, in which case it is not required to be present in the font, but
+  // we must still check if it was excluded by a unicode-range descriptor.
+  auto isValidForChar = [](gfxFont* aFont, uint32_t aCh) -> bool {
+    if (!aFont) {
+      return false;
+    }
+    if (aCh == 0x20) {
+      if (const auto* unicodeRange = aFont->GetUnicodeRangeMap()) {
+        return unicodeRange->test(aCh);
+      }
+      return true;
+    }
+    return aFont->HasCharacter(aCh);
+  };
+
   for (uint32_t i = 0; i < count; ++i) {
     FamilyFace& ff = mFonts[i];
     if (ff.IsInvalid()) {
@@ -2298,9 +2318,12 @@ already_AddRefed<gfxFont> gfxFontGroup::GetFirstValidFont(
 
     // already have a font?
     RefPtr<gfxFont> font = ff.Font();
-    if (font) {
+    if (isValidForChar(font, aCh)) {
       if (aGeneric) {
         *aGeneric = ff.Generic();
+      }
+      if (aIsFirst) {
+        *aIsFirst = (i == 0);
       }
       return font.forget();
     }
@@ -2328,15 +2351,21 @@ already_AddRefed<gfxFont> gfxFontGroup::GetFirstValidFont(
     }
 
     font = GetFontAt(i, aCh, &loading);
-    if (font) {
+    if (isValidForChar(font, aCh)) {
       if (aGeneric) {
         *aGeneric = ff.Generic();
+      }
+      if (aIsFirst) {
+        *aIsFirst = (i == 0);
       }
       return font.forget();
     }
   }
   if (aGeneric) {
     *aGeneric = StyleGenericFontFamily::None;
+  }
+  if (aIsFirst) {
+    *aIsFirst = false;
   }
   return GetDefaultFont();
 }
@@ -2934,7 +2963,7 @@ gfxTextRun* gfxFontGroup::GetEllipsisTextRun(
 
   // Use a Unicode ellipsis if the font supports it,
   // otherwise use three ASCII periods as fallback.
-  RefPtr<gfxFont> firstFont = GetFirstValidFont(uint32_t(kEllipsisChar[0]));
+  RefPtr<gfxFont> firstFont = GetFirstValidFont();
   nsString ellipsis =
       firstFont->HasCharacter(kEllipsisChar[0])
           ? nsDependentString(kEllipsisChar, ArrayLength(kEllipsisChar) - 1)
@@ -3054,12 +3083,9 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
     if (aPrevMatchedFont->HasCharacter(aCh) || IsDefaultIgnorable(aCh)) {
       return do_AddRef(aPrevMatchedFont);
     }
-    // Get the singleton NFC normalizer; this does not need to be deleted.
-    static UErrorCode err = U_ZERO_ERROR;
-    static const UNormalizer2* nfc = unorm2_getNFCInstance(&err);
     // Check if this char and preceding char can compose; if so, is the
     // combination supported by the current font.
-    int32_t composed = unorm2_composePair(nfc, aPrevCh, aCh);
+    uint32_t composed = intl::String::ComposePairNFC(aPrevCh, aCh);
     if (composed > 0 && aPrevMatchedFont->HasCharacter(composed)) {
       return do_AddRef(aPrevMatchedFont);
     }
@@ -3228,6 +3254,15 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
     // If the provided glyph matches the preference, accept the font.
     if (hasColorGlyph == PrefersColor(presentation)) {
       *aMatchType = t;
+      return true;
+    }
+    // If the character was a TextDefault char, but the next char is VS16,
+    // and the font is a COLR font that supports both these codepoints, then
+    // we'll assume it knows what it is doing (eg Twemoji Mozilla keycap
+    // sequences).
+    // TODO: reconsider all this as part of any fix for bug 543200.
+    if (aNextCh == kVariationSelector16 && emojiPresentation == TextDefault &&
+        f->HasCharacter(aNextCh) && f->GetFontEntry()->TryGetColorGlyphs()) {
       return true;
     }
     // Otherwise, remember the first potential fallback, but keep searching.
@@ -3812,6 +3847,35 @@ already_AddRefed<gfxFont> gfxFontGroup::WhichSystemFontSupportsChar(
   return gfxPlatformFontList::PlatformFontList()->SystemFindFontForChar(
       mPresContext, aCh, aNextCh, aRunScript, aPresentation, &mStyle,
       &visibility);
+}
+
+gfxFont::Metrics gfxFontGroup::GetMetricsForCSSUnits(
+    gfxFont::Orientation aOrientation) {
+  bool isFirst;
+  RefPtr<gfxFont> font = GetFirstValidFont(0x20, nullptr, &isFirst);
+  auto metrics = font->GetMetrics(aOrientation);
+
+  // If the font we used to get metrics was not the first in the list,
+  // or if it doesn't support the ZERO character, check for the font that
+  // does support ZERO and use its metrics for the 'ch' unit.
+  if (!isFirst || !font->HasCharacter('0')) {
+    RefPtr<gfxFont> zeroFont = GetFirstValidFont('0');
+    if (zeroFont != font) {
+      const auto& zeroMetrics = zeroFont->GetMetrics(aOrientation);
+      metrics.zeroWidth = zeroMetrics.zeroWidth;
+    }
+  }
+
+  // Likewise for the WATER ideograph character used as the basis for 'ic'.
+  if (!isFirst || !font->HasCharacter(0x6C34)) {
+    RefPtr<gfxFont> icFont = GetFirstValidFont(0x6C34);
+    if (icFont != font) {
+      const auto& icMetrics = icFont->GetMetrics(aOrientation);
+      metrics.ideographicWidth = icMetrics.ideographicWidth;
+    }
+  }
+
+  return metrics;
 }
 
 void gfxMissingFontRecorder::Flush() {

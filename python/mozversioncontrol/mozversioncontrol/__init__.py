@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import abc
 import errno
 import os
@@ -167,10 +165,6 @@ class Repository(object):
 
         If no email is configured, then None is returned.
         """
-
-    @abc.abstractmethod
-    def get_upstream(self):
-        """Reference to the upstream remote."""
 
     @abc.abstractmethod
     def get_changed_files(self, diff_filter, mode="unstaged", rev=None):
@@ -432,9 +426,6 @@ class HgRepository(Repository):
             return None
         return match.group(1)
 
-    def get_upstream(self):
-        return "default"
-
     def _format_diff_filter(self, diff_filter, for_status=False):
         df = diff_filter.lower()
         assert all(f in self._valid_diff_filter for f in df)
@@ -630,15 +621,6 @@ class GitRepository(Repository):
         if not email:
             return None
         return email.strip()
-
-    def get_upstream(self):
-        ref = self._run("symbolic-ref", "-q", "HEAD").strip()
-        upstream = self._run("for-each-ref", "--format=%(upstream:short)", ref).strip()
-
-        if not upstream:
-            raise MissingUpstreamRepo("Could not detect an upstream repository.")
-
-        return upstream
 
     def get_changed_files(self, diff_filter="ADM", mode="unstaged", rev=None):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)

@@ -1350,7 +1350,7 @@ void WebSocketChannel::BeginOpenInternal() {
     return;
   }
 
-  rv = NS_MaybeOpenChannelUsingAsyncOpen(localChannel, this);
+  rv = localChannel->AsyncOpen(this);
 
   if (NS_FAILED(rv)) {
     LOG(("WebSocketChannel::BeginOpenInternal: cannot async open\n"));
@@ -2853,11 +2853,12 @@ nsresult WebSocketChannel::DoAdmissionDNS() {
   if (mPort == -1) mPort = (mEncrypted ? kDefaultWSSPort : kDefaultWSPort);
   nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> main = GetMainThreadSerialEventTarget();
   nsCOMPtr<nsICancelable> cancelable;
-  rv = dns->AsyncResolveNative(
-      hostName, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0, nullptr, this, main,
-      mLoadInfo->GetOriginAttributes(), getter_AddRefs(cancelable));
+  rv = dns->AsyncResolveNative(hostName, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                               nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr,
+                               this, main, mLoadInfo->GetOriginAttributes(),
+                               getter_AddRefs(cancelable));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -3404,7 +3405,7 @@ WebSocketChannel::AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
   {
     auto lock = mTargetThread.Lock();
     if (!lock.ref()) {
-      lock.ref() = GetMainThreadEventTarget();
+      lock.ref() = GetMainThreadSerialEventTarget();
     }
   }
 
@@ -4152,9 +4153,9 @@ WebSocketChannel::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
       toSend = mCurrentOut->Length() - mCurrentOutSent;
       if (toSend > 0) {
         LOG(
-            ("WebSocketChannel::OnOutputStreamReady: "
+            ("WebSocketChannel::OnOutputStreamReady [%p]: "
              "Try to send %u of data\n",
-             toSend));
+             this, toSend));
       }
     }
 
@@ -4162,8 +4163,9 @@ WebSocketChannel::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
       amtSent = 0;
     } else {
       rv = mSocketOut->Write(sndBuf, toSend, &amtSent);
-      LOG(("WebSocketChannel::OnOutputStreamReady: write %u rv %" PRIx32 "\n",
-           amtSent, static_cast<uint32_t>(rv)));
+      LOG(("WebSocketChannel::OnOutputStreamReady [%p]: write %u rv %" PRIx32
+           "\n",
+           this, amtSent, static_cast<uint32_t>(rv)));
 
       if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
         mSocketOut->AsyncWait(this, 0, 0, mIOThread);

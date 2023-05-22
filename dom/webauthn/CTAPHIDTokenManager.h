@@ -186,6 +186,24 @@ class CTAPResult {
                                                        aBuffer.Elements());
   }
 
+  bool Ctap2CopyCredentialId(nsTArray<uint8_t>& aBuffer) {
+    if (!mRegisterResult) {
+      return false;
+    }
+
+    size_t len;
+    if (!rust_ctap2_register_result_credential_id_len(mRegisterResult, &len)) {
+      return false;
+    }
+
+    if (!aBuffer.SetLength(len, fallible)) {
+      return false;
+    }
+
+    return rust_ctap2_register_result_credential_id_copy(mRegisterResult,
+                                                         aBuffer.Elements());
+  }
+
   bool Ctap2CopyPubKeyCredential(nsTArray<uint8_t>& aBuffer, size_t index) {
     return Ctap2SignResCopyBuffer(index, CTAP2_SIGN_RESULT_PUBKEY_CRED_ID,
                                   aBuffer);
@@ -201,6 +219,10 @@ class CTAPResult {
 
   bool Ctap2CopyAuthData(nsTArray<uint8_t>& aBuffer, size_t index) {
     return Ctap2SignResCopyBuffer(index, CTAP2_SIGN_RESULT_AUTH_DATA, aBuffer);
+  }
+
+  bool Ctap2CopyRpIdHash(nsTArray<uint8_t>& aBuffer, size_t index) {
+    return Ctap2SignResCopyBuffer(index, CTAP2_SIGN_RESULT_RP_ID_HASH, aBuffer);
   }
 
   bool Ctap2HasPubKeyCredential(size_t index) {

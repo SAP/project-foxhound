@@ -25,7 +25,6 @@
 #include <limits>
 #include <type_traits>
 #include "Attr.h"
-#include "AutoplayPolicy.h"
 #include "ErrorList.h"
 #include "ExpandedPrincipal.h"
 #include "MainThreadUtils.h"
@@ -175,6 +174,7 @@
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/FromParser.h"
+#include "mozilla/dom/HighlightRegistry.h"
 #include "mozilla/dom/HTMLAllCollection.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
@@ -1423,7 +1423,6 @@ Document::Document(const char* aContentType)
       mUserHasInteracted(false),
       mHasUserInteractionTimerScheduled(false),
       mShouldResistFingerprinting(false),
-      mPendingFullscreenRequests(0),
       mXMLDeclarationBits(0),
       mOnloadBlockCount(0),
       mWriteLevel(0),
@@ -1958,7 +1957,7 @@ void Document::ConstructUbiNode(void* storage) {
 void Document::LoadEventFired() {
   // Object used to collect some telemetry data so we don't need to query for it
   // twice.
-  PageLoadEventTelemetryData pageLoadEventData;
+  glean::perf::PageLoadExtra pageLoadEventData;
 
   // Accumulate timing data located in each document's realm and report to
   // telemetry.
@@ -1982,17 +1981,10 @@ static uint32_t ConvertToUnsignedFromDouble(double aNumber) {
 }
 
 void Document::RecordPageLoadEventTelemetry(
-    PageLoadEventTelemetryData aEventTelemetryData) {
-  static bool sTelemetryEventEnabled = false;
-  if (!sTelemetryEventEnabled) {
-    sTelemetryEventEnabled = true;
-    Telemetry::SetEventRecordingEnabled("page_load"_ns, true);
-  }
-
+    glean::perf::PageLoadExtra& aEventTelemetryData) {
   // If the page load time is empty, then the content wasn't something we want
   // to report (i.e. not a top level document).
-  if (!aEventTelemetryData.mPageLoadTime ||
-      aEventTelemetryData.mPageLoadTime.IsZero()) {
+  if (!aEventTelemetryData.loadTime) {
     return;
   }
   MOZ_ASSERT(IsTopLevelContentDocument());
@@ -2045,21 +2037,33 @@ void Document::RecordPageLoadEventTelemetry(
       break;
   }
 
-  mozilla::glean::perf::PageLoadExtra extra = {
-      mozilla::Some(ConvertToUnsignedFromDouble(
-          aEventTelemetryData.mFirstContentfulPaintTime.ToMilliseconds())),
-      mozilla::Some(ConvertToUnsignedFromDouble(
-          aEventTelemetryData.mTotalJSExecutionTime.ToMilliseconds())),
-      mozilla::Some(ConvertToUnsignedFromDouble(
-          aEventTelemetryData.mPageLoadTime.ToMilliseconds())),
-      mozilla::Some(loadTypeStr),
-      mozilla::Some(ConvertToUnsignedFromDouble(
-          aEventTelemetryData.mResponseStartTime.ToMilliseconds()))};
-  mozilla::glean::perf::page_load.Record(mozilla::Some(extra));
+  nsCOMPtr<nsIEffectiveTLDService> tldService =
+      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+  if (tldService && mReferrerInfo &&
+      (docshell->GetLoadType() & nsIDocShell::LOAD_CMD_NORMAL)) {
+    nsAutoCString currentBaseDomain, referrerBaseDomain;
+    nsCOMPtr<nsIURI> referrerURI = mReferrerInfo->GetComputedReferrer();
+    if (referrerURI) {
+      auto result = NS_SUCCEEDED(
+          tldService->GetBaseDomain(referrerURI, 0, referrerBaseDomain));
+      if (result) {
+        bool sameOrigin = false;
+        NodePrincipal()->IsSameOrigin(referrerURI, &sameOrigin);
+        aEventTelemetryData.sameOriginNav = mozilla::Some(sameOrigin);
+      }
+    }
+  }
+
+  aEventTelemetryData.loadType = mozilla::Some(loadTypeStr);
+
+  // Sending a glean ping must be done on the parent process.
+  if (ContentChild* cc = ContentChild::GetSingleton()) {
+    cc->SendRecordPageLoadEvent(aEventTelemetryData);
+  }
 }
 
 void Document::AccumulatePageLoadTelemetry(
-    PageLoadEventTelemetryData& aEventTelemetryDataOut) {
+    glean::perf::PageLoadExtra& aEventTelemetryDataOut) {
   // Interested only in top level documents for real websites that are in the
   // foreground.
   if (!ShouldIncludeInTelemetry(false) || !IsTopLevelContentDocument() ||
@@ -2080,6 +2084,22 @@ void Document::AccumulatePageLoadTelemetry(
   TimeStamp responseStart;
   timedChannel->GetResponseStart(&responseStart);
 
+  TimeStamp redirectStart, redirectEnd;
+  timedChannel->GetRedirectStart(&redirectStart);
+  timedChannel->GetRedirectEnd(&redirectEnd);
+
+  uint8_t redirectCount;
+  timedChannel->GetRedirectCount(&redirectCount);
+  if (redirectCount) {
+    aEventTelemetryDataOut.redirectCount =
+        mozilla::Some(static_cast<uint32_t>(redirectCount));
+  }
+
+  if (!redirectStart.IsNull() && !redirectEnd.IsNull()) {
+    aEventTelemetryDataOut.redirectTime = mozilla::Some(
+        static_cast<uint32_t>((redirectEnd - redirectStart).ToMilliseconds()));
+  }
+
   TimeStamp navigationStart =
       GetNavigationTiming()->GetNavigationStartTimeStamp();
 
@@ -2098,7 +2118,8 @@ void Document::AccumulatePageLoadTelemetry(
     if (resolvedByTRR) {
       RefPtr<net::ChildDNSService> dnsServiceChild =
           net::ChildDNSService::GetSingleton();
-      dnsServiceChild->GetTRRDomain(dnsKey);
+      dnsServiceChild->GetTRRDomainKey(dnsKey);
+      aEventTelemetryDataOut.trrDomain = mozilla::Some(dnsKey);
     }
 
     uint32_t major;
@@ -2125,6 +2146,8 @@ void Document::AccumulatePageLoadTelemetry(
           http3Key = "supports_http3"_ns;
         }
       }
+
+      aEventTelemetryDataOut.httpVer = mozilla::Some(major);
     }
   }
 
@@ -2161,8 +2184,8 @@ void Document::AccumulatePageLoadTelemetry(
         Telemetry::PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS,
         responseStart, firstContentfulComposite);
 
-    aEventTelemetryDataOut.mFirstContentfulPaintTime =
-        firstContentfulComposite - navigationStart;
+    aEventTelemetryDataOut.fcpTime = mozilla::Some(static_cast<uint32_t>(
+        (firstContentfulComposite - navigationStart).ToMilliseconds()));
   }
 
   // DOM Content Loaded event
@@ -2195,13 +2218,15 @@ void Document::AccumulatePageLoadTelemetry(
         Telemetry::PERF_PAGE_LOAD_TIME_FROM_RESPONSESTART_MS, responseStart,
         loadEventStart);
 
-    aEventTelemetryDataOut.mResponseStartTime = responseStart - navigationStart;
-    aEventTelemetryDataOut.mPageLoadTime = loadEventStart - navigationStart;
+    aEventTelemetryDataOut.responseTime = mozilla::Some(static_cast<uint32_t>(
+        (responseStart - navigationStart).ToMilliseconds()));
+    aEventTelemetryDataOut.loadTime = mozilla::Some(static_cast<uint32_t>(
+        (loadEventStart - navigationStart).ToMilliseconds()));
   }
 }
 
 void Document::AccumulateJSTelemetry(
-    PageLoadEventTelemetryData& aEventTelemetryDataOut) {
+    glean::perf::PageLoadExtra& aEventTelemetryDataOut) {
   if (!IsTopLevelContentDocument() || !ShouldIncludeInTelemetry(false)) {
     return;
   }
@@ -2219,7 +2244,8 @@ void Document::AccumulateJSTelemetry(
     Telemetry::Accumulate(
         Telemetry::JS_PAGELOAD_EXECUTION_MS,
         ConvertToUnsignedFromDouble(timers.executionTime.ToMilliseconds()));
-    aEventTelemetryDataOut.mTotalJSExecutionTime = timers.executionTime;
+    aEventTelemetryDataOut.jsExecTime = mozilla::Some(
+        static_cast<uint32_t>(timers.executionTime.ToMilliseconds()));
   }
 
   if (!timers.delazificationTime.IsZero()) {
@@ -2502,6 +2528,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReadyForIdle)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentL10n)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHighlightRegistry)
 
   // Traverse all Document nsCOMPtrs.
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParser)
@@ -2644,6 +2671,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadyForIdle)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentL10n)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mHighlightRegistry)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParser)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOnloadBlocker)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDOMImplementation)
@@ -3716,7 +3744,9 @@ nsresult Document::InitCSP(nsIChannel* aChannel) {
   // served with a CSP might block internally applied inline styles.
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (loadInfo->GetExternalContentPolicyType() ==
-      ExtContentPolicy::TYPE_IMAGE) {
+          ExtContentPolicy::TYPE_IMAGE ||
+      loadInfo->GetExternalContentPolicyType() ==
+          ExtContentPolicy::TYPE_IMAGESET) {
     return NS_OK;
   }
 
@@ -6822,7 +6852,9 @@ already_AddRefed<PresShell> Document::CreatePresShell(
   }
 
   presShell->Init(aContext, aViewManager);
-
+  if (RefPtr<class HighlightRegistry> highlightRegistry = mHighlightRegistry) {
+    highlightRegistry->AddHighlightSelectionsToFrameSelection(IgnoreErrors());
+  }
   // Gaining a shell causes changes in how media queries are evaluated, so
   // invalidate that.
   aContext->MediaFeatureValuesChanged(
@@ -11667,8 +11699,6 @@ static void DispatchFullscreenChange(Document& aDocument, nsINode* aTarget) {
   }
 }
 
-static void ClearPendingFullscreenRequests(Document* aDoc);
-
 void Document::OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
                           bool aOnlySystemGroup) {
   if (MOZ_LOG_TEST(gSHIPBFCacheLog, LogLevel::Debug)) {
@@ -14393,29 +14423,6 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   }
 }
 
-class nsCallRequestFullscreen : public Runnable {
- public:
-  explicit nsCallRequestFullscreen(UniquePtr<FullscreenRequest> aRequest)
-      : mozilla::Runnable("nsCallRequestFullscreen"),
-        mRequest(std::move(aRequest)) {}
-
-  NS_IMETHOD Run() override {
-    Document* doc = mRequest->Document();
-    doc->RequestFullscreen(std::move(mRequest));
-    return NS_OK;
-  }
-
-  UniquePtr<FullscreenRequest> mRequest;
-};
-
-void Document::AsyncRequestFullscreen(UniquePtr<FullscreenRequest> aRequest) {
-  // Request fullscreen asynchronously.
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  nsCOMPtr<nsIRunnable> event =
-      new nsCallRequestFullscreen(std::move(aRequest));
-  Dispatch(TaskCategory::Other, event.forget());
-}
-
 static void UpdateViewportScrollbarOverrideForFullscreen(Document* aDoc) {
   if (nsPresContext* presContext = aDoc->GetPresContext()) {
     presContext->UpdateViewportScrollStylesOverride();
@@ -15031,13 +15038,20 @@ bool Document::HandlePendingFullscreenRequests(Document* aDoc) {
   return handled;
 }
 
-static void ClearPendingFullscreenRequests(Document* aDoc) {
+/* static */
+void Document::ClearPendingFullscreenRequests(Document* aDoc) {
   PendingFullscreenChangeList::Iterator<FullscreenRequest> iter(
       aDoc, PendingFullscreenChangeList::eInclusiveDescendants);
   while (!iter.AtEnd()) {
     UniquePtr<FullscreenRequest> request = iter.TakeAndNext();
     request->MayRejectPromise("Fullscreen request aborted");
   }
+}
+
+bool Document::HasPendingFullscreenRequests() {
+  PendingFullscreenChangeList::Iterator<FullscreenRequest> iter(
+      this, PendingFullscreenChangeList::eDocumentsWithSameRoot);
+  return !iter.AtEnd();
 }
 
 bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
@@ -15670,10 +15684,14 @@ void Document::ReportDocumentUseCounters() {
   // Copy StyleUseCounters into our document use counters.
   SetCssUseCounterBits();
 
+  Maybe<nsCString> urlForLogging;
+  const bool dumpCounters = StaticPrefs::dom_use_counters_dump_document();
+  if (dumpCounters) {
+    urlForLogging.emplace(
+        nsContentUtils::TruncatedURLForDisplay(GetDocumentURI()));
+  }
+
   // Report our per-document use counters.
-  MOZ_LOG(gUseCountersLog, LogLevel::Debug,
-          ("Reporting document use counters [%s]",
-           nsContentUtils::TruncatedURLForDisplay(GetDocumentURI()).get()));
   for (int32_t c = 0; c < eUseCounter_Count; ++c) {
     auto uc = static_cast<UseCounter>(c);
     if (!mUseCounters[uc]) {
@@ -15682,8 +15700,10 @@ void Document::ReportDocumentUseCounters() {
 
     auto id = static_cast<Telemetry::HistogramID>(
         Telemetry::HistogramFirstUseCounter + uc * 2);
-    MOZ_LOG(gUseCountersLog, LogLevel::Debug,
-            (" > %s\n", Telemetry::GetHistogramName(id)));
+    if (dumpCounters) {
+      printf_stderr("USE_COUNTER_DOCUMENT: %s - %s\n",
+                    Telemetry::GetHistogramName(id), urlForLogging->get());
+    }
     Telemetry::Accumulate(id, 1);
   }
 }
@@ -15772,7 +15792,7 @@ void Document::UpdateIntersectionObservations(TimeStamp aNowTime) {
       mIntersectionObservers);
   for (const auto& observer : observers) {
     if (observer) {
-      observer->Update(this, time);
+      observer->Update(*this, time);
     }
   }
 }
@@ -15835,6 +15855,9 @@ ResizeObserver& Document::EnsureLastRememberedSizeObserver() {
 }
 
 void Document::ObserveForLastRememberedSize(Element& aElement) {
+  if (NS_WARN_IF(!IsActive())) {
+    return;
+  }
   // Options are initialized with ResizeObserverBoxOptions::Content_box by
   // default, which is what we want.
   static ResizeObserverOptions options;
@@ -16222,10 +16245,6 @@ void Document::SetDocTreeHadMedia() {
   if (topWc && !topWc->IsDiscarded() && !topWc->GetDocTreeHadMedia()) {
     MOZ_ALWAYS_SUCCEEDS(topWc->SetDocTreeHadMedia(true));
   }
-}
-
-DocumentAutoplayPolicy Document::AutoplayPolicy() const {
-  return AutoplayPolicy::IsAllowedToPlay(*this);
 }
 
 void Document::MaybeAllowStorageForOpenerAfterUserInteraction() {
@@ -18104,6 +18123,13 @@ void Document::ClearOOPChildrenLoading() {
   if (!oopChildrenLoading.IsEmpty()) {
     UnblockOnload(false);
   }
+}
+
+HighlightRegistry& Document::HighlightRegistry() {
+  if (!mHighlightRegistry) {
+    mHighlightRegistry = MakeRefPtr<class HighlightRegistry>(this);
+  }
+  return *mHighlightRegistry;
 }
 
 }  // namespace mozilla::dom

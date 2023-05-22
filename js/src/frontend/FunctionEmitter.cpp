@@ -282,7 +282,7 @@ bool FunctionEmitter::emitTopLevelFunction(GCThingIndex index) {
     // For modules, we record the function and instantiate the binding
     // during ModuleInstantiate(), before the script is run.
     return bce_->sc->asModuleContext()->builder.noteFunctionDeclaration(
-        bce_->ec, index);
+        bce_->fc, index);
   }
 
   MOZ_ASSERT(bce_->sc->isGlobalContext() || bce_->sc->isEvalContext());
@@ -483,6 +483,12 @@ bool FunctionScriptEmitter::emitEndBody() {
   MOZ_ASSERT(state_ == State::Body);
   //                [stack]
 
+  if (bodyEnd_) {
+    if (!bce_->updateSourceCoordNotes(*bodyEnd_)) {
+      return false;
+    }
+  }
+
   if (funbox_->needsFinalYield()) {
     // If we fall off the end of a generator or async function, we
     // do a final yield with an |undefined| payload. We put all
@@ -614,12 +620,6 @@ bool FunctionScriptEmitter::emitEndBody() {
   }
   functionEmitterScope_.reset();
   tdzCache_.reset();
-
-  if (bodyEnd_) {
-    if (!bce_->updateSourceCoordNotes(*bodyEnd_)) {
-      return false;
-    }
-  }
 
   // We only want to mark the end of a function as a breakable position if
   // there is token there that the user can easily associate with the function

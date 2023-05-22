@@ -9,10 +9,9 @@ const { UptakeTelemetry } = ChromeUtils.import(
 const { Downloader } = ChromeUtils.import(
   "resource://services-settings/Attachments.jsm"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const RECORD = {
   id: "1f3a0802-648d-11ea-bd79-876a8b69c377",
@@ -46,9 +45,7 @@ function pathFromURL(url) {
   return file.path;
 }
 
-const PROFILE_URL =
-  "file://" +
-  OS.Path.split(OS.Constants.Path.localProfileDir).components.join("/");
+const PROFILE_URL = PathUtils.toFileURI(PathUtils.localProfileDir);
 
 function run_test() {
   server = new HttpServer();
@@ -156,7 +153,7 @@ add_task(async function test_download_writes_file_in_profile() {
 
   Assert.equal(
     fileURL,
-    PROFILE_URL + "/settings/main/some-collection/test_file.pem"
+    PROFILE_URL + "settings/main/some-collection/test_file.pem"
   );
   Assert.ok(await IOUtils.exists(localFilePath));
   const stat = await IOUtils.stat(localFilePath);
@@ -265,8 +262,8 @@ add_task(async function test_delete_removes_local_file() {
 
   Assert.ok(!(await IOUtils.exists(localFilePath)));
   // And removes parent folders.
-  const parentFolder = OS.Path.join(
-    OS.Constants.Path.localProfileDir,
+  const parentFolder = PathUtils.join(
+    PathUtils.localProfileDir,
     ...downloader.folders
   );
   Assert.ok(!(await IOUtils.exists(parentFolder)));
@@ -295,13 +292,13 @@ add_task(async function test_downloader_is_accessible_via_client() {
 
   Assert.equal(
     fileURL,
-    [
-      PROFILE_URL,
-      "settings",
-      client.bucketName,
-      client.collectionName,
-      RECORD.attachment.filename,
-    ].join("/")
+    PROFILE_URL +
+      [
+        "settings",
+        client.bucketName,
+        client.collectionName,
+        RECORD.attachment.filename,
+      ].join("/")
   );
 });
 add_task(clear_state);
@@ -622,4 +619,85 @@ add_task(async function test_download_from_dump() {
 });
 // Not really needed because the last test doesn't modify the main collection,
 // but added for consistency with other tests tasks around here.
+add_task(clear_state);
+
+add_task(async function test_obsolete_attachments_are_pruned() {
+  const RECORD2 = {
+    ...RECORD,
+    id: "another-id",
+  };
+  const client = RemoteSettings("some-collection");
+  // Store records and related attachments directly in the cache.
+  await client.db.importChanges({}, 42, [RECORD, RECORD2], { clear: true });
+  await client.db.saveAttachment(RECORD.id, {
+    record: RECORD,
+    blob: new Blob(["123"]),
+  });
+  await client.db.saveAttachment("custom-id", {
+    record: RECORD2,
+    blob: new Blob(["456"]),
+  });
+  // Store an extraneous cached attachment.
+  await client.db.saveAttachment("bar", {
+    record: { id: "bar" },
+    blob: new Blob(["789"]),
+  });
+
+  const recordAttachment = await client.attachments.cacheImpl.get(RECORD.id);
+  Assert.equal(
+    await recordAttachment.blob.text(),
+    "123",
+    "Record has a cached attachment"
+  );
+  const record2Attachment = await client.attachments.cacheImpl.get("custom-id");
+  Assert.equal(
+    await record2Attachment.blob.text(),
+    "456",
+    "Record 2 has a cached attachment"
+  );
+  const { blob: cachedExtra } = await client.attachments.cacheImpl.get("bar");
+  Assert.equal(await cachedExtra.text(), "789", "There is an extra attachment");
+
+  await client.attachments.prune([]);
+
+  Assert.ok(
+    await client.attachments.cacheImpl.get(RECORD.id),
+    "Record attachment was kept"
+  );
+  Assert.ok(
+    await client.attachments.cacheImpl.get("custom-id"),
+    "Record 2 attachment was kept"
+  );
+  Assert.ok(
+    !(await client.attachments.cacheImpl.get("bar")),
+    "Extra was deleted"
+  );
+});
+add_task(clear_state);
+
+add_task(
+  async function test_obsolete_attachments_listed_as_excluded_are_not_pruned() {
+    const client = RemoteSettings("some-collection");
+    // Store records and related attachments directly in the cache.
+    await client.db.importChanges({}, 42, [], { clear: true });
+    await client.db.saveAttachment(RECORD.id, {
+      record: RECORD,
+      blob: new Blob(["123"]),
+    });
+
+    const recordAttachment = await client.attachments.cacheImpl.get(RECORD.id);
+    Assert.equal(
+      await recordAttachment.blob.text(),
+      "123",
+      "Record has a cached attachment"
+    );
+
+    await client.attachments.prune([RECORD.id]);
+
+    Assert.ok(
+      await client.attachments.cacheImpl.get(RECORD.id),
+      "Record attachment was kept"
+    );
+  }
+);
 add_task(clear_state);

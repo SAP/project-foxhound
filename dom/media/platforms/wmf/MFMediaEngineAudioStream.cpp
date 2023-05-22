@@ -48,9 +48,16 @@ HRESULT MFMediaEngineAudioStream::CreateMediaType(const TrackInfo& aInfo,
   RETURN_IF_FAILED(mediaType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, bitDepth));
   if (subType == MFAudioFormat_AAC) {
     if (mAACUserData.IsEmpty()) {
-      MOZ_ASSERT(info.mCodecSpecificConfig.is<AacCodecSpecificData>());
-      const auto& blob = info.mCodecSpecificConfig.as<AacCodecSpecificData>()
-                             .mDecoderConfigDescriptorBinaryBlob;
+      MOZ_ASSERT(info.mCodecSpecificConfig.is<AacCodecSpecificData>() ||
+                 info.mCodecSpecificConfig.is<AudioCodecSpecificBinaryBlob>());
+      RefPtr<MediaByteBuffer> blob;
+      if (info.mCodecSpecificConfig.is<AacCodecSpecificData>()) {
+        blob = info.mCodecSpecificConfig.as<AacCodecSpecificData>()
+                   .mDecoderConfigDescriptorBinaryBlob;
+      } else {
+        blob = info.mCodecSpecificConfig.as<AudioCodecSpecificBinaryBlob>()
+                   .mBinaryBlob;
+      }
       AACAudioSpecificConfigToUserData(info.mExtendedProfile, blob->Elements(),
                                        blob->Length(), mAACUserData);
       LOGV("Generated AAC user data");
@@ -71,8 +78,8 @@ HRESULT MFMediaEngineAudioStream::CreateMediaType(const TrackInfo& aInfo,
 bool MFMediaEngineAudioStream::HasEnoughRawData() const {
   // If more than this much raw audio is queued, we'll hold off request more
   // audio.
-  static const int64_t AMPLE_AUDIO_USECS = 2000000;
-  return mRawDataQueueForFeedingEngine.Duration() >= AMPLE_AUDIO_USECS;
+  return mRawDataQueueForFeedingEngine.Duration() >=
+         StaticPrefs::media_wmf_media_engine_raw_data_threshold_audio();
 }
 
 already_AddRefed<MediaData> MFMediaEngineAudioStream::OutputDataInternal() {
@@ -88,6 +95,10 @@ already_AddRefed<MediaData> MFMediaEngineAudioStream::OutputDataInternal() {
       new AudioData(input->mOffset, input->mTime, AlignedAudioBuffer{},
                     mAudioInfo.mChannels, mAudioInfo.mRate);
   return output.forget();
+}
+
+bool MFMediaEngineAudioStream::IsEncrypted() const {
+  return mAudioInfo.mCrypto.IsEncrypted();
 }
 
 #undef LOGV

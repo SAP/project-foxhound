@@ -7,7 +7,7 @@
  * https://streams.spec.whatwg.org/#default-writer-class-definition
  */
 
-[Exposed=*, Pref="dom.streams.writable_streams.enabled"]
+[Exposed=*]
 interface WritableStreamDefaultWriter {
   [Throws]
   constructor(WritableStream stream);
@@ -22,7 +22,6 @@ interface WritableStreamDefaultWriter {
   [NewObject]
   Promise<undefined> close();
 
-  [Throws]
   undefined releaseLock();
 
   [NewObject]

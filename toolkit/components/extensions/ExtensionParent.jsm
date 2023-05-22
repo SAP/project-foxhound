@@ -25,6 +25,7 @@ const { AppConstants } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -32,7 +33,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   BroadcastConduit: "resource://gre/modules/ConduitsParent.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.jsm",
@@ -558,6 +558,10 @@ class ProxyContextParent extends BaseContext {
     apiManager.emit("proxy-context-load", this);
   }
 
+  get isProxyContextParent() {
+    return true;
+  }
+
   trackRunListenerPromise(runListenerPromise) {
     if (
       // The extension was already shutdown.
@@ -881,9 +885,8 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
     for (const resource of resources) {
       const { targetFront } = resource;
       if (targetFront.isTopLevel && resource.name === "dom-complete") {
-        const url = targetFront.localTab.linkedBrowser.currentURI.spec;
         for (const listener of this._onNavigatedListeners) {
-          listener(url);
+          listener(targetFront.url);
         }
       }
     }
@@ -1239,7 +1242,7 @@ ParentAPIManager = {
 
     // Store pending listener additions so we can be sure they're all
     // fully initialize before we consider extension startup complete.
-    if (context.viewType === "background" && context.listenerPromises) {
+    if (context.isBackgroundContext && context.listenerPromises) {
       const { listenerPromises } = context;
       listenerPromises.add(promise);
       let remove = () => {

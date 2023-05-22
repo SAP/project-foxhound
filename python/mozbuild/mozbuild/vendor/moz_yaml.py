@@ -7,8 +7,6 @@
 # Requires `pyyaml` and `voluptuous`
 # (both are in-tree under third_party/python)
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import errno
 import os
 import re
@@ -673,7 +671,7 @@ class UpdateActions(object):
         for v in values:
             if "action" not in v:
                 raise Invalid("All file-update entries must specify a valid action")
-            if v["action"] in ["copy-file", "move-file", "movie-dir"]:
+            if v["action"] in ["copy-file", "move-file", "move-dir"]:
                 if "from" not in v or "to" not in v or len(v.keys()) != 3:
                     raise Invalid(
                         "%s action must (only) specify 'from' and 'to' keys"

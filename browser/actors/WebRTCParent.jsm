@@ -33,14 +33,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIOSPermissionRequest"
 );
 
-// Keep in sync with defines at base_capturer_pipewire.cc
-// With PipeWire we can't select which system resource is shared so
-// we don't create a window/screen list. Instead we place these constants
-// as window name/id so frontend code can identify PipeWire backend
-// and does not try to create screen/window preview.
-const PIPEWIRE_PORTAL_NAME = "####_PIPEWIRE_PORTAL_####";
-const PIPEWIRE_ID = 0xaffffff;
-
 class WebRTCParent extends JSWindowActorParent {
   didDestroy() {
     // Media stream tracks end on unload, so call stopRecording() on them early
@@ -79,7 +71,7 @@ class WebRTCParent extends JSWindowActorParent {
                 return false;
               }
             } catch (err) {
-              Cu.reportError(`error in PeerConnection blocker: ${err.message}`);
+              console.error(`error in PeerConnection blocker: ${err.message}`);
             }
           }
           return true;
@@ -359,8 +351,7 @@ class WebRTCParent extends JSWindowActorParent {
         lazy.SitePermissions.ALLOW,
         lazy.SitePermissions.SCOPE_TEMPORARY,
         this.browsingContext.top.embedderElement,
-        gracePeriodMs,
-        aPermissionPrincipal.URI
+        gracePeriodMs
       );
     }
   }
@@ -380,8 +371,36 @@ class WebRTCParent extends JSWindowActorParent {
     if (aRequest.sharingScreen) {
       return false;
     }
-    if (aRequest.audioOutputDevices?.length) {
-      return false;
+    let {
+      callID,
+      windowID,
+      audioInputDevices,
+      videoInputDevices,
+      audioOutputDevices,
+      hasInherentAudioConstraints,
+      hasInherentVideoConstraints,
+      audioOutputId,
+    } = aRequest;
+
+    if (audioOutputDevices?.length) {
+      // Prompt if a specific device is not requested, available and allowed.
+      let device = audioOutputDevices.find(({ id }) => id == audioOutputId);
+      if (
+        !device ||
+        !lazy.SitePermissions.getForPrincipal(
+          aPrincipal,
+          ["speaker", device.id].join("^"),
+          this.getBrowser()
+        ).state == lazy.SitePermissions.ALLOW
+      ) {
+        return false;
+      }
+      this.sendAsyncMessage("webrtc:Allow", {
+        callID,
+        windowID,
+        devices: [device.deviceIndex],
+      });
+      return true;
     }
 
     let { perms } = Services;
@@ -400,15 +419,6 @@ class WebRTCParent extends JSWindowActorParent {
       aRequest.secondOrigin;
 
     let map = lazy.webrtcUI.activePerms.get(this.manager.outerWindowId);
-    let {
-      callID,
-      windowID,
-      audioInputDevices,
-      videoInputDevices,
-      hasInherentAudioConstraints,
-      hasInherentVideoConstraints,
-    } = aRequest;
-
     // We consider a camera or mic active if it is active or was active within a
     // grace period of milliseconds ago.
     const isAllowed = ({ mediaSource, rawId }, permissionID) =>
@@ -591,16 +601,19 @@ function prompt(aActor, aBrowser, aRequest) {
     "privacy.webrtc.allowSilencingNotifications"
   );
 
-  const isNotNowLabelEnabled = allowedOrActiveCameraOrMicrophone(aBrowser);
+  const isNotNowLabelEnabled =
+    reqAudioOutput || allowedOrActiveCameraOrMicrophone(aBrowser);
   let secondaryActions = [];
-  if (notificationSilencingEnabled && sharingScreen) {
+  if (reqAudioOutput || (notificationSilencingEnabled && sharingScreen)) {
     // We want to free up the checkbox at the bottom of the permission
     // panel for the notification silencing option, so we use a
     // different configuration for the permissions panel when
     // notification silencing is enabled.
 
-    // If we have a (temporary) allow permission for some mic/cam device
-    // we offer a 'Not now' label instead of 'Block'.
+    let permissionName = reqAudioOutput ? "speaker" : "screen";
+    // When selecting speakers, we always offer 'Not now' instead of 'Block'.
+    // When selecting screens, we offer 'Not now' if and only if we have a
+    // (temporary) allow permission for some mic/cam device.
     const id = isNotNowLabelEnabled
       ? "webrtc-action-not-now"
       : "webrtc-action-block";
@@ -612,7 +625,7 @@ function prompt(aActor, aBrowser, aRequest) {
           if (!isNotNowLabelEnabled) {
             lazy.SitePermissions.setForPrincipal(
               principal,
-              "screen",
+              permissionName,
               lazy.SitePermissions.BLOCK,
               lazy.SitePermissions.SCOPE_TEMPORARY,
               notification.browser
@@ -625,7 +638,7 @@ function prompt(aActor, aBrowser, aRequest) {
           aActor.denyRequest(aRequest);
           lazy.SitePermissions.setForPrincipal(
             principal,
-            "screen",
+            permissionName,
             lazy.SitePermissions.BLOCK,
             lazy.SitePermissions.SCOPE_PERSISTENT,
             notification.browser
@@ -849,8 +862,30 @@ function prompt(aActor, aBrowser, aRequest) {
           let device = devices[i];
           let type = device.mediaSource;
           let name;
-          // Building screen list from available screens.
-          if (type == "screen") {
+          if (device.canRequestOsLevelPrompt) {
+            // When we share content by PipeWire add only one item to the device
+            // list. When it's selected PipeWire portal dialog is opened and
+            // user confirms actual window/screen sharing there.
+            // Don't mark it as scary as there's an extra confirmation step by
+            // PipeWire portal dialog.
+
+            isPipeWire = true;
+            let item = addDeviceToList(
+              menupopup,
+              localization.formatValueSync("webrtc-share-pipe-wire-portal"),
+              i,
+              type
+            );
+            item.deviceId = device.rawId;
+            item.mediaSource = type;
+
+            // In this case the OS sharing dialog will be the only option and
+            // can be safely pre-selected.
+            menupopup.parentNode.selectedItem = item;
+            menupopup.parentNode.disabled = true;
+            break;
+          } else if (type == "screen") {
+            // Building screen list from available screens.
             if (device.name == "Primary Monitor") {
               name = localization.formatValueSync("webrtc-share-entire-screen");
             } else {
@@ -861,28 +896,7 @@ function prompt(aActor, aBrowser, aRequest) {
             }
           } else {
             name = device.name;
-            // When we share content by PipeWire add only one item to the device
-            // list. When it's selected PipeWire portal dialog is opened and
-            // user confirms actual window/screen sharing there.
-            // Don't mark it as scary as there's an extra confirmation step by
-            // PipeWire portal dialog.
-            if (name == PIPEWIRE_PORTAL_NAME && device.rawId == PIPEWIRE_ID) {
-              isPipeWire = true;
-              let item = addDeviceToList(
-                menupopup,
-                localization.formatValueSync("webrtc-share-pipe-wire-portal"),
-                i,
-                type
-              );
-              item.deviceId = device.rawId;
-              item.mediaSource = type;
 
-              // In this case the OS sharing dialog will be the only option and
-              // can be safely pre-selected.
-              menupopup.parentNode.selectedItem = item;
-              menupopup.parentNode.disabled = true;
-              break;
-            }
             if (type == "application") {
               // The application names returned by the platform are of the form:
               // <window count>\x1e<application name>
@@ -998,7 +1012,7 @@ function prompt(aActor, aBrowser, aRequest) {
                   // No preview for you.
                   return;
                 }
-                Cu.reportError(
+                console.error(
                   `error in preview: ${err.message} ${err.constraint}`
                 );
               }
@@ -1149,6 +1163,14 @@ function prompt(aActor, aBrowser, aRequest) {
           let allowSpeaker = audioDeviceIndex != "-1";
           if (allowSpeaker) {
             allowedDevices.push(audioDeviceIndex);
+            let { id } = audioOutputDevices.find(
+              ({ deviceIndex }) => deviceIndex == audioDeviceIndex
+            );
+            lazy.SitePermissions.setForPrincipal(
+              principal,
+              ["speaker", id].join("^"),
+              lazy.SitePermissions.ALLOW
+            );
           }
         }
 
@@ -1201,8 +1223,7 @@ function prompt(aActor, aBrowser, aRequest) {
       return false;
     }
 
-    // "Always allow this speaker" not yet supported for
-    // selectAudioOutput().  Bug 1712892
+    // Speaker grants are always remembered, so no checkbox is required.
     if (reqAudioOutput) {
       return false;
     }

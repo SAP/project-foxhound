@@ -45,8 +45,19 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   // constructor of WriteableStream so that it doesn't make those calls.
   // See also https://bugzilla.mozilla.org/show_bug.cgi?id=1801214.
   enum class HoldDropJSObjectsCaller { Implicit, Explicit };
+
+  // XXX: Do not call this constructor outside of dom/streams/ unless you are
+  // subclassing, instead use WritableStream::CreateNative, because currently
+  // the constructor is fallible. (See bug 1762233)
+  // Subclasses need to call SetUpNative method separately as a part of the
+  // construction.
   explicit WritableStream(const GlobalObject& aGlobal,
                           HoldDropJSObjectsCaller aHoldDropCaller);
+  // XXX: Do not call this constructor outside of dom/streams/ unless you are
+  // subclassing, instead use WritableStream::CreateNative, because currently
+  // the constructor is fallible. (See bug 1762233)
+  // Subclasses need to call SetUpNative method separately as a part of the
+  // construction.
   explicit WritableStream(nsIGlobalObject* aGlobal,
                           HoldDropJSObjectsCaller aHoldDropCaller);
 
@@ -142,7 +153,7 @@ class WritableStream : public nsISupports, public nsWrapperCache {
                                         ErrorResult& aRv);
 
   // WritableStreamUpdateBackpressure
-  void UpdateBackpressure(bool aBackpressure, ErrorResult& aRv);
+  void UpdateBackpressure(bool aBackpressure);
 
   // [Transferable]
   // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-steps
@@ -153,12 +164,45 @@ class WritableStream : public nsISupports, public nsWrapperCache {
       JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort,
       JS::MutableHandle<JSObject*> aReturnObject);
 
+  // Public functions to implement other specs
+  // https://streams.spec.whatwg.org/#other-specs-ws
+
+  // https://streams.spec.whatwg.org/#writablestream-set-up
+ protected:
+  // Sets up the WritableStream. Intended for subclasses.
+  // TODO: Do this in constructor if bug 1762233 makes this infallible.
+  MOZ_CAN_RUN_SCRIPT void SetUpNative(
+      JSContext* aCx, UnderlyingSinkAlgorithmsWrapper& aAlgorithms,
+      Maybe<double> aHighWaterMark, QueuingStrategySize* aSizeAlgorithm,
+      ErrorResult& aRv);
+
+ public:
+  // Creates and sets up a WritableStream. Use SetUpNative for this purpose in
+  // subclasses.
+  // TODO: Do this in constructor if bug 1762233 makes this infallible.
+  MOZ_CAN_RUN_SCRIPT static already_AddRefed<WritableStream> CreateNative(
+      JSContext* aCx, nsIGlobalObject& aGlobal,
+      UnderlyingSinkAlgorithmsWrapper& aAlgorithms,
+      Maybe<double> aHighWaterMark, QueuingStrategySize* aSizeAlgorithm,
+      ErrorResult& aRv);
+
+  // The following definitions must only be used on WritableStream instances
+  // initialized via the above set up algorithm:
+
+  // https://streams.spec.whatwg.org/#writablestream-error
+  MOZ_CAN_RUN_SCRIPT void ErrorNative(JSContext* aCx,
+                                      JS::Handle<JS::Value> aError,
+                                      ErrorResult& aRv);
+
+  // IDL layer functions
+
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  // IDL Methods
+  // IDL methods
+
   // TODO: Use MOZ_CAN_RUN_SCRIPT when IDL constructors can use it (bug 1749042)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY static already_AddRefed<WritableStream>
   Constructor(const GlobalObject& aGlobal,
@@ -199,6 +243,8 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   HoldDropJSObjectsCaller mHoldDropCaller;
 };
 
+namespace streams_abstract {
+
 MOZ_CAN_RUN_SCRIPT already_AddRefed<WritableStream> CreateWritableStream(
     JSContext* aCx, nsIGlobalObject* aGlobal,
     UnderlyingSinkAlgorithmsBase* aAlgorithms, double aHighWaterMark,
@@ -215,11 +261,13 @@ MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> WritableStreamAbort(
 MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> WritableStreamClose(
     JSContext* aCx, WritableStream* aStream, ErrorResult& aRv);
 
-already_AddRefed<Promise> WritableStreamAddWriteRequest(WritableStream* aStream,
-                                                        ErrorResult& aRv);
+already_AddRefed<Promise> WritableStreamAddWriteRequest(
+    WritableStream* aStream);
 
 already_AddRefed<WritableStreamDefaultWriter>
 AcquireWritableStreamDefaultWriter(WritableStream* aStream, ErrorResult& aRv);
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

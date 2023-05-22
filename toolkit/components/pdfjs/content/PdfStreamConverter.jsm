@@ -288,7 +288,7 @@ class ChromeActions {
     } catch (err) {
       // If there's an error here, it means that something is really wrong
       // on pdf.js side during sandbox initialization phase.
-      Cu.reportError(err);
+      console.error(err);
       return sendResp(false);
     }
 
@@ -662,14 +662,17 @@ class RangedChromeActions extends ChromeActions {
       done = this.dataListener.isDone;
 
       this.dataListener.onprogress = (loaded, total) => {
+        const chunk = this.dataListener.readData();
+
         this.domWindow.postMessage(
           {
             pdfjsLoadAction: "progressiveRead",
             loaded,
             total,
-            chunk: this.dataListener.readData(),
+            chunk,
           },
-          PDF_VIEWER_ORIGIN
+          PDF_VIEWER_ORIGIN,
+          chunk ? [chunk.buffer] : undefined
         );
       };
       this.dataListener.oncomplete = () => {
@@ -696,7 +699,8 @@ class RangedChromeActions extends ChromeActions {
         done,
         filename: this.contentDispositionFilename,
       },
-      PDF_VIEWER_ORIGIN
+      PDF_VIEWER_ORIGIN,
+      data ? [data.buffer] : undefined
     );
 
     return true;
@@ -714,14 +718,15 @@ class RangedChromeActions extends ChromeActions {
     // errors from chrome code for non-range requests, so this doesn't
     // seem high-pri
     this.networkManager.requestRange(begin, end, {
-      onDone: function RangedChromeActions_onDone(aArgs) {
+      onDone: function RangedChromeActions_onDone({ begin, chunk }) {
         domWindow.postMessage(
           {
             pdfjsLoadAction: "range",
-            begin: aArgs.begin,
-            chunk: aArgs.chunk,
+            begin,
+            chunk,
           },
-          PDF_VIEWER_ORIGIN
+          PDF_VIEWER_ORIGIN,
+          chunk ? [chunk.buffer] : undefined
         );
       },
       onProgress: function RangedChromeActions_onProgress(evt) {
@@ -785,7 +790,8 @@ class StandardChromeActions extends ChromeActions {
           errorCode,
           filename: this.contentDispositionFilename,
         },
-        PDF_VIEWER_ORIGIN
+        PDF_VIEWER_ORIGIN,
+        data ? [data.buffer] : undefined
       );
 
       this.dataListener = null;
@@ -961,7 +967,7 @@ PdfStreamConverter.prototype = {
     rv.shouldOpen = true;
     // Log that we're doing this to help debug issues if people end up being
     // surprised by this behaviour.
-    Cu.reportError("Found unusable PDF preferences. Fixing back to PDF.js");
+    console.error("Found unusable PDF preferences. Fixing back to PDF.js");
 
     mime.preferredAction = Ci.nsIHandlerInfo.handleInternally;
     mime.alwaysAskBeforeHandling = false;

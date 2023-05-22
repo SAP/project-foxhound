@@ -108,6 +108,10 @@ nsresult HTMLEditor::InsertDroppedDataTransferAsAction(
   MOZ_ASSERT(aDroppedAt.IsSet());
   MOZ_ASSERT(aDataTransfer.MozItemCount() > 0);
 
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   aEditActionData.InitializeDataTransfer(&aDataTransfer);
   RefPtr<StaticRange> targetRange = StaticRange::Create(
       aDroppedAt.GetContainer(), aDroppedAt.Offset(), aDroppedAt.GetContainer(),
@@ -254,6 +258,12 @@ NS_IMETHODIMP HTMLEditor::InsertHTML(const nsAString& aInString) {
 
 nsresult HTMLEditor::InsertHTMLAsAction(const nsAString& aInString,
                                         nsIPrincipal* aPrincipal) {
+  // FIXME: This should keep handling inserting HTML if the caller is
+  // nsIHTMLEditor::InsertHTML.
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   AutoEditActionDataSetter editActionData(*this, EditAction::eInsertHTML,
                                           aPrincipal);
   nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -268,11 +278,11 @@ nsresult HTMLEditor::InsertHTMLAsAction(const nsAString& aInString,
   rv = InsertHTMLWithContextAsSubAction(aInString, u""_ns, u""_ns, u""_ns,
                                         SafeToInsertData::Yes, EditorDOMPoint(),
                                         DeleteSelectedContent::Yes,
-                                        InlineStylesAtInsertionPoint::Preserve);
+                                        InlineStylesAtInsertionPoint::Clear);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertHTMLWithContextAsSubAction("
                        "SafeToInsertData::Yes, DeleteSelectedContent::Yes, "
-                       "InlineStylesAtInsertionPoint::Preserve) failed");
+                       "InlineStylesAtInsertionPoint::Clear) failed");
   return EditorBase::ToGenericNSResult(rv);
 }
 
@@ -523,10 +533,6 @@ nsresult HTMLEditor::InsertHTMLWithContextAsSubAction(
 
   if (NS_WARN_IF(!mInitSucceeded)) {
     return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  if (IsReadonly()) {
-    return NS_OK;
   }
 
   CommitComposition();
@@ -1457,10 +1463,10 @@ void HTMLEditor::HTMLTransferablePreparer::AddDataFlavorsInBestOrder(
         break;
     }
   }
-  DebugOnly<nsresult> rvIgnored = aTransferable.AddDataFlavor(kUnicodeMime);
+  DebugOnly<nsresult> rvIgnored = aTransferable.AddDataFlavor(kTextMime);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
-      "nsITransferable::AddDataFlavor(kUnicodeMime) failed, but ignored");
+      "nsITransferable::AddDataFlavor(kTextMime) failed, but ignored");
   rvIgnored = aTransferable.AddDataFlavor(kMozTextInternal);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
@@ -1645,9 +1651,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(HTMLEditor::BlobReader)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHTMLEditor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPointToInsert)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(HTMLEditor::BlobReader, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(HTMLEditor::BlobReader, Release)
 
 HTMLEditor::BlobReader::BlobReader(BlobImpl* aBlob, HTMLEditor* aHTMLEditor,
                                    SafeToInsertData aSafeToInsertData,
@@ -2032,7 +2035,7 @@ nsresult HTMLEditor::InsertFromTransferableAtSelection(
       }
     }
     if (bestFlavor.EqualsLiteral(kHTMLMime) ||
-        bestFlavor.EqualsLiteral(kUnicodeMime) ||
+        bestFlavor.EqualsLiteral(kTextMime) ||
         bestFlavor.EqualsLiteral(kMozTextInternal)) {
       nsAutoString stuffToPaste;
       if (!GetString(genericDataObj, stuffToPaste)) {
@@ -2257,6 +2260,10 @@ HTMLEditor::HavePrivateHTMLFlavor HTMLEditor::ClipboardHasPrivateHTMLFlavor(
 nsresult HTMLEditor::PasteAsAction(int32_t aClipboardType,
                                    bool aDispatchPasteEvent,
                                    nsIPrincipal* aPrincipal) {
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
                                           aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
@@ -2399,6 +2406,12 @@ nsresult HTMLEditor::PasteInternal(int32_t aClipboardType) {
 
 nsresult HTMLEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
                                                nsIPrincipal* aPrincipal) {
+  // FIXME: This may be called as a call of nsIEditor::PasteTransferable.
+  // In this case, we should keep handling the paste even in the readonly mode.
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
                                           aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
@@ -2447,6 +2460,10 @@ nsresult HTMLEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
 
 nsresult HTMLEditor::PasteNoFormattingAsAction(int32_t aSelectionType,
                                                nsIPrincipal* aPrincipal) {
+  if (IsReadonly()) {
+    return NS_OK;
+  }
+
   AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
                                           aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
@@ -2525,8 +2542,8 @@ nsresult HTMLEditor::PasteNoFormattingAsAction(int32_t aSelectionType,
 // The following arrays contain the MIME types that we can paste. The arrays
 // are used by CanPaste() and CanPasteTransferable() below.
 
-static const char* textEditorFlavors[] = {kUnicodeMime};
-static const char* textHtmlEditorFlavors[] = {kUnicodeMime,   kHTMLMime,
+static const char* textEditorFlavors[] = {kTextMime};
+static const char* textHtmlEditorFlavors[] = {kTextMime,      kHTMLMime,
                                               kJPEGImageMime, kJPGImageMime,
                                               kPNGImageMime,  kGIFImageMime};
 
@@ -2775,10 +2792,10 @@ nsresult HTMLEditor::PasteAsPlaintextQuotation(int32_t aSelectionType) {
                        "nsITransferable::Init() failed, but ignored");
 
   // We only handle plaintext pastes here
-  rvIgnored = transferable->AddDataFlavor(kUnicodeMime);
+  rvIgnored = transferable->AddDataFlavor(kTextMime);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
-      "nsITransferable::AddDataFlavor(kUnicodeMime) failed, but ignored");
+      "nsITransferable::AddDataFlavor(kTextMime) failed, but ignored");
 
   // Get the Data from the clipboard
   rvIgnored = clipboard->GetData(transferable, aSelectionType);
@@ -2796,7 +2813,7 @@ nsresult HTMLEditor::PasteAsPlaintextQuotation(int32_t aSelectionType) {
     return rv;
   }
 
-  if (!flavor.EqualsLiteral(kUnicodeMime)) {
+  if (!flavor.EqualsLiteral(kTextMime)) {
     return NS_OK;
   }
 
@@ -2816,10 +2833,6 @@ nsresult HTMLEditor::PasteAsPlaintextQuotation(int32_t aSelectionType) {
 nsresult HTMLEditor::InsertWithQuotationsAsSubAction(
     const nsAString& aQuotedText) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-
-  if (IsReadonly()) {
-    return NS_OK;
-  }
 
   {
     Result<EditActionResult, nsresult> result = CanHandleHTMLEditSubAction();
@@ -3065,10 +3078,6 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
 
   if (aNodeInserted) {
     *aNodeInserted = nullptr;
-  }
-
-  if (IsReadonly()) {
-    return NS_OK;
   }
 
   {
@@ -3347,10 +3356,6 @@ nsresult HTMLEditor::InsertAsCitedQuotationInternal(
     nsINode** aNodeInserted) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(!IsInPlaintextMode());
-
-  if (IsReadonly()) {
-    return NS_OK;
-  }
 
   {
     Result<EditActionResult, nsresult> result = CanHandleHTMLEditSubAction();

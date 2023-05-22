@@ -172,8 +172,8 @@ class RequestHeaders {
   void MergeOrSet(const char* aName, const nsACString& aValue);
   void MergeOrSet(const nsACString& aName, const nsACString& aValue);
   void Clear();
-  void ApplyToChannel(nsIHttpChannel* aChannel,
-                      bool aStripRequestBodyHeader) const;
+  void ApplyToChannel(nsIHttpChannel* aChannel, bool aStripRequestBodyHeader,
+                      bool aStripAuthHeader) const;
   void GetCORSUnsafeHeaders(nsTArray<nsCString>& aArray) const;
 };
 
@@ -208,7 +208,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   };
 
   // Make sure that any additions done to ErrorType enum are also mirrored in
-  // XHR_ERROR_TYPE enum of TelemetrySend.jsm.
+  // XHR_ERROR_TYPE enum of TelemetrySend.sys.mjs.
   enum class ErrorType : uint16_t {
     eOK,
     eRequest,
@@ -434,8 +434,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   void DispatchProgressEvent(DOMEventTargetHelper* aTarget,
                              const ProgressEventType aType, int64_t aLoaded,
                              int64_t aTotal);
-
-  void SetRequestObserver(nsIRequestObserver* aObserver);
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
       XMLHttpRequestMainThread, XMLHttpRequest)
@@ -666,8 +664,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   nsCOMPtr<nsIChannelEventSink> mChannelEventSink;
   nsCOMPtr<nsIProgressEventSink> mProgressEventSink;
 
-  nsIRequestObserver* mRequestObserver;
-
   nsCOMPtr<nsIURI> mBaseURI;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
 
@@ -754,7 +750,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
    */
   void CloseRequestWithError(const ProgressEventType aType);
 
-  bool mFirstStartRequestSeen;
   bool mInLoadProgressEvent;
 
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;

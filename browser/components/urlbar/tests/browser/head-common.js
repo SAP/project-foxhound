@@ -1,7 +1,3 @@
-var { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
-
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -85,4 +81,36 @@ async function withHttpServer(
     } catch (ex) {}
     server = null;
   }
+}
+
+/**
+ * Updates the Top Sites feed.
+ *
+ * @param {Function} condition
+ *   A callback that returns true after Top Sites are successfully updated.
+ * @param {boolean} searchShortcuts
+ *   True if Top Sites search shortcuts should be enabled.
+ */
+async function updateTopSites(condition, searchShortcuts = false) {
+  // Toggle the pref to clear the feed cache and force an update.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
+      ],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", false],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", true],
+      [
+        "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts",
+        searchShortcuts,
+      ],
+    ],
+  });
+
+  // Wait for the feed to be updated.
+  await TestUtils.waitForCondition(() => {
+    let sites = AboutNewTab.getTopSites();
+    return condition(sites);
+  }, "Waiting for top sites to be updated");
 }

@@ -4,9 +4,6 @@
 
 // tests the translation infobar, using a fake 'Translation' implementation.
 
-const { Translation } = ChromeUtils.import(
-  "resource:///modules/translation/TranslationParent.jsm"
-);
 const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
@@ -39,7 +36,10 @@ function test() {
     });
   });
 
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+  BrowserTestUtils.loadURIString(
+    gBrowser.selectedBrowser,
+    "http://example.com/"
+  );
 }
 
 function getLanguageExceptions() {

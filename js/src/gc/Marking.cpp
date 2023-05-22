@@ -12,6 +12,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/ScopeExit.h"
 
 #include <algorithm>
@@ -110,37 +111,6 @@ using mozilla::PodCopy;
 
 /*** Tracing Invariants *****************************************************/
 
-#if defined(DEBUG)
-template <typename T>
-static inline bool IsThingPoisoned(T* thing) {
-  const uint8_t poisonBytes[] = {
-      JS_FRESH_NURSERY_PATTERN,      JS_SWEPT_NURSERY_PATTERN,
-      JS_ALLOCATED_NURSERY_PATTERN,  JS_FRESH_TENURED_PATTERN,
-      JS_MOVED_TENURED_PATTERN,      JS_SWEPT_TENURED_PATTERN,
-      JS_ALLOCATED_TENURED_PATTERN,  JS_FREED_HEAP_PTR_PATTERN,
-      JS_FREED_CHUNK_PATTERN,        JS_FREED_ARENA_PATTERN,
-      JS_SWEPT_TI_PATTERN,           JS_SWEPT_CODE_PATTERN,
-      JS_RESET_VALUE_PATTERN,        JS_POISONED_JSSCRIPT_DATA_PATTERN,
-      JS_OOB_PARSE_NODE_PATTERN,     JS_LIFO_UNDEFINED_PATTERN,
-      JS_LIFO_UNINITIALIZED_PATTERN,
-  };
-  uint32_t* p =
-      reinterpret_cast<uint32_t*>(reinterpret_cast<FreeSpan*>(thing) + 1);
-  // Note: all free patterns are odd to make the common, not-poisoned case a
-  // single test.
-  if ((*p & 1) == 0) {
-    return false;
-  }
-  for (const uint8_t pb : poisonBytes) {
-    const uint32_t pw = pb | (pb << 8) | (pb << 16) | (pb << 24);
-    if (*p == pw) {
-      return true;
-    }
-  }
-  return false;
-}
-#endif
-
 template <typename T>
 static inline bool IsOwnedByOtherRuntime(JSRuntime* rt, T thing) {
   bool other = thing->runtimeFromAnyThread() != rt;
@@ -149,6 +119,13 @@ static inline bool IsOwnedByOtherRuntime(JSRuntime* rt, T thing) {
 }
 
 #ifdef DEBUG
+
+static inline bool IsInFreeList(TenuredCell* cell) {
+  Arena* arena = cell->arena();
+  uintptr_t addr = reinterpret_cast<uintptr_t>(cell);
+  MOZ_ASSERT(Arena::isAligned(addr, arena->getThingSize()));
+  return arena->inFreeList(addr);
+}
 
 template <typename T>
 void js::CheckTracedThing(JSTracer* trc, T* thing) {
@@ -202,23 +179,14 @@ void js::CheckTracedThing(JSTracer* trc, T* thing) {
              thing->getTraceKind());
 
   /*
-   * Try to assert that the thing is allocated.
+   * Check that we only mark allocated cells.
    *
-   * We would like to assert that the thing is not in the free list, but this
-   * check is very slow. Instead we check whether the thing has been poisoned:
-   * if it has not then we assume it is allocated, but if it has then it is
-   * either free or uninitialized in which case we check the free list.
-   *
-   * Further complications are that background sweeping may be running and
-   * concurrently modifiying the free list and that tracing is done off
-   * thread during compacting GC and reading the contents of the thing by
-   * IsThingPoisoned would be racy in this case.
+   * This check is restricted to marking for two reasons: Firstly, if background
+   * sweeping is running and concurrently modifying the free list then it is not
+   * safe. Secondly, it was thought to be slow so this is a compromise so as to
+   * not affect test times too much.
    */
-  MOZ_ASSERT_IF(rt->heapState() != JS::HeapState::Idle &&
-                    !zone->isGCSweeping() && !zone->isGCFinished() &&
-                    !zone->isGCCompacting(),
-                !IsThingPoisoned(thing) ||
-                    !InFreeList(thing->asTenured().arena(), thing));
+  MOZ_ASSERT_IF(zone->isGCMarking(), !IsInFreeList(&thing->asTenured()));
 }
 
 template <typename T>
@@ -1285,8 +1253,8 @@ static gcstats::PhaseKind GrayMarkingPhaseForCurrentPhase(
   }
 }
 
-void GCMarker::stealWorkFrom(GCMarker* other) {
-  stack.stealWorkFrom(other->stack);
+void GCMarker::moveWork(GCMarker* dst, GCMarker* src) {
+  MarkStack::moveWork(dst->stack, src->stack);
 }
 
 bool GCMarker::markUntilBudgetExhausted(SliceBudget& budget,
@@ -1363,18 +1331,17 @@ bool GCMarker::markOneColor(SliceBudget& budget) {
       // TODO: It might be better to only check this occasionally, possibly
       // combined with the slice budget check. Experiments with giving this its
       // own counter resulted in worse performance.
-      if (parallelMarker_->hasWaitingTasks() && stack.hasStealableWork()) {
-        parallelMarker_->stealWorkFrom(this);
+      if (parallelMarker_->hasWaitingTasks() && stack.canDonateWork()) {
+        parallelMarker_->donateWorkFrom(this);
         MOZ_ASSERT(hasEntries(color));
       }
     }
 
-    processMarkStackTop<opts>(budget);
-    MOZ_ASSERT_IF(color == MarkColor::Gray, !hasBlackEntries());
-
-    if (budget.isOverBudget()) {
+    if (!processMarkStackTop<opts>(budget)) {
       return false;
     }
+
+    MOZ_ASSERT_IF(color == MarkColor::Gray, !hasBlackEntries());
   } while (hasEntries(color));
 
   return true;
@@ -1407,7 +1374,7 @@ static inline size_t NumUsedDynamicSlots(NativeObject* obj) {
 }
 
 template <uint32_t opts>
-inline void GCMarker::processMarkStackTop(SliceBudget& budget) {
+inline bool GCMarker::processMarkStackTop(SliceBudget& budget) {
   /*
    * This function uses explicit goto and scans objects directly. This allows us
    * to eliminate tail recursion and significantly improve the marking
@@ -1424,74 +1391,89 @@ inline void GCMarker::processMarkStackTop(SliceBudget& budget) {
   size_t index;              // Index of the next slot to mark.
   size_t end;                // End of slot range to mark.
 
-  switch (stack.peekTag()) {
-    case MarkStack::SlotsOrElementsRangeTag: {
-      auto range = stack.popSlotsOrElementsRange();
-      obj = range.ptr().asRangeObject();
-      NativeObject* nobj = &obj->as<NativeObject>();
-      kind = range.kind();
-      index = range.start();
+  if (stack.peekTag() == MarkStack::SlotsOrElementsRangeTag) {
+    auto range = stack.popSlotsOrElementsRange();
+    obj = range.ptr().asRangeObject();
+    NativeObject* nobj = &obj->as<NativeObject>();
+    kind = range.kind();
+    index = range.start();
 
-      switch (kind) {
-        case SlotsOrElementsKind::FixedSlots: {
-          base = nobj->fixedSlots();
-          end = NumUsedFixedSlots(nobj);
-          break;
-        }
-
-        case SlotsOrElementsKind::DynamicSlots: {
-          base = nobj->slots_;
-          end = NumUsedDynamicSlots(nobj);
-          break;
-        }
-
-        case SlotsOrElementsKind::Elements: {
-          base = nobj->getDenseElements();
-
-          // Account for shifted elements.
-          size_t numShifted = nobj->getElementsHeader()->numShiftedElements();
-          size_t initlen = nobj->getDenseInitializedLength();
-          index = std::max(index, numShifted) - numShifted;
-          end = initlen;
-          break;
-        }
+    switch (kind) {
+      case SlotsOrElementsKind::FixedSlots: {
+        base = nobj->fixedSlots();
+        end = NumUsedFixedSlots(nobj);
+        break;
       }
 
-      goto scan_value_range;
-    }
-
-    case MarkStack::ObjectTag: {
-      obj = stack.popPtr().as<JSObject>();
-      AssertShouldMarkInZone(this, obj);
-      goto scan_obj;
-    }
-
-    case MarkStack::JitCodeTag: {
-      auto code = stack.popPtr().as<jit::JitCode>();
-      AutoSetTracingSource asts(tracer(), code);
-      return code->traceChildren(tracer());
-    }
-
-    case MarkStack::ScriptTag: {
-      auto script = stack.popPtr().as<BaseScript>();
-      if constexpr (bool(opts & MarkingOptions::MarkImplicitEdges)) {
-        markImplicitEdges(script);
+      case SlotsOrElementsKind::DynamicSlots: {
+        base = nobj->slots_;
+        end = NumUsedDynamicSlots(nobj);
+        break;
       }
-      AutoSetTracingSource asts(tracer(), script);
-      return script->traceChildren(tracer());
+
+      case SlotsOrElementsKind::Elements: {
+        base = nobj->getDenseElements();
+
+        // Account for shifted elements.
+        size_t numShifted = nobj->getElementsHeader()->numShiftedElements();
+        size_t initlen = nobj->getDenseInitializedLength();
+        index = std::max(index, numShifted) - numShifted;
+        end = initlen;
+        break;
+      }
+
+      case SlotsOrElementsKind::Unused: {
+        MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Unused SlotsOrElementsKind");
+      }
     }
 
-    default:
-      MOZ_CRASH("Invalid tag in mark stack");
+    goto scan_value_range;
   }
-  return;
+
+  budget.step();
+  if (budget.isOverBudget()) {
+    return false;
+  }
+
+  {
+    MarkStack::TaggedPtr ptr = stack.popPtr();
+    switch (ptr.tag()) {
+      case MarkStack::ObjectTag: {
+        obj = ptr.as<JSObject>();
+        AssertShouldMarkInZone(this, obj);
+        goto scan_obj;
+      }
+
+      case MarkStack::JitCodeTag: {
+        auto* code = ptr.as<jit::JitCode>();
+        AutoSetTracingSource asts(tracer(), code);
+        code->traceChildren(tracer());
+        return true;
+      }
+
+      case MarkStack::ScriptTag: {
+        auto* script = ptr.as<BaseScript>();
+        if constexpr (bool(opts & MarkingOptions::MarkImplicitEdges)) {
+          markImplicitEdges(script);
+        }
+        AutoSetTracingSource asts(tracer(), script);
+        script->traceChildren(tracer());
+        return true;
+      }
+
+      default:
+        MOZ_CRASH("Invalid tag in mark stack");
+    }
+  }
+
+  return true;
 
 scan_value_range:
   while (index < end) {
     budget.step();
     if (budget.isOverBudget()) {
       pushValueRange(obj, kind, index, end);
-      return;
+      return false;
     }
 
     const Value& v = base[index];
@@ -1528,16 +1510,11 @@ scan_value_range:
       markAndTraverseEdge<opts>(obj, JS::GCCellPtr(cell, cell->getTraceKind()));
     }
   }
-  return;
+
+  return true;
 
 scan_obj : {
   AssertShouldMarkInZone(this, obj);
-
-  budget.step();
-  if (budget.isOverBudget()) {
-    repush(obj);
-    return;
-  }
 
   if constexpr (bool(opts & MarkingOptions::MarkImplicitEdges)) {
     markImplicitEdges(obj);
@@ -1547,7 +1524,7 @@ scan_obj : {
   CallTraceHook(tracer(), obj);
 
   if (!obj->is<NativeObject>()) {
-    return;
+    return true;
   }
 
   NativeObject* nobj = &obj->as<NativeObject>();
@@ -1626,6 +1603,10 @@ static inline bool TagIsRangeTag(MarkStack::Tag tag) {
 inline MarkStack::TaggedPtr::TaggedPtr(Tag tag, Cell* ptr)
     : bits(tag | uintptr_t(ptr)) {
   assertValid();
+}
+
+inline uintptr_t MarkStack::TaggedPtr::tagUnchecked() const {
+  return bits & TagMask;
 }
 
 inline MarkStack::Tag MarkStack::TaggedPtr::tag() const {
@@ -1755,46 +1736,87 @@ bool MarkStack::hasEntries(MarkColor color) const {
   return color == MarkColor::Black ? hasBlackEntries() : hasGrayEntries();
 }
 
-MOZ_ALWAYS_INLINE bool MarkStack::hasStealableWork() const {
-  // Always leave ourselves with at least one stack entry.
-  return wordCountForCurrentColor() > ValueRangeWords;
+bool MarkStack::canDonateWork() const {
+  // It's not worth the overhead of donating very few entries. For some
+  // (non-parallelizable) workloads this can lead to constantly interrupting
+  // marking work and makes parallel marking slower than single threaded.
+  constexpr size_t MinWordCount = 12;
+
+  static_assert(MinWordCount >= ValueRangeWords,
+                "We must always leave at least one stack entry.");
+
+  return wordCountForCurrentColor() > MinWordCount;
 }
 
-void MarkStack::stealWorkFrom(MarkStack& other) {
+MOZ_ALWAYS_INLINE bool MarkStack::indexIsEntryBase(size_t index) const {
+  // The mark stack holds both TaggedPtr and SlotsOrElementsRange entries, which
+  // are one or two words long respectively. Determine whether |index| points to
+  // the base of an entry (i.e. the lowest word in memory).
+  //
+  // The possible cases are that |index| points to:
+  //  1. a single word TaggedPtr entry => true
+  //  2. the startAndKind_ word of SlotsOrElementsRange => true
+  //     (startAndKind_ is a uintptr_t tagged with SlotsOrElementsKind)
+  //  3. the ptr_ word of SlotsOrElementsRange (itself a TaggedPtr) => false
+  //
+  // To check for case 3, interpret the word as a TaggedPtr: if it is tagged as
+  // a SlotsOrElementsRange tagged pointer then we are inside such a range and
+  // |index| does not point to the base of an entry. This requires that no
+  // startAndKind_ word can be interpreted as such, which is arranged by making
+  // SlotsOrElementsRangeTag zero and all SlotsOrElementsKind tags non-zero.
+
+  MOZ_ASSERT(index >= basePositionForCurrentColor() && index < position());
+  return stack()[index].tagUnchecked() != SlotsOrElementsRangeTag;
+}
+
+/* static */
+void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
+  // Move some work from |src| to |dst|. Assumes |dst| is empty.
+  //
   // When this method runs during parallel marking, we are on the thread that
-  // owns |other|, and the thread that owns |this| is blocked waiting on the
+  // owns |src|, and the thread that owns |dst| is blocked waiting on the
   // ParallelMarkTask::resumed condition variable.
 
-  MOZ_ASSERT(markColor() == other.markColor());
-  MOZ_ASSERT(!hasEntries(markColor()));
-  MOZ_ASSERT(other.hasEntries(markColor()));
+  MOZ_ASSERT(src.markColor() == dst.markColor());
+  MOZ_ASSERT(!dst.hasEntries(dst.markColor()));
+  MOZ_ASSERT(src.canDonateWork());
 
-  size_t base = other.basePositionForCurrentColor();
-  size_t totalWords = other.position() - base;
-  size_t wordsToSteal = totalWords / 2;
+  size_t base = src.basePositionForCurrentColor();
+  size_t totalWords = src.position() - base;
+  size_t wordsToMove = totalWords / 2;
 
-  size_t targetPos = other.position() - wordsToSteal;
-  MOZ_ASSERT(other.position() >= base);
+  size_t targetPos = src.position() - wordsToMove;
+  MOZ_ASSERT(src.position() >= base);
 
-  if (!ensureSpace(wordsToSteal + 1)) {
+  // Adjust the target position in case it points to the middle of a two word
+  // entry.
+  if (!src.indexIsEntryBase(targetPos)) {
+    targetPos--;
+    wordsToMove++;
+  }
+  MOZ_ASSERT(src.indexIsEntryBase(targetPos));
+  MOZ_ASSERT(targetPos < src.position());
+  MOZ_ASSERT(targetPos > base);
+  MOZ_ASSERT(wordsToMove == src.position() - targetPos);
+
+  if (!dst.ensureSpace(wordsToMove)) {
     return;
   }
 
-  // TODO: This could be optimised to use memcpy if we could tell the difference
-  // between a single tagged pointer and a word that's part of a value range
-  // entry. This could be done by changing the way the entries are tagged.
-  //
   // TODO: This doesn't have good cache behaviour when moving work between
   // threads. It might be better if the original thread ended up with the top
-  // part of the stack, in other words if this method stole from the bottom of
+  // part of the stack, in src words if this method stole from the bottom of
   // the stack rather than the top.
-  while (other.position() > targetPos) {
-    if (other.peekTag() == MarkStack::SlotsOrElementsRangeTag) {
-      infalliblePush(other.popSlotsOrElementsRange());
-    } else {
-      infalliblePush(other.popPtr());
-    }
-  }
+
+  mozilla::PodCopy(dst.topPtr(), src.stack().begin() + targetPos, wordsToMove);
+  dst.topIndex_ += wordsToMove;
+  dst.peekPtr().assertValid();
+
+  src.topIndex_ = targetPos;
+#ifdef DEBUG
+  src.poisonUnused();
+#endif
+  src.peekPtr().assertValid();
 }
 
 MOZ_ALWAYS_INLINE size_t MarkStack::basePositionForCurrentColor() const {
@@ -2158,8 +2180,7 @@ void GCMarker::abortLinearWeakMarking() {
 }
 
 MOZ_NEVER_INLINE void GCMarker::delayMarkingChildrenOnOOM(Cell* cell) {
-  AutoLockGC lock(runtime());
-  runtime()->gc.delayMarkingChildren(cell, markColor(), lock);
+  runtime()->gc.delayMarkingChildren(cell, markColor());
 }
 
 bool GCRuntime::hasDelayedMarking() const {
@@ -2168,8 +2189,10 @@ bool GCRuntime::hasDelayedMarking() const {
   return result;
 }
 
-void GCRuntime::delayMarkingChildren(Cell* cell, MarkColor color,
-                                     const AutoLockGC& lock) {
+void GCRuntime::delayMarkingChildren(Cell* cell, MarkColor color) {
+  // Synchronize access to delayed marking state during parallel marking.
+  LockGuard<Mutex> lock(delayedMarkingLock);
+
   Arena* arena = cell->asTenured().arena();
   if (!arena->onDelayedMarkingList()) {
     arena->setNextDelayedMarkingArena(delayedMarkingList);
@@ -2228,7 +2251,8 @@ void GCRuntime::processDelayedMarkingList(MarkColor color) {
     }
     while (marker().hasEntries(color)) {
       SliceBudget budget = SliceBudget::unlimited();
-      marker().processMarkStackTop<NormalMarkingOptions>(budget);
+      MOZ_ALWAYS_TRUE(
+          marker().processMarkStackTop<NormalMarkingOptions>(budget));
     }
   } while (delayedMarkingWorkAdded);
 
@@ -2236,8 +2260,8 @@ void GCRuntime::processDelayedMarkingList(MarkColor color) {
 }
 
 void GCRuntime::markAllDelayedChildren(ShouldReportMarkTime reportTime) {
+  MOZ_ASSERT(CurrentThreadIsMainThread() || CurrentThreadIsPerformingGC());
   MOZ_ASSERT(marker().isDrained());
-  MOZ_ASSERT(marker().markColor() == MarkColor::Black);
   MOZ_ASSERT(hasDelayedMarking());
 
   mozilla::Maybe<gcstats::AutoPhase> ap;
@@ -2279,6 +2303,8 @@ void GCRuntime::rebuildDelayedMarkingList() {
 }
 
 void GCRuntime::resetDelayedMarking() {
+  MOZ_ASSERT(CurrentThreadIsMainThread());
+
   forEachDelayedMarkingArena([&](Arena* arena) {
     MOZ_ASSERT(arena->onDelayedMarkingList());
     arena->clearDelayedMarkingState();

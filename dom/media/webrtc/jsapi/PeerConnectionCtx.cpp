@@ -6,6 +6,7 @@
 
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "call/audio_state.h"
 #include "common/browser_logging/CSFLog.h"
 #include "common/browser_logging/WebRtcLog.h"
@@ -31,6 +32,7 @@
 #include "prcvar.h"
 #include "transport/runnable_utils.h"
 #include "WebrtcGlobalChild.h"
+#include "WebrtcGlobalInformation.h"
 
 static const char* pccLogTag = "PeerConnectionCtx";
 #ifdef LOGTAG
@@ -128,7 +130,7 @@ class DummyAudioProcessing : public AudioProcessing {
     return 0;
   }
   void set_stream_key_pressed(bool) override { MOZ_CRASH("Unexpected call"); }
-  bool CreateAndAttachAecDump(const std::string&, int64_t,
+  bool CreateAndAttachAecDump(absl::string_view, int64_t,
                               rtc::TaskQueue*) override {
     MOZ_CRASH("Unexpected call");
     return false;
@@ -296,7 +298,7 @@ static void RecordCommonRtpTelemetry(const T& list, const T& lastList,
                                      const bool isRemote) {
   using namespace Telemetry;
   for (const auto& s : list) {
-    const bool isAudio = s.mKind.Value().Find(u"audio") != -1;
+    const bool isAudio = s.mKind.Find(u"audio") != -1;
     if (s.mPacketsLost.WasPassed() && s.mPacketsReceived.WasPassed()) {
       if (const uint64_t total =
               s.mPacketsLost.Value() + s.mPacketsReceived.Value()) {
@@ -346,7 +348,7 @@ void PeerConnectionCtx::DeliverStats(
   // Record bandwidth telemetry
   for (const auto& s : aReport->mInboundRtpStreamStats) {
     if (s.mBytesReceived.WasPassed()) {
-      const bool isAudio = s.mKind.Value().Find(u"audio") != -1;
+      const bool isAudio = s.mKind.Find(u"audio") != -1;
       for (const auto& lastS : lastReport->mInboundRtpStreamStats) {
         if (lastS.mId == s.mId) {
           int32_t deltaMs = s.mTimestamp.Value() - lastS.mTimestamp.Value();
@@ -374,7 +376,7 @@ void PeerConnectionCtx::DeliverStats(
                            lastReport->mRemoteInboundRtpStreamStats, true);
   for (const auto& s : aReport->mRemoteInboundRtpStreamStats) {
     if (s.mRoundTripTime.WasPassed()) {
-      const bool isAudio = s.mKind.Value().Find(u"audio") != -1;
+      const bool isAudio = s.mKind.Find(u"audio") != -1;
       HistogramID id = isAudio ? WEBRTC_AUDIO_QUALITY_OUTBOUND_RTT
                                : WEBRTC_VIDEO_QUALITY_OUTBOUND_RTT;
       Accumulate(id, s.mRoundTripTime.Value() * 1000);
@@ -423,9 +425,17 @@ SharedWebrtcState* PeerConnectionCtx::GetSharedWebrtcState() const {
 
 void PeerConnectionCtx::RemovePeerConnection(const std::string& aKey) {
   MOZ_ASSERT(NS_IsMainThread());
-  size_t result = mPeerConnections.erase(aKey);
-  if (mPeerConnections.size() == 0 && result > 0) {
-    mSharedWebrtcState = nullptr;
+  auto it = mPeerConnections.find(aKey);
+  if (it != mPeerConnections.end()) {
+    if (it->second->GetFinalStats() && !it->second->LongTermStatsIsDisabled()) {
+      WebrtcGlobalInformation::StashStats(*(it->second->GetFinalStats()));
+    }
+
+    mPeerConnections.erase(it);
+
+    if (mPeerConnections.empty()) {
+      mSharedWebrtcState = nullptr;
+    }
   }
 }
 
@@ -434,7 +444,7 @@ void PeerConnectionCtx::AddPeerConnection(const std::string& aKey,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mPeerConnections.count(aKey) == 0,
              "PeerConnection with this key should not already exist");
-  if (mPeerConnections.size() == 0) {
+  if (mPeerConnections.empty()) {
     AudioState::Config audioStateConfig;
     audioStateConfig.audio_mixer = new rtc::RefCountedObject<DummyAudioMixer>();
     AudioProcessingBuilder audio_processing_builder;
@@ -488,9 +498,20 @@ void PeerConnectionCtx::ForEachPeerConnection(Function&& aFunction) const {
   }
 }
 
+void PeerConnectionCtx::ClearClosedStats() {
+  for (auto& [id, pc] : mPeerConnections) {
+    Unused << id;
+    if (pc->IsClosed()) {
+      // Rare case
+      pc->DisableLongTermStats();
+    }
+  }
+}
+
 nsresult PeerConnectionCtx::Initialize() {
   initGMP();
-
+  SdpRidAttributeList::kMaxRidLength =
+      webrtc::BaseRtpStringExtension::kMaxValueSizeBytes;
   nsresult rv = NS_NewTimerWithFuncCallback(
       getter_AddRefs(mTelemetryTimer), EverySecondTelemetryCallback_m, this,
       1000, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
@@ -511,8 +532,8 @@ static void GMPReady_m() {
 };
 
 static void GMPReady() {
-  GetMainThreadEventTarget()->Dispatch(WrapRunnableNM(&GMPReady_m),
-                                       NS_DISPATCH_NORMAL);
+  GetMainThreadSerialEventTarget()->Dispatch(WrapRunnableNM(&GMPReady_m),
+                                             NS_DISPATCH_NORMAL);
 };
 
 void PeerConnectionCtx::initGMP() {

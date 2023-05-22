@@ -92,6 +92,7 @@ class MOZ_STACK_CLASS CaretPoint {
     MOZ_ASSERT(!aOptions.contains(SuggestCaret::AndIgnoreTrivialError));
     MOZ_ASSERT(
         !aOptions.contains(SuggestCaret::OnlyIfTransactionsAllowedToDoIt));
+    mHandledCaretPoint = true;
     if (aOptions.contains(SuggestCaret::OnlyIfHasSuggestion) &&
         !mCaretPoint.IsSet()) {
       return false;
@@ -431,7 +432,7 @@ class EditorUtils final {
                                  const nsINode& aParentNode, uint32_t aOffset);
 
   /**
-   * Create an nsITransferable instance which has kUnicodeMime and
+   * Create an nsITransferable instance which has kTextMime and
    * kMozTextInternal flavors.
    */
   static Result<nsCOMPtr<nsITransferable>, nsresult>

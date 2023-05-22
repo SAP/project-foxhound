@@ -4,26 +4,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ReadableStreamTee.h"
+
+#include "ReadIntoRequest.h"
+#include "TeeState.h"
 #include "js/Exception.h"
 #include "js/TypeDecls.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/ReadIntoRequest.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
-#include "mozilla/dom/ReadableStreamTee.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/ReadableByteStreamController.h"
-#include "mozilla/dom/TeeState.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/CycleCollectedJSContext.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ReadableStreamDefaultTeeSourceAlgorithms,
                                    UnderlyingSourceAlgorithmsBase, mTeeState)
@@ -956,6 +959,7 @@ void ForwardReaderError(TeeState* aTeeState,
       RefPtr(aTeeState), RefPtr(aThisReader));
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
 void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
                            nsTArray<RefPtr<ReadableStream>>& aResult,
@@ -1002,4 +1006,6 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   aResult.AppendElement(teeState->Branch1());
   aResult.AppendElement(teeState->Branch2());
 }
+}  // namespace streams_abstract
+
 }  // namespace mozilla::dom

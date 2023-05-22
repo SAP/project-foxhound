@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
-
 import os
 from copy import deepcopy
 from struct import unpack
@@ -54,7 +52,7 @@ DLL_BLOCKLIST_DEFINITIONS_BEGIN_NAMED(gBlockedInprocDlls)
 
 """
 
-# These flag names should match the ones defined in WindowsDllBlocklistCommon.h
+# These flag names should match the ones defined in WindowsDllBlocklistInfo.h
 FLAGS_DEFAULT = "FLAGS_DEFAULT"
 BLOCK_WIN8_AND_OLDER = "BLOCK_WIN8_AND_OLDER"
 BLOCK_WIN7_AND_OLDER = "BLOCK_WIN7_AND_OLDER"
@@ -65,6 +63,7 @@ SUBSTITUTE_LSP_PASSTHROUGH = "SUBSTITUTE_LSP_PASSTHROUGH"
 REDIRECT_TO_NOOP_ENTRYPOINT = "REDIRECT_TO_NOOP_ENTRYPOINT"
 UTILITY_PROCESSES_ONLY = "UTILITY_PROCESSES_ONLY"
 SOCKET_PROCESSES_ONLY = "SOCKET_PROCESSES_ONLY"
+GPU_PROCESSES_ONLY = "GPU_PROCESSES_ONLY"
 
 # Only these flags are available in the input script
 INPUT_ONLY_FLAGS = {
@@ -104,6 +103,7 @@ ALL_DEFINITION_LISTS = (
     "ALL_PROCESSES",
     "BROWSER_PROCESS",
     "CHILD_PROCESSES",
+    "GPU_PROCESSES",
     "UTILITY_PROCESSES",
     "SOCKET_PROCESSES",
 )
@@ -374,6 +374,7 @@ GENERATED_BLOCKLIST_FILES = [
         flagspec={
             "BROWSER_PROCESS": {BROWSER_PROCESS_ONLY},
             "CHILD_PROCESSES": {CHILD_PROCESSES_ONLY},
+            "GPU_PROCESSES": {GPU_PROCESSES_ONLY},
             "UTILITY_PROCESSES": {UTILITY_PROCESSES_ONLY},
             "SOCKET_PROCESSES": {SOCKET_PROCESSES_ONLY},
         },
@@ -384,6 +385,7 @@ GENERATED_BLOCKLIST_FILES = [
         flagspec={
             "BROWSER_PROCESS": {BROWSER_PROCESS_ONLY},
             "CHILD_PROCESSES": {CHILD_PROCESSES_ONLY},
+            "GPU_PROCESSES": {GPU_PROCESSES_ONLY},
             "UTILITY_PROCESSES": {UTILITY_PROCESSES_ONLY},
             "SOCKET_PROCESSES": {SOCKET_PROCESSES_ONLY},
         },

@@ -4,11 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division, print_function
-
 import copy
 import json
-import mozdebug
 import os
 import pipes
 import random
@@ -20,22 +17,18 @@ import sys
 import tempfile
 import time
 import traceback
-import six
-
 from argparse import Namespace
 from collections import defaultdict, deque, namedtuple
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import partial
 from multiprocessing import cpu_count
-from subprocess import Popen, PIPE, STDOUT
-from tempfile import mkdtemp, gettempdir
-from threading import (
-    Timer,
-    Thread,
-    Event,
-    current_thread,
-)
+from subprocess import PIPE, STDOUT, Popen
+from tempfile import gettempdir, mkdtemp
+from threading import Event, Thread, Timer, current_thread
+
+import mozdebug
+import six
 
 try:
     import psutil
@@ -58,7 +51,18 @@ except ImportError:
 HARNESS_TIMEOUT = 5 * 60
 
 # benchmarking on tbpl revealed that this works best for now
+# TODO: This has been evaluated/set many years ago and we might want to
+# benchmark this again.
+# These days with e10s/fission the number of real processes/threads running
+# can be significantly higher, with both consequences on runtime and memory
+# consumption. So be aware that NUM_THREADS is just saying how many tests will
+# be started maximum in parallel and that depending on the tests there is
+# only a weak correlation to the effective number of processes or threads.
+# Be also aware that we can override this value with the threadCount option
+# on the command line to tweak it for a concrete CPU/memory combination.
 NUM_THREADS = int(cpu_count() * 4)
+if sys.platform == "win32":
+    NUM_THREADS = NUM_THREADS / 2
 
 EXPECTED_LOG_ACTIONS = set(
     [
@@ -77,13 +81,13 @@ if os.path.isdir(mozbase):
     for package in os.listdir(mozbase):
         sys.path.append(os.path.join(mozbase, package))
 
-from manifestparser import TestManifest
-from manifestparser.filters import chunk_by_slice, tags, pathprefix, failures
-from manifestparser.util import normsep
-from mozlog import commandline
 import mozcrash
 import mozfile
 import mozinfo
+from manifestparser import TestManifest
+from manifestparser.filters import chunk_by_slice, failures, pathprefix, tags
+from manifestparser.util import normsep
+from mozlog import commandline
 from mozprofile import Profile
 from mozprofile.cli import parse_preferences
 from mozrunner.utils import get_stack_fixer_function
@@ -174,6 +178,7 @@ class XPCShellTestThread(Thread):
         self.env = copy.deepcopy(kwargs.get("env"))
         self.symbolsPath = kwargs.get("symbolsPath")
         self.logfiles = kwargs.get("logfiles")
+        self.app_binary = kwargs.get("app_binary")
         self.xpcshell = kwargs.get("xpcshell")
         self.xpcsRunArgs = kwargs.get("xpcsRunArgs")
         self.failureManifest = kwargs.get("failureManifest")
@@ -562,8 +567,17 @@ class XPCShellTestThread(Thread):
         if not self.appPath:
             self.appPath = self.xrePath
 
-        xpcsCmd = [
-            self.xpcshell,
+        if self.app_binary:
+            xpcsCmd = [
+                self.app_binary,
+                "--xpcshell",
+            ]
+        else:
+            xpcsCmd = [
+                self.xpcshell,
+            ]
+
+        xpcsCmd += [
             "-g",
             self.xrePath,
             "-a",
@@ -785,6 +799,10 @@ class XPCShellTestThread(Thread):
         if self.test_object.get("dmd") == "true":
             self.env["PYTHON"] = sys.executable
             self.env["BREAKPAD_SYMBOLS_PATH"] = self.symbolsPath
+
+        if self.test_object.get("snap") == "true":
+            self.env["SNAP_NAME"] = "firefox"
+            self.env["SNAP_INSTANCE_NAME"] = "firefox"
 
         if self.test_object.get("subprocess") == "true":
             self.env["PYTHON"] = sys.executable
@@ -1101,10 +1119,15 @@ class XPCShellTests(object):
         """
         self.testharnessdir = os.path.dirname(os.path.abspath(__file__))
         self.headJSPath = self.testharnessdir.replace("\\", "/") + "/head.js"
-        self.xpcshell = os.path.abspath(self.xpcshell)
+        if self.xpcshell is not None:
+            self.xpcshell = os.path.abspath(self.xpcshell)
+
+        if self.app_binary is not None:
+            self.app_binary = os.path.abspath(self.app_binary)
 
         if self.xrePath is None:
-            self.xrePath = os.path.dirname(self.xpcshell)
+            binary_path = self.app_binary or self.xpcshell
+            self.xrePath = os.path.dirname(binary_path)
             if mozinfo.isMac:
                 # Check if we're run from an OSX app bundle and override
                 # self.xrePath if we are.
@@ -1530,6 +1553,11 @@ class XPCShellTests(object):
         )
 
         self.mozInfo["condprof"] = options.get("conditionedProfile", False)
+
+        self.mozInfo["msix"] = options.get(
+            "app_binary"
+        ) is not None and "WindowsApps" in options.get("app_binary", "")
+
         mozinfo.update(self.mozInfo)
 
         return True
@@ -1622,8 +1650,9 @@ class XPCShellTests(object):
         return self.conditioned_profile_copy
 
     def runSelfTest(self):
-        import selftest
         import unittest
+
+        import selftest
 
         this = self
 
@@ -1632,6 +1661,7 @@ class XPCShellTests(object):
                 unittest.TestCase.__init__(self, name)
                 self.testing_modules = this.testingModulesDir
                 self.xpcshellBin = this.xpcshell
+                self.app_binary = this.app_binary
                 self.utility_path = this.utility_path
                 self.symbols_path = this.symbolsPath
 
@@ -1705,6 +1735,7 @@ class XPCShellTests(object):
             JSDebuggerInfo = namedtuple("JSDebuggerInfo", ["port"])
             self.jsDebuggerInfo = JSDebuggerInfo(port=options["jsDebuggerPort"])
 
+        self.app_binary = options.get("app_binary")
         self.xpcshell = options.get("xpcshell")
         self.http3server = options.get("http3server")
         self.xrePath = options.get("xrePath")
@@ -1766,19 +1797,26 @@ class XPCShellTests(object):
         if not self.updateMozinfo(prefs, options):
             return False
 
+        self.log.info(
+            "These variables are available in the mozinfo environment and "
+            "can be used to skip tests conditionally:"
+        )
+        for info in sorted(self.mozInfo.items(), key=lambda item: item[0]):
+            self.log.info("    {key}: {value}".format(key=info[0], value=info[1]))
+
         if options.get("self_test"):
             if not self.runSelfTest():
                 return False
 
         if (
-            "tsan" in self.mozInfo
-            and self.mozInfo["tsan"]
-            and not options.get("threadCount")
-        ):
-            # TSan requires significantly more memory, so reduce the amount of parallel
-            # tests we run to avoid OOMs and timeouts.
+            ("tsan" in self.mozInfo and self.mozInfo["tsan"])
+            or ("asan" in self.mozInfo and self.mozInfo["asan"])
+        ) and not options.get("threadCount"):
+            # TSan/ASan require significantly more memory, so reduce the amount of parallel
+            # tests we run to avoid OOMs and timeouts. We always keep a minimum of 2 for
+            # non-sequential execution.
             # pylint --py3k W1619
-            self.threadCount = self.threadCount / 2
+            self.threadCount = max(self.threadCount / 2, 2)
 
         self.stack_fixer_function = None
         if self.utility_path and os.path.exists(self.utility_path):
@@ -1832,6 +1870,7 @@ class XPCShellTests(object):
             "env": self.env,  # making a copy of this in the testthreads
             "symbolsPath": self.symbolsPath,
             "logfiles": self.logfiles,
+            "app_binary": self.app_binary,
             "xpcshell": self.xpcshell,
             "xpcsRunArgs": self.xpcsRunArgs,
             "failureManifest": self.failure_manifest,
@@ -2198,8 +2237,16 @@ def main():
 
     log = commandline.setup_logging("XPCShell", options, {"tbpl": sys.stdout})
 
-    if options.xpcshell is None:
-        log.error("Must provide path to xpcshell using --xpcshell")
+    if options.xpcshell is None and options.app_binary is None:
+        log.error(
+            "Must provide path to xpcshell using --xpcshell or Firefox using --app-binary"
+        )
+        sys.exit(1)
+
+    if options.xpcshell is not None and options.app_binary is not None:
+        log.error(
+            "Cannot provide --xpcshell and --app-binary - they are mutually exclusive options. Choose one."
+        )
         sys.exit(1)
 
     xpcsh = XPCShellTests(log)

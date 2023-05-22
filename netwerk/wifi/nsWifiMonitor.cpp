@@ -93,7 +93,7 @@ NS_IMETHODIMP nsWifiMonitor::StartWatching(nsIWifiListener* aListener) {
 
   if (!mThread) {
     rv = NS_NewNamedThread("Wifi Monitor", getter_AddRefs(mThread), this,
-                           GetMonitorThreadStackSize());
+                           {.stackSize = GetMonitorThreadStackSize()});
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -179,7 +179,7 @@ NS_IMETHODIMP nsWifiMonitor::Run() {
   }
 
   if (doError) {
-    nsCOMPtr<nsIEventTarget> target = GetMainThreadEventTarget();
+    nsCOMPtr<nsIEventTarget> target = GetMainThreadSerialEventTarget();
     if (!target) return NS_ERROR_UNEXPECTED;
 
     nsCOMPtr<nsIRunnable> runnable(

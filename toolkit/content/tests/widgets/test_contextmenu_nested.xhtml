@@ -29,7 +29,7 @@
 
 <button label="Check"/>
 
-<vbox id="popuparea" popup="outermain" width="20" height="20"/>
+<vbox id="popuparea" popup="outermain" style="width: 20px; height: 20px"/>
 
 <script type="application/javascript">
 <![CDATA[
@@ -92,7 +92,7 @@ var popupTests = [
   events: [ "popuphiding innercontext", "popuphidden innercontext",
             "popuphiding outercontext", "popuphidden outercontext",
             "DOMMenuInactive innercontext",
-            "DOMMenuItemInactive outercontextmenu", "DOMMenuItemInactive outercontextmenu",
+            "DOMMenuItemInactive outercontextmenu",
             "DOMMenuInactive outercontext" ],
   test: () => $("outercontext").hidePopup(),
   result (testname) {
@@ -107,7 +107,7 @@ var popupTests = [
   events: [ "popuphiding innermain", "popuphidden innermain",
             "popuphiding outermain", "popuphidden outermain",
             "DOMMenuInactive innermain",
-            "DOMMenuItemInactive outermenu", "DOMMenuItemInactive outermenu",
+            "DOMMenuItemInactive outermenu",
             "DOMMenuInactive outermain" ],
 
   test: () => $("outermain").hidePopup(),

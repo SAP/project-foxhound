@@ -109,8 +109,6 @@ inline bool operator==(const gfxFontFaceSrc& a, const gfxFontFaceSrc& b) {
         return false;
       }
       if (a.mUseOriginPrincipal) {
-        // The mOriginPrincipal comparison isn't safe OMT.
-        MOZ_ASSERT(NS_IsMainThread());
         if (!a.mOriginPrincipal->Equals(b.mOriginPrincipal)) {
           return false;
         }
@@ -438,7 +436,7 @@ class gfxUserFontSet {
             aKey->mFontEntry->Weight().AsScalar(),
             aKey->mFontEntry->SlantStyle().AsScalar(),
             aKey->mFontEntry->Stretch().AsScalar(),
-            aKey->mFontEntry->mLanguageOverride);
+            aKey->mFontEntry->mRangeFlags, aKey->mFontEntry->mLanguageOverride);
       }
 
       enum { ALLOW_MEMMOVE = false };

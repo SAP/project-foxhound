@@ -221,10 +221,10 @@ EditorUtils::CreateTransferableForPlainText(const Document& aDocument) {
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                        "nsITransferable::Init() failed, but ignored");
 
-  rvIgnored = transferable->AddDataFlavor(kUnicodeMime);
+  rvIgnored = transferable->AddDataFlavor(kTextMime);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
-      "nsITransferable::AddDataFlavor(kUnicodeMime) failed, but ignored");
+      "nsITransferable::AddDataFlavor(kTextMime) failed, but ignored");
   rvIgnored = transferable->AddDataFlavor(kMozTextInternal);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
@@ -389,6 +389,23 @@ bool EditorDOMPointBase<
     PT, CT>::IsNextCharPreformattedNewLineCollapsedWithWhiteSpaces() const {
   return IsNextCharNewLine() &&
          EditorUtils::IsOnlyNewLinePreformatted(*ContainerAs<Text>());
+}
+
+/******************************************************************************
+ * mozilla::EditorDOMRangeBase
+ *****************************************************************************/
+
+NS_INSTANTIATE_EDITOR_DOM_RANGE_CONST_METHOD(nsINode*,
+                                             GetClosestCommonInclusiveAncestor);
+
+template <typename EditorDOMPointType>
+nsINode* EditorDOMRangeBase<
+    EditorDOMPointType>::GetClosestCommonInclusiveAncestor() const {
+  if (NS_WARN_IF(!IsPositioned())) {
+    return nullptr;
+  }
+  return nsContentUtils::GetClosestCommonInclusiveAncestor(
+      mStart.GetContainer(), mEnd.GetContainer());
 }
 
 /******************************************************************************

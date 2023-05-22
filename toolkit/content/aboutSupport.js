@@ -33,20 +33,23 @@ ChromeUtils.defineESModuleGetters(this, {
 window.addEventListener("load", function onload(event) {
   try {
     window.removeEventListener("load", onload);
-    Troubleshoot.snapshot(async function(snapshot) {
+    Troubleshoot.snapshot().then(async snapshot => {
       for (let prop in snapshotFormatters) {
         try {
           await snapshotFormatters[prop](snapshot[prop]);
         } catch (e) {
-          Cu.reportError(
-            "stack of snapshot error for about:support: " + e + ": " + e.stack
+          console.error(
+            "stack of snapshot error for about:support: ",
+            e,
+            ": ",
+            e.stack
           );
         }
       }
       if (location.hash) {
         scrollToSection();
       }
-    });
+    }, console.error);
     populateActionBox();
     setupEventListeners();
 
@@ -55,9 +58,7 @@ window.addEventListener("load", function onload(event) {
       $("update-history-row").hidden = true;
     }
   } catch (e) {
-    Cu.reportError(
-      "stack of load error for about:support: " + e + ": " + e.stack
-    );
+    console.error("stack of load error for about:support: ", e, ": ", e.stack);
   }
 });
 
@@ -1363,8 +1364,8 @@ function copyRawDataToClipboard(button) {
   if (button) {
     button.disabled = true;
   }
-  try {
-    Troubleshoot.snapshot(async function(snapshot) {
+  Troubleshoot.snapshot().then(
+    async snapshot => {
       if (button) {
         button.disabled = false;
       }
@@ -1376,20 +1377,21 @@ function copyRawDataToClipboard(button) {
         "@mozilla.org/widget/transferable;1"
       ].createInstance(Ci.nsITransferable);
       transferable.init(getLoadContext());
-      transferable.addDataFlavor("text/unicode");
-      transferable.setTransferData("text/unicode", str);
+      transferable.addDataFlavor("text/plain");
+      transferable.setTransferData("text/plain", str);
       Services.clipboard.setData(
         transferable,
         null,
         Ci.nsIClipboard.kGlobalClipboard
       );
-    });
-  } catch (err) {
-    if (button) {
-      button.disabled = false;
+    },
+    err => {
+      if (button) {
+        button.disabled = false;
+      }
+      console.error(err);
     }
-    throw err;
-  }
+  );
 }
 
 function getLoadContext() {
@@ -1420,9 +1422,9 @@ async function copyContentsToClipboard() {
   transferable.setTransferData("text/html", ssHtml);
 
   // Add the plain text flavor.
-  transferable.addDataFlavor("text/unicode");
+  transferable.addDataFlavor("text/plain");
   ssText.data = dataText;
-  transferable.setTransferData("text/unicode", ssText);
+  transferable.setTransferData("text/plain", ssText);
 
   // Store the data into the clipboard.
   Services.clipboard.setData(

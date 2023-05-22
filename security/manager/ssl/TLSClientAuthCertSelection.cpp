@@ -422,11 +422,13 @@ class SelectClientAuthCertificate : public Runnable {
   SelectClientAuthCertificate(ClientAuthInfo&& info,
                               UniqueCERTCertificate&& serverCert,
                               nsTArray<nsTArray<uint8_t>>&& caNames,
+                              UniqueCERTCertList&& potentialClientCertificates,
                               ClientAuthCertificateSelectedBase* continuation)
       : Runnable("SelectClientAuthCertificate"),
         mInfo(std::move(info)),
         mServerCert(std::move(serverCert)),
         mCANames(std::move(caNames)),
+        mPotentialClientCertificates(std::move(potentialClientCertificates)),
         mContinuation(continuation) {}
 
   NS_IMETHOD Run() override;
@@ -440,6 +442,7 @@ class SelectClientAuthCertificate : public Runnable {
   ClientAuthInfo mInfo;
   UniqueCERTCertificate mServerCert;
   nsTArray<nsTArray<uint8_t>> mCANames;
+  UniqueCERTCertList mPotentialClientCertificates;
   RefPtr<ClientAuthCertificateSelectedBase> mContinuation;
 
   nsTArray<nsTArray<uint8_t>> mEnterpriseCertificates;
@@ -536,13 +539,12 @@ void SelectClientAuthCertificate::DoSelectClientAuthCertificate() {
     return;
   }
 
-  UniqueCERTCertList certList(FindClientCertificatesWithPrivateKeys());
-  if (!certList) {
+  if (!mPotentialClientCertificates) {
     return;
   }
 
-  CERTCertListNode* n = CERT_LIST_HEAD(certList);
-  while (!CERT_LIST_END(n, certList)) {
+  CERTCertListNode* n = CERT_LIST_HEAD(mPotentialClientCertificates);
+  while (!CERT_LIST_END(n, mPotentialClientCertificates)) {
     nsTArray<nsTArray<uint8_t>> unusedBuiltChain;
     nsTArray<uint8_t> certBytes;
     certBytes.AppendElements(n->cert->derCert.data, n->cert->derCert.len);
@@ -561,7 +563,7 @@ void SelectClientAuthCertificate::DoSelectClientAuthCertificate() {
     n = CERT_LIST_NEXT(n);
   }
 
-  if (CERT_LIST_EMPTY(certList)) {
+  if (CERT_LIST_EMPTY(mPotentialClientCertificates)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("no client certificates available after filtering by CA"));
     return;
@@ -572,8 +574,9 @@ void SelectClientAuthCertificate::DoSelectClientAuthCertificate() {
     // automatically find the right cert
     UniqueCERTCertificate lowPrioNonrepCert;
     // loop through the list until we find a cert with a key
-    for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
-         !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
+    for (CERTCertListNode* node = CERT_LIST_HEAD(mPotentialClientCertificates);
+         !CERT_LIST_END(node, mPotentialClientCertificates);
+         node = CERT_LIST_NEXT(node)) {
       UniqueSECKEYPrivateKey tmpKey(PK11_FindKeyByAnyCert(node->cert, nullptr));
       if (tmpKey) {
         if (hasExplicitKeyUsageNonRepudiation(node->cert)) {
@@ -656,8 +659,9 @@ void SelectClientAuthCertificate::DoSelectClientAuthCertificate() {
     return;
   }
 
-  for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
-       !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
+  for (CERTCertListNode* node = CERT_LIST_HEAD(mPotentialClientCertificates);
+       !CERT_LIST_END(node, mPotentialClientCertificates);
+       node = CERT_LIST_NEXT(node)) {
     nsCOMPtr<nsIX509Cert> tempCert = new nsNSSCertificate(node->cert);
     nsresult rv = certArray->AppendElement(tempCert);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -748,6 +752,16 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
 
   nsTArray<nsTArray<uint8_t>> caNames(CollectCANames(caNamesDecoded));
 
+  // Currently, the IPC client certs module only refreshes its view of
+  // available certificates and keys if the platform issues a search for all
+  // certificates or keys. In the socket process, such a search may not have
+  // happened, so this ensures it has.
+  // Additionally, instantiating certificates in NSS is not thread-safe and has
+  // performance implications, so search for them here (on the socket thread)
+  // when not in the socket process.
+  UniqueCERTCertList potentialClientCertificates(
+      FindClientCertificatesWithPrivateKeys());
+
   RefPtr<ClientAuthCertificateSelected> continuation(
       new ClientAuthCertificateSelected(info));
   // If this is the socket process, dispatch an IPC call to select a client
@@ -757,13 +771,6 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
   // appropriate information to the NSSSocketControl, which then calls
   // SSL_ClientCertCallbackComplete to continue the connection.
   if (XRE_IsSocketProcess()) {
-    // Currently, the IPC client certs module only refreshes its view of
-    // available certificates and keys if the platform issues a search for all
-    // certificates or keys. In the socket process, such a search may not have
-    // happened, so this ensures it has.
-    UniqueCERTCertList certList(FindClientCertificatesWithPrivateKeys());
-    Unused << certList;
-
     mozilla::ipc::PBackgroundChild* actorChild = mozilla::ipc::BackgroundChild::
         GetOrCreateForSocketParentBridgeForCurrentThread();
     if (!actorChild) {
@@ -793,9 +800,9 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
                             info->GetPort(), info->GetProviderFlags(),
                             info->GetProviderTlsFlags());
     RefPtr<SelectClientAuthCertificate> selectClientAuthCertificate(
-        new SelectClientAuthCertificate(std::move(authInfo),
-                                        std::move(serverCert),
-                                        std::move(caNames), continuation));
+        new SelectClientAuthCertificate(
+            std::move(authInfo), std::move(serverCert), std::move(caNames),
+            std::move(potentialClientCertificates), continuation));
     if (NS_FAILED(NS_DispatchToMainThread(selectClientAuthCertificate))) {
       PR_SetError(SEC_ERROR_LIBRARY_FAILURE, 0);
       return SECFailure;
@@ -861,25 +868,42 @@ bool SelectTLSClientAuthCertParent::Dispatch(
       new RemoteClientAuthCertificateSelected(this));
   ClientAuthInfo authInfo(aHostName, aOriginAttributes, aPort, aProviderFlags,
                           aProviderTlsFlags);
-  SECItem serverCertItem{
-      siBuffer,
-      const_cast<uint8_t*>(aServerCertBytes.data().Elements()),
-      static_cast<unsigned int>(aServerCertBytes.data().Length()),
-  };
-  UniqueCERTCertificate serverCert(CERT_NewTempCertificate(
-      CERT_GetDefaultCertDB(), &serverCertItem, nullptr, false, true));
-  if (!serverCert) {
+  nsCOMPtr<nsIEventTarget> socketThread =
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+  if (NS_WARN_IF(!socketThread)) {
     return false;
   }
-  nsTArray<nsTArray<uint8_t>> caNames;
-  for (auto& caName : aCANames) {
-    caNames.AppendElement(std::move(caName.data()));
-  }
-  RefPtr<SelectClientAuthCertificate> selectClientAuthCertificate(
-      new SelectClientAuthCertificate(std::move(authInfo),
-                                      std::move(serverCert), std::move(caNames),
-                                      continuation));
-  return NS_SUCCEEDED(NS_DispatchToMainThread(selectClientAuthCertificate));
+  // Dispatch the work of instantiating a CERTCertificate and searching for
+  // client certificates to the socket thread.
+  nsresult rv = socketThread->Dispatch(NS_NewRunnableFunction(
+      "SelectTLSClientAuthCertParent::Dispatch",
+      [authInfo(std::move(authInfo)), continuation(std::move(continuation)),
+       serverCertBytes(aServerCertBytes),
+       caNames(std::move(aCANames))]() mutable {
+        SECItem serverCertItem{
+            siBuffer,
+            const_cast<uint8_t*>(serverCertBytes.data().Elements()),
+            static_cast<unsigned int>(serverCertBytes.data().Length()),
+        };
+        UniqueCERTCertificate serverCert(CERT_NewTempCertificate(
+            CERT_GetDefaultCertDB(), &serverCertItem, nullptr, false, true));
+        if (!serverCert) {
+          return;
+        }
+        nsTArray<nsTArray<uint8_t>> caNamesArray;
+        for (auto& caName : caNames) {
+          caNamesArray.AppendElement(std::move(caName.data()));
+        }
+        UniqueCERTCertList potentialClientCertificates(
+            FindClientCertificatesWithPrivateKeys());
+        RefPtr<SelectClientAuthCertificate> selectClientAuthCertificate(
+            new SelectClientAuthCertificate(
+                std::move(authInfo), std::move(serverCert),
+                std::move(caNamesArray), std::move(potentialClientCertificates),
+                continuation));
+        Unused << NS_DispatchToMainThread(selectClientAuthCertificate);
+      }));
+  return NS_SUCCEEDED(rv);
 }
 
 void SelectTLSClientAuthCertParent::TLSClientAuthCertSelected(

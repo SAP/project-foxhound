@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
-
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
@@ -97,7 +93,7 @@ add_task(async function updateMainButtonInFullscreen() {
     "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.loadURIString(
     gBrowser.selectedBrowser,
     TEST_PATH + "video_test.html"
   );

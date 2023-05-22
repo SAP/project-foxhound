@@ -46,10 +46,10 @@ add_task(async function test_with_pref_enabled() {
   let windowPromise = addWindowListener(
     "chrome://mozapps/content/downloads/unknownContentType.xhtml"
   );
-  BrowserTestUtils.loadURI(gBrowser, kTestURI);
+  BrowserTestUtils.loadURIString(gBrowser, kTestURI);
   let win = await windowPromise;
 
-  let expectedValue = "text/csv;foo,bar,foobar";
+  let expectedValue = "Untitled.csv";
   is(
     win.document.getElementById("location").value,
     expectedValue,
@@ -70,10 +70,10 @@ add_task(async function test_with_pref_disabled() {
   });
   let downloadsPanelPromise = promisePanelOpened();
   let downloadsPromise = Downloads.getList(Downloads.PUBLIC);
-  let expectedValue = "text/csv;foo,bar,foobar";
+  let sourceURLBit = "text/csv;foo,bar,foobar";
 
   info("Loading URI for pref enabled");
-  BrowserTestUtils.loadURI(gBrowser, kTestURI);
+  BrowserTestUtils.loadURIString(gBrowser, kTestURI);
   info("Waiting for downloads panel to open");
   await downloadsPanelPromise;
   info("Getting downloads info after opening downloads panel");
@@ -90,7 +90,7 @@ add_task(async function test_with_pref_disabled() {
   is(download.contentType, "text/csv", "File contentType should be correct.");
   is(
     download.source.url,
-    `data:${expectedValue}`,
+    `data:${sourceURLBit}`,
     "File name should be correct."
   );
 

@@ -480,40 +480,6 @@ bool BackgroundChildImpl::DeallocPQuotaChild(PQuotaChild* aActor) {
   return true;
 }
 
-// -----------------------------------------------------------------------------
-// WebMIDI API
-// -----------------------------------------------------------------------------
-
-PMIDIPortChild* BackgroundChildImpl::AllocPMIDIPortChild(
-    const MIDIPortInfo& aPortInfo, const bool& aSysexEnabled) {
-  MOZ_CRASH("Should be created manually");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPMIDIPortChild(PMIDIPortChild* aActor) {
-  MOZ_ASSERT(aActor);
-  // The reference is increased in dom/midi/MIDIPort.cpp. We should
-  // decrease it after IPC.
-  RefPtr<dom::MIDIPortChild> child =
-      dont_AddRef(static_cast<dom::MIDIPortChild*>(aActor));
-  child->Teardown();
-  return true;
-}
-
-PMIDIManagerChild* BackgroundChildImpl::AllocPMIDIManagerChild() {
-  MOZ_CRASH("Should be created manually");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPMIDIManagerChild(PMIDIManagerChild* aActor) {
-  MOZ_ASSERT(aActor);
-  // The reference is increased in dom/midi/MIDIAccessManager.cpp. We should
-  // decrease it after IPC.
-  RefPtr<dom::MIDIManagerChild> child =
-      dont_AddRef(static_cast<dom::MIDIManagerChild*>(aActor));
-  return true;
-}
-
 mozilla::dom::PClientManagerChild*
 BackgroundChildImpl::AllocPClientManagerChild() {
   return mozilla::dom::AllocClientManagerChild();
@@ -523,16 +489,6 @@ bool BackgroundChildImpl::DeallocPClientManagerChild(
     mozilla::dom::PClientManagerChild* aActor) {
   return mozilla::dom::DeallocClientManagerChild(aActor);
 }
-
-#ifdef EARLY_BETA_OR_EARLIER
-void BackgroundChildImpl::OnChannelReceivedMessage(const Message& aMsg) {
-  if (aMsg.type() == dom::PVsync::MessageType::Msg_Notify__ID) {
-    // Not really necessary to look at the message payload, it will be
-    // <0.5ms away from TimeStamp::Now()
-    SchedulerGroup::MarkVsyncReceived();
-  }
-}
-#endif
 
 dom::PWebAuthnTransactionChild*
 BackgroundChildImpl::AllocPWebAuthnTransactionChild() {

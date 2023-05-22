@@ -26,6 +26,7 @@
 #include "Pivot.h"
 #include "Relation.h"
 #include "RelationType.h"
+#include "TextLeafRange.h"
 #include "xpcAccessibleDocument.h"
 
 #ifdef A11Y_LOG
@@ -59,16 +60,10 @@ void RemoteAccessibleBase<Derived>::Shutdown() {
 
   if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     // Remove this acc's relation map from the doc's map of
-    // reverse relations. We don't need to do additional processing
-    // of the corresponding forward relations, because this shutdown
-    // should trigger a cache update from the content process.
-    // Similarly, we don't need to remove the reverse rels created
-    // by this acc's forward rels because they'll be cleared during
-    // the next update's call to PreProcessRelations().
-    // In short, accs are responsible for managing their own
-    // reverse relation map, both in PreProcessRelations() and in
-    // Shutdown().
-    Unused << mDoc->mReverseRelations.Remove(ID());
+    // reverse relations. Prune forward relations associated with this
+    // acc's reverse relations. This also removes the acc's map of reverse
+    // rels from the mDoc's mReverseRelations.
+    PruneRelationsOnShutdown();
   }
 
   // XXX Ideally  this wouldn't be necessary, but it seems OuterDoc
@@ -395,73 +390,53 @@ Accessible* RemoteAccessibleBase<Derived>::ChildAtPoint(
           break;
         }
 
-        // Because our rects are in hittesting order, the first match we
-        // encounter is supposed to be the deepest match. Unfortunately, this
-        // isn't always the case; e.g. on Gmail (bug 1801756).
-        // 1. Find the first match. We do this to respect visual order as far as
-        // possible.
-        if (!lastMatch) {
-          if (acc->Bounds().Contains(aX, aY)) {
-            lastMatch = acc;
-          }
-          continue;
+        if (acc == this) {
+          MOZ_ASSERT(!acc->IsOuterDoc());
+          // Even though we're searching from the doc's cache
+          // this call shouldn't pass the boundary defined by
+          // the acc this call originated on. If we hit `this`,
+          // return our most recent match.
+          break;
         }
 
-        // 2. We assume that lastMatch is at least in the correct subtree, even
-        // if it isn't the deepest match therein. We also assume a
-        // descendant match won't have a lower z-index. Therefore, find the
-        // deepest matching descendant of lastMatch.
-        // Note that IsAncestorOf is generally faster than Bounds, so we call
-        // that first.
-        if (lastMatch->IsAncestorOf(acc) && acc->Bounds().Contains(aX, aY)) {
+        if (acc->Bounds().Contains(aX, aY)) {
+          // Because our rects are in hittesting order, the
+          // first match we encounter is guaranteed to be the
+          // deepest match.
           lastMatch = acc;
-        }
-      }
-    }
-  }
-
-  if (lastMatch == this || (!lastMatch && Bounds().Contains(aX, aY))) {
-    return this;
-  }
-  if (!lastMatch) {
-    return nullptr;
-  }
-
-  // lastMatch is currently the deepest descendant.
-  // ChildAtPoint should always return an Accessible which is a descendant of
-  // `this`. However, it's possible that the initial match in the viewport cache
-  // is in a different subtree. For example, this can happen when the aX, aY
-  // given are outside `this`.
-  if (aWhichChild == EWhichChildAtPoint::DeepestChild) {
-    if (IsDoc()) {
-      // There are less documents in the ancestor chain than there are
-      // Accessibles, so walk the document ancestors.
-      DocAccessibleParent* doc;
-      for (doc = lastMatch->Document(); doc; doc = doc->ParentDoc()) {
-        if (doc == this) {
           break;
         }
       }
-      if (!doc) {
-        // lastMatch is not a descendant of this.
-        return nullptr;
-      }
-    } else if (!IsAncestorOf(lastMatch)) {
-      return nullptr;
     }
-  } else {
-    // The caller requested a direct child of this.
-    RemoteAccessible* parent = lastMatch;
-    while ((parent = parent->RemoteParent())) {
+  }
+
+  if (aWhichChild == EWhichChildAtPoint::DirectChild && lastMatch) {
+    // lastMatch is the deepest match. Walk up to the direct child of this.
+    RemoteAccessible* parent = lastMatch->RemoteParent();
+    for (;;) {
       if (parent == this) {
         break;
       }
+      if (!parent || parent->IsDoc()) {
+        // `this` is not an ancestor of lastMatch. Ignore lastMatch.
+        lastMatch = nullptr;
+        break;
+      }
       lastMatch = parent;
+      parent = parent->RemoteParent();
     }
-    if (!parent) {
-      // lastMatch is not a descendant of this.
-      return nullptr;
-    }
+  } else if (aWhichChild == EWhichChildAtPoint::DeepestChild && lastMatch &&
+             !IsDoc() && !IsAncestorOf(lastMatch)) {
+    // If we end up with a match that is not in the ancestor chain
+    // of the accessible this call originated on, we should ignore it.
+    // This can happen when the aX, aY given are outside `this`.
+    lastMatch = nullptr;
+  }
+
+  if (!lastMatch && Bounds().Contains(aX, aY)) {
+    // Even though the hit target isn't inside `this`, the point is still
+    // within our bounds, so fall back to `this`.
+    return this;
   }
 
   return lastMatch;
@@ -488,21 +463,20 @@ Maybe<nsRect> RemoteAccessibleBase<Derived>::RetrieveCachedBounds() const {
 }
 
 template <class Derived>
-void RemoteAccessibleBase<Derived>::ApplyCrossProcOffset(
-    nsRect& aBounds) const {
-  Accessible* parentAcc = Parent();
-  if (!parentAcc || !parentAcc->IsRemote() || !parentAcc->IsOuterDoc()) {
+void RemoteAccessibleBase<Derived>::ApplyCrossDocOffset(nsRect& aBounds) const {
+  if (!IsDoc()) {
+    // We should only apply cross-doc offsets to documents. If we're anything
+    // else, return early here.
     return;
   }
 
-  if (!IsDoc() || !AsDoc()->IsOOPIframeDoc()) {
-    // We should only apply cross-proc offsets to OOP iframe documents. If we're
-    // anything else, return early here.
+  RemoteAccessible* parentAcc = RemoteParent();
+  if (!parentAcc || !parentAcc->IsOuterDoc()) {
     return;
   }
 
   Maybe<const nsTArray<int32_t>&> maybeOffset =
-      parentAcc->AsRemote()->mCachedFields->GetAttribute<nsTArray<int32_t>>(
+      parentAcc->mCachedFields->GetAttribute<nsTArray<int32_t>>(
           nsGkAtoms::crossorigin);
   if (!maybeOffset) {
     return;
@@ -516,7 +490,8 @@ void RemoteAccessibleBase<Derived>::ApplyCrossProcOffset(
 }
 
 template <class Derived>
-bool RemoteAccessibleBase<Derived>::ApplyTransform(nsRect& aBounds) const {
+bool RemoteAccessibleBase<Derived>::ApplyTransform(
+    nsRect& aCumulativeBounds) const {
   // First, attempt to retrieve the transform from the cache.
   Maybe<const UniquePtr<gfx::Matrix4x4>&> maybeTransform =
       mCachedFields->GetAttribute<UniquePtr<gfx::Matrix4x4>>(
@@ -525,45 +500,14 @@ bool RemoteAccessibleBase<Derived>::ApplyTransform(nsRect& aBounds) const {
     return false;
   }
 
-  // Layout does not include translations in transform matricies for iframes.
-  // Because of that, we avoid making aBounds self-relative before transforming
-  // when working with a transform on an iframe. This is true for both in- and
-  // out-of-process iframes.
-  bool isIframe = false;
-  if (IsRemote() && IsOuterDoc()) {
-    Accessible* firstChild = FirstChild();
-    if (firstChild && firstChild->IsRemote() && firstChild->IsDoc()) {
-      const RemoteAccessible* firstChildRemote = firstChild->AsRemote();
-      if (!firstChildRemote->AsDoc()->IsTopLevel()) {
-        isIframe = true;
-      }
-    }
-  }
-
-  if (isIframe) {
-    // We want to maintain the effect of the cross-process offset on the
-    // bounds, but otherwise make the rect self-relative. To accomplish that,
-    // remove the influence of the cached bounds, if any.
-    if (Maybe<nsRect> maybeBounds = RetrieveCachedBounds()) {
-      aBounds.MoveBy(-maybeBounds.value().TopLeft());
-    }
-  } else {
-    // The transform matrix we cache is meant to operate on rects
-    // within the coordinate space of the frame to which the
-    // transform is applied (self-relative rects). We cache bounds
-    // relative to some ancestor. Remove the relative offset before
-    // transforming. The transform matrix will add it back in.
-    aBounds.MoveTo(0, 0);
-  }
-
   auto mtxInPixels = gfx::Matrix4x4Typed<CSSPixel, CSSPixel>::FromUnknownMatrix(
       *(*maybeTransform));
 
   // Our matrix is in CSS Pixels, so we need our rect to be in CSS
   // Pixels too. Convert before applying.
-  auto boundsInPixels = CSSRect::FromAppUnits(aBounds);
+  auto boundsInPixels = CSSRect::FromAppUnits(aCumulativeBounds);
   boundsInPixels = mtxInPixels.TransformBounds(boundsInPixels);
-  aBounds = CSSRect::ToAppUnits(boundsInPixels);
+  aCumulativeBounds = CSSRect::ToAppUnits(boundsInPixels);
 
   return true;
 }
@@ -605,11 +549,26 @@ nsRect RemoteAccessibleBase<Derived>::BoundsInAppUnits() const {
 }
 
 template <class Derived>
+bool RemoteAccessibleBase<Derived>::IsFixedPos() const {
+  MOZ_ASSERT(mCachedFields);
+  if (auto maybePosition =
+          mCachedFields->GetAttribute<RefPtr<nsAtom>>(nsGkAtoms::position)) {
+    return *maybePosition == nsGkAtoms::fixed;
+  }
+
+  return false;
+}
+
+template <class Derived>
 LayoutDeviceIntRect RemoteAccessibleBase<Derived>::BoundsWithOffset(
     Maybe<nsRect> aOffset) const {
   Maybe<nsRect> maybeBounds = RetrieveCachedBounds();
   if (maybeBounds) {
     nsRect bounds = *maybeBounds;
+    // maybeBounds is parent-relative. However, the transform matrix we cache
+    // (if any) is meant to operate on self-relative rects. Therefore, make
+    // bounds self-relative until after we transform.
+    bounds.MoveTo(0, 0);
     const DocAccessibleParent* topDoc = IsDoc() ? AsDoc() : nullptr;
 
     if (aOffset.isSome()) {
@@ -619,12 +578,15 @@ LayoutDeviceIntRect RemoteAccessibleBase<Derived>::BoundsWithOffset(
       bounds.SetRectY(bounds.y + internalRect.y, internalRect.height);
     }
 
-    ApplyCrossProcOffset(bounds);
-
     Unused << ApplyTransform(bounds);
+    // Now apply the parent-relative offset.
+    bounds.MoveBy(maybeBounds->TopLeft());
+
+    ApplyCrossDocOffset(bounds);
 
     LayoutDeviceIntRect devPxBounds;
     const Accessible* acc = Parent();
+    bool encounteredFixedContainer = IsFixedPos();
     while (acc && acc->IsRemote()) {
       RemoteAccessible* remoteAcc = const_cast<Accessible*>(acc)->AsRemote();
 
@@ -649,24 +611,44 @@ LayoutDeviceIntRect RemoteAccessibleBase<Derived>::BoundsWithOffset(
           topDoc = remoteAcc->AsDoc();
         }
 
-        // We're unable to account for the document offset of remote,
-        // cross process iframes when computing parent-relative bounds.
-        // Instead we store this value separately and apply it here. This
-        // offset is cached on both in - and OOP iframes, but is only applied
-        // to OOP iframes.
-        remoteAcc->ApplyCrossProcOffset(remoteBounds);
+        // We don't account for the document offset of iframes when
+        // computing parent-relative bounds. Instead, we store this value
+        // separately on all iframes and apply it here. See the comments in
+        // LocalAccessible::BundleFieldsForCache where we set the
+        // nsGkAtoms::crossorigin attribute.
+        remoteAcc->ApplyCrossDocOffset(remoteBounds);
+        if (!encounteredFixedContainer) {
+          // Apply scroll offset, if applicable. Only the contents of an
+          // element are affected by its scroll offset, which is why this call
+          // happens in this loop instead of both inside and outside of
+          // the loop (like ApplyTransform).
+          // Never apply scroll offsets past a fixed container.
+          remoteAcc->ApplyScrollOffset(remoteBounds);
+        }
+        if (remoteAcc->IsDoc()) {
+          // Fixed elements are document relative, so if we've hit a
+          // document we're now subject to that document's styling
+          // (including scroll offsets that operate on it).
+          // This ordering is important, we don't want to apply scroll
+          // offsets on this doc's content.
+          encounteredFixedContainer = false;
+        }
+        if (!encounteredFixedContainer) {
+          // The transform matrix we cache (if any) is meant to operate on
+          // self-relative rects. Therefore, we must apply the transform before
+          // we make bounds parent-relative.
+          Unused << remoteAcc->ApplyTransform(bounds);
+          // Regardless of whether this is a doc, we should offset `bounds`
+          // by the bounds retrieved here. This is how we build screen
+          // coordinates from relative coordinates.
+          bounds.MoveBy(remoteBounds.X(), remoteBounds.Y());
+        }
 
-        // Apply scroll offset, if applicable. Only the contents of an
-        // element are affected by its scroll offset, which is why this call
-        // happens in this loop instead of both inside and outside of
-        // the loop (like ApplyTransform).
-        remoteAcc->ApplyScrollOffset(remoteBounds);
-
-        // Regardless of whether this is a doc, we should offset `bounds`
-        // by the bounds retrieved here. This is how we build screen
-        // coordinates from relative coordinates.
-        bounds.MoveBy(remoteBounds.X(), remoteBounds.Y());
-        Unused << remoteAcc->ApplyTransform(bounds);
+        if (remoteAcc->IsFixedPos()) {
+          encounteredFixedContainer = true;
+        }
+        // we can't just break here if we're scroll suppressed because we still
+        // need to find the top doc.
       }
       acc = acc->Parent();
     }
@@ -883,8 +865,7 @@ Relation RemoteAccessibleBase<Derived>::RelationByType(
   }
 
   if (auto accRelMapEntry = mDoc->mReverseRelations.Lookup(ID())) {
-    if (auto reverseIdsEntry =
-            accRelMapEntry.Data().Lookup(static_cast<uint64_t>(aType))) {
+    if (auto reverseIdsEntry = accRelMapEntry.Data().Lookup(aType)) {
       rel.AppendIter(new RemoteAccIterator(reverseIdsEntry.Data(), Document()));
     }
   }
@@ -978,8 +959,8 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
             // we know the acc and `this` are still alive in the doc. If we hit
             // the following assert, we don't have parity on implicit/explicit
             // rels and something is wrong.
-            nsTArray<uint64_t>& reverseRelIDs = reverseRels->LookupOrInsert(
-                static_cast<uint64_t>(data.mReverseType));
+            nsTArray<uint64_t>& reverseRelIDs =
+                reverseRels->LookupOrInsert(data.mReverseType);
             //  There might be other reverse relations stored for this acc, so
             //  remove our ID instead of deleting the array entirely.
             DebugOnly<bool> removed = reverseRelIDs.RemoveElement(ID());
@@ -1011,14 +992,50 @@ void RemoteAccessibleBase<Derived>::PostProcessRelations(
       const nsTArray<uint64_t>& newIDs =
           *mCachedFields->GetAttribute<nsTArray<uint64_t>>(data.mAtom);
       for (uint64_t id : newIDs) {
-        nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& relations =
+        nsTHashMap<RelationType, nsTArray<uint64_t>>& relations =
             Document()->mReverseRelations.LookupOrInsert(id);
-        nsTArray<uint64_t>& ids =
-            relations.LookupOrInsert(static_cast<uint64_t>(data.mReverseType));
+        nsTArray<uint64_t>& ids = relations.LookupOrInsert(data.mReverseType);
         ids.AppendElement(ID());
       }
     }
   }
+}
+
+template <class Derived>
+void RemoteAccessibleBase<Derived>::PruneRelationsOnShutdown() {
+  auto reverseRels = mDoc->mReverseRelations.Lookup(ID());
+  if (!reverseRels) {
+    return;
+  }
+  for (auto const& data : kRelationTypeAtoms) {
+    // Fetch the list of targets for this reverse relation
+    auto reverseTargetList = reverseRels->Lookup(data.mReverseType);
+    if (!reverseTargetList) {
+      continue;
+    }
+    for (uint64_t id : *reverseTargetList) {
+      // For each target, retrieve its corresponding forward relation target
+      // list
+      RemoteAccessible* affectedAcc = mDoc->GetAccessible(id);
+      if (!affectedAcc) {
+        // It's possible the affect acc also shut down, in which case
+        // we don't have anything to update.
+        continue;
+      }
+      if (auto forwardTargetList =
+              affectedAcc->mCachedFields
+                  ->GetMutableAttribute<nsTArray<uint64_t>>(data.mAtom)) {
+        forwardTargetList->RemoveElement(ID());
+        if (!forwardTargetList->Length()) {
+          // The ID we removed was the only thing in the list, so remove the
+          // entry from the cache entirely -- don't leave an empty array.
+          affectedAcc->mCachedFields->Remove(data.mAtom);
+        }
+      }
+    }
+  }
+  // Remove this ID from the document's map of reverse relations.
+  reverseRels.Remove();
 }
 
 template <class Derived>
@@ -1466,6 +1483,18 @@ void RemoteAccessibleBase<Derived>::SelectionRanges(
 }
 
 template <class Derived>
+bool RemoteAccessibleBase<Derived>::RemoveFromSelection(int32_t aSelectionNum) {
+  MOZ_ASSERT(IsHyperText());
+  if (SelectionCount() <= aSelectionNum) {
+    return false;
+  }
+
+  Unused << mDoc->SendRemoveTextSelection(mID, aSelectionNum);
+
+  return true;
+}
+
+template <class Derived>
 void RemoteAccessibleBase<Derived>::ARIAGroupPosition(
     int32_t* aLevel, int32_t* aSetSize, int32_t* aPosInSet) const {
   if (!mCachedFields) {
@@ -1759,6 +1788,16 @@ Maybe<int32_t> RemoteAccessibleBase<Derived>::GetIntARIAAttr(
     }
   }
   return Nothing();
+}
+
+template <class Derived>
+void RemoteAccessibleBase<Derived>::Language(nsAString& aLocale) {
+  if (!IsHyperText()) {
+    return;
+  }
+  if (auto attrs = GetCachedTextAttributes()) {
+    attrs->GetAttribute(nsGkAtoms::language, aLocale);
+  }
 }
 
 template <class Derived>

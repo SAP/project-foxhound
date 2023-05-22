@@ -16,18 +16,18 @@ happen on mozilla-beta and mozilla-release.
 Additional configuration is found in the :ref:`graph config <taskgraph-graph-config>`.
 """
 import functools
+import itertools
 import json
 import os
-import itertools
-from copy import deepcopy
 from datetime import datetime
 
 import jsone
-
 from mozbuild.util import memoize
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.yaml import load_yaml
+
+from gecko_taskgraph.util.copy_task import copy_task
 
 # constants {{{1
 """Map signing scope aliases to sets of projects.
@@ -225,8 +225,7 @@ def with_scope_prefix(f):
         scope_or_scopes = f(config, **kwargs)
         if isinstance(scope_or_scopes, list):
             return map(functools.partial(add_scope_prefix, config), scope_or_scopes)
-        else:
-            return add_scope_prefix(config, scope_or_scopes)
+        return add_scope_prefix(config, scope_or_scopes)
 
     return wrapper
 
@@ -365,10 +364,9 @@ def get_release_config(config):
 def get_signing_cert_scope_per_platform(build_platform, is_shippable, config):
     if "devedition" in build_platform:
         return get_devedition_signing_cert_scope(config)
-    elif is_shippable:
+    if is_shippable:
         return get_signing_cert_scope(config)
-    else:
-        return add_scope_prefix(config, "signing:cert:dep-signing")
+    return add_scope_prefix(config, "signing:cert:dep-signing")
 
 
 # generate_beetmover_upstream_artifacts {{{1
@@ -398,7 +396,7 @@ def generate_beetmover_upstream_artifacts(
             "platform": platform,
         },
     )
-    map_config = deepcopy(cached_load_yaml(job["attributes"]["artifact_map"]))
+    map_config = copy_task(cached_load_yaml(job["attributes"]["artifact_map"]))
     upstream_artifacts = list()
 
     if not locale:
@@ -438,7 +436,7 @@ def generate_beetmover_upstream_artifacts(
             if "partials_only" in map_config["mapping"][filename]:
                 continue
             # The next time we look at this file it might be a different locale.
-            file_config = deepcopy(map_config["mapping"][filename])
+            file_config = copy_task(map_config["mapping"][filename])
             resolve_keyed_by(
                 file_config,
                 "source_path_modifier",
@@ -510,7 +508,7 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             "platform": platform,
         },
     )
-    map_config = deepcopy(cached_load_yaml(job["attributes"]["artifact_map"]))
+    map_config = copy_task(cached_load_yaml(job["attributes"]["artifact_map"]))
     base_artifact_prefix = map_config.get(
         "base_artifact_prefix", get_artifact_prefix(job)
     )
@@ -555,8 +553,8 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             if "partials_only" in map_config["mapping"][filename]:
                 continue
 
-            # deepcopy because the next time we look at this file the locale will differ.
-            file_config = deepcopy(map_config["mapping"][filename])
+            # copy_task because the next time we look at this file the locale will differ.
+            file_config = copy_task(map_config["mapping"][filename])
 
             for field in [
                 "destinations",
@@ -609,7 +607,7 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             continue
 
         # Render all variables for the artifact map
-        platforms = deepcopy(map_config.get("platform_names", {}))
+        platforms = copy_task(map_config.get("platform_names", {}))
         if platform:
             for key in platforms.keys():
                 resolve_keyed_by(platforms, key, job["label"], platform=platform)
@@ -668,7 +666,7 @@ def generate_beetmover_partials_artifact_map(config, job, partials_info, **kwarg
             "platform": platform,
         },
     )
-    map_config = deepcopy(cached_load_yaml(job["attributes"]["artifact_map"]))
+    map_config = copy_task(cached_load_yaml(job["attributes"]["artifact_map"]))
     base_artifact_prefix = map_config.get(
         "base_artifact_prefix", get_artifact_prefix(job)
     )
@@ -685,7 +683,7 @@ def generate_beetmover_partials_artifact_map(config, job, partials_info, **kwarg
         map_config, "s3_bucket_paths", "s3_bucket_paths", platform=platform
     )
 
-    platforms = deepcopy(map_config.get("platform_names", {}))
+    platforms = copy_task(map_config.get("platform_names", {}))
     if platform:
         for key in platforms.keys():
             resolve_keyed_by(platforms, key, key, platform=platform)
@@ -703,8 +701,8 @@ def generate_beetmover_partials_artifact_map(config, job, partials_info, **kwarg
                 continue
             if "partials_only" not in map_config["mapping"][filename]:
                 continue
-            # deepcopy because the next time we look at this file the locale will differ.
-            file_config = deepcopy(map_config["mapping"][filename])
+            # copy_task because the next time we look at this file the locale will differ.
+            file_config = copy_task(map_config["mapping"][filename])
 
             for field in [
                 "destinations",

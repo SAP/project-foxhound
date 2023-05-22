@@ -5,7 +5,6 @@
 
 let sandbox;
 
-/* import-globals-from ../../browser/head-common.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser/head-common.js",
   this
@@ -15,26 +14,25 @@ ChromeUtils.defineESModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
     "resource:///modules/PartnerLinkAttribution.jsm",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
-});
-
 XPCOMUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
-  const { QuickSuggestTestUtils: Utils } = ChromeUtils.importESModule(
+  const { QuickSuggestTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/QuickSuggestTestUtils.sys.mjs"
   );
-  return new Utils(this);
+  module.init(this);
+  return module;
 });
 
 XPCOMUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
-  const { MerinoTestUtils: Utils } = ChromeUtils.importESModule(
+  const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
   );
-  return new Utils(this);
+  module.init(this);
+  return module;
 });
 
 registerCleanupFunction(async () => {
@@ -44,15 +42,69 @@ registerCleanupFunction(async () => {
 });
 
 /**
+ * Updates the Top Sites feed.
+ *
+ * @param {Function} condition
+ *   A callback that returns true after Top Sites are successfully updated.
+ * @param {boolean} searchShortcuts
+ *   True if Top Sites search shortcuts should be enabled.
+ */
+async function updateTopSites(condition, searchShortcuts = false) {
+  // Toggle the pref to clear the feed cache and force an update.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
+      ],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", false],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", true],
+      [
+        "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts",
+        searchShortcuts,
+      ],
+    ],
+  });
+
+  // Wait for the feed to be updated.
+  await TestUtils.waitForCondition(() => {
+    let sites = AboutNewTab.getTopSites();
+    return condition(sites);
+  }, "Waiting for top sites to be updated");
+}
+
+/**
  * Call this in your setup task if you use `doTelemetryTest()`.
  *
  * @param {object} options
  *   Options
- * @param {Array} options.suggestions
- *   Quick suggest will be initialized with these suggestions. They should be
- *   the suggestions you want to test.
+ * @param {Array} options.remoteSettingsResults
+ *   Array of remote settings result objects. If not given, no suggestions
+ *   will be present in remote settings.
+ * @param {Array} options.merinoSuggestions
+ *   Array of Merino suggestion objects. If given, this function will start
+ *   the mock Merino server and set `quicksuggest.dataCollection.enabled` to
+ *   true so that `UrlbarProviderQuickSuggest` will fetch suggestions from it.
+ *   Otherwise Merino will not serve suggestions, but you can still set up
+ *   Merino without using this function by using `MerinoTestUtils` directly.
+ * @param {Array} options.config
+ *   Quick suggest will be initialized with this config. Leave undefined to use
+ *   the default config. See `QuickSuggestTestUtils` for details.
  */
-async function setUpTelemetryTest({ suggestions }) {
+async function setUpTelemetryTest({
+  remoteSettingsResults = null,
+  merinoSuggestions = null,
+  config = QuickSuggestTestUtils.DEFAULT_CONFIG,
+}) {
+  if (UrlbarPrefs.get("resultMenu")) {
+    todo(
+      false,
+      "telemetry for the result menu to be implemented in bug 1790020"
+    );
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.resultMenu", false]],
+    });
+  }
   await SpecialPowers.pushPrefEnv({
     set: [
       // Enable blocking on primary sponsored and nonsponsored suggestions so we
@@ -78,7 +130,11 @@ async function setUpTelemetryTest({ suggestions }) {
   // Add a mock engine so we don't hit the network.
   await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(suggestions);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults,
+    merinoSuggestions,
+    config,
+  });
 }
 
 /**
@@ -101,7 +157,8 @@ async function setUpTelemetryTest({ suggestions }) {
  *     {object} event
  *       The expected recorded event.
  *     {object} ping
- *       The expected recorded custom telemetry ping.
+ *       The expected recorded custom telemetry ping. If no ping is expected,
+ *       leave this undefined or pass null.
  * @param {object} options.selectables
  *   An object describing the telemetry that's expected to be recorded when each
  *   selectable element in the suggestion's row is picked. This object maps HTML
@@ -115,7 +172,15 @@ async function setUpTelemetryTest({ suggestions }) {
  *     {object} event
  *       The expected recorded event.
  *     {Array} pings
- *       A list of expected recorded custom telemetry pings.
+ *       A list of expected recorded custom telemetry pings. If no pings are
+ *       expected, pass an empty array.
+ * @param {string} options.providerName
+ *   The name of the provider that is expected to create the UrlbarResult for
+ *   the suggestion.
+ * @param {Function} options.teardown
+ *   If given, this function will be called after each selectable test. If
+ *   picking an element causes side effects that need to be cleaned up before
+ *   starting the next selectable test, they can be cleaned up here.
  * @param {Function} options.showSuggestion
  *   This function should open the view and show the suggestion.
  */
@@ -124,10 +189,16 @@ async function doTelemetryTest({
   suggestion,
   impressionOnly,
   selectables,
+  providerName = UrlbarProviderQuickSuggest.name,
+  teardown = null,
   showSuggestion = () =>
     UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
-      value: suggestion.keywords[0],
+      // If the suggestion object is a remote settings result, it will have a
+      // `keywords` property. Otherwise the suggestion object must be a Merino
+      // suggestion, and the search string doesn't matter in that case because
+      // the mock Merino server will be set up to return suggestions regardless.
+      value: suggestion.keywords?.[0] || "test",
       fireInputEvent: true,
     }),
 }) {
@@ -136,6 +207,7 @@ async function doTelemetryTest({
   let selectableClassLists = await doImpressionOnlyTest({
     index,
     suggestion,
+    providerName,
     showSuggestion,
     expected: impressionOnly,
   });
@@ -197,11 +269,18 @@ async function doTelemetryTest({
 
     await doSelectableTest({
       suggestion,
+      providerName,
       showSuggestion,
       index,
       className,
       expected: selectables[className],
     });
+
+    if (teardown) {
+      info("Calling teardown");
+      await teardown();
+      info("Finished teardown");
+    }
   }
 
   // Finally, if an expected class doesn't match any actual element, then the
@@ -225,6 +304,9 @@ async function doTelemetryTest({
  *   The expected index of the suggestion in the results list.
  * @param {object} options.suggestion
  *   The suggestion being tested.
+ * @param {string} options.providerName
+ *   The name of the provider that is expected to create the UrlbarResult for
+ *   the suggestion.
  * @param {object} options.expected
  *   An object describing the expected impression-only telemetry. It must have
  *   the following properties:
@@ -233,7 +315,8 @@ async function doTelemetryTest({
  *     {object} event
  *       The expected recorded event.
  *     {object} ping
- *       The expected custom telemetry ping.
+ *       The expected recorded custom telemetry ping. If no ping is expected,
+ *       leave this undefined or pass null.
  * @param {Function} options.showSuggestion
  *   This function should open the view and show the suggestion.
  * @returns {Array}
@@ -244,6 +327,7 @@ async function doTelemetryTest({
 async function doImpressionOnlyTest({
   index,
   suggestion,
+  providerName,
   expected,
   showSuggestion,
 }) {
@@ -255,19 +339,21 @@ async function doImpressionOnlyTest({
   info("Showing suggestion");
   await showSuggestion();
 
-  // Get the quick suggest row.
-  let row = await validateSuggestionRow(index, suggestion);
+  // Get the suggestion row.
+  let row = await validateSuggestionRow(index, suggestion, providerName);
   if (!row) {
     Assert.ok(
       false,
-      "Couldn't get quick suggest row, stopping impression-only test"
+      "Couldn't get suggestion row, stopping impression-only test"
     );
     await spyCleanup();
     return null;
   }
 
-  // We need to get a non-quick-suggest row so we can pick it to trigger
-  // impression-only telemetry. We also verify no other rows are quick suggests.
+  // We need to get a different selectable row so we can pick it to trigger
+  // impression-only telemetry. For simplicity we'll look for a row that will
+  // load a URL when picked. We'll also verify no other rows are from the
+  // expected provider.
   let otherRow;
   let rowCount = UrlbarTestUtils.getResultCount(window);
   for (let i = 0; i < rowCount; i++) {
@@ -275,16 +361,24 @@ async function doImpressionOnlyTest({
       let r = await UrlbarTestUtils.waitForAutocompleteResultAt(window, i);
       Assert.notEqual(
         r.result.providerName,
-        UrlbarProviderQuickSuggest.name,
-        "No other row should be a quick suggest: index = " + i
+        providerName,
+        "No other row should be from expected provider: index = " + i
       );
-      otherRow = otherRow || r;
+      if (
+        !otherRow &&
+        (r.result.payload.url ||
+          (r.result.type == UrlbarUtils.RESULT_TYPE.SEARCH &&
+            (r.result.payload.query || r.result.payload.suggestion))) &&
+        r.hasAttribute("row-selectable")
+      ) {
+        otherRow = r;
+      }
     }
   }
   if (!otherRow) {
     Assert.ok(
       false,
-      "Couldn't get non-quick-suggest row, stopping impression-only test"
+      "Couldn't get a different selectable row with a URL, stopping impression-only test"
     );
     await spyCleanup();
     return null;
@@ -297,27 +391,34 @@ async function doImpressionOnlyTest({
     selectableClassLists.push([...element.classList]);
   }
 
-  // Pick the non-quick-suggest row. Assumptions:
+  // Pick the different row. Assumptions:
   // * The middle of the row is selectable
   // * Picking the row will load a page
-  info("Clicking non-quick-suggest row and waiting for view to close");
+  info("Clicking different row and waiting for view to close");
   let loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   await UrlbarTestUtils.promisePopupClose(window, () =>
     EventUtils.synthesizeMouseAtCenter(otherRow, {})
   );
 
-  info("Waiting for page to load after clicking non-quick-suggest row");
+  info("Waiting for page to load after clicking different row");
   await loadPromise;
 
   // Check telemetry.
+  info("Checking scalars");
   QuickSuggestTestUtils.assertScalars(expected.scalars);
+
+  info("Checking events");
   QuickSuggestTestUtils.assertEvents([expected.event]);
-  QuickSuggestTestUtils.assertPings(spy, [expected.ping]);
+
+  info("Checking pings");
+  QuickSuggestTestUtils.assertPings(spy, expected.ping ? [expected.ping] : []);
 
   // Clean up.
   await PlacesUtils.history.clear();
   await UrlbarTestUtils.formHistory.clear();
   await spyCleanup();
+
+  info("Finished impression-only test");
 
   return selectableClassLists;
 }
@@ -332,6 +433,9 @@ async function doImpressionOnlyTest({
  *   The expected index of the suggestion in the results list.
  * @param {object} options.suggestion
  *   The suggestion being tested.
+ * @param {string} options.providerName
+ *   The name of the provider that is expected to create the UrlbarResult for
+ *   the suggestion.
  * @param {string} options.className
  *   An HTML class name that should uniquely identify the selectable element
  *   within its row.
@@ -343,13 +447,15 @@ async function doImpressionOnlyTest({
  *     {object} event
  *       The expected recorded event.
  *     {Array} pings
- *       A list of expected custom telemetry pings.
+ *       A list of expected recorded custom telemetry pings. If no pings are
+ *       expected, pass an empty array.
  * @param {Function} options.showSuggestion
  *   This function should open the view and show the suggestion.
  */
 async function doSelectableTest({
   index,
   suggestion,
+  providerName,
   className,
   expected,
   showSuggestion,
@@ -359,14 +465,12 @@ async function doSelectableTest({
   Services.telemetry.clearEvents();
   let { spy, spyCleanup } = QuickSuggestTestUtils.createTelemetryPingSpy();
 
+  info("Showing suggestion");
   await showSuggestion();
 
-  let row = await validateSuggestionRow(index, suggestion);
+  let row = await validateSuggestionRow(index, suggestion, providerName);
   if (!row) {
-    Assert.ok(
-      false,
-      "Couldn't get quick suggest row, stopping selectable test"
-    );
+    Assert.ok(false, "Couldn't get suggestion row, stopping selectable test");
     await spyCleanup();
     return;
   }
@@ -374,29 +478,44 @@ async function doSelectableTest({
   let element = row.querySelector("." + className);
   Assert.ok(element, "Sanity check: Target selectable element should exist");
 
-  let helpLoadPromise;
-  if (className == "urlbarView-button-help") {
-    helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  let loadPromise;
+  if (className == "urlbarView-row-inner") {
+    // We assume clicking the row-inner will cause a page to load in the current
+    // browser.
+    loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  } else if (className == "urlbarView-button-help") {
+    loadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
   }
 
+  info("Clicking element: " + className);
   EventUtils.synthesizeMouseAtCenter(element, {});
 
-  QuickSuggestTestUtils.assertScalars(expected.scalars);
-  QuickSuggestTestUtils.assertEvents([expected.event]);
-  QuickSuggestTestUtils.assertPings(spy, expected.pings);
-
-  if (helpLoadPromise) {
-    await helpLoadPromise;
+  if (loadPromise) {
+    info("Waiting for load");
+    await loadPromise;
     await TestUtils.waitForTick();
-    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    if (className == "urlbarView-button-help") {
+      info("Closing help tab");
+      BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    }
   }
+
+  info("Checking scalars");
+  QuickSuggestTestUtils.assertScalars(expected.scalars);
+
+  info("Checking events");
+  QuickSuggestTestUtils.assertEvents([expected.event]);
+
+  info("Checking pings");
+  QuickSuggestTestUtils.assertPings(spy, expected.pings);
 
   if (className == "urlbarView-button-block") {
     await QuickSuggest.blockedSuggestions.clear();
   }
-
   await PlacesUtils.history.clear();
   await spyCleanup();
+
+  info("Finished selectable test: " + JSON.stringify({ className }));
 }
 
 /**
@@ -408,16 +527,19 @@ async function doSelectableTest({
  *   The expected index of the quick suggest row.
  * @param {object} suggestion
  *   The expected suggestion.
+ * @param {string} providerName
+ *   The name of the provider that is expected to create the UrlbarResult for
+ *   the suggestion.
  * @returns {Element}
  *   If the row is the expected suggestion, the row element is returned.
  *   Otherwise null is returned.
  */
-async function validateSuggestionRow(index, suggestion) {
+async function validateSuggestionRow(index, suggestion, providerName) {
   let rowCount = UrlbarTestUtils.getResultCount(window);
   Assert.less(
     index,
     rowCount,
-    "Expected quick suggest row index should be < row count"
+    "Expected suggestion row index should be < row count"
   );
   if (rowCount <= index) {
     return null;
@@ -426,16 +548,16 @@ async function validateSuggestionRow(index, suggestion) {
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, index);
   Assert.equal(
     row.result.providerName,
-    UrlbarProviderQuickSuggest.name,
-    "Expected quick suggest row should actually be a quick suggest"
+    providerName,
+    "Expected suggestion row should be from expected provider"
   );
   Assert.equal(
     row.result.payload.url,
     suggestion.url,
-    "The quick suggest row should represent the expected suggestion"
+    "The suggestion row should represent the expected suggestion"
   );
   if (
-    row.result.providerName != UrlbarProviderQuickSuggest.name ||
+    row.result.providerName != providerName ||
     row.result.payload.url != suggestion.url
   ) {
     return null;

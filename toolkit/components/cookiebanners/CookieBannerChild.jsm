@@ -33,6 +33,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
+  "prefDetectOnly",
+  "cookiebanners.service.detectOnly",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
   "bannerClickingEnabled",
   "cookiebanners.bannerClicking.enabled",
   false
@@ -43,7 +49,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "cookiebanners.bannerClicking.timeout",
   3000
 );
-
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "testing",
@@ -124,10 +129,27 @@ class CookieBannerChild extends JSWindowActorChild {
     if (!this.#isEnabled) {
       return false;
     }
-    if (this.#isPrivateBrowsing) {
-      return lazy.serviceModePBM == Ci.nsICookieBannerService.MODE_DETECT_ONLY;
+    return lazy.prefDetectOnly;
+  }
+
+  /**
+   * Checks whether we handled a banner for this site by injecting cookies and
+   * dispatches events.
+   * @returns {boolean} Whether we handled the banner and dispatched events.
+   */
+  #dispatchEventsForBannerHandledByInjection() {
+    if (
+      !this.docShell?.currentDocumentChannel?.loadInfo
+        ?.hasInjectedCookieForCookieBannerHandling
+    ) {
+      return false;
     }
-    return lazy.serviceMode == Ci.nsICookieBannerService.MODE_DETECT_ONLY;
+    // Strictly speaking we don't actively detect a banner when we handle it by
+    // cookie injection. We still dispatch "cookiebannerdetected" in this case
+    // for consistency.
+    this.sendAsyncMessage("CookieBanner::DetectedBanner");
+    this.sendAsyncMessage("CookieBanner::HandledBanner");
+    return true;
   }
 
   /**
@@ -168,6 +190,10 @@ class CookieBannerChild extends JSWindowActorChild {
     lazy.logConsole.debug("Got rules:", rules);
     // We can stop here if we don't have a rule.
     if (!rules.length) {
+      // If the cookie injector has handled the banner and there are no click
+      // rules we still need to dispatch a "cookiebannerhandled" event.
+      this.#dispatchEventsForBannerHandledByInjection();
+
       this.#maybeSendTestMessage();
       return;
     }
@@ -186,13 +212,20 @@ class CookieBannerChild extends JSWindowActorChild {
       matchedRule,
     } = await this.handleCookieBanner();
 
+    let dispatchedEventsForCookieInjection = this.#dispatchEventsForBannerHandledByInjection();
+
+    // 1. Detected event.
     if (bannerDetected) {
       lazy.logConsole.info("Detected cookie banner.", {
         url: this.document?.location.href,
       });
-      this.sendAsyncMessage("CookieBanner::DetectedBanner");
+      // Avoid dispatching a duplicate "cookiebannerdetected" event.
+      if (!dispatchedEventsForCookieInjection) {
+        this.sendAsyncMessage("CookieBanner::DetectedBanner");
+      }
     }
 
+    // 2. Handled event.
     if (bannerHandled) {
       lazy.logConsole.info("Handled cookie banner.", {
         url: this.document?.location.href,
@@ -208,7 +241,10 @@ class CookieBannerChild extends JSWindowActorChild {
         this.#gleanBannerHandlingTimer
       );
 
-      this.sendAsyncMessage("CookieBanner::HandledBanner");
+      // Avoid dispatching a duplicate "cookiebannerhandled" event.
+      if (!dispatchedEventsForCookieInjection) {
+        this.sendAsyncMessage("CookieBanner::HandledBanner");
+      }
     } else if (!this.#isDetectOnly) {
       // Cancel the timer we didn't handle the banner.
       Glean.cookieBannersClick.handleDuration.cancel(
@@ -330,7 +366,7 @@ class CookieBannerChild extends JSWindowActorChild {
    * The function to perform the core logic of handing the cookie banner. It
    * will detect the banner and click the banner button whenever possible
    * according to the given click rules.
-   * If the service mode pref is set to MODE_DETECT_ONLY we will only attempt to
+   * If the service mode pref is set to detect only mode we will only attempt to
    * find the cookie banner element and return early.
    *
    * @returns A promise which resolves when it finishes auto clicking.
@@ -355,6 +391,8 @@ class CookieBannerChild extends JSWindowActorChild {
 
     // No rule with valid button to click. This can happen if we're in
     // MODE_REJECT and there are only opt-in buttons available.
+    // This also applies when detect-only mode is enabled. We only want to
+    // dispatch events matching the current service mode.
     if (rules.every(rule => rule.target == null)) {
       this.#telemetryStatus.success = false;
       this.#telemetryStatus.failReason = "no_rule_for_mode";

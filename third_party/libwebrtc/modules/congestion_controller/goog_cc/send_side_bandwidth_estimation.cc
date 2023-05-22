@@ -204,8 +204,7 @@ SendSideBandwidthEstimation::SendSideBandwidthEstimation(
       expected_packets_since_last_loss_update_(0),
       current_target_(DataRate::Zero()),
       last_logged_target_(DataRate::Zero()),
-      min_bitrate_configured_(
-          DataRate::BitsPerSec(congestion_controller::GetMinBitrateBps())),
+      min_bitrate_configured_(kCongestionControllerMinBitrate),
       max_bitrate_configured_(kDefaultMaxBitrate),
       last_low_bitrate_log_(Timestamp::MinusInfinity()),
       has_decreased_since_last_fraction_loss_(false),
@@ -253,8 +252,7 @@ void SendSideBandwidthEstimation::OnRouteChange() {
   lost_packets_since_last_loss_update_ = 0;
   expected_packets_since_last_loss_update_ = 0;
   current_target_ = DataRate::Zero();
-  min_bitrate_configured_ =
-      DataRate::BitsPerSec(congestion_controller::GetMinBitrateBps());
+  min_bitrate_configured_ = kCongestionControllerMinBitrate;
   max_bitrate_configured_ = kDefaultMaxBitrate;
   last_low_bitrate_log_ = Timestamp::MinusInfinity();
   has_decreased_since_last_fraction_loss_ = false;
@@ -300,7 +298,7 @@ void SendSideBandwidthEstimation::SetSendBitrate(DataRate bitrate,
 void SendSideBandwidthEstimation::SetMinMaxBitrate(DataRate min_bitrate,
                                                    DataRate max_bitrate) {
   min_bitrate_configured_ =
-      std::max(min_bitrate, congestion_controller::GetMinBitrate());
+      std::max(min_bitrate, kCongestionControllerMinBitrate);
   if (max_bitrate > DataRate::Zero() && max_bitrate.IsFinite()) {
     max_bitrate_configured_ = std::max(min_bitrate_configured_, max_bitrate);
   } else {
@@ -317,6 +315,10 @@ DataRate SendSideBandwidthEstimation::target_rate() const {
   if (!disable_receiver_limit_caps_only_)
     target = std::min(target, receiver_limit_);
   return std::max(min_bitrate_configured_, target);
+}
+
+DataRate SendSideBandwidthEstimation::delay_based_limit() const {
+  return delay_based_limit_;
 }
 
 DataRate SendSideBandwidthEstimation::GetEstimatedLinkCapacity() const {
@@ -367,6 +369,7 @@ void SendSideBandwidthEstimation::UpdateLossBasedEstimator(
   if (LossBasedBandwidthEstimatorV2Enabled()) {
     loss_based_bandwidth_estimator_v2_.UpdateBandwidthEstimate(
         report.packet_feedbacks, delay_based_limit_, delay_detector_state);
+    UpdateEstimate(report.feedback_time);
   }
 }
 
@@ -391,8 +394,10 @@ void SendSideBandwidthEstimation::UpdatePacketsLost(int64_t packets_lost,
     }
 
     has_decreased_since_last_fraction_loss_ = false;
-    int64_t lost_q8 = (lost_packets_since_last_loss_update_ + packets_lost)
-                      << 8;
+    int64_t lost_q8 =
+        std::max<int64_t>(lost_packets_since_last_loss_update_ + packets_lost,
+                          0)
+        << 8;
     last_fraction_loss_ = std::min<int>(lost_q8 / expected, 255);
 
     // Reset accumulators.
@@ -401,6 +406,7 @@ void SendSideBandwidthEstimation::UpdatePacketsLost(int64_t packets_lost,
     last_loss_packet_report_ = at_time;
     UpdateEstimate(at_time);
   }
+
   UpdateUmaStatsPacketsLost(at_time, packets_lost);
 }
 
@@ -448,16 +454,13 @@ void SendSideBandwidthEstimation::UpdateRtt(TimeDelta rtt, Timestamp at_time) {
 }
 
 void SendSideBandwidthEstimation::UpdateEstimate(Timestamp at_time) {
-  if (rtt_backoff_.CorrectedRtt(at_time) >
-      static_cast<TimeDelta>(rtt_backoff_.rtt_limit_)) {
-    if (at_time - time_last_decrease_ >=
-            static_cast<TimeDelta>(rtt_backoff_.drop_interval_) &&
-        current_target_ >
-            static_cast<DataRate>(rtt_backoff_.bandwidth_floor_)) {
+  if (rtt_backoff_.CorrectedRtt(at_time) > rtt_backoff_.rtt_limit_) {
+    if (at_time - time_last_decrease_ >= rtt_backoff_.drop_interval_ &&
+        current_target_ > rtt_backoff_.bandwidth_floor_) {
       time_last_decrease_ = at_time;
-      DataRate new_bitrate = std::max(
-          current_target_ * static_cast<double>(rtt_backoff_.drop_fraction_),
-          rtt_backoff_.bandwidth_floor_.Get());
+      DataRate new_bitrate =
+          std::max(current_target_ * rtt_backoff_.drop_fraction_,
+                   rtt_backoff_.bandwidth_floor_.Get());
       link_capacity_.OnRttBackoff(new_bitrate, at_time);
       UpdateTargetBitrate(new_bitrate, at_time);
       return;

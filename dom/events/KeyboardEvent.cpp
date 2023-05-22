@@ -6,9 +6,11 @@
 
 #include "mozilla/dom/KeyboardEvent.h"
 
+#include "mozilla/BasicEvents.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/LookAndFeel.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsRFPService.h"
@@ -28,9 +30,25 @@ KeyboardEvent::KeyboardEvent(EventTarget* aOwner, nsPresContext* aPresContext,
     mEventIsInternal = false;
   } else {
     mEventIsInternal = true;
-    mEvent->mTime = PR_Now();
     mEvent->AsKeyboardEvent()->mKeyNameIndex = KEY_NAME_INDEX_USE_STRING;
   }
+}
+
+bool KeyboardEvent::IsMenuAccessKeyPressed() const {
+  Modifiers mask = LookAndFeel::GetMenuAccessKeyModifiers();
+  Modifiers modifiers = GetModifiersForMenuAccessKey();
+  return mask != MODIFIER_SHIFT && (modifiers & mask) &&
+         (modifiers & ~(mask | MODIFIER_SHIFT)) == 0;
+}
+
+static constexpr Modifiers kPossibleModifiersForAccessKey =
+    MODIFIER_SHIFT | MODIFIER_CONTROL | MODIFIER_ALT | MODIFIER_META |
+    MODIFIER_OS;
+
+Modifiers KeyboardEvent::GetModifiersForMenuAccessKey() const {
+  const WidgetInputEvent* inputEvent = WidgetEventPtr()->AsInputEvent();
+  MOZ_ASSERT(inputEvent);
+  return inputEvent->mModifiers & kPossibleModifiersForAccessKey;
 }
 
 bool KeyboardEvent::AltKey(CallerType aCallerType) {

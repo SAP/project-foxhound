@@ -69,11 +69,13 @@
 #include "vm/TypedArrayObject.h"
 #include "wasm/WasmJS.h"
 
+#include "vm/ArrayObject-inl.h"
 #include "vm/Compartment-inl.h"
 #include "vm/ErrorObject-inl.h"
 #include "vm/InlineCharBuffer-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/Realm-inl.h"
 
@@ -1914,17 +1916,13 @@ bool JSStructuredCloneWriter::traverseError(HandleObject obj) {
   MOZ_ASSERT(unwrapped);
 
   // Non-standard: Serialize |stack|.
-  // The Error stack property is saved as SavedFrames, which
-  // have an associated principal. This principal can't be cloned
-  // in certain cases.
+  // The Error stack property is saved as SavedFrames.
   RootedValue stack(cx, NullValue());
-  if (cloneDataPolicy.areErrorStackFramesAllowed()) {
-    RootedObject stackObj(cx, unwrapped->stack());
-    if (stackObj && stackObj->canUnwrapAs<SavedFrame>()) {
-      stack.setObject(*stackObj);
-      if (!cx->compartment()->wrap(cx, &stack)) {
-        return false;
-      }
+  RootedObject stackObj(cx, unwrapped->stack());
+  if (stackObj && stackObj->canUnwrapAs<SavedFrame>()) {
+    stack.setObject(*stackObj);
+    if (!cx->compartment()->wrap(cx, &stack)) {
+      return false;
     }
   }
   if (!otherEntries.append(stack)) {
@@ -2568,8 +2566,8 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
   }
 
   // Ensure invalid 64-bit values won't be truncated below.
-  if (nelems > ArrayBufferObject::maxBufferByteLength() ||
-      byteOffset > ArrayBufferObject::maxBufferByteLength()) {
+  if (nelems > ArrayBufferObject::MaxByteLength ||
+      byteOffset > ArrayBufferObject::MaxByteLength) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
                               "invalid typed array length or offset");
@@ -2639,8 +2637,8 @@ bool JSStructuredCloneReader::readDataView(uint64_t byteLength,
   }
 
   // Ensure invalid 64-bit values won't be truncated below.
-  if (byteLength > ArrayBufferObject::maxBufferByteLength() ||
-      byteOffset > ArrayBufferObject::maxBufferByteLength()) {
+  if (byteLength > ArrayBufferObject::MaxByteLength ||
+      byteOffset > ArrayBufferObject::MaxByteLength) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
                               "invalid DataView length or offset");
@@ -2675,9 +2673,9 @@ bool JSStructuredCloneReader::readArrayBuffer(StructuredDataType type,
     nbytes = data;
   }
 
-  // The maximum ArrayBuffer size depends on the platform and prefs, and we cast
-  // to size_t below, so we have to check this here.
-  if (nbytes > ArrayBufferObject::maxBufferByteLength()) {
+  // The maximum ArrayBuffer size depends on the platform, and we cast to size_t
+  // below, so we have to check this here.
+  if (nbytes > ArrayBufferObject::MaxByteLength) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_BAD_ARRAY_LENGTH);
     return false;
@@ -2709,9 +2707,9 @@ bool JSStructuredCloneReader::readSharedArrayBuffer(MutableHandleValue vp) {
     return in.reportTruncated();
   }
 
-  // The maximum ArrayBuffer size depends on the platform and prefs, and we cast
-  // to size_t below, so we have to check this here.
-  if (byteLength > ArrayBufferObject::maxBufferByteLength()) {
+  // The maximum ArrayBuffer size depends on the platform, and we cast to size_t
+  // below, so we have to check this here.
+  if (byteLength > ArrayBufferObject::MaxByteLength) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_BAD_ARRAY_LENGTH);
     return false;
@@ -3289,7 +3287,7 @@ bool JSStructuredCloneReader::readTransferMap() {
         return false;
       }
 
-      MOZ_RELEASE_ASSERT(extraData <= ArrayBufferObject::maxBufferByteLength());
+      MOZ_RELEASE_ASSERT(extraData <= ArrayBufferObject::MaxByteLength);
       size_t nbytes = extraData;
 
       MOZ_ASSERT(data == JS::SCTAG_TMO_ALLOC_DATA ||
@@ -3652,12 +3650,6 @@ bool JSStructuredCloneReader::readErrorFields(Handle<ErrorObject*> errorObj,
                                 "invalid 'stack' field for Error object");
       return false;
     }
-    if (!cloneDataPolicy.areErrorStackFramesAllowed()) {
-      JS_ReportErrorNumberASCII(
-          cx, GetErrorMessage, nullptr, JSMSG_SC_BAD_SERIALIZED_DATA,
-          "disallowed 'stack' field encountered for Error object");
-      return false;
-    }
     errorObj->setStackSlot(stack);
   } else if (!stack.isNull()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -3701,11 +3693,32 @@ bool JSStructuredCloneReader::readObjectField(HandleObject obj,
     return false;
   }
 
-  if (!DefineDataProperty(context(), obj, id, val)) {
-    return false;
+  // Fast path for adding a new property to a plain object. The property names
+  // we see here should be unique, but we check for duplicates to guard against
+  // corrupt or malicious data.
+  if (id.isString() && obj->is<PlainObject>() &&
+      MOZ_LIKELY(!obj->as<PlainObject>().contains(context(), id))) {
+    return AddDataPropertyToPlainObject(context(), obj.as<PlainObject>(), id,
+                                        val);
   }
 
-  return true;
+  // Fast path for adding an array element. The index shouldn't exceed the
+  // array's length, but we check for this in `addDenseElementNoLengthChange` to
+  // guard against corrupt or malicious data.
+  if (id.isInt() && obj->is<ArrayObject>()) {
+    ArrayObject* arr = &obj->as<ArrayObject>();
+    switch (arr->addDenseElementNoLengthChange(context(), id.toInt(), val)) {
+      case DenseElementResult::Failure:
+        return false;
+      case DenseElementResult::Success:
+        return true;
+      case DenseElementResult::Incomplete:
+        // Fall-through to slow path.
+        break;
+    }
+  }
+
+  return DefineDataProperty(context(), obj, id, val);
 }
 
 // Perform the whole recursive reading procedure.
@@ -3942,8 +3955,8 @@ JS_PUBLIC_API bool JS_StructuredClone(
 JSAutoStructuredCloneBuffer::JSAutoStructuredCloneBuffer(
     JSAutoStructuredCloneBuffer&& other)
     : data_(other.scope()) {
-  data_.ownTransferables_ = other.data_.ownTransferables_;
-  other.steal(&data_, &version_, &data_.callbacks_, &data_.closure_);
+  version_ = other.version_;
+  other.giveTo(&data_);
 }
 
 JSAutoStructuredCloneBuffer& JSAutoStructuredCloneBuffer::operator=(
@@ -3951,8 +3964,8 @@ JSAutoStructuredCloneBuffer& JSAutoStructuredCloneBuffer::operator=(
   MOZ_ASSERT(&other != this);
   MOZ_ASSERT(scope() == other.scope());
   clear();
-  data_.ownTransferables_ = other.data_.ownTransferables_;
-  other.steal(&data_, &version_, &data_.callbacks_, &data_.closure_);
+  version_ = other.version_;
+  other.giveTo(&data_);
   return *this;
 }
 
@@ -3974,22 +3987,11 @@ void JSAutoStructuredCloneBuffer::adopt(
                      OwnTransferablePolicy::OwnsTransferablesIfAny);
 }
 
-void JSAutoStructuredCloneBuffer::steal(
-    JSStructuredCloneData* data, uint32_t* versionp,
-    const JSStructuredCloneCallbacks** callbacks, void** closure) {
-  if (versionp) {
-    *versionp = version_;
-  }
-  if (callbacks) {
-    *callbacks = data_.callbacks_;
-  }
-  if (closure) {
-    *closure = data_.closure_;
-  }
+void JSAutoStructuredCloneBuffer::giveTo(JSStructuredCloneData* data) {
   *data = std::move(data_);
-
   version_ = 0;
   data_.setCallbacks(nullptr, nullptr, OwnTransferablePolicy::NoTransferables);
+  data_.Clear();
 }
 
 bool JSAutoStructuredCloneBuffer::read(

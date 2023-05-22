@@ -40,7 +40,6 @@
 #include "pc/legacy_stats_collector_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 
@@ -75,6 +74,13 @@ class RtpSenderInternal : public RtpSenderInterface {
   // Allow access to get/set parameters without invalidating transaction id.
   virtual RtpParameters GetParametersInternal() const = 0;
   virtual RTCError SetParametersInternal(const RtpParameters& parameters) = 0;
+
+  // GetParameters and SetParameters will remove deactivated simulcast layers
+  // and restore them on SetParameters. This is probably a Bad Idea, but we
+  // do not know who depends on this behavior
+  virtual RtpParameters GetParametersInternalWithAllLayers() const = 0;
+  virtual RTCError SetParametersInternalWithAllLayers(
+      const RtpParameters& parameters) = 0;
 
   // Returns an ID that changes every time SetTrack() is called, but
   // otherwise remains constant. Used to generate IDs for stats.
@@ -119,6 +125,9 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
   // Allow access to get/set parameters without invalidating transaction id.
   RtpParameters GetParametersInternal() const override;
   RTCError SetParametersInternal(const RtpParameters& parameters) override;
+  RtpParameters GetParametersInternalWithAllLayers() const override;
+  RTCError SetParametersInternalWithAllLayers(
+      const RtpParameters& parameters) override;
 
   // Used to set the SSRC of the sender, once a local description has been set.
   // If `ssrc` is 0, this indiates that the sender should disconnect from the
@@ -314,7 +323,6 @@ class AudioRtpSender : public DtmfProviderInterface, public RtpSenderBase {
   // DtmfSenderProvider implementation.
   bool CanInsertDtmf() override;
   bool InsertDtmf(int code, int duration) override;
-  sigslot::signal0<>* GetOnDestroyedSignal() override;
 
   // ObserverInterface implementation.
   void OnChanged() override;
@@ -351,9 +359,9 @@ class AudioRtpSender : public DtmfProviderInterface, public RtpSenderBase {
     return rtc::scoped_refptr<AudioTrackInterface>(
         static_cast<AudioTrackInterface*>(track_.get()));
   }
-  sigslot::signal0<> SignalDestroyed;
 
   LegacyStatsCollectorInterface* legacy_stats_ = nullptr;
+  rtc::scoped_refptr<DtmfSender> dtmf_sender_;
   rtc::scoped_refptr<DtmfSenderInterface> dtmf_sender_proxy_;
   bool cached_track_enabled_ = false;
 

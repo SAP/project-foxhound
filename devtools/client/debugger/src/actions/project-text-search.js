@@ -8,14 +8,12 @@
  */
 
 import { isFulfilled } from "../utils/async-value";
-import { findSourceMatches } from "../workers/search";
 import {
   getFirstSourceActorForGeneratedSource,
-  hasPrettySource,
   getSourceList,
   getSettledSourceTextContent,
+  isSourceBlackBoxed,
 } from "../selectors";
-import { isThirdParty } from "../utils/source";
 import { createLocation } from "../utils/location";
 import { loadSourceText } from "./sources/loadSourceText";
 import {
@@ -80,15 +78,37 @@ export function searchSources(cx, query) {
     await dispatch(clearSearchResults(cx));
     await dispatch(addSearchQuery(cx, query));
     dispatch(updateSearchStatus(cx, statusType.fetching));
-    let validSources = getSourceList(getState()).filter(
-      source => !hasPrettySource(getState(), source.id) && !isThirdParty(source)
+    const validSources = getSourceList(getState()).filter(
+      source => !isSourceBlackBoxed(getState(), source)
     );
     // Sort original entries first so that search results are more useful.
-    // See bug 1642778.
-    validSources = [
-      ...validSources.filter(x => x.isOriginal),
-      ...validSources.filter(x => !x.isOriginal),
-    ];
+    // Deprioritize third-party scripts, so their results show last.
+    validSources.sort((a, b) => {
+      function isThirdParty(source) {
+        return (
+          source?.url &&
+          (source.url.includes("node_modules") ||
+            source.url.includes("bower_components"))
+        );
+      }
+
+      if (a.isOriginal && !isThirdParty(a)) {
+        return -1;
+      }
+
+      if (b.isOriginal && !isThirdParty(b)) {
+        return 1;
+      }
+
+      if (!isThirdParty(a) && isThirdParty(b)) {
+        return -1;
+      }
+      if (isThirdParty(a) && !isThirdParty(b)) {
+        return 1;
+      }
+      return 0;
+    });
+
     for (const source of validSources) {
       if (cancelled) {
         return;
@@ -112,7 +132,7 @@ export function searchSources(cx, query) {
 }
 
 export function searchSource(cx, source, sourceActor, query) {
-  return async ({ dispatch, getState }) => {
+  return async ({ dispatch, getState, searchWorker }) => {
     if (!source) {
       return;
     }
@@ -123,7 +143,11 @@ export function searchSource(cx, source, sourceActor, query) {
     const content = getSettledSourceTextContent(getState(), location);
     let matches = [];
     if (content && isFulfilled(content) && content.value.type === "text") {
-      matches = await findSourceMatches(source.id, content.value, query);
+      matches = await searchWorker.findSourceMatches(
+        source.id,
+        content.value,
+        query
+      );
     }
     if (!matches.length) {
       return;

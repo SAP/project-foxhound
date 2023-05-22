@@ -9,6 +9,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   EventEmitter: "resource://gre/modules/EventEmitter.sys.mjs",
+  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   TaskQueue: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
@@ -56,7 +57,11 @@ export class RemoteSettingsClient extends BaseFeature {
   get shouldEnable() {
     return (
       lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") ||
-      lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")
+      lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored") ||
+      // Keyword-based (i.e., non-zero-prefix) weather suggestions rely on
+      // remote settings for keywords.
+      (lazy.QuickSuggest.weather.shouldEnable &&
+        !lazy.UrlbarPrefs.get("weather.zeroPrefix"))
     );
   }
 
@@ -64,6 +69,8 @@ export class RemoteSettingsClient extends BaseFeature {
     return [
       "suggest.quicksuggest.nonsponsored",
       "suggest.quicksuggest.sponsored",
+      "suggest.weather",
+      "weather.zeroPrefix",
     ];
   }
 
@@ -108,6 +115,7 @@ export class RemoteSettingsClient extends BaseFeature {
    *         ],
    *       },
    *     },
+   *     weather_keywords: [],
    *   }
    */
   get config() {
@@ -186,8 +194,6 @@ export class RemoteSettingsClient extends BaseFeature {
       source: "remote-settings",
       icon: icons.shift(),
       position: result.position,
-      is_top_pick: !!result.is_top_pick,
-      _test_is_best_match: result._test_is_best_match,
     }));
   }
 

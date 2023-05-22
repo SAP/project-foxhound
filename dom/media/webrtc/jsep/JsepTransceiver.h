@@ -41,7 +41,7 @@ class JsepTransceiver {
         mLevel(SIZE_MAX),
         mBundleLevel(SIZE_MAX),
         mAddTrackMagic(false),
-        mWasCreatedBySetRemote(false),
+        mOnlyExistsBecauseOfSetRemote(false),
         mStopped(false),
         mRemoved(false),
         mNegotiated(false),
@@ -62,7 +62,7 @@ class JsepTransceiver {
         mLevel(orig.mLevel),
         mBundleLevel(orig.mBundleLevel),
         mAddTrackMagic(orig.mAddTrackMagic),
-        mWasCreatedBySetRemote(orig.mWasCreatedBySetRemote),
+        mOnlyExistsBecauseOfSetRemote(orig.mOnlyExistsBecauseOfSetRemote),
         mStopped(orig.mStopped),
         mRemoved(orig.mRemoved),
         mNegotiated(orig.mNegotiated),
@@ -70,14 +70,15 @@ class JsepTransceiver {
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(JsepTransceiver);
 
-  void Rollback(JsepTransceiver& oldTransceiver, bool rollbackLevel) {
+  void Rollback(JsepTransceiver& oldTransceiver, bool aRemote) {
     MOZ_ASSERT(oldTransceiver.GetMediaType() == GetMediaType());
     MOZ_ASSERT(!oldTransceiver.IsNegotiated() || !oldTransceiver.HasLevel() ||
                !HasLevel() || oldTransceiver.GetLevel() == GetLevel());
     mTransport = oldTransceiver.mTransport;
-    if (rollbackLevel) {
+    if (aRemote) {
       mLevel = oldTransceiver.mLevel;
       mBundleLevel = oldTransceiver.mBundleLevel;
+      mSendTrack = oldTransceiver.mSendTrack;
     }
     mRecvTrack = oldTransceiver.mRecvTrack;
 
@@ -161,9 +162,13 @@ class JsepTransceiver {
 
   bool HasAddTrackMagic() const { return mAddTrackMagic; }
 
-  void SetCreatedBySetRemote() { mWasCreatedBySetRemote = true; }
+  void SetOnlyExistsBecauseOfSetRemote(bool aValue) {
+    mOnlyExistsBecauseOfSetRemote = aValue;
+  }
 
-  bool WasCreatedBySetRemote() const { return mWasCreatedBySetRemote; }
+  bool OnlyExistsBecauseOfSetRemote() const {
+    return mOnlyExistsBecauseOfSetRemote;
+  }
 
   void SetNegotiated() {
     MOZ_ASSERT(IsAssociated());
@@ -214,9 +219,10 @@ class JsepTransceiver {
   // Is this track pair sharing a transport with another?
   size_t mBundleLevel;  // SIZE_MAX if no bundle level
   // The w3c and IETF specs have a lot of "magical" behavior that happens
-  // when addTrack is used. This was a deliberate design choice. Sadface.
+  // when addTrack is used to create a transceiver. This was a deliberate
+  // design choice. Sadface.
   bool mAddTrackMagic;
-  bool mWasCreatedBySetRemote;
+  bool mOnlyExistsBecauseOfSetRemote;
   bool mStopped;
   bool mRemoved;
   bool mNegotiated;

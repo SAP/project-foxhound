@@ -176,10 +176,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
   std::unique_ptr<JSAMPLE[]> row;
 
   const auto try_catch_block = [&]() -> bool {
-    jpeg_decompress_struct cinfo;
-    // cinfo is initialized by libjpeg, which we are not instrumenting with
-    // msan, therefore we need to initialize cinfo here.
-    msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
+    jpeg_decompress_struct cinfo = {};
     // Setup error handling in jpeg library so we can deal with broken jpegs in
     // the fuzzer.
     jpeg_error_mgr jerr;
@@ -254,10 +251,12 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
 
     jpeg_start_decompress(&cinfo);
     JXL_ASSERT(cinfo.output_components == nbcomp);
+    JxlDataType data_type =
+        ppf->info.bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
 
     const JxlPixelFormat format{
         /*num_channels=*/static_cast<uint32_t>(nbcomp),
-        /*data_type=*/BITS_IN_JSAMPLE == 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16,
+        data_type,
         /*endianness=*/JXL_NATIVE_ENDIAN,
         /*align=*/0,
     };

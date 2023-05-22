@@ -376,12 +376,7 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
 resfile = $(notdir $1).res
 # We also build .res files for simple programs if a corresponding manifest
 # exists. We'll generate a .rc file that includes the manifest.
-ifdef GNU_CC
-# Skip on mingw builds because of bug 1657863
-resfile_for_manifest =
-else
 resfile_for_manifest = $(if $(wildcard $(srcdir)/$(notdir $1).manifest),$(call resfile,$1))
-endif
 else
 resfile =
 resfile_for_manifest =
@@ -605,6 +600,12 @@ ifdef WINE
 relativize = $(if $(filter /%,$1),$(DEPTH)$(subst $(space),,$(foreach d,$(subst /, ,$(topobjdir)),/..))$1,$1)
 else
 relativize = $1
+endif
+
+ifdef WINE
+# asmarm64 needs a library that can be found in $PATH but for some reason,
+# wine wants its path in $WINEPATH, so fill that to make it happy.
+$(ASOBJS) $(SOBJS): export WINEPATH=$(subst :,;,$(PATH))
 endif
 
 ifdef ASFILES

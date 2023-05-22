@@ -61,10 +61,14 @@ browsertime-tp6:
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
                         - --extra-profiler-run
+                        - --extra-summary-methods=mean
+                        - --extra-summary-methods=geomean
                     default:
                         - --chimera
                         - --conditioned-profile=settled
                         - --extra-profiler-run
+                        - --extra-summary-methods=mean
+                        - --extra-summary-methods=geomean
         run-on-projects:
             by-subtest:
                 netflix:  # Bug 1756212 - Disable temporarily due to perma on mac
@@ -259,6 +263,7 @@ browsertime-benchmark:
                     - [motionmark-animometer, mm-a]
                     - [motionmark-htmlsuite, mm-h]
                     - [speedometer, sp]
+                    - [speedometer3, sp3]
                     - [stylebench, sb]
                     - [sunspider, ss]
                     - [twitch-animation, tw-a]
@@ -272,6 +277,7 @@ browsertime-benchmark:
                     - [motionmark-animometer, mm-a]
                     - [motionmark-htmlsuite, mm-h]
                     - [speedometer, sp]
+                    - [speedometer3, sp3]
                     - [stylebench, sb]
                     - [sunspider, ss]
                     - [unity-webgl, ugl]
@@ -284,6 +290,7 @@ browsertime-benchmark:
                     - [motionmark-animometer, mm-a]
                     - [motionmark-htmlsuite, mm-h]
                     - [speedometer, sp]
+                    - [speedometer3, sp3]
                     - [stylebench, sb]
                     - [sunspider, ss]
                     - [unity-webgl, ugl]
@@ -309,6 +316,14 @@ browsertime-benchmark:
                     default: 2
     run-on-projects:
         by-subtest:
+            speedometer3:
+                by-app:
+                    firefox:
+                        by-test-platform:
+                            windows.*-32.*: []
+                            .*64.*shippable-qr/.*: [trunk, mozilla-release]
+                            default: []
+                    default: []
             unity-webgl:
                 by-app:
                     firefox:
@@ -337,13 +352,6 @@ browsertime-benchmark:
             motionmark-htmlsuite: 1500
             unity-webgl: 1500
             default: 900
-    fetches:
-        fetch:
-            - assorted-dom
-            - jetstream2
-            - matrix-react-bench
-            - twitch-animation
-            - unity-webgl
     mozharness:
         extra-options:
             - --extra-profiler-run
@@ -379,9 +387,6 @@ browsertime-benchmark-wasm:
             wasm-godot: 1500
             wasm-godot-baseline: 1500
             default: 900
-    fetches:
-        fetch:
-            - wasm-misc
     mozharness:
         extra-options:
             - --extra-profiler-run
@@ -416,10 +421,7 @@ browsertime-youtube-playback:
         by-subtest:
             youtube-playback-hfr: 3600
             youtube-playback-widevine.*: 3600
-            default:
-                by-test-platform:
-                    windows10-aarch64/opt: 3600
-                    default: 2700
+            default: 2700
 
 browsertime-tp6-live:
     <<: *tp6-defaults
@@ -574,3 +576,37 @@ browsertime-first-install:
             default: []
     tier: 2
     treeherder-symbol: Btime(welcome)
+
+browsertime-grandprix:
+    raptor:
+        apps: [firefox, chrome, chromium, safari]
+        subtests: [grandprix]
+    description: Raptor (browsertime) grandprix benchmark test
+    max-run-time: 2700
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    windows.*-32.*: []
+                    .*64.*shippable-qr/.*: [autoland, mozilla-central]
+                    default: []
+            default: []
+    tier: 3
+    treeherder-symbol: Btime(grandprix)
+
+browsertime-regression-tests:
+    raptor:
+        apps: [firefox]
+        subtests: [[constant-regression, regress-c]]
+    description: Raptor (browsertime) tests for our regression detection system
+    max-run-time: 700
+    run-on-projects: [autoland]
+    limit-platforms:
+        - .*linux(?!.*shippable)(?!.*clang).*
+    mozharness:
+        extra-options:
+            by-test-platform:
+                windows10-64.*shippable.*-qr.*: []
+                default: []
+    tier: 2
+    treeherder-symbol: Btime(regressor)

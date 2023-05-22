@@ -21,6 +21,31 @@ class Function;
 
 namespace extensions {
 
+#define NS_IMPL_WEBEXT_EVENTMGR_WITH_DATAMEMBER(            \
+    _class, _eventName, _eventGetterName, _eventDataMember) \
+  ExtensionEventManager* _class::_eventGetterName() {       \
+    if (!(_eventDataMember)) {                              \
+      (_eventDataMember) = CreateEventManager(_eventName);  \
+    }                                                       \
+    return (_eventDataMember);                              \
+  }
+#define NS_IMPL_WEBEXT_EVENTMGR(_class, _eventName, _eventGetterName) \
+  NS_IMPL_WEBEXT_EVENTMGR_WITH_DATAMEMBER(                            \
+      _class, _eventName, _eventGetterName, m##_eventGetterName##EventMgr)
+
+#define NS_IMPL_WEBEXT_SETTING_WITH_DATAMEMBER(                   \
+    _class, _settingName, _settingGetterName, _settingDataMember) \
+  ExtensionSetting* _class::_settingGetterName() {                \
+    if (!(_settingDataMember)) {                                  \
+      (_settingDataMember) = CreateSetting(_settingName);         \
+    }                                                             \
+    return (_settingDataMember);                                  \
+  }
+#define NS_IMPL_WEBEXT_SETTING(_class, _settingName, _settingGetterName) \
+  NS_IMPL_WEBEXT_SETTING_WITH_DATAMEMBER(_class, _settingName,           \
+                                         _settingGetterName,             \
+                                         m##_settingGetterName##Setting)
+
 class ExtensionAPIAddRemoveListener;
 class ExtensionAPICallFunctionNoReturn;
 class ExtensionAPICallSyncFunction;
@@ -29,6 +54,7 @@ class ExtensionAPIGetProperty;
 class ExtensionBrowser;
 class ExtensionEventManager;
 class ExtensionPort;
+class ExtensionSetting;
 
 class ExtensionAPIBase {
  public:
@@ -88,6 +114,9 @@ class ExtensionAPIBase {
   // API Requests helpers.
   already_AddRefed<ExtensionEventManager> CreateEventManager(
       const nsAString& aEventName);
+
+  already_AddRefed<ExtensionSetting> CreateSetting(
+      const nsAString& aSettingName);
 
   RefPtr<ExtensionAPICallFunctionNoReturn> CallFunctionNoReturn(
       const nsAString& aApiMethod);

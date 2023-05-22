@@ -1029,6 +1029,11 @@ add_task(async function reorder_notification() {
 
   // Randomly reorder the array.
   sorted.sort(() => 0.5 - Math.random());
+  // Ensure there's at least one item out of place, since random does not
+  // necessarily mean they are unordered.
+  if (sorted[0].url == bookmarks[0].url) {
+    sorted.push(sorted.shift());
+  }
 
   const observer = expectPlacesObserverNotifications(["bookmark-moved"]);
   await PlacesUtils.bookmarks.reorder(
@@ -1060,8 +1065,11 @@ add_task(async function reorder_notification() {
 
 add_task(async function update_notitle_notification() {
   let toolbarBmURI = Services.io.newURI("https://example.com");
+  let toolbarItemId = await PlacesUtils.promiseItemId(
+    PlacesUtils.bookmarks.toolbarGuid
+  );
   let toolbarBmId = PlacesUtils.bookmarks.insertBookmark(
-    PlacesUtils.toolbarFolderId,
+    toolbarItemId,
     toolbarBmURI,
     0,
     "Bookmark"

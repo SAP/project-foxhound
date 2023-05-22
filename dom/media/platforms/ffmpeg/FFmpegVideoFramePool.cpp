@@ -9,6 +9,7 @@
 #include "FFmpegLog.h"
 #include "mozilla/widget/DMABufLibWrapper.h"
 #include "libavutil/pixfmt.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #ifdef MOZ_LOGGING
 #  undef DMABUF_LOG
@@ -18,6 +19,10 @@ extern mozilla::LazyLogModule gDmabufLog;
 #else
 #  define DMABUF_LOG(args)
 #endif /* MOZ_LOGGING */
+
+// Start copying surfaces when free ffmpeg surface count is below 1/4 of all
+// available surfaces.
+#define SURFACE_COPY_THRESHOLD (1.0f / 4.0f)
 
 namespace mozilla {
 
@@ -86,8 +91,11 @@ VideoFrameSurface<LIBAV_VER>::~VideoFrameSurface() {
   ReleaseVAAPIData(/* aForFrameRecycle */ false);
 }
 
-VideoFramePool<LIBAV_VER>::VideoFramePool()
-    : mSurfaceLock("VideoFramePoolSurfaceLock") {}
+VideoFramePool<LIBAV_VER>::VideoFramePool(int aFFMPEGPoolSize)
+    : mSurfaceLock("VideoFramePoolSurfaceLock"),
+      mFFMPEGPoolSize(aFFMPEGPoolSize) {
+  DMABUF_LOG("VideoFramePool::VideoFramePool() pool size %d", mFFMPEGPoolSize);
+}
 
 VideoFramePool<LIBAV_VER>::~VideoFramePool() {
   MutexAutoLock lock(mSurfaceLock);
@@ -115,6 +123,32 @@ VideoFramePool<LIBAV_VER>::GetFreeVideoFrameSurface() {
   return nullptr;
 }
 
+bool VideoFramePool<LIBAV_VER>::ShouldCopySurface() {
+  // Number of used HW surfaces.
+  int surfacesUsed = 0;
+  int surfacesUsedFFmpeg = 0;
+  for (const auto& surface : mDMABufSurfaces) {
+    if (surface->IsUsed()) {
+      surfacesUsed++;
+      if (surface->IsFFMPEGSurface()) {
+        surfacesUsedFFmpeg++;
+      }
+    }
+  }
+  float freeRatio = 1.0f - (surfacesUsedFFmpeg / (float)mFFMPEGPoolSize);
+  DMABUF_LOG(
+      "Surface pool size %d used copied %d used ffmpeg %d (max %d) free ratio "
+      "%f",
+      (int)mDMABufSurfaces.Length(), surfacesUsed - surfacesUsedFFmpeg,
+      surfacesUsedFFmpeg, mFFMPEGPoolSize, freeRatio);
+  if (StaticPrefs::media_ffmpeg_vaapi_force_surface_copy_AtStartup()) {
+    return true;
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(mTextureCopyWorks.isSome());
+  return mTextureCopyWorks.value() && freeRatio < SURFACE_COPY_THRESHOLD;
+}
+
 RefPtr<VideoFrameSurface<LIBAV_VER>>
 VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
     VADRMPRIMESurfaceDescriptor& aVaDesc, int aWidth, int aHeight,
@@ -127,34 +161,44 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
   }
 
   MutexAutoLock lock(mSurfaceLock);
+  if (MOZ_UNLIKELY(mTextureCopyWorks.isNothing())) {
+    RefPtr<DMABufSurfaceYUV> surface =
+        DMABufSurfaceYUV::CopyYUVSurface(aVaDesc, aWidth, aHeight);
+    mTextureCopyWorks = Some(surface != nullptr);
+    if (!mTextureCopyWorks.value()) {
+      DMABUF_LOG("  DMABuf texture copy is broken");
+    }
+  }
+
+  RefPtr<DMABufSurfaceYUV> surface;
   RefPtr<VideoFrameSurface<LIBAV_VER>> videoSurface =
       GetFreeVideoFrameSurface();
   if (!videoSurface) {
-    RefPtr<DMABufSurfaceYUV> surface =
-        DMABufSurfaceYUV::CreateYUVSurface(aVaDesc, aWidth, aHeight);
-    if (!surface) {
-      return nullptr;
-    }
+    surface = new DMABufSurfaceYUV();
+    videoSurface = new VideoFrameSurface<LIBAV_VER>(surface);
+    mDMABufSurfaces.AppendElement(videoSurface);
     DMABUF_LOG("Created new VA-API DMABufSurface UID %d", surface->GetUID());
-    RefPtr<VideoFrameSurface<LIBAV_VER>> surf =
-        new VideoFrameSurface<LIBAV_VER>(surface);
-    if (!mTextureCreationWorks) {
-      mTextureCreationWorks = Some(surface->VerifyTextureCreation());
-    }
+  } else {
+    surface = videoSurface->GetDMABufSurface();
+    DMABUF_LOG("Reusing VA-API DMABufSurface UID %d", surface->GetUID());
+  }
+
+  bool copySurface = ShouldCopySurface();
+  if (!surface->UpdateYUVData(aVaDesc, aWidth, aHeight, copySurface)) {
+    return nullptr;
+  }
+
+  if (MOZ_UNLIKELY(!mTextureCreationWorks)) {
+    mTextureCreationWorks = Some(surface->VerifyTextureCreation());
     if (!*mTextureCreationWorks) {
       DMABUF_LOG("  failed to create texture over DMABuf memory!");
       return nullptr;
     }
-    videoSurface = surf;
-    mDMABufSurfaces.AppendElement(std::move(surf));
-  } else {
-    RefPtr<DMABufSurfaceYUV> surface = videoSurface->GetDMABufSurface();
-    DMABUF_LOG("Reusing VA-API DMABufSurface UID %d", surface->GetUID());
-    if (!surface->UpdateYUVData(aVaDesc, aWidth, aHeight)) {
-      return nullptr;
-    }
   }
-  videoSurface->LockVAAPIData(aAVCodecContext, aAVFrame, aLib);
+
+  if (!copySurface) {
+    videoSurface->LockVAAPIData(aAVCodecContext, aAVFrame, aLib);
+  }
   videoSurface->MarkAsUsed();
   return videoSurface;
 }

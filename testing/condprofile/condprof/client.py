@@ -4,33 +4,32 @@
 #
 # This module needs to stay Python 2 and 3 compatible
 #
-from __future__ import absolute_import
-import os
-import tarfile
+import datetime
 import functools
-import tempfile
+import os
 import shutil
+import tarfile
+import tempfile
 import time
 
-from mozprofile.prefs import Preferences
-
-from condprof import check_install  # NOQA
 from condprof import progress
-from condprof.util import (
-    download_file,
-    TASK_CLUSTER,
-    logger,
-    check_exists,
-    ArchiveNotFound,
-)
 from condprof.changelog import Changelog
-
+from condprof.util import (
+    TASK_CLUSTER,
+    ArchiveNotFound,
+    check_exists,
+    download_file,
+    logger,
+)
+from mozprofile.prefs import Preferences
 
 TC_SERVICE = "https://firefox-ci-tc.services.mozilla.com"
 ROOT_URL = TC_SERVICE + "/api/index"
 INDEX_PATH = "gecko.v2.%(repo)s.latest.firefox.condprof-%(platform)s-%(scenario)s"
+INDEX_BY_DATE_PATH = "gecko.v2.%(repo)s.pushdate.%(date)s.latest.firefox.condprof-%(platform)s-%(scenario)s"
 PUBLIC_DIR = "artifacts/public/condprof"
 TC_LINK = ROOT_URL + "/v1/task/" + INDEX_PATH + "/" + PUBLIC_DIR + "/"
+TC_LINK_BY_DATE = ROOT_URL + "/v1/task/" + INDEX_BY_DATE_PATH + "/" + PUBLIC_DIR + "/"
 ARTIFACT_NAME = "profile%(version)s-%(platform)s-%(scenario)s-%(customization)s.tgz"
 CHANGELOG_LINK = (
     ROOT_URL + "/v1/task/" + INDEX_PATH + "/" + PUBLIC_DIR + "/changelog.json"
@@ -147,6 +146,9 @@ def get_profile(
     else:
         version = ""
 
+    # when we bump the Firefox version on trunk, autoland still needs to catch up
+    # in this case we want to download an older profile- 2 days to account for closures/etc.
+    oldday = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
     params = {
         "platform": platform,
         "scenario": scenario,
@@ -154,6 +156,7 @@ def get_profile(
         "task_id": task_id,
         "repo": repo,
         "version": version,
+        "date": str(oldday.date()).replace("-", "."),
     }
     logger.info("Getting conditioned profile with arguments: %s" % params)
     filename = ARTIFACT_NAME % params
@@ -221,7 +224,13 @@ def get_profile(
     try:
         return _retries(_get_profile, onerror, retries)
     except RetriesError:
-        raise ProfileNotFoundError(url)
+        # look for older profile 2 days previously
+        filename = ARTIFACT_NAME % params
+        url = TC_LINK_BY_DATE % params + filename
+        try:
+            return _retries(_get_profile, onerror, retries)
+        except RetriesError:
+            raise ProfileNotFoundError(url)
 
 
 def read_changelog(platform, repo="mozilla-central", scenario="settled"):

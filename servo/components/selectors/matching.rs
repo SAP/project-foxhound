@@ -7,8 +7,7 @@ use crate::attr::{
     ParsedCaseSensitivity,
 };
 use crate::bloom::{BloomFilter, BLOOM_HASH_MASK};
-use crate::nth_index_cache::NthIndexCacheInner;
-use crate::parser::{AncestorHashes, Combinator, Component, LocalName};
+use crate::parser::{AncestorHashes, Combinator, Component, LocalName, NthSelectorData};
 use crate::parser::{NonTSPseudoClass, Selector, SelectorImpl, SelectorIter, SelectorList};
 use crate::tree::Element;
 use smallvec::SmallVec;
@@ -325,6 +324,21 @@ where
     matches!(result, SelectorMatchingResult::Matched)
 }
 
+/// Matches each selector of a list as a complex selector
+#[inline(always)]
+pub fn list_matches_complex_selector<E: Element>(
+    list: &[Selector<E::Impl>],
+    element: &E,
+    context: &mut MatchingContext<E::Impl>,
+) -> bool {
+    for selector in list {
+        if matches_complex_selector(selector.iter(), element, context) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Traverse all descendents of the given element and return true as soon as any of them match
 /// the given list of selectors.
 fn has_children_matching<E: Element>(
@@ -384,17 +398,9 @@ fn hover_and_active_quirk_applies<Impl: SelectorImpl>(
         Component::Class(_) |
         Component::PseudoElement(_) |
         Component::Negation(_) |
-        Component::FirstChild |
-        Component::LastChild |
-        Component::OnlyChild |
         Component::Empty |
-        Component::NthChild(_, _) |
-        Component::NthLastChild(_, _) |
-        Component::NthOfType(_, _) |
-        Component::NthLastOfType(_, _) |
-        Component::FirstOfType |
-        Component::LastOfType |
-        Component::OnlyOfType => false,
+        Component::Nth(_) |
+        Component::NthOf(_) => false,
         Component::NonTSPseudoClass(ref pseudo_class) => pseudo_class.is_active_or_hover(),
         _ => true,
     })
@@ -784,12 +790,6 @@ where
             }
             element.match_non_ts_pseudo_class(pc, &mut context.shared)
         },
-        Component::FirstChild => matches_first_child(element, context.shared),
-        Component::LastChild => matches_last_child(element, context.shared),
-        Component::OnlyChild => {
-            matches_first_child(element, context.shared) &&
-                matches_last_child(element, context.shared)
-        },
         Component::Root => element.is_root(),
         Component::Empty => {
             if context.shared.needs_selector_flags() {
@@ -808,48 +808,28 @@ where
                         .nest(|context| matches_complex_selector(selector.iter(), element, context))
                 })
         },
+        // These should only work at parse time, should be replaced with :is() at CascadeData build
+        // time.
+        Component::ParentSelector => false,
         Component::Scope => match context.shared.scope_element {
             Some(ref scope_element) => element.opaque() == *scope_element,
             None => element.is_root(),
         },
-        Component::NthChild(a, b) => {
-            matches_generic_nth_child(element, context.shared, a, b, false, false)
+        Component::Nth(ref nth_data) => {
+            matches_generic_nth_child(element, context.shared, nth_data, &[])
         },
-        Component::NthLastChild(a, b) => {
-            matches_generic_nth_child(element, context.shared, a, b, false, true)
-        },
-        Component::NthOfType(a, b) => {
-            matches_generic_nth_child(element, context.shared, a, b, true, false)
-        },
-        Component::NthLastOfType(a, b) => {
-            matches_generic_nth_child(element, context.shared, a, b, true, true)
-        },
-        Component::FirstOfType => {
-            matches_generic_nth_child(element, context.shared, 0, 1, true, false)
-        },
-        Component::LastOfType => {
-            matches_generic_nth_child(element, context.shared, 0, 1, true, true)
-        },
-        Component::OnlyOfType => {
-            matches_generic_nth_child(element, context.shared, 0, 1, true, false) &&
-                matches_generic_nth_child(element, context.shared, 0, 1, true, true)
-        },
-        Component::Is(ref list) | Component::Where(ref list) => context.shared.nest(|context| {
-            for selector in &**list {
-                if matches_complex_selector(selector.iter(), element, context) {
-                    return true;
-                }
-            }
-            false
-        }),
-        Component::Negation(ref list) => context.shared.nest_for_negation(|context| {
-            for selector in &**list {
-                if matches_complex_selector(selector.iter(), element, context) {
-                    return false;
-                }
-            }
-            true
-        }),
+        Component::NthOf(ref nth_of_data) => matches_generic_nth_child(
+            element,
+            context.shared,
+            nth_of_data.nth_data(),
+            nth_of_data.selectors(),
+        ),
+        Component::Is(ref list) | Component::Where(ref list) => context
+            .shared
+            .nest(|context| list_matches_complex_selector(list, element, context)),
+        Component::Negation(ref list) => context
+            .shared
+            .nest_for_negation(|context| !list_matches_complex_selector(list, element, context)),
         Component::Has(ref list) => context
             .shared
             .nest(|context| has_children_matching(list, element, context)),
@@ -892,14 +872,11 @@ fn to_unconditional_case_sensitivity<'a, E: Element>(
     }
 }
 
-#[inline]
 fn matches_generic_nth_child<E>(
     element: &E,
     context: &mut MatchingContext<E::Impl>,
-    a: i32,
-    b: i32,
-    is_of_type: bool,
-    is_from_end: bool,
+    nth_data: &NthSelectorData,
+    selectors: &[Selector<E::Impl>],
 ) -> bool
 where
     E: Element,
@@ -908,33 +885,87 @@ where
         return false;
     }
 
+    let NthSelectorData { ty, a, b, .. } = *nth_data;
+    let is_of_type = ty.is_of_type();
+    if ty.is_only() {
+        debug_assert!(
+            selectors.is_empty(),
+            ":only-child and :only-of-type cannot have a selector list!"
+        );
+        return matches_generic_nth_child(
+            element,
+            context,
+            &NthSelectorData::first(is_of_type),
+            selectors,
+        ) && matches_generic_nth_child(
+            element,
+            context,
+            &NthSelectorData::last(is_of_type),
+            selectors,
+        );
+    }
+
+    let is_from_end = ty.is_from_end();
+
+    // It's useful to know whether this can only select the first/last element
+    // child for optimization purposes, see the `HAS_EDGE_CHILD_SELECTOR` flag.
+    let is_edge_child_selector = a == 0 && b == 1 && !is_of_type && selectors.is_empty();
+
     if context.needs_selector_flags() {
-        element.apply_selector_flags(if is_from_end {
+        element.apply_selector_flags(if is_edge_child_selector {
+            ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR
+        } else if is_from_end {
             ElementSelectorFlags::HAS_SLOW_SELECTOR
         } else {
             ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS
         });
     }
 
-    // Grab a reference to the appropriate cache.
-    let mut cache = context
-        .nth_index_cache
-        .as_mut()
-        .map(|c| c.get(is_of_type, is_from_end));
+    if !selectors.is_empty() && !list_matches_complex_selector(selectors, element, context) {
+        return false;
+    }
+
+    // :first/last-child are rather trivial to match, don't bother with the
+    // cache.
+    if is_edge_child_selector {
+        return if is_from_end {
+            element.next_sibling_element()
+        } else {
+            element.prev_sibling_element()
+        }
+        .is_none();
+    }
 
     // Lookup or compute the index.
-    let index = if let Some(i) = cache.as_mut().and_then(|c| c.lookup(element.opaque())) {
+    let index = if let Some(i) = context
+        .nth_index_cache(is_of_type, is_from_end, selectors)
+        .lookup(element.opaque())
+    {
         i
     } else {
-        let i = nth_child_index(element, is_of_type, is_from_end, cache.as_deref_mut());
-        if let Some(c) = cache.as_mut() {
-            c.insert(element.opaque(), i)
-        }
+        let i = nth_child_index(
+            element,
+            context,
+            selectors,
+            is_of_type,
+            is_from_end,
+            /* check_cache = */ true,
+        );
+        context
+            .nth_index_cache(is_of_type, is_from_end, selectors)
+            .insert(element.opaque(), i);
         i
     };
     debug_assert_eq!(
         index,
-        nth_child_index(element, is_of_type, is_from_end, None),
+        nth_child_index(
+            element,
+            context,
+            selectors,
+            is_of_type,
+            is_from_end,
+            /* check_cache = */ false
+        ),
         "invalid cache"
     );
 
@@ -951,9 +982,11 @@ where
 #[inline]
 fn nth_child_index<E>(
     element: &E,
+    context: &mut MatchingContext<E::Impl>,
+    selectors: &[Selector<E::Impl>],
     is_of_type: bool,
     is_from_end: bool,
-    mut cache: Option<&mut NthIndexCacheInner>,
+    check_cache: bool,
 ) -> i32
 where
     E: Element,
@@ -964,19 +997,33 @@ where
     // siblings to the left checking the cache in the is_from_end case (this
     // matches what Gecko does). The indices-from-the-left is handled during the
     // regular look further below.
-    if let Some(ref mut c) = cache {
-        if is_from_end && !c.is_empty() {
-            let mut index: i32 = 1;
-            let mut curr = element.clone();
-            while let Some(e) = curr.prev_sibling_element() {
-                curr = e;
-                if !is_of_type || element.is_same_type(&curr) {
-                    if let Some(i) = c.lookup(curr.opaque()) {
-                        return i - index;
-                    }
-                    index += 1;
-                }
+    if check_cache &&
+        is_from_end &&
+        !context
+            .nth_index_cache(is_of_type, is_from_end, selectors)
+            .is_empty()
+    {
+        let mut index: i32 = 1;
+        let mut curr = element.clone();
+        while let Some(e) = curr.prev_sibling_element() {
+            curr = e;
+            let matches = if is_of_type {
+                element.is_same_type(&curr)
+            } else if !selectors.is_empty() {
+                list_matches_complex_selector(selectors, &curr, context)
+            } else {
+                true
+            };
+            if !matches {
+                continue;
             }
+            if let Some(i) = context
+                .nth_index_cache(is_of_type, is_from_end, selectors)
+                .lookup(curr.opaque())
+            {
+                return i - index;
+            }
+            index += 1;
         }
     }
 
@@ -991,40 +1038,29 @@ where
     };
     while let Some(e) = next(curr) {
         curr = e;
-        if !is_of_type || element.is_same_type(&curr) {
-            // If we're computing indices from the left, check each element in the
-            // cache. We handle the indices-from-the-right case at the top of this
-            // function.
-            if !is_from_end {
-                if let Some(i) = cache.as_mut().and_then(|c| c.lookup(curr.opaque())) {
-                    return i + index;
-                }
-            }
-            index += 1;
+        let matches = if is_of_type {
+            element.is_same_type(&curr)
+        } else if !selectors.is_empty() {
+            list_matches_complex_selector(selectors, &curr, context)
+        } else {
+            true
+        };
+        if !matches {
+            continue;
         }
+        // If we're computing indices from the left, check each element in the
+        // cache. We handle the indices-from-the-right case at the top of this
+        // function.
+        if !is_from_end && check_cache {
+            if let Some(i) = context
+                .nth_index_cache(is_of_type, is_from_end, selectors)
+                .lookup(curr.opaque())
+            {
+                return i + index;
+            }
+        }
+        index += 1;
     }
 
     index
-}
-
-#[inline]
-fn matches_first_child<E>(element: &E, context: &MatchingContext<E::Impl>) -> bool
-where
-    E: Element,
-{
-    if context.needs_selector_flags() {
-        element.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
-    }
-    element.prev_sibling_element().is_none()
-}
-
-#[inline]
-fn matches_last_child<E>(element: &E, context: &MatchingContext<E::Impl>) -> bool
-where
-    E: Element,
-{
-    if context.needs_selector_flags() {
-        element.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
-    }
-    element.next_sibling_element().is_none()
 }

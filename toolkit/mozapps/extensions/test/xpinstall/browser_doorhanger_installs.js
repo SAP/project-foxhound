@@ -65,7 +65,7 @@ async function waitForProgressNotification(
   aPanelOpen = false,
   aExpectedCount = 1,
   wantDisabled = true,
-  expectedAnchorID = "addons-notification-icon",
+  expectedAnchorID = "unified-extensions-button",
   win = window
 ) {
   let notificationId = PROGRESS_NOTIFICATION;
@@ -220,7 +220,7 @@ function acceptAppMenuNotificationWhenShown(
 async function waitForNotification(
   aId,
   aExpectedCount = 1,
-  expectedAnchorID = "addons-notification-icon",
+  expectedAnchorID = "unified-extensions-button",
   win = window
 ) {
   info("Waiting for " + aId + " notification");
@@ -1017,7 +1017,7 @@ var TESTS = [
     });
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    BrowserTestUtils.loadURI(gBrowser, path);
+    BrowserTestUtils.loadURIString(gBrowser, path);
     await failPromise;
 
     // Wait for the browser code to add the failure notification
@@ -1108,12 +1108,12 @@ var TESTS = [
       false,
       requestedUrl
     );
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT2 + "enabled.html");
+    BrowserTestUtils.loadURIString(gBrowser, TESTROOT2 + "enabled.html");
     await loadedPromise;
 
     let progressPromise = waitForProgressNotification();
     let notificationPromise = waitForNotification("addon-install-failed");
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT + "corrupt.xpi");
+    BrowserTestUtils.loadURIString(gBrowser, TESTROOT + "corrupt.xpi");
     await progressPromise;
     let panel = await notificationPromise;
 
@@ -1151,7 +1151,7 @@ var TESTS = [
     await new Promise(resolve => executeSoon(resolve));
 
     notificationPromise = waitForNotification("addon-install-blocked");
-    BrowserTestUtils.loadURI(
+    BrowserTestUtils.loadURIString(
       gBrowser,
       TESTROOT + "installtrigger.html?" + triggers
     );
@@ -1184,13 +1184,7 @@ var TESTS = [
       TESTROOT + "installtrigger.html?" + triggers
     );
     let panel = await notificationPromise;
-
     let notification = panel.childNodes[0];
-    // Close the notification
-    let anchor = document.getElementById("addons-notification-icon");
-    anchor.click();
-    // Reopen the notification
-    anchor.click();
 
     ok(PopupNotifications.isPanelOpen, "Notification should still be open");
     is(
@@ -1198,7 +1192,6 @@ var TESTS = [
       1,
       "Should be only one notification"
     );
-    notification = panel.childNodes[0];
     is(
       notification.id,
       "addon-progress-notification",
@@ -1218,7 +1211,7 @@ var TESTS = [
     EventUtils.synthesizeMouseAtCenter(notification.secondaryButton, {});
     await cancelledPromise;
 
-    await new Promise(resolve => executeSoon(resolve));
+    await waitForTick();
 
     ok(!PopupNotifications.isPanelOpen, "Notification should be closed");
 
@@ -1468,10 +1461,7 @@ var TESTS = [
 
   async function test_blockedInstallDomain_with_unified_extensions() {
     await SpecialPowers.pushPrefEnv({
-      set: [
-        ["extensions.unifiedExtensions.enabled", true],
-        ["extensions.install_origins.enabled", true],
-      ],
+      set: [["extensions.install_origins.enabled", true]],
     });
 
     let win = await BrowserTestUtils.openNewBrowserWindow();
@@ -1509,7 +1499,6 @@ var TESTS = [
   async function test_mv3_installOrigins_disallowed_with_unified_extensions() {
     await SpecialPowers.pushPrefEnv({
       set: [
-        ["extensions.unifiedExtensions.enabled", true],
         // Disable signature check because we load an unsigned MV3 extension.
         ["xpinstall.signatures.required", false],
         ["extensions.install_origins.enabled", true],
@@ -1544,7 +1533,6 @@ var TESTS = [
   async function test_mv3_installOrigins_allowed_with_unified_extensions() {
     await SpecialPowers.pushPrefEnv({
       set: [
-        ["extensions.unifiedExtensions.enabled", true],
         // Disable signature check because we load an unsigned MV3 extension.
         ["xpinstall.signatures.required", false],
         // When this pref is disabled, install should be possible.
@@ -1616,10 +1604,6 @@ add_task(async function() {
       ["extensions.InstallTriggerImpl.enabled", true],
       // Relax the user input requirements while running this test.
       ["xpinstall.userActivation.required", false],
-      // This is needed to allow most of the tests to pass no matter the value
-      // of this pref. In the future, we'll want to enable this pref by default
-      // and adjust the assertions on the anchor IDs.
-      ["extensions.unifiedExtensions.enabled", false],
     ],
   });
 

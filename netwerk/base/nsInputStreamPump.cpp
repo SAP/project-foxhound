@@ -100,8 +100,9 @@ nsresult nsInputStreamPump::EnsureWaiting() {
     // created on main thread.
     if (mState == STATE_STOP && !mOffMainThread) {
       nsCOMPtr<nsIEventTarget> mainThread =
-          mLabeledMainThreadTarget ? mLabeledMainThreadTarget
-                                   : do_AddRef(GetMainThreadEventTarget());
+          mLabeledMainThreadTarget
+              ? mLabeledMainThreadTarget
+              : do_AddRef(GetMainThreadSerialEventTarget());
       if (mTargetThread != mainThread) {
         mTargetThread = mainThread;
       }
@@ -353,7 +354,7 @@ nsInputStreamPump::AsyncRead(nsIStreamListener* listener) {
   if (NS_IsMainThread() && mLabeledMainThreadTarget) {
     mTargetThread = mLabeledMainThreadTarget;
   } else {
-    mTargetThread = GetCurrentEventTarget();
+    mTargetThread = mozilla::GetCurrentSerialEventTarget();
   }
   NS_ENSURE_STATE(mTargetThread);
 

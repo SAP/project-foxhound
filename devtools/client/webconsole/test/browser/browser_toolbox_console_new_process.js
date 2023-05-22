@@ -18,21 +18,17 @@ const EXAMPLE_URI =
   "test/browser/test-console.html";
 
 /* global gToolbox */
-/* import-globals-from ../../../framework/browser-toolbox/test/helpers-browser-toolbox.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
   this
 );
 
 add_task(async function() {
-  await pushPref("devtools.browsertoolbox.fission", true);
   // Needed for the invokeInTab() function below
   await pushPref("security.allow_parent_unrestricted_js_loads", true);
 
   await addTab(TEST_URI);
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableContentMessages: true,
-  });
+  const ToolboxTask = await initBrowserToolboxTask();
   await ToolboxTask.importFunctions({
     findMessagesVirtualized,
     findMessageVirtualizedByType,

@@ -215,7 +215,12 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
 
   virtual void SelectionRanges(nsTArray<TextRange>* aRanges) const override;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual bool RemoveFromSelection(
+      int32_t aSelectionNum) override;
+
   virtual Maybe<int32_t> GetIntARIAAttr(nsAtom* aAttrName) const override;
+
+  virtual void Language(nsAString& aLocale) override;
 
   //////////////////////////////////////////////////////////////////////////////
   // SelectAccessible
@@ -348,6 +353,15 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
    */
   void PostProcessRelations(const nsTArray<bool>& aToUpdate);
 
+  /**
+   * This method is called during shutdown, before we clear our
+   * reverse rel map from the document's mReverseRelations cache.
+   * Here, we traverse our reverse relations, removing our ID from
+   * the corresponding forward relation's target list. This ensures
+   * the stored forward relations do not reference defunct accessibles.
+   */
+  void PruneRelationsOnShutdown();
+
   uint32_t GetCachedTextLength();
   Maybe<const nsTArray<int32_t>&> GetCachedTextLines();
   Maybe<nsTArray<nsRect>> GetCachedCharData();
@@ -414,10 +428,11 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
  protected:
   void SetParent(Derived* aParent);
   Maybe<nsRect> RetrieveCachedBounds() const;
-  bool ApplyTransform(nsRect& aBounds) const;
+  bool ApplyTransform(nsRect& aCumulativeBounds) const;
   void ApplyScrollOffset(nsRect& aBounds) const;
-  void ApplyCrossProcOffset(nsRect& aBounds) const;
+  void ApplyCrossDocOffset(nsRect& aBounds) const;
   LayoutDeviceIntRect BoundsWithOffset(Maybe<nsRect> aOffset) const;
+  bool IsFixedPos() const;
 
   virtual void ARIAGroupPosition(int32_t* aLevel, int32_t* aSetSize,
                                  int32_t* aPosInSet) const override;

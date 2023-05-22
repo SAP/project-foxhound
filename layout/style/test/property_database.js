@@ -5080,7 +5080,7 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     initial_values: ["top"],
     other_values: ["bottom"],
-    invalid_values: [],
+    invalid_values: ["right", "left", "top-outside", "bottom-outside"],
   },
   "caret-color": {
     domProp: "caretColor",
@@ -5753,24 +5753,88 @@ var gCSSProperties = {
   "font-synthesis": {
     domProp: "fontSynthesis",
     inherited: true,
-    type: CSS_TYPE_LONGHAND,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    subproperties: [
+      "font-synthesis-weight",
+      "font-synthesis-style",
+      "font-synthesis-small-caps",
+    ],
     applies_to_first_letter: true,
     applies_to_first_line: true,
     applies_to_marker: true,
     applies_to_placeholder: true,
     applies_to_cue: true,
-    initial_values: ["weight style small-caps"],
-    other_values: ["none", "weight", "style", "small-caps"],
+    initial_values: [
+      "weight style small-caps",
+      "weight small-caps style",
+      "small-caps weight style",
+      "small-caps style weight",
+      "style weight small-caps",
+      "style small-caps weight",
+    ],
+    other_values: [
+      "none",
+      "weight",
+      "style",
+      "small-caps",
+      "weight style",
+      "style weight",
+      "weight small-caps",
+      "small-caps weight",
+      "style small-caps",
+      "small-caps style",
+    ],
     invalid_values: [
+      "10px",
       "weight none",
       "style none",
       "none style",
+      "none 10px",
       "weight 10px",
       "weight weight",
       "style style",
       "small-caps none",
       "small-caps small-caps",
     ],
+  },
+  "font-synthesis-weight": {
+    domProp: "fontSynthesisWeight",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_marker: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    initial_values: ["auto"],
+    other_values: ["none"],
+    invalid_values: ["auto none", "weight", "normal", "0"],
+  },
+  "font-synthesis-style": {
+    domProp: "fontSynthesisStyle",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_marker: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    initial_values: ["auto"],
+    other_values: ["none"],
+    invalid_values: ["auto none", "style", "normal", "0"],
+  },
+  "font-synthesis-small-caps": {
+    domProp: "fontSynthesisSmallCaps",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_marker: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    initial_values: ["auto"],
+    other_values: ["none"],
+    invalid_values: ["auto none", "small-caps", "normal", "0"],
   },
   "font-variant": {
     domProp: "fontVariant",
@@ -11631,32 +11695,28 @@ function get_computed_value(cs, property) {
   return cs.getPropertyValue(property);
 }
 
-const kNonStandardCaptionSideValues = [
-  "right",
-  "left",
-  "top-outside",
-  "bottom-outside",
-];
-if (IsCSSPropertyPrefEnabled("layout.css.caption-side-non-standard.enabled")) {
-  gCSSProperties["caption-side"].other_values.push(
-    ...kNonStandardCaptionSideValues
-  );
-} else {
-  gCSSProperties["caption-side"].invalid_values.push(
-    ...kNonStandardCaptionSideValues
-  );
-}
-
 {
-  const enabled = IsCSSPropertyPrefEnabled(
+  const mozHiddenUnscrollableEnabled = IsCSSPropertyPrefEnabled(
     "layout.css.overflow-moz-hidden-unscrollable.enabled"
+  );
+  const overlayEnabled = IsCSSPropertyPrefEnabled(
+    "layout.css.overflow-overlay.enabled"
   );
   for (let p of ["overflow", "overflow-x", "overflow-y"]) {
     let prop = gCSSProperties[p];
-    let values = enabled ? prop.other_values : prop.invalid_values;
-    values.push("-moz-hidden-unscrollable");
+    let mozHiddenUnscrollableValues = mozHiddenUnscrollableEnabled
+      ? prop.other_values
+      : prop.invalid_values;
+    let overlayValues = overlayEnabled
+      ? prop.other_values
+      : prop.invalid_values;
+    mozHiddenUnscrollableValues.push("-moz-hidden-unscrollable");
+    overlayValues.push("overlay");
     if (p == "overflow") {
-      values.push("-moz-hidden-unscrollable -moz-hidden-unscrollable");
+      mozHiddenUnscrollableValues.push(
+        "-moz-hidden-unscrollable -moz-hidden-unscrollable"
+      );
+      overlayValues.push("overlay overlay");
     }
   }
 }
@@ -12047,10 +12107,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.font-variant-emoji.enabled")) {
   };
 }
 
-var isGridTemplateSubgridValueEnabled = IsCSSPropertyPrefEnabled(
-  "layout.css.grid-template-subgrid-value.enabled"
-);
-
 var isGridTemplateMasonryValueEnabled = IsCSSPropertyPrefEnabled(
   "layout.css.grid-template-masonry-value.enabled"
 );
@@ -12187,6 +12243,22 @@ gCSSProperties["grid-template-columns"] = {
     "fit-content(1px) 1fr",
     "[a] fit-content(calc(1px - 99%)) [b]",
     "[a] fit-content(10%) [b c] fit-content(1em)",
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=981300
+    "[none subgrid min-content max-content foo] 40px",
+    "subgrid",
+    "subgrid [] [foo bar]",
+    "subgrid repeat(1, [])",
+    "subgrid Repeat(4, [a] [b c] [] [d])",
+    "subgrid repeat(auto-fill, [])",
+    "subgrid repeat(Auto-fill, [a b c]) [a] []",
+    "subgrid [x] repeat( Auto-fill, [a b c]) []",
+    "subgrid [x] repeat( auto-fill , [a b] [c]) [y]",
+    "subgrid repeat(auto-fill, [a] [b] [c]) [d]",
+    "subgrid repeat(Auto-fill, [a] [b c] [] [d])",
+    "subgrid [x y] [x] repeat(auto-fill, [a b] [c] [d] [d]) [x] [x]",
+    "subgrid [x] repeat(auto-fill, []) [y z]",
+    "subgrid [x] repeat(auto-fill, [y]) [z] [] repeat(2, [a] [b]) [y] []",
+    "subgrid [x] repeat(auto-fill, []) [x y] [z] [] []",
   ],
   invalid_values: [
     "",
@@ -12251,30 +12323,6 @@ gCSSProperties["grid-template-columns"] = {
     "fit-content(min-content)",
     "fit-content(1px) repeat(auto-fit, 1px)",
     "fit-content(1px) repeat(auto-fill, 1px)",
-  ],
-  unbalanced_values: ["(foo] 40px"],
-};
-if (isGridTemplateSubgridValueEnabled) {
-  gCSSProperties["grid-template-columns"].other_values.push(
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=981300
-    "[none subgrid min-content max-content foo] 40px",
-
-    "subgrid",
-    "subgrid [] [foo bar]",
-    "subgrid repeat(1, [])",
-    "subgrid Repeat(4, [a] [b c] [] [d])",
-    "subgrid repeat(auto-fill, [])",
-    "subgrid repeat(Auto-fill, [a b c]) [a] []",
-    "subgrid [x] repeat( Auto-fill, [a b c]) []",
-    "subgrid [x] repeat( auto-fill , [a b] [c]) [y]",
-    "subgrid repeat(auto-fill, [a] [b] [c]) [d]",
-    "subgrid repeat(Auto-fill, [a] [b c] [] [d])",
-    "subgrid [x y] [x] repeat(auto-fill, [a b] [c] [d] [d]) [x] [x]",
-    "subgrid [x] repeat(auto-fill, []) [y z]",
-    "subgrid [x] repeat(auto-fill, [y]) [z] [] repeat(2, [a] [b]) [y] []",
-    "subgrid [x] repeat(auto-fill, []) [x y] [z] [] []"
-  );
-  gCSSProperties["grid-template-columns"].invalid_values.push(
     "subgrid [inherit]",
     "subgrid [initial]",
     "subgrid [unset]",
@@ -12308,9 +12356,10 @@ if (isGridTemplateSubgridValueEnabled) {
     "subgrid [a] repeat(auto-fit,[])",
     "subgrid repeat(auto-fill, 1px)",
     "subgrid repeat(auto-fill, 1px [])",
-    "subgrid repeat(auto-fill, []) repeat(auto-fill, [])"
-  );
-}
+    "subgrid repeat(auto-fill, []) repeat(auto-fill, [])",
+  ],
+  unbalanced_values: ["(foo] 40px"],
+};
 if (isGridTemplateMasonryValueEnabled) {
   gCSSProperties["grid-template-columns"].other_values.push("masonry");
   gCSSProperties["grid-template-columns"].invalid_values.push(
@@ -12386,6 +12435,13 @@ gCSSProperties["grid-template"] = {
     "[bar] 'fizz' 100px / [foo] 40px",
     "[bar] 'fizz' 100px [buzz] / [foo] 40px",
     "[bar] 'fizz' 100px [buzz] \n [a] '.' 200px [b] / [foo] 40px",
+    "subgrid / subgrid",
+    "subgrid/40px 20px",
+    "subgrid [foo] [] [bar baz] / 40px 20px",
+    "40px 20px/subgrid",
+    "40px 20px/subgrid  [foo] [] repeat(3, [a] [b]) [bar baz]",
+    "subgrid/subgrid",
+    "subgrid [foo] [] [bar baz]/subgrid [foo] [] [bar baz]",
   ],
   invalid_values: [
     "'fizz' / repeat(1, 100px)",
@@ -12394,25 +12450,12 @@ gCSSProperties["grid-template"] = {
     "[fizz] [buzz] 100px / 40px",
     "[fizz] [buzz] 'foo' / 40px",
     "'foo' / none",
-  ],
-};
-if (isGridTemplateSubgridValueEnabled) {
-  gCSSProperties["grid-template"].other_values.push(
-    "subgrid / subgrid",
-    "subgrid/40px 20px",
-    "subgrid [foo] [] [bar baz] / 40px 20px",
-    "40px 20px/subgrid",
-    "40px 20px/subgrid  [foo] [] repeat(3, [a] [b]) [bar baz]",
-    "subgrid/subgrid",
-    "subgrid [foo] [] [bar baz]/subgrid [foo] [] [bar baz]"
-  );
-  gCSSProperties["grid-template"].invalid_values.push(
     "subgrid",
     "subgrid []",
     "subgrid [] / 'fizz'",
-    "subgrid / 'fizz'"
-  );
-}
+    "subgrid / 'fizz'",
+  ],
+};
 if (isGridTemplateMasonryValueEnabled) {
   gCSSProperties["grid-template"].other_values.push(
     "masonry / subgrid",
@@ -13604,7 +13647,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.animation-composition.enabled")) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.scroll-linked-animations.enabled")) {
+if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
   // Basically, web-platform-tests should cover most cases, so here we only
   // put some basic test cases.
   gCSSProperties["animation"].subproperties.push("animation-timeline");
@@ -13673,6 +13716,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-linked-animations.enabled")) {
     initial_values: ["none"],
     other_values: [
       "all",
+      "auto",
       "ball",
       "mall",
       "color",
@@ -13685,13 +13729,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-linked-animations.enabled")) {
       "\\2bounce",
       "-\\2bounce",
     ],
-    invalid_values: [
-      "auto",
-      "bounce, abc",
-      "abc bounce",
-      "10px",
-      "rgb(1, 2, 3)",
-    ],
+    invalid_values: ["abc bounce", "10px", "rgb(1, 2, 3)"],
   };
 
   gCSSProperties["scroll-timeline-axis"] = {
@@ -13708,17 +13746,82 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-linked-animations.enabled")) {
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
     subproperties: ["scroll-timeline-name", "scroll-timeline-axis"],
-    initial_values: ["none block", "block none", "block", "none"],
+    initial_values: ["none block", "none"],
     other_values: [
+      "auto inline",
       "bounce inline",
       "bounce vertical",
-      "horizontal bounce",
-      "inline \\32bounce",
-      "block -bounce",
-      "vertical \\32 0bounce",
-      "horizontal -\\32 0bounce",
+      "\\32bounce inline",
+      "-bounce block",
+      "\\32 0bounce vertical",
+      "-\\32 0bounce horizontal",
+      "a, b, c",
+      "a block, b inline, c vertical",
     ],
-    invalid_values: ["", "bounce bounce"],
+    invalid_values: ["", "bounce bounce", "horizontal a", "block abc"],
+  };
+
+  gCSSProperties["view-timeline-name"] = {
+    domProp: "viewTimelineName",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "all",
+      "auto",
+      "ball",
+      "mall",
+      "color",
+      "foobar",
+      "\\32bounce",
+      "-bounce",
+      "-\\32bounce",
+      "\\32 0bounce",
+      "-\\32 0bounce",
+      "\\2bounce",
+      "-\\2bounce",
+      "bounce, abc",
+      "none, none",
+    ],
+    invalid_values: ["abc bounce", "10px", "rgb(1, 2, 3)"],
+  };
+
+  gCSSProperties["view-timeline-axis"] = {
+    domProp: "viewTimelineAxis",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["block"],
+    other_values: ["inline", "vertical", "horizontal", "inline, block"],
+    invalid_values: ["auto", "none", "abc", "inline block"],
+  };
+
+  gCSSProperties["view-timeline-inset"] = {
+    domProp: "viewTimelineInset",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["0px"],
+    other_values: ["auto", "1%", "1px 1%", "auto auto", "calc(0px) auto"],
+    invalid_values: ["none", "rgb(1, 2, 3)", "foo bar", "1px 2px 3px"],
+  };
+
+  gCSSProperties["view-timeline"] = {
+    domProp: "viewTimeline",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["view-timeline-name", "view-timeline-axis"],
+    initial_values: ["none block", "none"],
+    other_values: [
+      "auto inline",
+      "bounce inline",
+      "bounce vertical",
+      "\\32bounce inline",
+      "-bounce block",
+      "\\32 0bounce vertical",
+      "-\\32 0bounce horizontal",
+      "a, b, c",
+      "a block, b inline, c vertical",
+    ],
+    invalid_values: ["", ",", "abc abc", "horizontal a", "block abc"],
   };
 }
 

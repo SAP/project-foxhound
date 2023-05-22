@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import {
   MIN_RICH_FAVICON_SIZE,
   MIN_SMALL_FAVICON_SIZE,
@@ -16,7 +19,7 @@ import { LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
 import { ImpressionStats } from "../DiscoveryStreamImpressionStats/ImpressionStats";
 import React from "react";
 import { ScreenshotUtils } from "content-src/lib/screenshot-utils";
-import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.jsm";
+import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.sys.mjs";
 import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 import { TopSiteImpressionWrapper } from "./TopSiteImpressionWrapper";
 const SPOC_TYPE = "SPOC";
@@ -590,7 +593,7 @@ export class TopSitePlaceholder extends React.PureComponent {
         isDraggable={false}
       >
         <button
-          aria-haspopup="true"
+          aria-haspopup="dialog"
           className="context-menu-button edit-button icon"
           data-l10n-id="newtab-menu-topsites-placeholder-tooltip"
           onClick={this.onEditButtonClick}

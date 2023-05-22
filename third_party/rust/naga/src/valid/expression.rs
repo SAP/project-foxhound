@@ -1,10 +1,16 @@
 #[cfg(feature = "validate")]
-use super::{compose::validate_compose, FunctionInfo, ShaderStages, TypeFlags};
+use std::ops::Index;
+
+#[cfg(feature = "validate")]
+use super::{
+    compose::validate_compose, validate_atomic_compare_exchange_struct, FunctionInfo, ShaderStages,
+    TypeFlags,
+};
 #[cfg(feature = "validate")]
 use crate::arena::UniqueArena;
 
 use crate::{
-    arena::{BadHandle, Handle},
+    arena::Handle,
     proc::{IndexableLengthError, ResolveError},
 };
 
@@ -15,10 +21,6 @@ pub enum ExpressionError {
     DoesntExist,
     #[error("Used by a statement before it was introduced into the scope by any of the dominating blocks")]
     NotInScope,
-    #[error("Depends on {0:?}, which has not been processed yet")]
-    ForwardDependency(Handle<crate::Expression>),
-    #[error(transparent)]
-    BadDependency(#[from] BadHandle),
     #[error("Base type {0:?} is not compatible with this expression")]
     InvalidBaseType(Handle<crate::Expression>),
     #[error("Accessing with index {0:?} can't be done")]
@@ -63,8 +65,6 @@ pub enum ExpressionError {
     ExpectedGlobalVariable,
     #[error("Not a global variable or a function argument")]
     ExpectedGlobalOrArgument,
-    #[error("Calling an undeclared function {0:?}")]
-    CallToUndeclaredFunction(Handle<crate::Function>),
     #[error("Needs to be an binding array instead of {0:?}")]
     ExpectedBindingArrayType(Handle<crate::Type>),
     #[error("Needs to be an image instead of {0:?}")]
@@ -115,8 +115,8 @@ pub enum ExpressionError {
     WrongArgumentCount(crate::MathFunction),
     #[error("Argument [{1}] to {0:?} as expression {2:?} has an invalid type.")]
     InvalidArgumentType(crate::MathFunction, u32, Handle<crate::Expression>),
-    #[error("Atomic result type can't be {0:?} of {1} bytes")]
-    InvalidAtomicResultType(crate::ScalarKind, crate::Bytes),
+    #[error("Atomic result type can't be {0:?}")]
+    InvalidAtomicResultType(Handle<crate::Type>),
     #[error("Shader requires capability {0:?}")]
     MissingCapabilities(super::Capabilities),
 }
@@ -129,15 +129,19 @@ struct ExpressionTypeResolver<'a> {
 }
 
 #[cfg(feature = "validate")]
-impl<'a> ExpressionTypeResolver<'a> {
-    fn resolve(
-        &self,
-        handle: Handle<crate::Expression>,
-    ) -> Result<&'a crate::TypeInner, ExpressionError> {
+impl<'a> Index<Handle<crate::Expression>> for ExpressionTypeResolver<'a> {
+    type Output = crate::TypeInner;
+
+    #[allow(clippy::panic)]
+    fn index(&self, handle: Handle<crate::Expression>) -> &Self::Output {
         if handle < self.root {
-            Ok(self.info[handle].ty.inner_with(self.types))
+            self.info[handle].ty.inner_with(self.types)
         } else {
-            Err(ExpressionError::ForwardDependency(handle))
+            // `Validator::validate_module_handles` should have caught this.
+            panic!(
+                "Depends on {:?}, which has not been processed yet",
+                self.root
+            )
         }
     }
 }
@@ -163,7 +167,7 @@ impl super::Validator {
 
         let stages = match *expression {
             E::Access { base, index } => {
-                let base_type = resolver.resolve(base)?;
+                let base_type = &resolver[base];
                 // See the documentation for `Expression::Access`.
                 let dynamic_indexing_restricted = match *base_type {
                     Ti::Vector { .. } => false,
@@ -176,7 +180,7 @@ impl super::Validator {
                         return Err(ExpressionError::InvalidBaseType(base));
                     }
                 };
-                match *resolver.resolve(index)? {
+                match resolver[index] {
                     //TODO: only allow one of these
                     Ti::Scalar {
                         kind: Sk::Sint | Sk::Uint,
@@ -254,7 +258,7 @@ impl super::Validator {
                     Ok(limit)
                 }
 
-                let limit = resolve_index_limit(module, base, resolver.resolve(base)?, true)?;
+                let limit = resolve_index_limit(module, base, &resolver[base], true)?;
                 if index >= limit {
                     return Err(ExpressionError::IndexOutOfBounds(
                         base,
@@ -263,11 +267,8 @@ impl super::Validator {
                 }
                 ShaderStages::all()
             }
-            E::Constant(handle) => {
-                let _ = module.constants.try_get(handle)?;
-                ShaderStages::all()
-            }
-            E::Splat { size: _, value } => match *resolver.resolve(value)? {
+            E::Constant(_handle) => ShaderStages::all(),
+            E::Splat { size: _, value } => match resolver[value] {
                 Ti::Scalar { .. } => ShaderStages::all(),
                 ref other => {
                     log::error!("Splat scalar type {:?}", other);
@@ -279,7 +280,7 @@ impl super::Validator {
                 vector,
                 pattern,
             } => {
-                let vec_size = match *resolver.resolve(vector)? {
+                let vec_size = match resolver[vector] {
                     Ti::Vector { size: vec_size, .. } => vec_size,
                     ref other => {
                         log::error!("Swizzle vector type {:?}", other);
@@ -294,11 +295,6 @@ impl super::Validator {
                 ShaderStages::all()
             }
             E::Compose { ref components, ty } => {
-                for &handle in components {
-                    if handle >= root {
-                        return Err(ExpressionError::ForwardDependency(handle));
-                    }
-                }
                 validate_compose(
                     ty,
                     &module.constants,
@@ -313,16 +309,10 @@ impl super::Validator {
                 }
                 ShaderStages::all()
             }
-            E::GlobalVariable(handle) => {
-                let _ = module.global_variables.try_get(handle)?;
-                ShaderStages::all()
-            }
-            E::LocalVariable(handle) => {
-                let _ = function.local_variables.try_get(handle)?;
-                ShaderStages::all()
-            }
+            E::GlobalVariable(_handle) => ShaderStages::all(),
+            E::LocalVariable(_handle) => ShaderStages::all(),
             E::Load { pointer } => {
-                match *resolver.resolve(pointer)? {
+                match resolver[pointer] {
                     Ti::Pointer { base, .. }
                         if self.types[base.index()]
                             .flags
@@ -346,57 +336,9 @@ impl super::Validator {
                 depth_ref,
             } => {
                 // check the validity of expressions
-                let image_ty = match function.expressions[image] {
-                    crate::Expression::GlobalVariable(var_handle) => {
-                        module.global_variables[var_handle].ty
-                    }
-                    crate::Expression::FunctionArgument(i) => function.arguments[i as usize].ty,
-                    crate::Expression::Access { base, .. }
-                    | crate::Expression::AccessIndex { base, .. } => {
-                        match function.expressions[base] {
-                            crate::Expression::GlobalVariable(var_handle) => {
-                                let array_ty = module.global_variables[var_handle].ty;
+                let image_ty = Self::global_var_ty(module, function, image)?;
+                let sampler_ty = Self::global_var_ty(module, function, sampler)?;
 
-                                match module.types[array_ty].inner {
-                                    Ti::BindingArray { base, .. } => base,
-                                    _ => {
-                                        return Err(ExpressionError::ExpectedBindingArrayType(
-                                            array_ty,
-                                        ))
-                                    }
-                                }
-                            }
-                            _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                        }
-                    }
-                    _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                };
-
-                let sampler_ty = match function.expressions[sampler] {
-                    crate::Expression::GlobalVariable(var_handle) => {
-                        module.global_variables[var_handle].ty
-                    }
-                    crate::Expression::FunctionArgument(i) => function.arguments[i as usize].ty,
-                    crate::Expression::Access { base, .. }
-                    | crate::Expression::AccessIndex { base, .. } => {
-                        match function.expressions[base] {
-                            crate::Expression::GlobalVariable(var_handle) => {
-                                let array_ty = module.global_variables[var_handle].ty;
-
-                                match module.types[array_ty].inner {
-                                    Ti::BindingArray { base, .. } => base,
-                                    _ => {
-                                        return Err(ExpressionError::ExpectedBindingArrayType(
-                                            array_ty,
-                                        ))
-                                    }
-                                }
-                            }
-                            _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                        }
-                    }
-                    _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                };
                 let comparison = match module.types[sampler_ty].inner {
                     Ti::Sampler { comparison } => comparison,
                     _ => return Err(ExpressionError::ExpectedSamplerType(sampler_ty)),
@@ -413,7 +355,7 @@ impl super::Validator {
                             return Err(ExpressionError::InvalidImageArrayIndex);
                         }
                         if let Some(expr) = array_index {
-                            match *resolver.resolve(expr)? {
+                            match resolver[expr] {
                                 Ti::Scalar {
                                     kind: Sk::Sint,
                                     width: _,
@@ -432,6 +374,10 @@ impl super::Validator {
                         kind: crate::ScalarKind::Float,
                         multi: false,
                     } => false,
+                    crate::ImageClass::Sampled {
+                        kind: crate::ScalarKind::Uint | crate::ScalarKind::Sint,
+                        multi: false,
+                    } if gather.is_some() => false,
                     crate::ImageClass::Depth { multi: false } => true,
                     _ => return Err(ExpressionError::InvalidImageClass(class)),
                 };
@@ -449,7 +395,7 @@ impl super::Validator {
                     crate::ImageDimension::D2 => 2,
                     crate::ImageDimension::D3 | crate::ImageDimension::Cube => 3,
                 };
-                match *resolver.resolve(coordinate)? {
+                match resolver[coordinate] {
                     Ti::Scalar {
                         kind: Sk::Float, ..
                     } if num_components == 1 => {}
@@ -487,7 +433,7 @@ impl super::Validator {
 
                 // check depth reference type
                 if let Some(expr) = depth_ref {
-                    match *resolver.resolve(expr)? {
+                    match resolver[expr] {
                         Ti::Scalar {
                             kind: Sk::Float, ..
                         } => {}
@@ -524,7 +470,7 @@ impl super::Validator {
                     crate::SampleLevel::Auto => ShaderStages::FRAGMENT,
                     crate::SampleLevel::Zero => ShaderStages::all(),
                     crate::SampleLevel::Exact(expr) => {
-                        match *resolver.resolve(expr)? {
+                        match resolver[expr] {
                             Ti::Scalar {
                                 kind: Sk::Float, ..
                             } => {}
@@ -533,7 +479,7 @@ impl super::Validator {
                         ShaderStages::all()
                     }
                     crate::SampleLevel::Bias(expr) => {
-                        match *resolver.resolve(expr)? {
+                        match resolver[expr] {
                             Ti::Scalar {
                                 kind: Sk::Float, ..
                             } => {}
@@ -542,7 +488,7 @@ impl super::Validator {
                         ShaderStages::all()
                     }
                     crate::SampleLevel::Gradient { x, y } => {
-                        match *resolver.resolve(x)? {
+                        match resolver[x] {
                             Ti::Scalar {
                                 kind: Sk::Float, ..
                             } if num_components == 1 => {}
@@ -555,7 +501,7 @@ impl super::Validator {
                                 return Err(ExpressionError::InvalidSampleLevelGradientType(dim, x))
                             }
                         }
-                        match *resolver.resolve(y)? {
+                        match resolver[y] {
                             Ti::Scalar {
                                 kind: Sk::Float, ..
                             } if num_components == 1 => {}
@@ -579,38 +525,14 @@ impl super::Validator {
                 sample,
                 level,
             } => {
-                let ty = match function.expressions[image] {
-                    crate::Expression::GlobalVariable(var_handle) => {
-                        module.global_variables[var_handle].ty
-                    }
-                    crate::Expression::FunctionArgument(i) => function.arguments[i as usize].ty,
-                    crate::Expression::Access { base, .. }
-                    | crate::Expression::AccessIndex { base, .. } => {
-                        match function.expressions[base] {
-                            crate::Expression::GlobalVariable(var_handle) => {
-                                let array_ty = module.global_variables[var_handle].ty;
-
-                                match module.types[array_ty].inner {
-                                    Ti::BindingArray { base, .. } => base,
-                                    _ => {
-                                        return Err(ExpressionError::ExpectedBindingArrayType(
-                                            array_ty,
-                                        ))
-                                    }
-                                }
-                            }
-                            _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                        }
-                    }
-                    _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                };
+                let ty = Self::global_var_ty(module, function, image)?;
                 match module.types[ty].inner {
                     Ti::Image {
                         class,
                         arrayed,
                         dim,
                     } => {
-                        match resolver.resolve(coordinate)?.image_storage_coordinates() {
+                        match resolver[coordinate].image_storage_coordinates() {
                             Some(coord_dim) if coord_dim == dim => {}
                             _ => {
                                 return Err(ExpressionError::InvalidImageCoordinateType(
@@ -622,7 +544,7 @@ impl super::Validator {
                             return Err(ExpressionError::InvalidImageArrayIndex);
                         }
                         if let Some(expr) = array_index {
-                            match *resolver.resolve(expr)? {
+                            match resolver[expr] {
                                 Ti::Scalar {
                                     kind: Sk::Sint,
                                     width: _,
@@ -634,7 +556,7 @@ impl super::Validator {
                         match (sample, class.is_multisampled()) {
                             (None, false) => {}
                             (Some(sample), true) => {
-                                if resolver.resolve(sample)?.scalar_kind() != Some(Sk::Sint) {
+                                if resolver[sample].scalar_kind() != Some(Sk::Sint) {
                                     return Err(ExpressionError::InvalidImageOtherIndexType(
                                         sample,
                                     ));
@@ -648,7 +570,7 @@ impl super::Validator {
                         match (level, class.is_mipmapped()) {
                             (None, false) => {}
                             (Some(level), true) => {
-                                if resolver.resolve(level)?.scalar_kind() != Some(Sk::Sint) {
+                                if resolver[level].scalar_kind() != Some(Sk::Sint) {
                                     return Err(ExpressionError::InvalidImageOtherIndexType(level));
                                 }
                             }
@@ -662,31 +584,7 @@ impl super::Validator {
                 ShaderStages::all()
             }
             E::ImageQuery { image, query } => {
-                let ty = match function.expressions[image] {
-                    crate::Expression::GlobalVariable(var_handle) => {
-                        module.global_variables[var_handle].ty
-                    }
-                    crate::Expression::FunctionArgument(i) => function.arguments[i as usize].ty,
-                    crate::Expression::Access { base, .. }
-                    | crate::Expression::AccessIndex { base, .. } => {
-                        match function.expressions[base] {
-                            crate::Expression::GlobalVariable(var_handle) => {
-                                let array_ty = module.global_variables[var_handle].ty;
-
-                                match module.types[array_ty].inner {
-                                    Ti::BindingArray { base, .. } => base,
-                                    _ => {
-                                        return Err(ExpressionError::ExpectedBindingArrayType(
-                                            array_ty,
-                                        ))
-                                    }
-                                }
-                            }
-                            _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                        }
-                    }
-                    _ => return Err(ExpressionError::ExpectedGlobalVariable),
-                };
+                let ty = Self::global_var_ty(module, function, image)?;
                 match module.types[ty].inner {
                     Ti::Image { class, arrayed, .. } => {
                         let good = match query {
@@ -706,7 +604,7 @@ impl super::Validator {
             }
             E::Unary { op, expr } => {
                 use crate::UnaryOperator as Uo;
-                let inner = resolver.resolve(expr)?;
+                let inner = &resolver[expr];
                 match (op, inner.scalar_kind()) {
                     (_, Some(Sk::Sint | Sk::Bool))
                     //TODO: restrict Negate for bools?
@@ -721,8 +619,8 @@ impl super::Validator {
             }
             E::Binary { op, left, right } => {
                 use crate::BinaryOperator as Bo;
-                let left_inner = resolver.resolve(left)?;
-                let right_inner = resolver.resolve(right)?;
+                let left_inner = &resolver[left];
+                let right_inner = &resolver[right];
                 let good = match op {
                     Bo::Add | Bo::Subtract => match *left_inner {
                         Ti::Scalar { kind, .. } | Ti::Vector { kind, .. } => match kind {
@@ -903,9 +801,9 @@ impl super::Validator {
                 accept,
                 reject,
             } => {
-                let accept_inner = resolver.resolve(accept)?;
-                let reject_inner = resolver.resolve(reject)?;
-                let condition_good = match *resolver.resolve(condition)? {
+                let accept_inner = &resolver[accept];
+                let reject_inner = &resolver[reject];
+                let condition_good = match resolver[condition] {
                     Ti::Scalar {
                         kind: Sk::Bool,
                         width: _,
@@ -935,7 +833,7 @@ impl super::Validator {
                 ShaderStages::all()
             }
             E::Derivative { axis: _, expr } => {
-                match *resolver.resolve(expr)? {
+                match resolver[expr] {
                     Ti::Scalar {
                         kind: Sk::Float, ..
                     }
@@ -948,7 +846,7 @@ impl super::Validator {
             }
             E::Relational { fun, argument } => {
                 use crate::RelationalFunction as Rf;
-                let argument_inner = resolver.resolve(argument)?;
+                let argument_inner = &resolver[argument];
                 match fun {
                     Rf::All | Rf::Any => match *argument_inner {
                         Ti::Vector { kind: Sk::Bool, .. } => {}
@@ -981,10 +879,11 @@ impl super::Validator {
             } => {
                 use crate::MathFunction as Mf;
 
-                let arg_ty = resolver.resolve(arg)?;
-                let arg1_ty = arg1.map(|expr| resolver.resolve(expr)).transpose()?;
-                let arg2_ty = arg2.map(|expr| resolver.resolve(expr)).transpose()?;
-                let arg3_ty = arg3.map(|expr| resolver.resolve(expr)).transpose()?;
+                let resolve = |arg| &resolver[arg];
+                let arg_ty = resolve(arg);
+                let arg1_ty = arg1.map(resolve);
+                let arg2_ty = arg2.map(resolve);
+                let arg3_ty = arg3.map(resolve);
                 match fun {
                     Mf::Abs => {
                         if arg1_ty.is_some() | arg2_ty.is_some() | arg3_ty.is_some() {
@@ -1324,7 +1223,11 @@ impl super::Validator {
                             _ => return Err(ExpressionError::InvalidArgumentType(fun, 0, arg)),
                         }
                     }
-                    Mf::CountOneBits | Mf::ReverseBits | Mf::FindLsb | Mf::FindMsb => {
+                    Mf::CountLeadingZeros
+                    | Mf::CountOneBits
+                    | Mf::ReverseBits
+                    | Mf::FindLsb
+                    | Mf::FindMsb => {
                         if arg1_ty.is_some() | arg2_ty.is_some() | arg3_ty.is_some() {
                             return Err(ExpressionError::WrongArgumentCount(fun));
                         }
@@ -1468,7 +1371,7 @@ impl super::Validator {
                 kind,
                 convert,
             } => {
-                let base_width = match *resolver.resolve(expr)? {
+                let base_width = match resolver[expr] {
                     crate::TypeInner::Scalar { width, .. }
                     | crate::TypeInner::Vector { width, .. }
                     | crate::TypeInner::Matrix { width, .. } => width,
@@ -1481,25 +1384,33 @@ impl super::Validator {
                 ShaderStages::all()
             }
             E::CallResult(function) => other_infos[function.index()].available_stages,
-            E::AtomicResult {
-                kind,
-                width,
-                comparison: _,
-            } => {
-                let good = match kind {
-                    crate::ScalarKind::Uint | crate::ScalarKind::Sint => {
-                        self.check_width(kind, width)
+            E::AtomicResult { ty, comparison } => {
+                let scalar_predicate = |ty: &crate::TypeInner| match ty {
+                    &crate::TypeInner::Scalar {
+                        kind: kind @ (crate::ScalarKind::Uint | crate::ScalarKind::Sint),
+                        width,
+                    } => self.check_width(kind, width),
+                    _ => false,
+                };
+                let good = match &module.types[ty].inner {
+                    ty if !comparison => scalar_predicate(ty),
+                    &crate::TypeInner::Struct { ref members, .. } if comparison => {
+                        validate_atomic_compare_exchange_struct(
+                            &module.types,
+                            members,
+                            scalar_predicate,
+                        )
                     }
                     _ => false,
                 };
                 if !good {
-                    return Err(ExpressionError::InvalidAtomicResultType(kind, width));
+                    return Err(ExpressionError::InvalidAtomicResultType(ty));
                 }
                 ShaderStages::all()
             }
-            E::ArrayLength(expr) => match *resolver.resolve(expr)? {
+            E::ArrayLength(expr) => match resolver[expr] {
                 Ti::Pointer { base, .. } => {
-                    let base_ty = resolver.types.get_handle(base)?;
+                    let base_ty = &resolver.types[base];
                     if let Ti::Array {
                         size: crate::ArraySize::Dynamic,
                         ..
@@ -1517,5 +1428,32 @@ impl super::Validator {
             },
         };
         Ok(stages)
+    }
+
+    fn global_var_ty(
+        module: &crate::Module,
+        function: &crate::Function,
+        expr: Handle<crate::Expression>,
+    ) -> Result<Handle<crate::Type>, ExpressionError> {
+        use crate::Expression as Ex;
+
+        match function.expressions[expr] {
+            Ex::GlobalVariable(var_handle) => Ok(module.global_variables[var_handle].ty),
+            Ex::FunctionArgument(i) => Ok(function.arguments[i as usize].ty),
+            Ex::Access { base, .. } | Ex::AccessIndex { base, .. } => {
+                match function.expressions[base] {
+                    Ex::GlobalVariable(var_handle) => {
+                        let array_ty = module.global_variables[var_handle].ty;
+
+                        match module.types[array_ty].inner {
+                            crate::TypeInner::BindingArray { base, .. } => Ok(base),
+                            _ => Err(ExpressionError::ExpectedBindingArrayType(array_ty)),
+                        }
+                    }
+                    _ => Err(ExpressionError::ExpectedGlobalVariable),
+                }
+            }
+            _ => Err(ExpressionError::ExpectedGlobalVariable),
+        }
     }
 }

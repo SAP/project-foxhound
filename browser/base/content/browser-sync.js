@@ -9,6 +9,11 @@ const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
+  "ExperimentAPI",
+  "resource://nimbus/ExperimentAPI.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "FxAccounts",
   "resource://gre/modules/FxAccounts.jsm"
 );
@@ -73,7 +78,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
       }
       // force a background sync.
       SyncedTabs.syncTabs().catch(ex => {
-        Cu.reportError(ex);
+        console.error(ex);
       });
       this.deck.toggleAttribute("syncingtabs", true);
       // show the current list - it will be updated by our observer.
@@ -99,7 +104,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
         return this.__showSyncedTabs(paginationInfo);
       },
       e => {
-        Cu.reportError(e);
+        console.error(e);
       }
     );
   }
@@ -151,7 +156,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
         for (let client of clients) {
           // add a menu separator for all clients other than the first.
           if (fragment.lastElementChild) {
-            let separator = document.createXULElement("menuseparator");
+            let separator = document.createXULElement("toolbarseparator");
             fragment.appendChild(separator);
           }
           // We add the client's elements to a container, and indicate which
@@ -176,7 +181,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
         this.tabsList.appendChild(fragment);
       })
       .catch(err => {
-        Cu.reportError(err);
+        console.error(err);
       })
       .then(() => {
         // an observer for tests.
@@ -574,7 +579,7 @@ var gSync = {
 
   observe(subject, topic, data) {
     if (!this._initialized) {
-      Cu.reportError("browser-sync observer called after unload: " + topic);
+      console.error("browser-sync observer called after unload: ", topic);
       return;
     }
     switch (topic) {
@@ -799,9 +804,26 @@ var gSync = {
     let fxaStatus = document.documentElement.getAttribute("fxastatus");
 
     if (fxaStatus == "not_configured") {
-      this.openFxAEmailFirstPageFromFxaMenu(
-        PanelMultiView.getViewNode(document, "PanelUI-fxa")
-      );
+      let extraParams = {};
+      let fxaButtonVisibilityExperiment =
+        ExperimentAPI.getExperimentMetaData({
+          featureId: "fxaButtonVisibility",
+        }) ??
+        ExperimentAPI.getRolloutMetaData({
+          featureId: "fxaButtonVisibility",
+        });
+      if (fxaButtonVisibilityExperiment) {
+        extraParams = {
+          entrypoint_experiment: fxaButtonVisibilityExperiment.slug,
+          entrypoint_variation: fxaButtonVisibilityExperiment.branch.slug,
+        };
+      }
+
+      let panel =
+        anchor.id == "appMenu-fxa-label2"
+          ? PanelMultiView.getViewNode(document, "PanelUI-fxa")
+          : undefined;
+      this.openFxAEmailFirstPageFromFxaMenu(panel, extraParams);
       PanelUI.hide();
       return;
     }
@@ -1197,21 +1219,24 @@ var gSync = {
     }
   },
 
-  async openFxAEmailFirstPage(entryPoint) {
+  async openFxAEmailFirstPage(entryPoint, extraParams = {}) {
     if (!(await FxAccounts.canConnectAccount())) {
       return;
     }
-    const url = await FxAccounts.config.promiseConnectAccountURI(entryPoint);
+    const url = await FxAccounts.config.promiseConnectAccountURI(
+      entryPoint,
+      extraParams
+    );
     switchToTabHavingURI(url, true, { replaceQueryString: true });
   },
 
-  async openFxAEmailFirstPageFromFxaMenu(panel = undefined) {
+  async openFxAEmailFirstPageFromFxaMenu(panel = undefined, extraParams = {}) {
     this.emitFxaToolbarTelemetry("login", panel);
     let entryPoint = "fxa_discoverability_native";
     if (panel) {
       entryPoint = "fxa_app_menu";
     }
-    this.openFxAEmailFirstPage(entryPoint);
+    this.openFxAEmailFirstPage(entryPoint, extraParams);
   },
 
   async openFxAManagePage(entryPoint) {
@@ -1854,7 +1879,7 @@ var gSync = {
       let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
       navbar.overflowable.show().then(() => {
         PanelUI.showSubView("PanelUI-remotetabs", anchor);
-      }, Cu.reportError);
+      }, console.error);
     } else {
       // It is placed somewhere else - just try and show it.
       PanelUI.showSubView("PanelUI-remotetabs", anchor);

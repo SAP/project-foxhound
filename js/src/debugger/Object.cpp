@@ -123,16 +123,7 @@ static DebuggerObject* DebuggerObject_checkThis(JSContext* cx,
     return nullptr;
   }
 
-  // Forbid Debugger.Object.prototype, which is of class DebuggerObject::class_
-  // but isn't a real working Debugger.Object.
-  DebuggerObject* nthisobj = &thisobj->as<DebuggerObject>();
-  if (!nthisobj->isInstance()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_INCOMPATIBLE_PROTO, "Debugger.Object",
-                              "method", "prototype object");
-    return nullptr;
-  }
-  return nthisobj;
+  return &thisobj->as<DebuggerObject>();
 }
 
 /* static */
@@ -216,6 +207,7 @@ struct MOZ_STACK_CLASS DebuggerObject::CallData {
   bool makeDebuggeeValueMethod();
   bool makeDebuggeeNativeFunctionMethod();
   bool isSameNativeMethod();
+  bool isSameNativeWithJitInfoMethod();
   bool unsafeDereferenceMethod();
   bool unwrapMethod();
   bool getPromiseReactionsMethod();
@@ -1339,7 +1331,18 @@ bool DebuggerObject::CallData::isSameNativeMethod() {
     return false;
   }
 
-  return DebuggerObject::isSameNative(cx, object, args[0], args.rval());
+  return DebuggerObject::isSameNative(cx, object, args[0], CheckJitInfo::No,
+                                      args.rval());
+}
+
+bool DebuggerObject::CallData::isSameNativeWithJitInfoMethod() {
+  if (!args.requireAtLeast(
+          cx, "Debugger.Object.prototype.isSameNativeWithJitInfo", 1)) {
+    return false;
+  }
+
+  return DebuggerObject::isSameNative(cx, object, args[0], CheckJitInfo::Yes,
+                                      args.rval());
 }
 
 bool DebuggerObject::CallData::unsafeDereferenceMethod() {
@@ -1529,6 +1532,7 @@ const JSFunctionSpec DebuggerObject::methods_[] = {
     JS_DEBUG_FN("makeDebuggeeNativeFunction", makeDebuggeeNativeFunctionMethod,
                 1),
     JS_DEBUG_FN("isSameNative", isSameNativeMethod, 1),
+    JS_DEBUG_FN("isSameNativeWithJitInfo", isSameNativeWithJitInfoMethod, 1),
     JS_DEBUG_FN("unsafeDereference", unsafeDereferenceMethod, 0),
     JS_DEBUG_FN("unwrap", unwrapMethod, 0),
     JS_DEBUG_FN("getPromiseReactions", getPromiseReactionsMethod, 0),
@@ -1539,8 +1543,8 @@ NativeObject* DebuggerObject::initClass(JSContext* cx,
                                         Handle<GlobalObject*> global,
                                         HandleObject debugCtor) {
   Rooted<NativeObject*> objectProto(
-      cx, InitClass(cx, debugCtor, nullptr, &class_, construct, 0, properties_,
-                    methods_, nullptr, nullptr));
+      cx, InitClass(cx, debugCtor, nullptr, nullptr, "Object", construct, 0,
+                    properties_, methods_, nullptr, nullptr));
 
   if (!objectProto) {
     return nullptr;
@@ -2359,6 +2363,11 @@ Maybe<Completion> DebuggerObject::call(JSContext* cx,
     }
   }
 
+  // Note whether we are in an evaluation that might invoke the OnNativeCall
+  // hook, so that the JITs will be disabled.
+  AutoNoteDebuggerEvaluationWithOnNativeCallHook noteEvaluation(
+      cx, dbg->observesNativeCalls() ? dbg : nullptr);
+
   // Call the function.
   LeaveDebuggeeNoExecute nnx(cx);
 
@@ -2544,9 +2553,36 @@ static JSAtom* MaybeGetSelfHostedFunctionName(const Value& v) {
   return GetClonedSelfHostedFunctionName(fun);
 }
 
+static bool IsSameNative(JSFunction* a, JSFunction* b,
+                         DebuggerObject::CheckJitInfo checkJitInfo) {
+  if (a->native() != b->native()) {
+    return false;
+  }
+
+  if (checkJitInfo == DebuggerObject::CheckJitInfo::No) {
+    return true;
+  }
+
+  // Both function should agree with the existence of JitInfo.
+
+  if (a->hasJitInfo() != b->hasJitInfo()) {
+    return false;
+  }
+
+  if (!a->hasJitInfo()) {
+    return true;
+  }
+
+  if (a->jitInfo() == b->jitInfo()) {
+    return true;
+  }
+
+  return false;
+}
+
 /* static */
 bool DebuggerObject::isSameNative(JSContext* cx, Handle<DebuggerObject*> object,
-                                  HandleValue value,
+                                  HandleValue value, CheckJitInfo checkJitInfo,
                                   MutableHandleValue result) {
   RootedValue referentValue(cx, ObjectValue(*object->referent()));
 
@@ -2569,7 +2605,9 @@ bool DebuggerObject::isSameNative(JSContext* cx, Handle<DebuggerObject*> object,
   }
 
   RootedFunction referentFun(cx, EnsureNativeFunction(referentValue));
-  result.setBoolean(referentFun && referentFun->native() == fun->native());
+
+  result.setBoolean(referentFun &&
+                    IsSameNative(referentFun, fun, checkJitInfo));
   return true;
 }
 

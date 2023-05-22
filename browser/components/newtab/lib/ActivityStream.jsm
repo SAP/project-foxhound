@@ -21,8 +21,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 // NB: Eagerly load modules that will be loaded/constructed/initialized in the
 // common case to avoid the overhead of wrapping and detecting lazy loading.
-const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -532,7 +532,7 @@ const FEEDS_DATA = [
         AT: ["de"],
         IT: ["it"],
         FR: ["fr"],
-        ES: ["es"],
+        ES: ["es-ES"],
         PL: ["pl"],
         JP: ["ja", "ja-JP-mac"],
       }[geo];

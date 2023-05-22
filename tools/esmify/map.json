@@ -1,14 +1,6 @@
 {
   "chrome://devtools-startup/content/DevToolsShim.jsm":
     "devtools/startup/DevToolsShim.jsm",
-  "chrome://global/content/certviewer/asn1js_bundle.jsm":
-    "toolkit/components/certviewer/content/vendor/asn1js_bundle.jsm",
-  "chrome://global/content/certviewer/certDecoder.jsm":
-    "toolkit/components/certviewer/content/certDecoder.jsm",
-  "chrome://global/content/certviewer/pkijs_bundle.jsm":
-    "toolkit/components/certviewer/content/vendor/pkijs_bundle.jsm",
-  "chrome://global/content/certviewer/pvutils_bundle.jsm":
-    "toolkit/components/certviewer/content/vendor/pvutils_bundle.jsm",
   "chrome://global/content/tabprompts.jsm":
     "toolkit/components/prompts/content/tabprompts.jsm",
   "chrome://mochikit/content/ShutdownLeaksCollector.jsm":
@@ -329,7 +321,6 @@
     "browser/components/customizableui/PanelMultiView.jsm",
   "resource:///modules/PartnerLinkAttribution.jsm":
     "browser/modules/PartnerLinkAttribution.jsm",
-  "resource:///modules/PermissionUI.jsm": "browser/modules/PermissionUI.jsm",
   "resource:///modules/PingCentre.jsm": "browser/modules/PingCentre.jsm",
   "resource:///modules/PinnedGroupBuilder.jsm":
     "browser/components/places/PinnedGroupBuilder.jsm",
@@ -718,8 +709,8 @@
     "toolkit/components/formautofill/FormAutofillStorageBase.jsm",
   "resource://autofill/FormAutofillSync.jsm":
     "toolkit/components/formautofill/FormAutofillSync.jsm",
-  "resource://autofill/FormAutofillTelemetryUtils.jsm":
-    "toolkit/components/formautofill/FormAutofillTelemetryUtils.jsm",
+  "resource://autofill/Autofilltelemetry.jsm":
+    "toolkit/components/formautofill/Autofilltelemetry.jsm",
   "resource://autofill/FormAutofillUtils.jsm":
     "toolkit/components/formautofill/FormAutofillUtils.jsm",
   "resource://autofill/ProfileAutoCompleteResult.jsm":
@@ -1190,8 +1181,6 @@
     "mobile/android/modules/geckoview/GeckoViewProgress.jsm",
   "resource://gre/modules/GeckoViewPrompt.jsm":
     "mobile/android/components/geckoview/GeckoViewPrompt.jsm",
-  "resource://gre/modules/GeckoViewPrompter.jsm":
-    "mobile/android/components/geckoview/GeckoViewPrompter.jsm",
   "resource://gre/modules/GeckoViewPush.jsm":
     "mobile/android/components/geckoview/GeckoViewPush.jsm",
   "resource://gre/modules/GeckoViewPushController.jsm":
@@ -1370,8 +1359,6 @@
   "resource://gre/modules/Preferences.jsm": "toolkit/modules/Preferences.jsm",
   "resource://gre/modules/PrincipalsCollector.jsm":
     "toolkit/components/cleardata/PrincipalsCollector.jsm",
-  "resource://gre/modules/PrioPing.jsm":
-    "toolkit/components/telemetry/pings/PrioPing.jsm",
   "resource://gre/modules/PrivateBrowsingUtils.jsm":
     "toolkit/modules/PrivateBrowsingUtils.jsm",
   "resource://gre/modules/ProcessSelector.jsm": "dom/base/ProcessSelector.jsm",
@@ -1440,7 +1427,7 @@
   "resource://gre/modules/ShareDelegate.jsm":
     "mobile/android/components/geckoview/ShareDelegate.jsm",
   "resource://gre/modules/SharedPromptUtils.jsm":
-    "toolkit/components/prompts/src/SharedPromptUtils.jsm",
+    "toolkit/components/prompts/src/PromptUtils.jsm",
   "resource://gre/modules/ShieldContentProcess.jsm":
     "toolkit/components/normandy/ShieldContentProcess.jsm",
   "resource://gre/modules/ShortcutUtils.jsm":

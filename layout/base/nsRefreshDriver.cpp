@@ -40,7 +40,6 @@
 #include "mozilla/InputTaskManager.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/dom/FontTableURIProtocolHandler.h"
 #include "nsITimer.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -1521,7 +1520,7 @@ void nsRefreshDriver::DispatchVisualViewportScrollEvents() {
 
 void nsRefreshDriver::AddPostRefreshObserver(
     nsAPostRefreshObserver* aObserver) {
-  MOZ_DIAGNOSTIC_ASSERT(!mPostRefreshObservers.Contains(aObserver));
+  MOZ_ASSERT(!mPostRefreshObservers.Contains(aObserver));
   mPostRefreshObservers.AppendElement(aObserver);
 }
 
@@ -1545,14 +1544,12 @@ void nsRefreshDriver::AddImageRequest(imgIRequest* aRequest) {
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     nsCOMPtr<nsIURI> uri = aRequest->GetURI();
-    nsAutoCString uristr;
-    uri->GetAsciiSpec(uristr);
 
     PROFILER_MARKER_TEXT("Image Animation", GRAPHICS,
                          MarkerOptions(MarkerTiming::IntervalStart(),
                                        MarkerInnerWindowIdFromDocShell(
                                            GetDocShell(mPresContext))),
-                         uristr);
+                         nsContentUtils::TruncatedURLForDisplay(uri));
   }
 }
 
@@ -1569,14 +1566,12 @@ void nsRefreshDriver::RemoveImageRequest(imgIRequest* aRequest) {
 
   if (removed && profiler_thread_is_being_profiled_for_markers()) {
     nsCOMPtr<nsIURI> uri = aRequest->GetURI();
-    nsAutoCString uristr;
-    uri->GetAsciiSpec(uristr);
 
     PROFILER_MARKER_TEXT("Image Animation", GRAPHICS,
                          MarkerOptions(MarkerTiming::IntervalEnd(),
                                        MarkerInnerWindowIdFromDocShell(
                                            GetDocShell(mPresContext))),
-                         uristr);
+                         nsContentUtils::TruncatedURLForDisplay(uri));
   }
 }
 
@@ -1738,8 +1733,7 @@ void nsRefreshDriver::EnsureTimerStarted(EnsureTimerStartedFlags aFlags) {
     // Image documents receive ticks from clients' refresh drivers.
     // XXXdholbert Exclude SVG-in-opentype fonts from this optimization, until
     // they receive refresh-driver ticks from their client docs (bug 1107252).
-    nsIURI* uri = mPresContext->Document()->GetDocumentURI();
-    if (!uri || !mozilla::dom::IsFontTableURI(uri)) {
+    if (!mPresContext->Document()->IsSVGGlyphsDocument()) {
       MOZ_ASSERT(!mActiveTimer,
                  "image doc refresh driver should never have its own timer");
       return;
@@ -1760,8 +1754,8 @@ void nsRefreshDriver::EnsureTimerStarted(EnsureTimerStartedFlags aFlags) {
       if (profiler_thread_is_being_profiled_for_markers()) {
         nsCString text = "initial timer start "_ns;
         if (mPresContext->Document()->GetDocumentURI()) {
-          text.Append(
-              mPresContext->Document()->GetDocumentURI()->GetSpecOrDefault());
+          text.Append(nsContentUtils::TruncatedURLForDisplay(
+              mPresContext->Document()->GetDocumentURI()));
         }
 
         PROFILER_MARKER_TEXT("nsRefreshDriver", LAYOUT,

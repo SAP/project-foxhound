@@ -32,9 +32,9 @@ dictionary RTCStats {
 };
 
 dictionary RTCRtpStreamStats : RTCStats {
-  unsigned long ssrc;
+  required unsigned long ssrc;
+  required DOMString kind;
   DOMString mediaType;
-  DOMString kind;
   DOMString transportId;
   DOMString codecId;
 };
@@ -63,8 +63,10 @@ dictionary RTCReceivedRtpStreamStats: RTCRtpStreamStats {
 };
 
 dictionary RTCInboundRtpStreamStats : RTCReceivedRtpStreamStats {
+  required DOMString trackIdentifier;
   DOMString remoteId;
   unsigned long framesDecoded;
+  unsigned long framesDropped;
   unsigned long frameWidth;
   unsigned long frameHeight;
   double framesPerSecond;

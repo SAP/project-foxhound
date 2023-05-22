@@ -20,8 +20,8 @@ ChromeUtils.defineModuleGetter(
   "pktApi",
   "chrome://pocket/content/pktApi.jsm"
 );
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
 });
 
 // List of namespaces for the structured ingestion system.
@@ -119,7 +119,8 @@ var pktTelemetry = {
   sendStructuredIngestionEvent(eventObject) {
     lazy.pingCentre.sendStructuredIngestionPing(
       eventObject,
-      this._generateStructuredIngestionEndpoint()
+      this._generateStructuredIngestionEndpoint(),
+      STRUCTURED_INGESTION_NAMESPACE_AS
     );
   },
 };

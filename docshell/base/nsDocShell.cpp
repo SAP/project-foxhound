@@ -96,7 +96,6 @@
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "ReferrerInfo.h"
 
-#include "nsIAppShell.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
 #include "nsICachingChannel.h"
@@ -265,17 +264,6 @@ using mozilla::ipc::Endpoint;
 // Threshold value in ms for META refresh based redirects
 #define REFRESH_REDIRECT_TIMER 15000
 
-// Hint for native dispatch of events on how long to delay after
-// all documents have loaded in milliseconds before favoring normal
-// native event dispatch priorites over performance
-// Can be overridden with docshell.event_starvation_delay_hint pref.
-#define NS_EVENT_STARVATION_DELAY_HINT 2000
-
-static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
-
-// Number of documents currently loading
-static int32_t gNumberOfDocumentsLoading = 0;
-
 static mozilla::LazyLogModule gCharsetMenuLog("CharsetMenu");
 
 #define LOGCHARSETMENU(args) \
@@ -296,16 +284,6 @@ extern mozilla::LazyLogModule gSHIPBFCacheLog;
 
 const char kAppstringsBundleURL[] =
     "chrome://global/locale/appstrings.properties";
-
-static void FavorPerformanceHint(bool aPerfOverStarvation) {
-  nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
-  if (appShell) {
-    appShell->FavorPerformanceHint(
-        aPerfOverStarvation,
-        Preferences::GetUint("docshell.event_starvation_delay_hint",
-                             NS_EVENT_STARVATION_DELAY_HINT));
-  }
-}
 
 static bool IsTopLevelDoc(BrowsingContext* aBrowsingContext,
                           nsILoadInfo* aLoadInfo) {
@@ -3978,7 +3956,9 @@ nsresult nsDocShell::LoadErrorPage(nsIURI* aURI, const char16_t* aURL,
                                    const char16_t* aDescription,
                                    const char* aCSSClass,
                                    nsIChannel* aFailedChannel) {
-  MOZ_ASSERT(!mIsBeingDestroyed);
+  if (mIsBeingDestroyed) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
 #if defined(DEBUG)
   if (MOZ_LOG_TEST(gDocShellLog, LogLevel::Debug)) {
@@ -4784,6 +4764,17 @@ void nsDocShell::DoGetPositionAndSize(int32_t* aX, int32_t* aY, int32_t* aWidth,
 }
 
 NS_IMETHODIMP
+nsDocShell::SetDimensions(DimensionRequest&& aRequest) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsDocShell::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
+                          int32_t* aY, int32_t* aCX, int32_t* aCY) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 nsDocShell::Repaint(bool aForce) {
   PresShell* presShell = GetPresShell();
   NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
@@ -4861,7 +4852,7 @@ nsDocShell::GetVisibility(bool* aVisibility) {
   NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
 
   // if our root view is hidden, we are not visible
-  if (view->GetVisibility() == nsViewVisibility_kHide) {
+  if (view->GetVisibility() == ViewVisibility::Hide) {
     return NS_OK;
   }
 
@@ -4908,7 +4899,13 @@ nsDocShell::GetVisibility(bool* aVisibility) {
 
   // Check with the tree owner as well to give embedders a chance to
   // expose visibility as well.
-  return treeOwnerAsWin->GetVisibility(aVisibility);
+  nsresult rv = treeOwnerAsWin->GetVisibility(aVisibility);
+  if (rv == NS_ERROR_NOT_IMPLEMENTED) {
+    // The tree owner had no opinion on our visibility.
+    *aVisibility = true;
+    return NS_OK;
+  }
+  return rv;
 }
 
 void nsDocShell::ActivenessMaybeChanged() {
@@ -6453,14 +6450,6 @@ nsresult nsDocShell::EndPageLoad(nsIWebProgress* aProgress,
     mIsExecutingOnLoadHandler = false;
 
     mEODForCurrentDocument = true;
-
-    // If all documents have completed their loading
-    // favor native event dispatch priorities
-    // over performance
-    if (--gNumberOfDocumentsLoading == 0) {
-      // Hint to use normal native event dispatch priorities
-      FavorPerformanceHint(false);
-    }
   }
   /* Check if the httpChannel has any cache-control related response headers,
    * like no-store, no-cache. If so, update SHEntry so that
@@ -7598,12 +7587,6 @@ nsresult nsDocShell::RestoreFromHistory() {
   mSavingOldViewer = false;
   mEODForCurrentDocument = false;
 
-  // Tell the event loop to favor plevents over user events, see comments
-  // in CreateContentViewer.
-  if (++gNumberOfDocumentsLoading == 1) {
-    FavorPerformanceHint(true);
-  }
-
   if (document) {
     RefPtr<nsDocShell> parent = GetInProcessParentDocshell();
     if (parent) {
@@ -8052,8 +8035,9 @@ nsresult nsDocShell::CreateContentViewer(const nsACString& aContentType,
         if (profiler_thread_is_being_profiled_for_markers()) {
           nsCOMPtr<nsIURI> prinURI;
           BasePrincipal::Cast(thisPrincipal)->GetURI(getter_AddRefs(prinURI));
-          nsPrintfCString marker("Iframe loaded in background: %s",
-                                 prinURI->GetSpecOrDefault().get());
+          nsPrintfCString marker(
+              "Iframe loaded in background: %s",
+              nsContentUtils::TruncatedURLForDisplay(prinURI).get());
           PROFILER_MARKER_TEXT("Background Iframe", DOM, {}, marker);
         }
         SetBackgroundLoadIframe();
@@ -8093,16 +8077,6 @@ nsresult nsDocShell::CreateContentViewer(const nsACString& aContentType,
         doc->SetPartID(partID);
       }
     }
-  }
-
-  // Give hint to native plevent dispatch mechanism. If a document
-  // is loading the native plevent dispatch mechanism should favor
-  // performance over normal native event dispatch priorities.
-  if (++gNumberOfDocumentsLoading == 1) {
-    // Hint to favor performance for the plevent notification mechanism.
-    // We want the pages to load as fast as possible even if its means
-    // native messages might be starved.
-    FavorPerformanceHint(true);
   }
 
   if (errorOnLocationChangeNeeded) {
@@ -9471,7 +9445,36 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
   if (!isJavaScript && isNotDownload &&
       !aLoadState->NotifiedBeforeUnloadListeners() && mContentViewer) {
     bool okToUnload;
-    rv = mContentViewer->PermitUnload(&okToUnload);
+
+    // Check if request is exempted from HTTPSOnlyMode and if https-first is
+    // enabled, if so it means:
+    //    * https-first failed to upgrade request to https
+    //    * we already asked for permission to unload and the user accepted
+    //      otherwise we wouldn't be here.
+    bool isPrivateWin = GetOriginAttributes().mPrivateBrowsingId > 0;
+    bool isHistoryOrReload = false;
+    uint32_t loadType = aLoadState->LoadType();
+
+    // Check if request is a reload.
+    if (loadType == LOAD_RELOAD_NORMAL ||
+        loadType == LOAD_RELOAD_BYPASS_CACHE ||
+        loadType == LOAD_RELOAD_BYPASS_PROXY ||
+        loadType == LOAD_RELOAD_BYPASS_PROXY_AND_CACHE ||
+        loadType == LOAD_HISTORY) {
+      isHistoryOrReload = true;
+    }
+
+    // If it isn't a reload, the request already failed to be upgraded and
+    // https-first is enabled then don't ask the user again for permission to
+    // unload and just unload.
+    if (!isHistoryOrReload && aLoadState->IsExemptFromHTTPSOnlyMode() &&
+        nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
+      rv = mContentViewer->PermitUnload(
+          nsIContentViewer::PermitUnloadAction::eDontPromptAndUnload,
+          &okToUnload);
+    } else {
+      rv = mContentViewer->PermitUnload(&okToUnload);
+    }
 
     if (NS_SUCCEEDED(rv) && !okToUnload) {
       // The user chose not to unload the page, interrupt the
@@ -12958,10 +12961,12 @@ bool nsDocShell::ShouldOpenInBlankTarget(const nsAString& aOriginalTarget,
              : !linkHost.Equals("www."_ns + docHost);
 }
 
-static bool IsElementAnchorOrArea(nsIContent* aContent) {
-  // Make sure we are dealing with either an <A> or <AREA> element in the HTML
-  // or XHTML namespace.
-  return aContent->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area);
+static bool ElementCanHaveNoopener(nsIContent* aContent) {
+  // Make sure we are dealing with either an <A>, <AREA>, or <FORM> element in
+  // the HTML, XHTML, or SVG namespace.
+  return aContent->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area,
+                                       nsGkAtoms::form) ||
+         aContent->IsSVGElement(nsGkAtoms::a);
 }
 
 nsresult nsDocShell::OnLinkClickSync(nsIContent* aContent,
@@ -13020,11 +13025,11 @@ nsresult nsDocShell::OnLinkClickSync(nsIContent* aContent,
   }
 
   uint32_t flags = INTERNAL_LOAD_FLAGS_NONE;
-  bool isElementAnchorOrArea = IsElementAnchorOrArea(aContent);
+  bool elementCanHaveNoopener = ElementCanHaveNoopener(aContent);
   bool triggeringPrincipalIsSystemPrincipal =
       aLoadState->TriggeringPrincipal()->IsSystemPrincipal();
-  if (isElementAnchorOrArea) {
-    MOZ_ASSERT(aContent->IsHTMLElement());
+  if (elementCanHaveNoopener) {
+    MOZ_ASSERT(aContent->IsHTMLElement() || aContent->IsSVGElement());
     nsAutoString relString;
     aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::rel,
                                    relString);
@@ -13080,8 +13085,7 @@ nsresult nsDocShell::OnLinkClickSync(nsIContent* aContent,
   // window for mScriptGlobal.  If it's not, then we don't want to
   // follow this link.
   nsPIDOMWindowInner* referrerInner = referrerDoc->GetInnerWindow();
-  NS_ENSURE_TRUE(referrerInner, NS_ERROR_UNEXPECTED);
-  if (!mScriptGlobal ||
+  if (!mScriptGlobal || !referrerInner ||
       mScriptGlobal->GetCurrentInnerWindow() != referrerInner) {
     // We're no longer the current inner window
     return NS_OK;
@@ -13108,8 +13112,8 @@ nsresult nsDocShell::OnLinkClickSync(nsIContent* aContent,
   uint32_t loadType = inOnLoadHandler ? LOAD_NORMAL_REPLACE : LOAD_LINK;
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      isElementAnchorOrArea ? new ReferrerInfo(*aContent->AsElement())
-                            : new ReferrerInfo(*referrerDoc);
+      elementCanHaveNoopener ? new ReferrerInfo(*aContent->AsElement())
+                             : new ReferrerInfo(*referrerDoc);
   RefPtr<WindowContext> context = mBrowsingContext->GetCurrentWindowContext();
 
   aLoadState->SetTriggeringSandboxFlags(triggeringSandboxFlags);

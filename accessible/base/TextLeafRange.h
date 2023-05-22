@@ -249,6 +249,21 @@ class TextLeafRange final {
   TextLeafPoint End() const { return mEnd; }
   void SetEnd(const TextLeafPoint& aEnd) { mEnd = aEnd; }
 
+  /**
+   * Returns a union rect (in dev pixels) of all character bounds in this range.
+   * This rect is screen-relative and inclusive of mEnd. This function only
+   * works on remote accessibles, and assumes caching is enabled.
+   */
+  LayoutDeviceIntRect Bounds() const;
+
+  /**
+   * Set range as DOM selection.
+   * aSelectionNum is the selection index to use. If aSelectionNum is
+   * out of bounds for current selection ranges, or is -1, a new selection
+   * range is created.
+   */
+  MOZ_CAN_RUN_SCRIPT bool SetSelection(int32_t aSelectionNum) const;
+
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;

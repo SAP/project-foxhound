@@ -379,6 +379,10 @@ class GCRuntime {
     return stats().addressOfAllocsSinceMinorGCNursery();
   }
 
+  const void* addressOfLastBufferedWholeCell() {
+    return storeBuffer_.refNoCheck().addressOfLastBufferedWholeCell();
+  }
+
 #ifdef JS_GC_ZEAL
   const uint32_t* addressOfZealModeBits() { return &zealModeBits.refNoCheck(); }
   void getZealBits(uint32_t* zealBits, uint32_t* frequency,
@@ -501,7 +505,9 @@ class GCRuntime {
 
   JS::Zone* getCurrentSweepGroup() { return currentSweepGroup; }
   unsigned getCurrentSweepGroupIndex() {
-    return state() == State::Sweep ? sweepGroupIndex : 0;
+    MOZ_ASSERT_IF(unsigned(state()) < unsigned(State::Sweep),
+                  sweepGroupIndex == 0);
+    return sweepGroupIndex;
   }
 
   uint64_t gcNumber() const { return number; }
@@ -623,8 +629,7 @@ class GCRuntime {
   static TenuredCell* refillFreeListInGC(Zone* zone, AllocKind thingKind);
 
   // Delayed marking.
-  void delayMarkingChildren(gc::Cell* cell, MarkColor color,
-                            const AutoLockGC& lock);
+  void delayMarkingChildren(gc::Cell* cell, MarkColor color);
   bool hasDelayedMarking() const;
   void markAllDelayedChildren(ShouldReportMarkTime reportTime);
 
@@ -661,6 +666,9 @@ class GCRuntime {
                                   AutoLockGC& lock);
   void resetParameter(JSGCParamKey key, AutoLockGC& lock);
   uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
+  bool setThreadParameter(JSGCParamKey key, uint32_t value, AutoLockGC& lock);
+  void resetThreadParameter(JSGCParamKey key, AutoLockGC& lock);
+  void updateThreadDataStructures(AutoLockGC& lock);
 
   JS::GCOptions gcOptions() const { return maybeGcOptions.ref().ref(); }
 
@@ -791,6 +799,7 @@ class GCRuntime {
       SliceBudget& sliceBudget,
       ParallelMarking allowParallelMarking = SingleThreadedMarking,
       ShouldReportMarkTime reportTime = ReportMarkTime);
+  bool canMarkInParallel() const;
 
   bool hasMarkingWork(MarkColor color) const;
 
@@ -906,7 +915,6 @@ class GCRuntime {
   [[nodiscard]] bool relocateArenas(Zone* zone, JS::GCReason reason,
                                     Arena*& relocatedListOut,
                                     SliceBudget& sliceBudget);
-  void updateRttValueObjects(MovingTracer* trc, Zone* zone);
   void updateCellPointers(Zone* zone, AllocKinds kinds);
   void updateAllCellPointers(MovingTracer* trc, Zone* zone);
   void updateZonePointersToRelocatedCells(Zone* zone);
@@ -1013,6 +1021,7 @@ class GCRuntime {
   MainThreadData<double> helperThreadRatio;
   MainThreadData<size_t> maxHelperThreads;
   MainThreadOrGCTaskData<size_t> helperThreadCount;
+  MainThreadData<size_t> markingThreadCount;
 
   // State used for managing atom mark bitmaps in each zone.
   AtomMarkingRuntime atomMarking;
@@ -1340,10 +1349,16 @@ class GCRuntime {
 
   MainThreadData<bool> lowMemoryState;
 
-  /* Synchronize GC heap access among GC helper threads and the main thread. */
+  /*
+   * General purpose GC lock, used for synchronising operations on
+   * arenas and during parallel marking.
+   */
   friend class js::AutoLockGC;
   friend class js::AutoLockGCBgAlloc;
   js::Mutex lock MOZ_UNANNOTATED;
+
+  /* Lock used to synchronise access to delayed marking state. */
+  js::Mutex delayedMarkingLock MOZ_UNANNOTATED;
 
   friend class BackgroundSweepTask;
   friend class BackgroundFreeTask;

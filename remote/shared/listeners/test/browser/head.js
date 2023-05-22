@@ -63,6 +63,25 @@ async function doGC() {
  */
 async function loadURL(browser, url) {
   const loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, url);
+  BrowserTestUtils.loadURIString(browser, url);
   return loaded;
+}
+
+/**
+ * Create a fetch request to `url` from the content page loaded in the provided
+ * `browser`.
+ *
+ *
+ * @param {Browser} browser
+ *     The browser element where the fetch should be performed.
+ * @param {String} url
+ *     The URL to fetch.
+ */
+function fetch(browser, url) {
+  return SpecialPowers.spawn(browser, [url], async _url => {
+    const response = await content.fetch(_url);
+    // Wait for response.text() to resolve as well to make sure the response
+    // has completed before returning.
+    await response.text();
+  });
 }

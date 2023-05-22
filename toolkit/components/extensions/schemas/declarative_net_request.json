@@ -229,7 +229,7 @@
               "isUrlFilterCaseSensitive": {
                 "type": "boolean",
                 "optional": true,
-                "description": "Whether 'urlFilter' or 'regexFilter' is case-sensitive. Defaults to true."
+                "description": "Whether 'urlFilter' or 'regexFilter' is case-sensitive."
               },
               "initiatorDomains": {
                 "type": "array",
@@ -421,6 +421,42 @@
     ],
     "functions": [
       {
+        "name": "updateDynamicRules",
+        "type": "function",
+        "description": "Modifies the current set of dynamic rules for the extension. The rules with IDs listed in options.removeRuleIds are first removed, and then the rules given in options.addRules are added. These rules are persisted across browser sessions and extension updates.",
+        "async": "callback",
+        "parameters": [
+          {
+            "name": "options",
+            "type": "object",
+            "properties": {
+              "removeRuleIds": {
+                "type": "array",
+                "optional": true,
+                "description": "IDs of the rules to remove. Any invalid IDs will be ignored.",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "addRules": {
+                "type": "array",
+                "optional": true,
+                "description": "Rules to add.",
+                "items": {
+                  "$ref": "Rule"
+                }
+              }
+            }
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Called when the dynamic rules have been updated",
+            "parameters": []
+          }
+        ]
+      },
+      {
         "name": "updateSessionRules",
         "type": "function",
         "description": "Modifies the current set of session scoped rules for the extension. The rules with IDs listed in options.removeRuleIds are first removed, and then the rules given in options.addRules are added. These rules are not persisted across sessions and are backed in memory.",
@@ -525,6 +561,27 @@
         ]
       },
       {
+        "name": "getDynamicRules",
+        "type": "function",
+        "description": "Returns the current set of dynamic rules for the extension.",
+        "async": "callback",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "dynamicRules",
+                "type": "array",
+                "items": {
+                  "$ref": "Rule"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "getSessionRules",
         "type": "function",
         "description": "Returns the current set of session scoped rules for the extension.",
@@ -535,6 +592,7 @@
             "type": "function",
             "parameters": [
               {
+                "name": "sessionRules",
                 "type": "array",
                 "items": {
                   "$ref": "Rule"
@@ -617,6 +675,34 @@
           }
         ]
       }
-    ]
+    ],
+    "properties": {
+      "DYNAMIC_RULESET_ID": {
+        "type": "string",
+        "value": "_dynamic",
+        "description": "Ruleset ID for the dynamic rules added by the extension."
+      },
+      "GUARANTEED_MINIMUM_STATIC_RULES": {
+        "type": "number",
+        "description": "The minimum number of static rules guaranteed to an extension across its enabled static rulesets. Any rules above this limit will count towards the global static rule limit."
+      },
+      "MAX_NUMBER_OF_STATIC_RULESETS": {
+        "type": "number",
+        "description": "The maximum number of static Rulesets an extension can specify as part of the rule_resources manifest key."
+      },
+      "MAX_NUMBER_OF_ENABLED_STATIC_RULESETS": {
+        "type": "number",
+        "description": "The maximum number of static Rulesets an extension can enable at any one time."
+      },
+      "MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES": {
+        "type": "number",
+        "description": "The maximum number of dynamic and session rules an extension can add. NOTE: in the Firefox we are enforcing this limit to the session and dynamic rules count separately, instead of enforcing it to the rules count for both combined as the Chrome implementation does."
+      },
+      "SESSION_RULESET_ID": {
+        "type": "string",
+        "value": "_session",
+        "description": "Ruleset ID for the session-scoped rules added by the extension."
+      }
+    }
   }
 ]

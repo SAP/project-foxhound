@@ -93,14 +93,8 @@ pref("extensions.formautofill.addresses.capture.enabled", true);
 pref("browser.formfill.debug", false);
 pref("extensions.formautofill.loglevel", "Warn");
 
-#ifdef NIGHTLY_BUILD
-// PDF.js
+// PDF.js (enabled in StaticPrefList.yaml)
 // Try to convert PDFs sent as octet-stream
 pref("pdfjs.handleOctetStream", true);
 pref("browser.download.open_pdf_attachments_inline", true);
 pref("pdfjs.annotationEditorMode", -1);
-pref("pdfjs.disabled", true);
-
-// set isolating strategy for Fission to isolateNothing
-pref("fission.webContentIsolationStrategy", 0);
-#endif

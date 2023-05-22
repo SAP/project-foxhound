@@ -9,7 +9,9 @@
 
 import { ChromeMigrationUtils } from "resource:///modules/ChromeMigrationUtils.sys.mjs";
 
-const { OSCrypto } = ChromeUtils.import("resource://gre/modules/OSCrypto.jsm");
+const { OSCrypto } = ChromeUtils.import(
+  "resource://gre/modules/OSCrypto_win.jsm"
+);
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 /**
@@ -56,7 +58,7 @@ export class ChromeWindowsLoginCrypto {
         const encryptedKey = withHeader.slice(DPAPI_KEY_PREFIX.length);
         keyData = this.osCrypto.decryptData(encryptedKey, null, "bytes");
       } catch (ex) {
-        Cu.reportError(`${userDataPathSuffix} os_crypt key: ${ex}`);
+        console.error(`${userDataPathSuffix} os_crypt key: ${ex}`);
 
         // Use a generic key that will fail for actually encrypted data, but for
         // testing it'll be consistent for both encrypting and decrypting.

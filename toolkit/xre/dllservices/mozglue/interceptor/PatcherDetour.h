@@ -22,10 +22,10 @@
 #include "mozilla/interceptor/Trampoline.h"
 #include "mozilla/interceptor/VMSharingPolicies.h"
 
-#define COPY_CODES(NBYTES)                          \
-  do {                                              \
-    tramp.CopyFrom(origBytes.GetAddress(), NBYTES); \
-    origBytes += NBYTES;                            \
+#define COPY_CODES(NBYTES)                           \
+  do {                                               \
+    tramp.CopyCodes(origBytes.GetAddress(), NBYTES); \
+    origBytes += NBYTES;                             \
   } while (0)
 
 namespace mozilla {
@@ -213,6 +213,11 @@ class WindowsDllDetourPatcher final
 
       origBytes.Commit();
 #  elif defined(_M_X64)
+      // Note: At the moment we clear 13-byte patches by replacing the jump to
+      //       the patched function by a jump to the stub code. The original
+      //       bytes of the original function are *not* restored. This implies
+      //       that the stub code outlives our cleaning, so unwind information
+      //       remains useful and must not be removed here.
       if (opcode1 == 0x49) {
         if (!Clear13BytePatch(origBytes, tramp.GetCurrentRemoteAddress())) {
           continue;
@@ -1175,6 +1180,14 @@ class WindowsDllDetourPatcher final
         } else if (*origBytes >= 0xb8 && *origBytes <= 0xbf) {
           // mov r32, imm32
           COPY_CODES(5);
+        } else if (*origBytes == 0x8b && (origBytes[1] & kMaskMod) == kModReg) {
+          // 8B /r: mov r32, r/m32
+          COPY_CODES(2);
+        } else if (*origBytes == 0xf7 &&
+                   (origBytes[1] & (kMaskMod | kMaskReg)) ==
+                       (kModReg | (0 << kRegFieldShift))) {
+          // F7 /0 id: test r/m32, imm32
+          COPY_CODES(6);
         } else {
           MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
           return;
@@ -1669,6 +1682,14 @@ class WindowsDllDetourPatcher final
     if (!trampPtr) {
       return;
     }
+
+#ifdef _M_X64
+    if constexpr (MMPolicyT::kSupportsUnwindInfo) {
+      DebugOnly<bool> unwindInfoAdded = tramp.AddUnwindInfo(
+          origBytes.GetBaseAddress(), origBytes.GetOffset());
+      MOZ_ASSERT(unwindInfoAdded);
+    }
+#endif  // _M_X64
 
     WritableTargetFunction<MMPolicyT> target(origBytes.Promote());
     if (!target) {

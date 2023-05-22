@@ -2180,7 +2180,7 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
       case LOCAL_GL_RENDERER: {
         bool allowRenderer = StaticPrefs::webgl_enable_renderer_query();
-        if (nsContentUtils::ShouldResistFingerprinting()) {
+        if (ShouldResistFingerprinting()) {
           allowRenderer = false;
         }
         if (allowRenderer) {
@@ -4246,8 +4246,8 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
   // -
 
   mozilla::ipc::Shmem* pShmem = nullptr;
-  // Image to release after Ping response.
-  RefPtr<layers::Image> imageWaitPingResponse;
+  // Image to release after WebGLContext::TexImage().
+  RefPtr<layers::Image> keepAliveImage;
 
   if (desc->sd) {
     const auto& sd = *(desc->sd);
@@ -4279,10 +4279,9 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
       if (sdType == layers::SurfaceDescriptor::TSurfaceDescriptorD3D10) {
         const auto& sdD3D = sd.get_SurfaceDescriptorD3D10();
         const auto& inProcess = mNotLost->inProcess;
-        if (!inProcess) {
-          MOZ_ASSERT(desc->image);
-          imageWaitPingResponse = desc->image;
-        }
+        MOZ_ASSERT(desc->image);
+        keepAliveImage = desc->image;
+
         if (sdD3D.gpuProcessTextureId().isSome() && inProcess) {
           return Some(
               std::string{"gpuProcessTextureId works only in GPU process."});
@@ -4387,11 +4386,11 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
     (void)child->SendTexImage(static_cast<uint32_t>(level), respecFormat,
                               CastUvec3(offset), pi, std::move(*desc));
 
-    if (tempShmem || imageWaitPingResponse) {
+    if (tempShmem || keepAliveImage) {
       const auto eventTarget = GetCurrentSerialEventTarget();
       MOZ_ASSERT(eventTarget);
       child->SendPing()->Then(eventTarget, __func__,
-                              [tempShmem, imageWaitPingResponse]() {
+                              [tempShmem, keepAliveImage]() {
                                 // Cleans up when (our copy of)
                                 // sendableShmem/image goes out of scope.
                               });
@@ -5596,24 +5595,26 @@ void ClientWebGLContext::RequestExtension(const WebGLExtensionID ext) const {
 
 // -
 
-static bool IsExtensionForbiddenForCaller(const WebGLExtensionID ext,
-                                          const dom::CallerType callerType) {
-  if (callerType == dom::CallerType::System) return false;
+bool ClientWebGLContext::IsExtensionForbiddenForCaller(
+    const WebGLExtensionID ext, const dom::CallerType callerType) const {
+  if (callerType == dom::CallerType::System) {
+    return false;
+  }
 
-  if (StaticPrefs::webgl_enable_privileged_extensions()) return false;
+  if (StaticPrefs::webgl_enable_privileged_extensions()) {
+    return false;
+  }
 
-  const bool resistFingerprinting =
-      nsContentUtils::ShouldResistFingerprinting();
   switch (ext) {
     case WebGLExtensionID::MOZ_debug:
       return true;
 
     case WebGLExtensionID::WEBGL_debug_renderer_info:
-      return resistFingerprinting ||
+      return ShouldResistFingerprinting() ||
              !StaticPrefs::webgl_enable_debug_renderer_info();
 
     case WebGLExtensionID::WEBGL_debug_shaders:
-      return resistFingerprinting;
+      return ShouldResistFingerprinting();
 
     default:
       return false;
@@ -5622,7 +5623,10 @@ static bool IsExtensionForbiddenForCaller(const WebGLExtensionID ext,
 
 bool ClientWebGLContext::IsSupported(const WebGLExtensionID ext,
                                      const dom::CallerType callerType) const {
-  if (IsExtensionForbiddenForCaller(ext, callerType)) return false;
+  if (IsExtensionForbiddenForCaller(ext, callerType)) {
+    return false;
+  }
+
   const auto& limits = Limits();
   return limits.supportedExtensions[ext];
 }
@@ -5661,15 +5665,13 @@ void ClientWebGLContext::GetSupportedProfilesASTC(
 
 bool ClientWebGLContext::ShouldResistFingerprinting() const {
   if (mCanvasElement) {
-    // If we're constructed from a canvas element.
     return mCanvasElement->OwnerDoc()->ShouldResistFingerprinting();
   }
   if (mOffscreenCanvas) {
-    // If we're constructed from an offscreen canvas
     return mOffscreenCanvas->ShouldResistFingerprinting();
   }
   // Last resort, just check the global preference
-  return nsContentUtils::ShouldResistFingerprinting();
+  return nsContentUtils::ShouldResistFingerprinting("Fallback");
 }
 
 uint32_t ClientWebGLContext::GetPrincipalHashValue() const {
@@ -5679,7 +5681,10 @@ uint32_t ClientWebGLContext::GetPrincipalHashValue() const {
   if (mOffscreenCanvas) {
     nsIGlobalObject* global = mOffscreenCanvas->GetOwnerGlobal();
     if (global) {
-      return global->GetPrincipalHashValue();
+      nsIPrincipal* principal = global->PrincipalOrNull();
+      if (principal) {
+        return principal->GetHashValue();
+      }
     }
   }
   return 0;
@@ -6764,24 +6769,5 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(
     mCanvasElement, mOffscreenCanvas)
 
 // -----------------------------
-
-#define _(X)                                                 \
-  NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(WebGL##X##JS, AddRef) \
-  NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(WebGL##X##JS, Release)
-
-_(Buffer)
-_(Framebuffer)
-_(Program)
-_(Query)
-_(Renderbuffer)
-_(Sampler)
-_(Shader)
-_(Sync)
-_(Texture)
-_(TransformFeedback)
-_(UniformLocation)
-_(VertexArray)
-
-#undef _
 
 }  // namespace mozilla

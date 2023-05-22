@@ -135,8 +135,6 @@ const URL_ROOT_MOCHI_8888 = CHROME_URL_ROOT.replace(
   "http://mochi.test:8888/"
 );
 
-const TARGET_SWITCHING_PREF = "devtools.target-switching.server.enabled";
-
 try {
   if (isMochitest) {
     Services.scriptloader.loadSubScript(
@@ -566,7 +564,7 @@ async function navigateTo(
   if (uri === browser.currentURI.spec) {
     gBrowser.reloadTab(gBrowser.getTabForBrowser(browser));
   } else {
-    BrowserTestUtils.loadURI(browser, uri);
+    BrowserTestUtils.loadURIString(browser, uri);
   }
 
   if (waitForLoad) {
@@ -917,17 +915,6 @@ async function createAndAttachTargetForTab(tab) {
 
 function isFissionEnabled() {
   return SpecialPowers.useRemoteSubframes;
-}
-
-function isServerTargetSwitchingEnabled() {
-  return Services.prefs.getBoolPref(TARGET_SWITCHING_PREF);
-}
-
-/**
- * Enables server target switching
- */
-async function enableTargetSwitching() {
-  await pushPref(TARGET_SWITCHING_PREF, true);
 }
 
 function isEveryFrameTargetEnabled() {
@@ -2017,4 +2004,33 @@ function getInputStream(data) {
   );
   const buffer = new TextEncoder().encode(data).buffer;
   return new BufferStream(buffer, 0, buffer.byteLength);
+}
+
+/**
+ * Wait for a specific target to have been fully processed by targetCommand.
+ *
+ * @param {Commands} commands
+ *        The commands instance
+ * @param {Function} isExpectedTargetFn
+ *        Predicate which will be called with a target front argument. Should
+ *        return true if the target front is the expected one, false otherwise.
+ * @return {Promise}
+ *         Promise which resolves when a target matching `isExpectedTargetFn`
+ *         has been processed by targetCommand.
+ */
+function waitForTargetProcessed(commands, isExpectedTargetFn) {
+  return new Promise(resolve => {
+    const onProcessed = targetFront => {
+      try {
+        if (isExpectedTargetFn(targetFront)) {
+          commands.targetCommand.off("processed-available-target", onProcessed);
+          resolve();
+        }
+      } catch {
+        // Ignore errors from isExpectedTargetFn.
+      }
+    };
+
+    commands.targetCommand.on("processed-available-target", onProcessed);
+  });
 }

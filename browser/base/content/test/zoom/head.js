@@ -76,7 +76,7 @@ var FullZoomHelper = {
           resolve(value);
         },
         handleError(error) {
-          Cu.reportError(error);
+          console.error(error);
         },
       });
     });
@@ -179,7 +179,7 @@ var FullZoomHelper = {
 
   failAndContinue: function failAndContinue(func) {
     return function(err) {
-      Cu.reportError(err);
+      console.error(err);
       ok(false, err);
       func();
     };
@@ -216,7 +216,7 @@ async function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.loadURIString(tab.linkedBrowser, url);
   }
 
   return loaded;

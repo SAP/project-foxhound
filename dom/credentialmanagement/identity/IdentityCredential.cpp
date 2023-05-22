@@ -81,34 +81,34 @@ IdentityCredential::DiscoverFromExternalSource(
         NS_ERROR_FAILURE, __func__);
   }
 
-  RefPtr<IdentityCredential::GetIdentityCredentialPromise::Private> result =
-      new IdentityCredential::GetIdentityCredentialPromise::Private(__func__);
-
   // Kick the request off to the main process and translate the result to the
   // expected type when we get a result.
   MOZ_ASSERT(aOptions.mIdentity.WasPassed());
   RefPtr<WindowGlobalChild> wgc = aParent->GetWindowGlobalChild();
   MOZ_ASSERT(wgc);
   RefPtr<IdentityCredential> credential = new IdentityCredential(aParent);
-  wgc->SendDiscoverIdentityCredentialFromExternalSource(
-         aOptions.mIdentity.Value())
+  return wgc
+      ->SendDiscoverIdentityCredentialFromExternalSource(
+          aOptions.mIdentity.Value())
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [result,
-           credential](const WindowGlobalChild::
+          [credential](const WindowGlobalChild::
                            DiscoverIdentityCredentialFromExternalSourcePromise::
                                ResolveValueType& aResult) {
             if (aResult.isSome()) {
               credential->CopyValuesFrom(aResult.value());
-              result->Resolve(credential, __func__);
-            } else {
-              result->Reject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
+              return IdentityCredential::GetIdentityCredentialPromise::
+                  CreateAndResolve(credential, __func__);
             }
+            return IdentityCredential::GetIdentityCredentialPromise::
+                CreateAndReject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
           },
-          [result](const WindowGlobalChild::
-                       DiscoverIdentityCredentialFromExternalSourcePromise::
-                           RejectValueType& aResult) { return; });
-  return result.forget();
+          [](const WindowGlobalChild::
+                 DiscoverIdentityCredentialFromExternalSourcePromise::
+                     RejectValueType& aResult) {
+            return IdentityCredential::GetIdentityCredentialPromise::
+                CreateAndReject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
+          });
 }
 
 // static
@@ -127,12 +127,34 @@ IdentityCredential::DiscoverFromExternalSourceInMainProcess(
         NS_ERROR_DOM_NOT_ALLOWED_ERR, __func__);
   }
 
+  RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise::Private> result =
+      new IdentityCredential::GetIPCIdentityCredentialPromise::Private(
+          __func__);
+
+  RefPtr<nsITimer> timeout;
+  if (StaticPrefs::
+          dom_security_credentialmanagement_identity_reject_delay_enabled()) {
+    nsresult rv = NS_NewTimerWithCallback(
+        getter_AddRefs(timeout),
+        [=](auto) {
+          if (!result->IsResolved()) {
+            result->Reject(NS_ERROR_DOM_NETWORK_ERR, __func__);
+          }
+        },
+        StaticPrefs::
+            dom_security_credentialmanagement_identity_reject_delay_duration_ms(),
+        nsITimer::TYPE_ONE_SHOT, "IdentityCredentialTimeoutCallback");
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      result->Reject(NS_ERROR_FAILURE, __func__);
+      return result.forget();
+    }
+  }
+
   nsCOMPtr<nsIPrincipal> principal(aPrincipal);
   RefPtr<CanonicalBrowsingContext> browsingContext(aBrowsingContext);
 
-  // Have the user choose a provider.
-  return PromptUserToSelectProvider(aBrowsingContext,
-                                    aOptions.mProviders.Value())
+  // Have the user choose a provider then create a credential for that provider.
+  PromptUserToSelectProvider(aBrowsingContext, aOptions.mProviders.Value())
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [principal, browsingContext](const IdentityProvider& provider) {
@@ -142,7 +164,38 @@ IdentityCredential::DiscoverFromExternalSourceInMainProcess(
           [](nsresult error) {
             return IdentityCredential::GetIPCIdentityCredentialPromise::
                 CreateAndReject(error, __func__);
+          })
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [result, timeout = std::move(timeout)](
+              const IdentityCredential::GetIPCIdentityCredentialPromise::
+                  ResolveOrRejectValue&& value) {
+            // Resolve the result
+            result->ResolveOrReject(value, __func__);
+
+            // Cancel the timer (if it is still pending) and
+            // release the hold on the variables leaked into the timer.
+            if (timeout &&
+                StaticPrefs::
+                    dom_security_credentialmanagement_identity_reject_delay_enabled()) {
+              timeout->Cancel();
+            }
           });
+
+  return result->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [browsingContext](
+          const IdentityCredential::GetIPCIdentityCredentialPromise::
+              ResolveOrRejectValue&& value) {
+        if (value.IsReject()) {
+          // We force the close to occur here. It may have already closed, in
+          // which case this will be a no-op. This forces a close in the event
+          // of a user not acting before the timeout.
+          IdentityCredential::CloseUserInterface(browsingContext);
+        }
+        return IdentityCredential::GetIPCIdentityCredentialPromise::
+            CreateAndResolveOrReject(value, __func__);
+      });
 }
 
 // static
@@ -260,6 +313,13 @@ RefPtr<IdentityCredential::ValidationPromise>
 IdentityCredential::CheckRootManifest(nsIPrincipal* aPrincipal,
                                       const IdentityProvider& aProvider) {
   MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (StaticPrefs::
+          dom_security_credentialmanagement_identity_test_ignore_well_known()) {
+    return IdentityCredential::ValidationPromise::CreateAndResolve(true,
+                                                                   __func__);
+  }
+
   // Build the URL
   nsString configLocation = aProvider.mConfigURL;
   nsCOMPtr<nsIURI> configURI;
@@ -390,20 +450,32 @@ IdentityCredential::FetchAccountList(
     const IdentityInternalManifest& aManifest) {
   MOZ_ASSERT(XRE_IsParentProcess());
   // Build the URL
-  nsCString configLocation =
-      NS_ConvertUTF16toUTF8(aManifest.mAccounts_endpoint);
+  nsCOMPtr<nsIURI> baseURI;
+  nsCString baseURIString = NS_ConvertUTF16toUTF8(aProvider.mConfigURL);
+  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), baseURIString);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetAccountListPromise::CreateAndReject(rv,
+                                                                      __func__);
+  }
+  nsCOMPtr<nsIURI> idpURI;
+  nsCString accountSpec = NS_ConvertUTF16toUTF8(aManifest.mAccounts_endpoint);
+  rv = NS_NewURI(getter_AddRefs(idpURI), accountSpec.get(), baseURI);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetAccountListPromise::CreateAndReject(rv,
+                                                                      __func__);
+  }
+  nsCString configLocation;
+  rv = idpURI->GetSpec(configLocation);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetAccountListPromise::CreateAndReject(rv,
+                                                                      __func__);
+  }
 
   // Build the principal to use for this connection
   // This is an expanded principal! It has the cookies of the IDP because it
   // subsumes the constituent principals. It also has no serializable origin,
   // so it won't send an Origin header even though this is a CORS mode
   // request. It accomplishes this without being a SystemPrincipal too.
-  nsCOMPtr<nsIURI> idpURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(idpURI), configLocation);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return IdentityCredential::GetAccountListPromise::CreateAndReject(rv,
-                                                                      __func__);
-  }
   nsCOMPtr<nsIPrincipal> idpPrincipal = BasePrincipal::CreateContentPrincipal(
       idpURI, aPrincipal->OriginAttributesRef());
   nsCOMPtr<nsIPrincipal> nullPrincipal =
@@ -467,7 +539,23 @@ RefPtr<IdentityCredential::GetTokenPromise> IdentityCredential::FetchToken(
     const IdentityAccount& aAccount) {
   MOZ_ASSERT(XRE_IsParentProcess());
   // Build the URL
-  nsCString tokenLocation = NS_ConvertUTF16toUTF8(aManifest.mId_token_endpoint);
+  nsCOMPtr<nsIURI> baseURI;
+  nsCString baseURIString = NS_ConvertUTF16toUTF8(aProvider.mConfigURL);
+  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), baseURIString);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetTokenPromise::CreateAndReject(rv, __func__);
+  }
+  nsCOMPtr<nsIURI> idpURI;
+  nsCString tokenSpec = NS_ConvertUTF16toUTF8(aManifest.mId_token_endpoint);
+  rv = NS_NewURI(getter_AddRefs(idpURI), tokenSpec.get(), baseURI);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetTokenPromise::CreateAndReject(rv, __func__);
+  }
+  nsCString tokenLocation;
+  rv = idpURI->GetSpec(tokenLocation);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetTokenPromise::CreateAndReject(rv, __func__);
+  }
 
   // Create the global
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
@@ -477,7 +565,7 @@ RefPtr<IdentityCredential::GetTokenPromise> IdentityCredential::FetchToken(
   jsapi.Init();
   JSContext* cx = jsapi.cx();
   JS::Rooted<JSObject*> sandbox(cx);
-  nsresult rv = xpc->CreateSandbox(cx, aPrincipal, sandbox.address());
+  rv = xpc->CreateSandbox(cx, aPrincipal, sandbox.address());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return IdentityCredential::GetTokenPromise::CreateAndReject(rv, __func__);
   }
@@ -545,12 +633,32 @@ RefPtr<IdentityCredential::GetTokenPromise> IdentityCredential::FetchToken(
 // static
 RefPtr<IdentityCredential::GetMetadataPromise>
 IdentityCredential::FetchMetadata(nsIPrincipal* aPrincipal,
+                                  const IdentityProvider& aProvider,
                                   const IdentityInternalManifest& aManifest) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aPrincipal);
   // Build the URL
-  nsCString configLocation =
+  nsCOMPtr<nsIURI> baseURI;
+  nsCString baseURIString = NS_ConvertUTF16toUTF8(aProvider.mConfigURL);
+  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), baseURIString);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetMetadataPromise::CreateAndReject(rv,
+                                                                   __func__);
+  }
+  nsCOMPtr<nsIURI> idpURI;
+  nsCString metadataSpec =
       NS_ConvertUTF16toUTF8(aManifest.mClient_metadata_endpoint);
+  rv = NS_NewURI(getter_AddRefs(idpURI), metadataSpec.get(), baseURI);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetMetadataPromise::CreateAndReject(rv,
+                                                                   __func__);
+  }
+  nsCString configLocation;
+  rv = idpURI->GetSpec(configLocation);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetMetadataPromise::CreateAndReject(rv,
+                                                                   __func__);
+  }
 
   // Create the global
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
@@ -560,7 +668,7 @@ IdentityCredential::FetchMetadata(nsIPrincipal* aPrincipal,
   jsapi.Init();
   JSContext* cx = jsapi.cx();
   JS::Rooted<JSObject*> sandbox(cx);
-  nsresult rv = xpc->CreateSandbox(cx, aPrincipal, sandbox.address());
+  rv = xpc->CreateSandbox(cx, aPrincipal, sandbox.address());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return IdentityCredential::GetMetadataPromise::CreateAndReject(rv,
                                                                    __func__);
@@ -720,8 +828,7 @@ IdentityCredential::PromptUserWithPolicy(
   }
 
   // Check the storage bit
-  nsCString configLocation =
-      NS_ConvertUTF16toUTF8(aManifest.mAccounts_endpoint);
+  nsCString configLocation = NS_ConvertUTF16toUTF8(aProvider.mConfigURL);
   nsCOMPtr<nsIURI> idpURI;
   error = NS_NewURI(getter_AddRefs(idpURI), configLocation);
   if (NS_WARN_IF(NS_FAILED(error))) {
@@ -751,7 +858,7 @@ IdentityCredential::PromptUserWithPolicy(
   // otherwise, fetch ->Then display ->Then return ->Catch reject
   RefPtr<BrowsingContext> browsingContext(aBrowsingContext);
   nsCOMPtr<nsIPrincipal> argumentPrincipal(aPrincipal);
-  return FetchMetadata(aPrincipal, aManifest)
+  return FetchMetadata(aPrincipal, aProvider, aManifest)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [aAccount, aProvider, argumentPrincipal, browsingContext,

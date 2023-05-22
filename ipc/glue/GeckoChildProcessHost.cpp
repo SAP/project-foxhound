@@ -189,6 +189,12 @@ class BaseProcessLauncher {
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BaseProcessLauncher);
 
+#ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
+  void SetLaunchArchitecture(uint32_t aLaunchArch) {
+    mLaunchArch = aLaunchArch;
+  }
+#endif
+
   RefPtr<ProcessLaunchPromise> Launch(GeckoChildProcessHost*);
 
  protected:
@@ -217,6 +223,9 @@ class BaseProcessLauncher {
   nsCOMPtr<nsISerialEventTarget> mLaunchThread;
   GeckoProcessType mProcessType;
   UniquePtr<base::LaunchOptions> mLaunchOptions;
+#ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
+  uint32_t mLaunchArch = base::PROCESS_ARCH_INVALID;
+#endif
   std::vector<std::string> mExtraOpts;
 #ifdef XP_WIN
   nsString mGroupId;
@@ -253,7 +262,6 @@ class WindowsProcessLauncher : public BaseProcessLauncher {
   WindowsProcessLauncher(GeckoChildProcessHost* aHost,
                          std::vector<std::string>&& aExtraOpts)
       : BaseProcessLauncher(aHost, std::move(aExtraOpts)),
-        mProfileDir(aHost->mProfileDir),
         mCachedNtdllThunk(GetCachedNtDllThunk()),
         mWerDataPointer(&(aHost->mWerData)) {}
 
@@ -265,8 +273,6 @@ class WindowsProcessLauncher : public BaseProcessLauncher {
 
   mozilla::Maybe<CommandLine> mCmdLine;
   bool mUseSandbox = false;
-
-  nsCOMPtr<nsIFile> mProfileDir;
 
   const Buffer<IMAGE_THUNK_DATA>* mCachedNtdllThunk;
   CrashReporter::WindowsErrorReportingData const* mWerDataPointer;
@@ -643,10 +649,6 @@ void GeckoChildProcessHost::PrepareLaunch() {
   mEnableSandboxLogging =
       mEnableSandboxLogging || !!PR_GetEnv("MOZ_SANDBOX_LOGGING");
 
-  if (ShouldHaveDirectoryService() && mProcessType == GeckoProcessType_GPU) {
-    mozilla::Unused << NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                                              getter_AddRefs(mProfileDir));
-  }
 #  endif
 #elif defined(XP_MACOSX)
 #  if defined(MOZ_SANDBOX)
@@ -703,6 +705,9 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
 
   RefPtr<BaseProcessLauncher> launcher =
       new ProcessLauncher(this, std::move(aExtraOpts));
+#ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
+  launcher->SetLaunchArchitecture(mLaunchArch);
+#endif
 
   // Note: Destroy() waits on mHandlePromise to delete |this|. As such, we want
   // to be sure that all of our post-launch processing on |this| happens before
@@ -1353,15 +1358,15 @@ bool WindowsProcessLauncher::DoSetup() {
   const bool isGMP = mProcessType == GeckoProcessType_GMPlugin;
   const bool isWidevine = isGMP && Contains(mExtraOpts, "gmp-widevinecdm");
 #    if defined(_ARM64_)
-  const bool isClearKey = isGMP && Contains(mExtraOpts, "gmp-clearkey");
-  const bool isSandboxBroker =
-      mProcessType == GeckoProcessType_RemoteSandboxBroker;
-  if (isClearKey || isWidevine || isSandboxBroker) {
+  bool useRemoteSandboxBroker = false;
+  if (mLaunchArch & (base::PROCESS_ARCH_I386 | base::PROCESS_ARCH_X86_64)) {
     // On Windows on ARM64 for ClearKey and Widevine, and for the sandbox
     // launcher process, we want to run the x86 plugin-container.exe in
     // the "i686" subdirectory, instead of the aarch64 plugin-container.exe.
     // So insert "i686" into the exePath.
     exePath = exePath.DirName().AppendASCII("i686").Append(exePath.BaseName());
+    useRemoteSandboxBroker =
+        mProcessType != GeckoProcessType_RemoteSandboxBroker;
   }
 #    endif  // if defined(_ARM64_)
 #  endif    // defined(MOZ_SANDBOX) || defined(_ARM64_)
@@ -1372,6 +1377,16 @@ bool WindowsProcessLauncher::DoSetup() {
     mCmdLine->AppendLooseValue(UTF8ToWide("-contentproc"));
   }
 
+#  ifdef HAS_DLL_BLOCKLIST
+  if (IsDynamicBlocklistDisabled(
+          gSafeMode,
+          CommandLine::ForCurrentProcess()->HasSwitch(UTF8ToWide(
+              mozilla::geckoargs::sDisableDynamicDllBlocklist.sMatch)))) {
+    mCmdLine->AppendLooseValue(
+        UTF8ToWide(mozilla::geckoargs::sDisableDynamicDllBlocklist.sMatch));
+  }
+#  endif  // HAS_DLL_BLOCKLIST
+
   mCmdLine->AppendSwitchWithValue(switches::kProcessChannelID, mChannelId);
 
   for (std::vector<std::string>::iterator it = mExtraOpts.begin();
@@ -1381,8 +1396,8 @@ bool WindowsProcessLauncher::DoSetup() {
 
 #  if defined(MOZ_SANDBOX)
 #    if defined(_ARM64_)
-  if (isClearKey || isWidevine)
-    mResults.mSandboxBroker = new RemoteSandboxBroker();
+  if (useRemoteSandboxBroker)
+    mResults.mSandboxBroker = new RemoteSandboxBroker(mLaunchArch);
   else
 #    endif  // if defined(_ARM64_)
     mResults.mSandboxBroker = new SandboxBroker();
@@ -1425,8 +1440,7 @@ bool WindowsProcessLauncher::DoSetup() {
         // For now we treat every failure as fatal in
         // SetSecurityLevelForGPUProcess and just crash there right away. Should
         // this change in the future then we should also handle the error here.
-        mResults.mSandboxBroker->SetSecurityLevelForGPUProcess(mSandboxLevel,
-                                                               mProfileDir);
+        mResults.mSandboxBroker->SetSecurityLevelForGPUProcess(mSandboxLevel);
         mUseSandbox = true;
       }
       break;

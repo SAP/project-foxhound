@@ -114,28 +114,12 @@ cfr-doorhanger-doh-primary-button-2 = Okay
 cfr-doorhanger-doh-secondary-button = Disable
   .accesskey = D
 
-## Fission Experiment Message
-
-cfr-doorhanger-fission-body-approved = Your privacy matters. { -brand-short-name } now isolates, or sandboxes, websites from each other, which makes it harder for hackers to steal passwords, credit card numbers, and other sensitive information.
-cfr-doorhanger-fission-header = Site Isolation
-cfr-doorhanger-fission-primary-button = OK, Got it
-  .accesskey = O
-cfr-doorhanger-fission-secondary-button = Learn more
-  .accesskey = L
-
 ## Full Video Support CFR message
 
 cfr-doorhanger-video-support-body = Videos on this site may not play correctly on this version of { -brand-short-name }. For full video support, update { -brand-short-name } now.
 cfr-doorhanger-video-support-header = Update { -brand-short-name } to play video
 cfr-doorhanger-video-support-primary-button = Update Now
   .accesskey = U
-
-## Spotlight modal shared strings
-
-spotlight-learn-more-collapsed = Learn more
-  .title = Expand to learn more about the feature
-spotlight-learn-more-expanded = Learn more
-  .title = Close
 
 ## VPN promotion dialog for public Wi-Fi users
 ##
@@ -220,3 +204,33 @@ colorways-cfr-header-28days = Independent Voices colorways expire January 16
 colorways-cfr-header-14days = Independent Voices colorways expire in two weeks
 colorways-cfr-header-7days =  Independent Voices colorways expire this week
 colorways-cfr-header-today = Independent Voices colorways expire today
+
+## Cookie Banner Handling CFR
+
+# Alternate headline for localization: "See fewer cookie requests"
+cfr-cookiebanner-header = Cookie banners begone!
+cfr-cookiebanner-body = Allow { -brand-short-name } to automatically reject all cookie banner requests when possible.
+cfr-cookiebanner-accept-button-v2 = Reject Requests
+  .accesskey = R
+cfr-cookiebanner-reject-button = Not Now
+  .accesskey = N
+
+cfr-cookiebanner-header-variant-1 = See fewer cookie pop-ups
+cfr-cookiebanner-body-variant-1 = Let { -brand-short-name } automatically answer cookie pop-ups for you so you can get back to distraction-free browsing. { -brand-short-name } will reject all requests if possible.
+cfr-cookiebanner-accept-button-variant-1 = Dismiss Pop-ups
+  .accesskey = D
+cfr-cookiebanner-reject-button-variant-1 = No Thanks
+  .accesskey = N
+
+cfr-cookiebanner-header-variant-2 = Cookie Banner Reduction
+cfr-cookiebanner-body-variant-2 = Reduce the amount of cookie banners you see by allowing { -brand-short-name } to decline a website’s cookie consent request if possible.
+cfr-cookiebanner-accept-button-variant-2 = Allow
+  .accesskey = A
+cfr-cookiebanner-reject-button-variant-2 = Not Now
+  .accesskey = N
+
+## These strings are used in the Fox doodle Pin/set default spotlights
+
+july-jam-headline = We’ve got you covered
+july-jam-body = Every month, { -brand-short-name } blocks an average of 3,000+ trackers per user, giving you safe, speedy access to the good internet.
+july-jam-set-default-primary = Open my links with { -brand-short-name }

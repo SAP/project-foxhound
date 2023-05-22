@@ -12,7 +12,6 @@
 #include "Crypto.h"
 #include "GeckoProfiler.h"
 #include "MainThreadUtils.h"
-#include "Principal.h"
 #include "ScriptLoader.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
@@ -193,6 +192,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WorkerGlobalScopeBase,
                                                   DOMEventTargetHelper)
   tmp->AssertIsOnWorkerThread();
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConsole)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mModuleLoader)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSerialEventTarget)
   tmp->TraverseObjectsInGlobal(cb);
   // If we already exited WorkerThreadPrimaryRunnable, we will find it
@@ -207,6 +207,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScopeBase,
                                                 DOMEventTargetHelper)
   tmp->AssertIsOnWorkerThread();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsole)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mModuleLoader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSerialEventTarget)
   tmp->UnlinkObjectsInGlobal();
   // If we already exited WorkerThreadPrimaryRunnable, we will find it
@@ -274,15 +275,6 @@ bool WorkerGlobalScopeBase::IsSharedMemoryAllowed() const {
 bool WorkerGlobalScopeBase::ShouldResistFingerprinting() const {
   AssertIsOnWorkerThread();
   return mShouldResistFingerprinting;
-}
-
-bool WorkerGlobalScopeBase::IsSystemPrincipal() const {
-  return mWorkerPrivate->UsesSystemPrincipal();
-}
-
-uint32_t WorkerGlobalScopeBase::GetPrincipalHashValue() const {
-  AssertIsOnWorkerThread();
-  return mWorkerPrivate->GetPrincipalHashValue();
 }
 
 OriginTrials WorkerGlobalScopeBase::Trials() const {
@@ -562,7 +554,11 @@ void WorkerGlobalScope::ImportScripts(JSContext* aCx,
         profiler_thread_is_being_profiled_for_markers()
             ? StringJoin(","_ns, aScriptURLs,
                          [](nsACString& dest, const auto& scriptUrl) {
-                           AppendUTF16toUTF8(scriptUrl, dest);
+                           AppendUTF16toUTF8(
+                               Substring(
+                                   scriptUrl, 0,
+                                   std::min(size_t(128), scriptUrl.Length())),
+                               dest);
                          })
             : nsAutoCString{});
     workerinternals::Load(mWorkerPrivate, std::move(stack), aScriptURLs,
@@ -664,7 +660,7 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(JSContext* aCx,
 
 void WorkerGlobalScope::GetOrigin(nsAString& aOrigin) const {
   AssertIsOnWorkerThread();
-  aOrigin = mWorkerPrivate->OriginNoSuffix();
+  nsContentUtils::GetUTFOrigin(mWorkerPrivate->GetPrincipal(), aOrigin);
 }
 
 bool WorkerGlobalScope::CrossOriginIsolated() const {
@@ -916,9 +912,7 @@ bool DedicatedWorkerGlobalScope::WrapGlobalObject(
 
   return DedicatedWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(usesSystemPrincipal ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void DedicatedWorkerGlobalScope::PostMessage(
@@ -1080,9 +1074,7 @@ bool SharedWorkerGlobalScope::WrapGlobalObject(
 
   return SharedWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void SharedWorkerGlobalScope::Close() {
@@ -1125,9 +1117,7 @@ bool ServiceWorkerGlobalScope::WrapGlobalObject(
 
   return ServiceWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 already_AddRefed<Clients> ServiceWorkerGlobalScope::GetClients() {
@@ -1252,9 +1242,7 @@ bool WorkerDebuggerGlobalScope::WrapGlobalObject(
 
   return WorkerDebuggerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void WorkerDebuggerGlobalScope::GetGlobal(JSContext* aCx,

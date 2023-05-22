@@ -35,7 +35,6 @@
   </head>
   <body>
     <header>
-      <login-filter></login-filter>
       <fxaccounts-button hidden></fxaccounts-button>
       <menu-button></menu-button>
     </header>
@@ -180,6 +179,12 @@
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-list.css">
+      <div class="listHeader">
+        <login-filter></login-filter>
+        <div class="create-login-button-container">
+          <button class="create-login-button" data-l10n-id="create-new-login-button"></button>
+        </div>
+      </div>
       <div class="meta">
         <label for="login-sort">
           <span data-l10n-id="login-list-sort-label-text"></span>
@@ -206,9 +211,6 @@
           <p data-l10n-id="about-logins-login-list-empty-search-title"></p>
           <span data-l10n-id="about-logins-login-list-empty-search-description"></span>
         </div>
-      </div>
-      <div class="create-login-button-container">
-        <button class="create-login-button" data-l10n-id="create-login-button"></button>
       </div>
     </template>
 
@@ -256,6 +258,7 @@
     </template>
 
     <template id="login-item-template">
+      <script type="module" src="chrome://browser/content/aboutlogins/components/login-timeline.mjs"></script>
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-item.css">
@@ -358,9 +361,7 @@
               <button class="save-changes-button" type="submit"></button>
               <button class="cancel-button" data-l10n-id="login-item-cancel-button" type="button"></button>
             </moz-button-group>
-            <p class="time-created meta-info" data-l10n-id="login-item-time-created" data-l10n-args='{"timeCreated": 0}'></p>
-            <p class="time-changed meta-info" data-l10n-id="login-item-time-changed" data-l10n-args='{"timeChanged": 0}'></p>
-            <p class="time-used meta-info" data-l10n-id="login-item-time-used" data-l10n-args='{"timeUsed": 0}'></p>
+            <login-timeline hidden ></login-timeline>
           </form>
         </div>
       </div>

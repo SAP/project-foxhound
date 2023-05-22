@@ -404,6 +404,7 @@
             "autofill-clear-button",
             "autofill-insecureWarning",
             "generatedPassword",
+            "generic",
             "importableLearnMore",
             "importableLogins",
             "insecureWarning",
@@ -435,6 +436,9 @@
               break;
             case "autofill-insecureWarning":
               options = { is: "autocomplete-creditcard-insecure-field" };
+              break;
+            case "generic":
+              options = { is: "autocomplete-generic-richlistitem" };
               break;
             case "importableLearnMore":
               options = {

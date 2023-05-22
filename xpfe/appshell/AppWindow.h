@@ -20,6 +20,7 @@
 #include "nsDocShell.h"
 #include "nsRect.h"
 #include "Units.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 
 // Interfaces needed
@@ -35,25 +36,21 @@
 #include "nsIRemoteTab.h"
 #include "nsIWebProgressListener.h"
 #include "nsITimer.h"
-
-#ifndef MOZ_NEW_XULSTORE
-#  include "nsIXULStore.h"
-#endif
-
-namespace mozilla {
-namespace dom {
-class Element;
-}  // namespace dom
-}  // namespace mozilla
+#include "nsIXULStore.h"
 
 class nsAtom;
 class nsXULTooltipListener;
-struct nsWidgetInitData;
 
 namespace mozilla {
 class PresShell;
 class AppWindowTimerCallback;
 class L10nReadyPromiseHandler;
+namespace dom {
+class Element;
+}  // namespace dom
+namespace widget {
+struct InitData;
+}  // namespace widget
 }  // namespace mozilla
 
 // AppWindow
@@ -147,7 +144,7 @@ class AppWindow final : public nsIBaseWindow,
   // AppWindow methods...
   nsresult Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
                       int32_t aInitialWidth, int32_t aInitialHeight,
-                      bool aIsHiddenWindow, nsWidgetInitData& widgetInitData);
+                      bool aIsHiddenWindow, widget::InitData& widgetInitData);
 
   nsDocShell* GetDocShell() { return mDocShell; }
 
@@ -385,9 +382,13 @@ class AppWindow final : public nsIBaseWindow,
   GetPrimaryRemoteTabSize(int32_t* aWidth, int32_t* aHeight);
   nsresult GetPrimaryContentShellSize(int32_t* aWidth, int32_t* aHeight);
   nsresult SetPrimaryRemoteTabSize(int32_t aWidth, int32_t aHeight);
-#ifndef MOZ_NEW_XULSTORE
+  void SizeShellToWithLimit(int32_t aDesiredWidth, int32_t aDesiredHeight,
+                            int32_t shellItemWidth, int32_t shellItemHeight);
+  nsresult MoveResize(const Maybe<LayoutDeviceIntPoint>& aPosition,
+                      const Maybe<LayoutDeviceIntSize>& aSize, bool aRepaint);
+  nsresult MoveResize(const Maybe<DesktopPoint>& aPosition,
+                      const Maybe<DesktopSize>& aSize, bool aRepaint);
   nsCOMPtr<nsIXULStore> mLocalStore;
-#endif
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(AppWindow, NS_APPWINDOW_IMPL_CID)

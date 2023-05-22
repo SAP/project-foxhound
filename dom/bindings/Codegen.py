@@ -973,7 +973,7 @@ class CGInterfaceObjectJSClass(CGThing):
         if self.descriptor.interface.isNamespace():
             classString = self.descriptor.interface.getExtendedAttribute("ClassString")
             if classString is None:
-                classString = "Object"
+                classString = self.descriptor.interface.identifier.name
             else:
                 classString = classString[0]
             funToString = "nullptr"
@@ -999,7 +999,7 @@ class CGInterfaceObjectJSClass(CGThing):
                 JS_NULL_CLASS_EXT,
                 ${objectOps}
               },
-              eInterface,
+              ${type},
               ${needsHasInstance},
               ${prototypeID},
               ${depth},
@@ -1013,6 +1013,9 @@ class CGInterfaceObjectJSClass(CGThing):
             classOpsPtr=classOpsPtr,
             hooks=NativePropertyHooks(self.descriptor),
             objectOps=objectOps,
+            type="eNamespace"
+            if self.descriptor.interface.isNamespace()
+            else "eInterface",
             needsHasInstance=toStringBool(needsHasInstance),
             prototypeID=prototypeID,
             depth=depth,
@@ -18220,6 +18223,57 @@ class CGForwardDeclarations(CGWrapper):
         CGWrapper.__init__(self, builder.build())
 
 
+def dependencySortDictionariesAndUnionsAndCallbacks(types):
+    def getDependenciesFromType(type):
+        if type.isDictionary():
+            return set([type.unroll().inner])
+        if type.isSequence():
+            return getDependenciesFromType(type.unroll())
+        if type.isUnion():
+            return set([type.unroll()])
+        if type.isRecord():
+            return set([type.unroll().inner])
+        if type.isCallback():
+            return set([type.unroll()])
+        return set()
+
+    def getDependencies(unionTypeOrDictionaryOrCallback):
+        if isinstance(unionTypeOrDictionaryOrCallback, IDLDictionary):
+            deps = set()
+            if unionTypeOrDictionaryOrCallback.parent:
+                deps.add(unionTypeOrDictionaryOrCallback.parent)
+            for member in unionTypeOrDictionaryOrCallback.members:
+                deps |= getDependenciesFromType(member.type)
+            return deps
+
+        if (
+            unionTypeOrDictionaryOrCallback.isType()
+            and unionTypeOrDictionaryOrCallback.isUnion()
+        ):
+            deps = set()
+            for member in unionTypeOrDictionaryOrCallback.flatMemberTypes:
+                deps |= getDependenciesFromType(member)
+            return deps
+
+        assert unionTypeOrDictionaryOrCallback.isCallback()
+        return set()
+
+    def getName(unionTypeOrDictionaryOrCallback):
+        if isinstance(unionTypeOrDictionaryOrCallback, IDLDictionary):
+            return unionTypeOrDictionaryOrCallback.identifier.name
+
+        if (
+            unionTypeOrDictionaryOrCallback.isType()
+            and unionTypeOrDictionaryOrCallback.isUnion()
+        ):
+            return unionTypeOrDictionaryOrCallback.name
+
+        assert unionTypeOrDictionaryOrCallback.isCallback()
+        return unionTypeOrDictionaryOrCallback.identifier.name
+
+    return dependencySortObjects(types, getDependencies, getName)
+
+
 class CGBindingRoot(CGThing):
     """
     Root codegen class for binding generation. Instantiate the class, and call
@@ -18607,53 +18661,8 @@ class CGBindingRoot(CGThing):
         # to most derived so that class inheritance works out.  We also have to
         # generate members before the dictionary that contains them.
 
-        def getDependenciesFromType(type):
-            if type.isDictionary():
-                return set([type.unroll().inner])
-            if type.isSequence():
-                return getDependenciesFromType(type.unroll())
-            if type.isUnion():
-                return set([type.unroll()])
-            if type.isCallback():
-                return set([type.unroll()])
-            return set()
-
-        def getDependencies(unionTypeOrDictionaryOrCallback):
-            if isinstance(unionTypeOrDictionaryOrCallback, IDLDictionary):
-                deps = set()
-                if unionTypeOrDictionaryOrCallback.parent:
-                    deps.add(unionTypeOrDictionaryOrCallback.parent)
-                for member in unionTypeOrDictionaryOrCallback.members:
-                    deps |= getDependenciesFromType(member.type)
-                return deps
-
-            if (
-                unionTypeOrDictionaryOrCallback.isType()
-                and unionTypeOrDictionaryOrCallback.isUnion()
-            ):
-                deps = set()
-                for member in unionTypeOrDictionaryOrCallback.flatMemberTypes:
-                    deps |= getDependenciesFromType(member)
-                return deps
-
-            assert unionTypeOrDictionaryOrCallback.isCallback()
-            return set()
-
-        def getName(unionTypeOrDictionaryOrCallback):
-            if isinstance(unionTypeOrDictionaryOrCallback, IDLDictionary):
-                return unionTypeOrDictionaryOrCallback.identifier.name
-
-            if (
-                unionTypeOrDictionaryOrCallback.isType()
-                and unionTypeOrDictionaryOrCallback.isUnion()
-            ):
-                return unionTypeOrDictionaryOrCallback.name
-
-            assert unionTypeOrDictionaryOrCallback.isCallback()
-            return unionTypeOrDictionaryOrCallback.identifier.name
-
-        for t in dependencySortObjects(
-            dictionaries + unionStructs + callbacks, getDependencies, getName
+        for t in dependencySortDictionariesAndUnionsAndCallbacks(
+            dictionaries + unionStructs + callbacks
         ):
             if t.isDictionary():
                 cgthings.append(CGDictionary(t, config))
@@ -23340,6 +23349,8 @@ class GlobalGenRoots:
             unlinkMethods,
             unionStructs,
         ) = UnionTypes(unionTypes, config)
+
+        unionStructs = dependencySortDictionariesAndUnionsAndCallbacks(unionStructs)
 
         unions = CGList(
             traverseMethods

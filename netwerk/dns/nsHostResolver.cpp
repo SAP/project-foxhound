@@ -65,26 +65,22 @@ static const unsigned int NEGATIVE_RECORD_LIFETIME = 60;
 // the time. In particular, thread creation results in a res_init() call from
 // libc which is quite expensive.
 //
-// The pool dynamically grows between 0 and MAX_RESOLVER_THREADS in size. New
+// The pool dynamically grows between 0 and MaxResolverThreads() in size. New
 // requests go first to an idle thread. If that cannot be found and there are
-// fewer than MAX_RESOLVER_THREADS currently in the pool a new thread is created
+// fewer than MaxResolverThreads() currently in the pool a new thread is created
 // for high priority requests. If the new request is at a lower priority a new
-// thread will only be created if there are fewer than HighThreadThreshold
-// currently outstanding. If a thread cannot be created or an idle thread
-// located for the request it is queued.
+// thread will only be created if there are fewer than
+// MaxResolverThreadsAnyPriority() currently outstanding. If a thread cannot be
+// created or an idle thread located for the request it is queued.
 //
-// When the pool is greater than HighThreadThreshold in size a thread will be
-// destroyed after ShortIdleTimeoutSeconds of idle time. Smaller pools use
-// LongIdleTimeoutSeconds for a timeout period.
+// When the pool is greater than MaxResolverThreadsAnyPriority() in size a
+// thread will be destroyed after ShortIdleTimeoutSeconds of idle time. Smaller
+// pools use LongIdleTimeoutSeconds for a timeout period.
 
-#define HighThreadThreshold MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY
-#define LongIdleTimeoutSeconds 300  // for threads 1 -> HighThreadThreshold
-#define ShortIdleTimeoutSeconds \
-  60  // for threads HighThreadThreshold+1 -> MAX_RESOLVER_THREADS
-
-static_assert(
-    HighThreadThreshold <= MAX_RESOLVER_THREADS,
-    "High Thread Threshold should be less equal Maximum allowed thread");
+// for threads 1 -> MaxResolverThreadsAnyPriority()
+#define LongIdleTimeoutSeconds 300
+// for threads MaxResolverThreadsAnyPriority() + 1 -> MaxResolverThreads()
+#define ShortIdleTimeoutSeconds 60
 
 //----------------------------------------------------------------------------
 
@@ -228,8 +224,8 @@ nsresult nsHostResolver::Init() MOZ_NO_THREAD_SAFETY_ANALYSIS {
   }
 
   nsCOMPtr<nsIThreadPool> threadPool = new nsThreadPool();
-  MOZ_ALWAYS_SUCCEEDS(threadPool->SetThreadLimit(MAX_RESOLVER_THREADS));
-  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadLimit(MAX_RESOLVER_THREADS));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetThreadLimit(MaxResolverThreads()));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadLimit(MaxResolverThreads()));
   MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadTimeout(poolTimeoutMs));
   MOZ_ALWAYS_SUCCEEDS(
       threadPool->SetThreadStackSize(nsIThreadManager::kThreadPoolStackSize));
@@ -350,12 +346,10 @@ void nsHostResolver::Shutdown() {
   }
 }
 
-nsresult nsHostResolver::GetHostRecord(const nsACString& host,
-                                       const nsACString& aTrrServer,
-                                       uint16_t type, uint16_t flags,
-                                       uint16_t af, bool pb,
-                                       const nsCString& originSuffix,
-                                       nsHostRecord** result) {
+nsresult nsHostResolver::GetHostRecord(
+    const nsACString& host, const nsACString& aTrrServer, uint16_t type,
+    nsIDNSService::DNSFlags flags, uint16_t af, bool pb,
+    const nsCString& originSuffix, nsHostRecord** result) {
   MutexAutoLock lock(mLock);
   nsHostKey key(host, aTrrServer, type, flags, af, pb, originSuffix);
 
@@ -420,7 +414,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
                                      const nsACString& aTrrServer,
                                      int32_t aPort, uint16_t type,
                                      const OriginAttributes& aOriginAttributes,
-                                     uint16_t flags, uint16_t af,
+                                     nsIDNSService::DNSFlags flags, uint16_t af,
                                      nsResolveHostCallback* aCallback) {
   nsAutoCString host(aHost);
   NS_ENSURE_TRUE(!host.IsEmpty(), NS_ERROR_UNEXPECTED);
@@ -480,7 +474,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
 
     bool excludedFromTRR = false;
     if (TRRService::Get() && TRRService::Get()->IsExcludedFromTRR(host)) {
-      flags |= RES_DISABLE_TRR;
+      flags |= nsIDNSService::RESOLVE_DISABLE_TRR;
       excludedFromTRR = true;
 
       if (!aTrrServer.IsEmpty()) {
@@ -681,8 +675,8 @@ already_AddRefed<nsHostRecord> nsHostResolver::FromIPLiteral(
 
 already_AddRefed<nsHostRecord> nsHostResolver::FromUnspecEntry(
     nsHostRecord* aRec, const nsACString& aHost, const nsACString& aTrrServer,
-    const nsACString& aOriginSuffix, uint16_t aType, uint16_t aFlags,
-    uint16_t af, bool aPb, nsresult& aStatus) {
+    const nsACString& aOriginSuffix, uint16_t aType,
+    nsIDNSService::DNSFlags aFlags, uint16_t af, bool aPb, nsresult& aStatus) {
   RefPtr<nsHostRecord> result = nullptr;
   // If this is an IPV4 or IPV6 specific request, check if there is
   // an AF_UNSPEC entry we can use. Otherwise, hit the resolver...
@@ -773,8 +767,8 @@ already_AddRefed<nsHostRecord> nsHostResolver::FromUnspecEntry(
 
 void nsHostResolver::DetachCallback(
     const nsACString& host, const nsACString& aTrrServer, uint16_t aType,
-    const OriginAttributes& aOriginAttributes, uint16_t flags, uint16_t af,
-    nsResolveHostCallback* aCallback, nsresult status) {
+    const OriginAttributes& aOriginAttributes, nsIDNSService::DNSFlags flags,
+    uint16_t af, nsResolveHostCallback* aCallback, nsresult status) {
   RefPtr<nsHostRecord> rec;
   RefPtr<nsResolveHostCallback> callback(aCallback);
 
@@ -812,9 +806,9 @@ nsresult nsHostResolver::ConditionallyCreateThread(nsHostRecord* rec) {
   if (mNumIdleTasks) {
     // wake up idle tasks to process this lookup
     mIdleTaskCV.Notify();
-  } else if ((mActiveTaskCount < HighThreadThreshold) ||
+  } else if ((mActiveTaskCount < MaxResolverThreadsAnyPriority()) ||
              (IsHighPriority(rec->flags) &&
-              mActiveTaskCount < MAX_RESOLVER_THREADS)) {
+              mActiveTaskCount < MaxResolverThreads())) {
     nsCOMPtr<nsIRunnable> event = mozilla::NewRunnableMethod(
         "nsHostResolver::ThreadFunc", this, &nsHostResolver::ThreadFunc);
     mActiveTaskCount++;
@@ -1100,6 +1094,17 @@ nsresult nsHostResolver::NameLookup(nsHostRecord* rec,
   // so we don't wrongly report the reason for the previous one.
   rec->Reset();
 
+  if (StaticPrefs::network_trr_display_fallback_warning()) {
+    TRRSkippedReason heuristicResult =
+        TRRService::Get()->GetHeuristicDetectionResult();
+    if (heuristicResult != TRRSkippedReason::TRR_UNSET &&
+        heuristicResult != TRRSkippedReason::TRR_OK) {
+      rec->RecordReason(heuristicResult);
+    }
+    LOG(("NameLookup: %s heuristicResult: %d ", rec->host.get(),
+         heuristicResult));
+  }
+
   ComputeEffectiveTRRMode(rec);
 
   if (!rec->mTrrServer.IsEmpty()) {
@@ -1108,7 +1113,7 @@ nsresult nsHostResolver::NameLookup(nsHostRecord* rec,
       return NS_ERROR_UNKNOWN_HOST;
     }
 
-    if (rec->flags & RES_DISABLE_TRR) {
+    if (rec->flags & nsIDNSService::RESOLVE_DISABLE_TRR) {
       LOG(("TRR with server and DISABLE_TRR flag. Returning error."));
       return NS_ERROR_UNKNOWN_HOST;
     }
@@ -1116,22 +1121,24 @@ nsresult nsHostResolver::NameLookup(nsHostRecord* rec,
   }
 
   LOG(("NameLookup: %s effectiveTRRmode: %d flags: %X", rec->host.get(),
-       rec->mEffectiveTRRMode, rec->flags));
+       static_cast<nsIRequest::TRRMode>(rec->mEffectiveTRRMode), rec->flags));
 
-  if (rec->flags & RES_DISABLE_TRR) {
+  if (rec->flags & nsIDNSService::RESOLVE_DISABLE_TRR) {
     rec->RecordReason(TRRSkippedReason::TRR_DISABLED_FLAG);
   }
 
   bool serviceNotReady = !TRRServiceEnabledForRecord(rec);
 
   if (rec->mEffectiveTRRMode != nsIRequest::TRR_DISABLED_MODE &&
-      !((rec->flags & RES_DISABLE_TRR)) && !serviceNotReady) {
+      !((rec->flags & nsIDNSService::RESOLVE_DISABLE_TRR)) &&
+      !serviceNotReady) {
     rv = TrrLookup(rec, aLock);
   }
 
   if (rec->mEffectiveTRRMode == nsIRequest::TRR_DISABLED_MODE ||
       (rec->mEffectiveTRRMode == nsIRequest::TRR_FIRST_MODE &&
-       (rec->flags & RES_DISABLE_TRR || serviceNotReady || NS_FAILED(rv)))) {
+       (rec->flags & nsIDNSService::RESOLVE_DISABLE_TRR || serviceNotReady ||
+        NS_FAILED(rv)))) {
     if (!rec->IsAddrRecord()) {
       return rv;
     }
@@ -1143,6 +1150,33 @@ nsresult nsHostResolver::NameLookup(nsHostRecord* rec,
     RefPtr<AddrHostRecord> addrRec = do_QueryObject(rec);
     MOZ_ASSERT(addrRec && addrRec->mResolverType == DNSResolverType::Native);
 #endif
+
+    // Don't fallback to native if the network.trr.display_fallback_warning pref
+    // is set on TRR confirmation failure or a heuristic tripped
+    // Heuristics will only be tripped if we attempted to enable DoH
+    if (StaticPrefs::network_trr_display_fallback_warning() &&
+        (rec->mTRRSkippedReason == TRRSkippedReason::TRR_NOT_CONFIRMED ||
+         (rec->mTRRSkippedReason >=
+              nsITRRSkipReason::TRR_HEURISTIC_TRIPPED_GOOGLE_SAFESEARCH &&
+          rec->mTRRSkippedReason <=
+              nsITRRSkipReason::TRR_HEURISTIC_TRIPPED_NRPT))) {
+      LOG(
+          ("NameLookup: ResolveHostComplete with status NS_ERROR_UNKNOWN_HOST "
+           "for: %s effectiveTRRmode: "
+           "%d SkippedReason: %d",
+           rec->host.get(),
+           static_cast<nsIRequest::TRRMode>(rec->mEffectiveTRRMode),
+           static_cast<int32_t>(rec->mTRRSkippedReason)));
+
+      mozilla::LinkedList<RefPtr<nsResolveHostCallback>> cbs =
+          std::move(rec->mCallbacks);
+      for (nsResolveHostCallback* c = cbs.getFirst(); c;
+           c = c->removeAndGetNext()) {
+        c->OnResolveHostComplete(this, rec, NS_ERROR_UNKNOWN_HOST);
+      }
+
+      return NS_OK;
+    }
 
     rv = NativeLookup(rec, aLock);
   }
@@ -1175,8 +1209,9 @@ bool nsHostResolver::GetHostToLookup(AddrHostRecord** result) {
 
   MutexAutoLock lock(mLock);
 
-  timeout = (mNumIdleTasks >= HighThreadThreshold) ? mShortIdleTimeout
-                                                   : mLongIdleTimeout;
+  timeout = (mNumIdleTasks >= MaxResolverThreadsAnyPriority())
+                ? mShortIdleTimeout
+                : mLongIdleTimeout;
   epoch = TimeStamp::Now();
 
   while (!mShutdown) {
@@ -1192,7 +1227,7 @@ bool nsHostResolver::GetHostToLookup(AddrHostRecord** result) {
       return true;
     }
 
-    if (mActiveAnyThreadCount < HighThreadThreshold) {
+    if (mActiveAnyThreadCount < MaxResolverThreadsAnyPriority()) {
       addrRec = mQueue.Dequeue(false, lock);
       if (addrRec) {
         MOZ_ASSERT(IsMediumPriority(addrRec->flags) ||
@@ -1558,7 +1593,9 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupLocked(
       !rec->mResolving && sGetTtlEnabled) {
     LOG(("Issuing second async lookup for TTL for host [%s].",
          addrRec->host.get()));
-    addrRec->flags = (addrRec->flags & ~RES_PRIORITY_MEDIUM) | RES_PRIORITY_LOW;
+    addrRec->flags =
+        (addrRec->flags & ~nsIDNSService::RESOLVE_PRIORITY_MEDIUM) |
+        nsIDNSService::RESOLVE_PRIORITY_LOW;
     DebugOnly<nsresult> rv = NativeLookup(rec, aLock);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Could not issue second async lookup for TTL.");
@@ -1644,8 +1681,8 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByTypeLocked(
 
 void nsHostResolver::CancelAsyncRequest(
     const nsACString& host, const nsACString& aTrrServer, uint16_t aType,
-    const OriginAttributes& aOriginAttributes, uint16_t flags, uint16_t af,
-    nsIDNSListener* aListener, nsresult status)
+    const OriginAttributes& aOriginAttributes, nsIDNSService::DNSFlags flags,
+    uint16_t af, nsIDNSListener* aListener, nsresult status)
 
 {
   MutexAutoLock lock(mLock);

@@ -938,7 +938,8 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
       StaticPrefs::javascript_options_jit_full_debug_checks_DoNotUseDirectly());
 #endif
 
-#if !defined(JS_CODEGEN_MIPS32) && !defined(JS_CODEGEN_MIPS64)
+#if !defined(JS_CODEGEN_MIPS32) && !defined(JS_CODEGEN_MIPS64) && \
+    !defined(JS_CODEGEN_RISCV64)
   JS_SetGlobalJitCompilerOption(
       cx, JSJITCOMPILER_SPECTRE_INDEX_MASKING,
       StaticPrefs::javascript_options_spectre_index_masking_DoNotUseDirectly());
@@ -968,9 +969,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
     bool disabledHugeMemory = JS::DisableWasmHugeMemory();
     MOZ_RELEASE_ASSERT(disabledHugeMemory);
   }
-
-  JS::SetLargeArrayBuffersEnabled(
-      StaticPrefs::javascript_options_large_arraybuffers_DoNotUseDirectly());
 
   JS::SetSiteBasedPretenuringEnabled(
       StaticPrefs::

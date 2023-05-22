@@ -8,12 +8,8 @@
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
-);
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -108,7 +104,7 @@ export class PromiseWorker extends ChromeWorker {
       try {
         listener(event.data);
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
       }
     }
   }

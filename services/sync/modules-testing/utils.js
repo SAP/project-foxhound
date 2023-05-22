@@ -23,9 +23,6 @@ var EXPORTED_SYMBOLS = [
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
-const { CryptoUtils } = ChromeUtils.import(
-  "resource://services-crypto/utils.js"
-);
 const { Assert } = ChromeUtils.importESModule(
   "resource://testing-common/Assert.sys.mjs"
 );
@@ -251,11 +248,14 @@ var configureFxAccountIdentity = function(
     FxAccountsClient.apply(this);
   };
   MockFxAccountsClient.prototype = {
-    __proto__: FxAccountsClient.prototype,
     accountStatus() {
       return Promise.resolve(true);
     },
   };
+  Object.setPrototypeOf(
+    MockFxAccountsClient.prototype,
+    FxAccountsClient.prototype
+  );
   let mockFxAClient = new MockFxAccountsClient();
   fxa._internal._fxAccountsClient = mockFxAClient;
 

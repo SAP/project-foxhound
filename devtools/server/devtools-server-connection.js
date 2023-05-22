@@ -86,13 +86,6 @@ DevToolsServerConnection.prototype = {
     return this._transport;
   },
 
-  /**
-   * Message manager used to communicate with the parent process,
-   * set by child.js. Is only defined for connections instantiated
-   * within a child process.
-   */
-  parentMessageManager: null,
-
   close(options) {
     if (this._transport) {
       this._transport.close(options);
@@ -236,7 +229,7 @@ DevToolsServerConnection.prototype = {
     const errorString = prefix + ": " + DevToolsUtils.safeErrorString(error);
     // On worker threads we don't have access to Cu.
     if (!isWorker) {
-      Cu.reportError(errorString);
+      console.error(errorString);
     }
     dumpn(errorString);
     return {
@@ -546,73 +539,5 @@ DevToolsServerConnection.prototype = {
     this._extraPools.forEach(pool => this.dumpPool(pool, output, dumpedPools));
 
     return output;
-  },
-
-  /**
-   * In a content child process, ask the DevToolsServer in the parent process
-   * to execute a given module setup helper.
-   *
-   * @param module
-   *        The module to be required
-   * @param setupParent
-   *        The name of the setup helper exported by the above module
-   *        (setup helper signature: function ({mm}) { ... })
-   * @return boolean
-   *         true if the setup helper returned successfully
-   */
-  setupInParent({ module, setupParent }) {
-    if (!this.parentMessageManager) {
-      return false;
-    }
-
-    return this.parentMessageManager.sendSyncMessage("debug:setup-in-parent", {
-      prefix: this.prefix,
-      module,
-      setupParent,
-    });
-  },
-
-  /**
-   * Instanciates a protocol.js actor in the parent process, from the content process
-   * module is the absolute path to protocol.js actor module
-   *
-   * @param spawnByActorID string
-   *        The actor ID of the actor that is requesting an actor to be created.
-   *        This is used as a prefix to compute the actor id of the actor created
-   *        in the parent process.
-   * @param module string
-   *        Absolute path for the actor module to load.
-   * @param constructor string
-   *        The symbol exported by this module that implements Actor.
-   * @param args array
-   *        Arguments to pass to its constructor
-   */
-  spawnActorInParentProcess(spawnedByActorID, { module, constructor, args }) {
-    if (!this.parentMessageManager) {
-      return null;
-    }
-
-    const mm = this.parentMessageManager;
-
-    const onResponse = new Promise(done => {
-      const listener = msg => {
-        if (msg.json.prefix != this.prefix) {
-          return;
-        }
-        mm.removeMessageListener("debug:spawn-actor-in-parent:actor", listener);
-        done(msg.json.actorID);
-      };
-      mm.addMessageListener("debug:spawn-actor-in-parent:actor", listener);
-    });
-
-    mm.sendAsyncMessage("debug:spawn-actor-in-parent", {
-      prefix: this.prefix,
-      module,
-      constructor,
-      args,
-      spawnedByActorID,
-    });
-
-    return onResponse;
   },
 };

@@ -9,6 +9,7 @@ use super::{
     MetricId,
 };
 use crate::ipc::need_ipc;
+use std::borrow::Cow;
 
 /// Sealed traits protect against downstream implementations.
 ///
@@ -134,7 +135,7 @@ where
     pub fn new(
         id: MetricId,
         meta: CommonMetricData,
-        labels: Option<Vec<String>>,
+        labels: Option<Vec<Cow<'static, str>>>,
     ) -> LabeledMetric<T> {
         let core = glean::private::LabeledMetric::new(meta, labels);
         LabeledMetric { id, core }

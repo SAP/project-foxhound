@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "UtilityProcessManager.h"
 
+#include "JSOracleParent.h"
 #include "mozilla/ipc/UtilityProcessHost.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/Preferences.h"
@@ -20,9 +21,16 @@
 #include "nsAppRunner.h"
 #include "nsContentUtils.h"
 
+#ifdef XP_WIN
+#  include "mozilla/dom/WindowsUtilsParent.h"
+#endif
+
 #include "mozilla/GeckoArgs.h"
 
 namespace mozilla::ipc {
+
+extern LazyLogModule gUtilityProcessLog;
+#define LOGD(...) MOZ_LOG(gUtilityProcessLog, LogLevel::Debug, (__VA_ARGS__))
 
 static StaticRefPtr<UtilityProcessManager> sSingleton;
 
@@ -49,6 +57,8 @@ RefPtr<UtilityProcessManager> UtilityProcessManager::GetIfExists() {
 }
 
 UtilityProcessManager::UtilityProcessManager() : mObserver(new Observer(this)) {
+  LOGD("[%p] UtilityProcessManager::UtilityProcessManager", this);
+
   // Start listening for pref changes so we can
   // forward them to the process once it is running.
   nsContentUtils::RegisterShutdownObserver(mObserver);
@@ -56,6 +66,8 @@ UtilityProcessManager::UtilityProcessManager() : mObserver(new Observer(this)) {
 }
 
 UtilityProcessManager::~UtilityProcessManager() {
+  LOGD("[%p] UtilityProcessManager::~UtilityProcessManager", this);
+
   // The Utility process should ALL have already been shut down.
   MOZ_ASSERT(NoMoreProcesses());
 }
@@ -79,6 +91,8 @@ UtilityProcessManager::Observer::Observe(nsISupports* aSubject,
 }
 
 void UtilityProcessManager::OnXPCOMShutdown() {
+  LOGD("[%p] UtilityProcessManager::OnXPCOMShutdown", this);
+
   MOZ_ASSERT(NS_IsMainThread());
   sXPCOMShutdown = true;
   nsContentUtils::UnregisterShutdownObserver(mObserver);
@@ -123,6 +137,9 @@ RefPtr<UtilityProcessManager::ProcessFields> UtilityProcessManager::GetProcess(
 
 RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
     SandboxingKind aSandbox) {
+  LOGD("[%p] UtilityProcessManager::LaunchProcess SandboxingKind=%" PRIu64,
+       this, aSandbox);
+
   MOZ_ASSERT(NS_IsMainThread());
 
   if (IsShutdown()) {
@@ -212,6 +229,11 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
 template <typename Actor>
 RefPtr<GenericNonExclusivePromise> UtilityProcessManager::StartUtility(
     RefPtr<Actor> aActor, SandboxingKind aSandbox) {
+  LOGD(
+      "[%p] UtilityProcessManager::StartUtility actor=%p "
+      "SandboxingKind=%" PRIu64,
+      this, aActor.get(), aSandbox);
+
   if (!aActor) {
     MOZ_ASSERT(false, "Actor singleton failure");
     return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_FAILURE,
@@ -350,6 +372,49 @@ UtilityProcessManager::StartProcessForRemoteMediaDecoding(
           });
 }
 
+RefPtr<UtilityProcessManager::JSOraclePromise>
+UtilityProcessManager::StartJSOracle(dom::JSOracleParent* aParent) {
+  return StartUtility(RefPtr{aParent}, SandboxingKind::GENERIC_UTILITY);
+}
+
+#ifdef XP_WIN
+
+// Windows Utils
+
+RefPtr<UtilityProcessManager::WindowsUtilsPromise>
+UtilityProcessManager::GetWindowsUtilsPromise() {
+  RefPtr<UtilityProcessManager> self = this;
+  if (!mWindowsUtils) {
+    mWindowsUtils = new dom::WindowsUtilsParent();
+  }
+
+  RefPtr<dom::WindowsUtilsParent> wup = mWindowsUtils;
+  MOZ_ASSERT(wup, "Unable to get a singleton for WindowsUtils");
+  return StartUtility(wup, SandboxingKind::WINDOWS_UTILS)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [self, wup]() {
+            if (!wup->CanSend()) {
+              MOZ_ASSERT(false, "WindowsUtilsParent can't send");
+              return WindowsUtilsPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                          __func__);
+            }
+            return WindowsUtilsPromise::CreateAndResolve(wup, __func__);
+          },
+          [self](nsresult aError) {
+            if (!self->IsShutdown()) {
+              MOZ_ASSERT_UNREACHABLE(
+                  "PWindowsUtils: failure when starting actor");
+            }
+            NS_WARNING("StartUtility rejected promise for PWindowsUtils");
+            return WindowsUtilsPromise::CreateAndReject(aError, __func__);
+          });
+}
+
+void UtilityProcessManager::ReleaseWindowsUtils() { mWindowsUtils = nullptr; }
+
+#endif  // XP_WIN
+
 bool UtilityProcessManager::IsProcessLaunching(SandboxingKind aSandbox) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -390,6 +455,8 @@ void UtilityProcessManager::OnProcessUnexpectedShutdown(
 }
 
 void UtilityProcessManager::CleanShutdownAllProcesses() {
+  LOGD("[%p] UtilityProcessManager::CleanShutdownAllProcesses", this);
+
   for (auto& it : mProcesses) {
     if (it) {
       DestroyProcess(it->mSandbox);
@@ -398,6 +465,9 @@ void UtilityProcessManager::CleanShutdownAllProcesses() {
 }
 
 void UtilityProcessManager::CleanShutdown(SandboxingKind aSandbox) {
+  LOGD("[%p] UtilityProcessManager::CleanShutdown SandboxingKind=%" PRIu64,
+       this, aSandbox);
+
   DestroyProcess(aSandbox);
 }
 
@@ -414,6 +484,9 @@ uint16_t UtilityProcessManager::AliveProcesses() {
 bool UtilityProcessManager::NoMoreProcesses() { return AliveProcesses() == 0; }
 
 void UtilityProcessManager::DestroyProcess(SandboxingKind aSandbox) {
+  LOGD("[%p] UtilityProcessManager::DestroyProcess SandboxingKind=%" PRIu64,
+       this, aSandbox);
+
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
   if (AliveProcesses() <= 1) {

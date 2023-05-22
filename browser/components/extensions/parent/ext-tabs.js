@@ -602,10 +602,6 @@ this.tabs = class extends ExtensionAPIPersistent {
       // that it may not otherwise have access to, we set the triggering
       // principal to the url that is being opened.  This is used for newtab,
       // about: and moz-extension: protocols.
-      // We also prevent discarded, or lazy tabs by setting allowInheritPrincipal to false.
-      if (url.startsWith("about:")) {
-        options.allowInheritPrincipal = false;
-      }
       options.triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         Services.io.newURI(url),
         {
@@ -713,12 +709,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           }).then(window => {
             let url;
 
-            let options = {
-              // When allowInheritPrincipal is false, tabs cannot be discarded, so we set it to true.
-              // TODO bug 1488053: Remove allowInheritPrincipal: true
-              allowInheritPrincipal: true,
-              triggeringPrincipal: context.principal,
-            };
+            let options = { triggeringPrincipal: context.principal };
             if (createProperties.cookieStoreId) {
               // May throw if validation fails.
               options.userContextId = getUserContextIdForCookieStoreId(
@@ -1086,24 +1077,25 @@ this.tabs = class extends ExtensionAPIPersistent {
               move([tabA, tabB], {index: 0})
                 -> tabA to 0, tabB to 0 if tabA and tabB are in different windows
           */
-          let indexMap = new Map();
-          let lastInsertion = new Map();
+          let lastInsertionMap = new Map();
 
           for (let nativeTab of getNativeTabsFromIDArray(tabIds)) {
             // If the window is not specified, use the window from the tab.
             let window = destinationWindow || nativeTab.ownerGlobal;
+            let isSameWindow = nativeTab.ownerGlobal == window;
             let gBrowser = window.gBrowser;
 
             // If we are not moving the tab to a different window, and the window
             // only has one tab, do nothing.
-            if (nativeTab.ownerGlobal == window && gBrowser.tabs.length === 1) {
+            if (isSameWindow && gBrowser.tabs.length === 1) {
+              lastInsertionMap.set(window, 0);
               continue;
             }
             // If moving between windows, be sure privacy matches.  While gBrowser
             // prevents this, we want to silently ignore it.
             if (
-              nativeTab.ownerGlobal != window &&
-              PrivateBrowsingUtils.isBrowserPrivate(window.gBrowser) !=
+              !isSameWindow &&
+              PrivateBrowsingUtils.isBrowserPrivate(gBrowser) !=
                 PrivateBrowsingUtils.isBrowserPrivate(
                   nativeTab.ownerGlobal.gBrowser
                 )
@@ -1111,10 +1103,28 @@ this.tabs = class extends ExtensionAPIPersistent {
               continue;
             }
 
-            let insertionPoint = indexMap.get(window) || moveProperties.index;
-            // If the index is -1 it should go to the end of the tabs.
-            if (insertionPoint == -1) {
-              insertionPoint = gBrowser.tabs.length;
+            let insertionPoint;
+            let lastInsertion = lastInsertionMap.get(window);
+            if (lastInsertion == null) {
+              insertionPoint = moveProperties.index;
+              let maxIndex = gBrowser.tabs.length - (isSameWindow ? 1 : 0);
+              if (insertionPoint == -1) {
+                // If the index is -1 it should go to the end of the tabs.
+                insertionPoint = maxIndex;
+              } else {
+                insertionPoint = Math.min(insertionPoint, maxIndex);
+              }
+            } else if (isSameWindow && nativeTab._tPos <= lastInsertion) {
+              // lastInsertion is the current index of the last inserted tab.
+              // insertionPoint is the desired index of the current tab *after* moving it.
+              // When the tab is moved, the last inserted tab will no longer be at index
+              // lastInsertion, but (lastInsertion - 1). To position the tabs adjacent to
+              // each other, the tab should therefore be at index (lastInsertion - 1 + 1).
+              insertionPoint = lastInsertion;
+            } else {
+              // In this case the last inserted tab will stay at index lastInsertion,
+              // so we should move the current tab to index (lastInsertion + 1).
+              insertionPoint = lastInsertion + 1;
             }
 
             // We can only move pinned tabs to a point within, or just after,
@@ -1129,28 +1139,15 @@ this.tabs = class extends ExtensionAPIPersistent {
               continue;
             }
 
-            // If this is not the first tab to be inserted into this window and
-            // the insertion point is the same as the last insertion and
-            // the tab is further to the right than the current insertion point
-            // then you need to bump up the insertion point. See bug 1323311.
-            if (
-              lastInsertion.has(window) &&
-              lastInsertion.get(window) === insertionPoint &&
-              nativeTab._tPos > insertionPoint
-            ) {
-              insertionPoint++;
-              indexMap.set(window, insertionPoint);
-            }
-
-            if (nativeTab.ownerGlobal != window) {
+            if (isSameWindow) {
+              // If the window we are moving is the same, just move the tab.
+              gBrowser.moveTabTo(nativeTab, insertionPoint);
+            } else {
               // If the window we are moving the tab in is different, then move the tab
               // to the new window.
               nativeTab = gBrowser.adoptTab(nativeTab, insertionPoint, false);
-            } else {
-              // If the window we are moving is the same, just move the tab.
-              gBrowser.moveTabTo(nativeTab, insertionPoint);
             }
-            lastInsertion.set(window, nativeTab._tPos);
+            lastInsertionMap.set(window, nativeTab._tPos);
             tabsMoved.push(nativeTab);
           }
 
@@ -1210,26 +1207,22 @@ this.tabs = class extends ExtensionAPIPersistent {
           return Promise.resolve();
         },
 
-        _getZoomSettings(tabId) {
+        async getZoomSettings(tabId) {
           let nativeTab = getTabOrActive(tabId);
 
-          let { FullZoom } = nativeTab.ownerGlobal;
+          let { FullZoom, ZoomUI } = nativeTab.ownerGlobal;
 
           return {
             mode: "automatic",
             scope: FullZoom.siteSpecific ? "per-origin" : "per-tab",
-            defaultZoomFactor: 1,
+            defaultZoomFactor: await ZoomUI.getGlobalValue(),
           };
         },
 
-        getZoomSettings(tabId) {
-          return Promise.resolve(this._getZoomSettings(tabId));
-        },
-
-        setZoomSettings(tabId, settings) {
+        async setZoomSettings(tabId, settings) {
           let nativeTab = getTabOrActive(tabId);
 
-          let currentSettings = this._getZoomSettings(
+          let currentSettings = await this.getZoomSettings(
             tabTracker.getId(nativeTab)
           );
 
@@ -1238,11 +1231,10 @@ this.tabs = class extends ExtensionAPIPersistent {
               key => settings[key] === currentSettings[key]
             )
           ) {
-            return Promise.reject(
+            throw new ExtensionError(
               `Unsupported zoom settings: ${JSON.stringify(settings)}`
             );
           }
-          return Promise.resolve();
         },
 
         onZoomChange: new EventManager({
@@ -1277,7 +1269,7 @@ this.tabs = class extends ExtensionAPIPersistent {
               }
             };
 
-            let zoomListener = event => {
+            let zoomListener = async event => {
               let browser = event.originalTarget;
 
               // For non-remote browsers, this event is dispatched on the document
@@ -1308,7 +1300,7 @@ this.tabs = class extends ExtensionAPIPersistent {
                   tabId,
                   oldZoomFactor,
                   newZoomFactor,
-                  zoomSettings: tabsApi.tabs._getZoomSettings(tabId),
+                  zoomSettings: await tabsApi.tabs.getZoomSettings(tabId),
                 });
               }
             };

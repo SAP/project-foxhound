@@ -2,45 +2,53 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { Domain } from "chrome://remote/content/cdp/domains/Domain.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  MainProcessTarget:
-    "chrome://remote/content/cdp/targets/MainProcessTarget.sys.mjs",
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   TabSession: "chrome://remote/content/cdp/sessions/TabSession.sys.mjs",
   windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.jsm",
-});
-
 let browserContextIds = 1;
 
+// Default filter from CDP specification
+const defaultFilter = [
+  { type: "browser", exclude: true },
+  { type: "tab", exclude: true },
+  {},
+];
+
 export class Target extends Domain {
+  #browserContextIds;
+
   constructor(session) {
     super(session);
+
+    this.#browserContextIds = new Set();
 
     this._onTargetCreated = this._onTargetCreated.bind(this);
     this._onTargetDestroyed = this._onTargetDestroyed.bind(this);
   }
 
   getBrowserContexts() {
-    return {
-      browserContextIds: [],
-    };
+    const browserContextIds = lazy.ContextualIdentityService.getPublicUserContextIds().filter(
+      id => this.#browserContextIds.has(id)
+    );
+
+    return { browserContextIds };
   }
 
   createBrowserContext() {
     const identity = lazy.ContextualIdentityService.create(
       "remote-agent-" + browserContextIds++
     );
+
+    this.#browserContextIds.add(identity.userContextId);
     return { browserContextId: identity.userContextId };
   }
 
@@ -49,21 +57,23 @@ export class Target extends Domain {
 
     lazy.ContextualIdentityService.remove(browserContextId);
     lazy.ContextualIdentityService.closeContainerTabs(browserContextId);
+
+    this.#browserContextIds.delete(browserContextId);
   }
 
-  getTargets() {
+  getTargets(options = {}) {
+    const { filter = defaultFilter } = options;
     const { targetList } = this.session.target;
 
-    const targetInfos = [];
-    for (const target of targetList) {
-      if (target instanceof lazy.MainProcessTarget) {
-        continue;
-      }
+    this._validateTargetFilter(filter);
 
-      targetInfos.push(this._getTargetInfo(target));
-    }
+    const targetInfos = [...targetList]
+      .filter(target => this._filterIncludesTarget(target, filter))
+      .map(target => this._getTargetInfo(target));
 
-    return { targetInfos };
+    return {
+      targetInfos,
+    };
   }
 
   setDiscoverTargets(options = {}) {
@@ -174,15 +184,48 @@ export class Target extends Domain {
   }
 
   _getTargetInfo(target) {
+    const attached = [...this.session.connection.sessions.values()].some(
+      session => session.target.id === target.id
+    );
+
     return {
       targetId: target.id,
       type: target.type,
       title: target.title,
       url: target.url,
-      // TODO: Correctly determine if target is attached (bug 1680780)
-      attached: target.id == this.session.target.id,
+      attached,
       browserContextId: target.browserContextId,
     };
+  }
+
+  _filterIncludesTarget(target, filter) {
+    for (const entry of filter) {
+      if ([undefined, target.type].includes(entry.type)) {
+        return !entry.exclude;
+      }
+    }
+
+    return false;
+  }
+
+  _validateTargetFilter(filter) {
+    if (!Array.isArray(filter)) {
+      throw new TypeError("filter: array value expected");
+    }
+
+    for (const entry of filter) {
+      if (entry === null || Array.isArray(entry) || typeof entry !== "object") {
+        throw new TypeError("filter: object values expected in array");
+      }
+
+      if (!["undefined", "string"].includes(typeof entry.type)) {
+        throw new TypeError("filter: type: string value expected");
+      }
+
+      if (!["undefined", "boolean"].includes(typeof entry.exclude)) {
+        throw new TypeError("filter: exclude: boolean value expected");
+      }
+    }
   }
 
   _onTargetCreated(eventName, target) {

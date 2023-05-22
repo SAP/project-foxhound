@@ -26,7 +26,6 @@ const {
   getMessage,
   getAllNetworkMessagesUpdateById,
 } = require("resource://devtools/client/webconsole/selectors/messages.js");
-const Telemetry = require("resource://devtools/client/shared/telemetry.js");
 
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const App = createFactory(
@@ -95,7 +94,8 @@ class WebConsoleWrapper {
     this.queuedMessageUpdates = [];
     this.queuedRequestUpdates = [];
     this.throttledDispatchPromise = null;
-    this.telemetry = new Telemetry();
+
+    this.telemetry = this.hud.telemetry;
   }
 
   #serviceContainer;
@@ -164,7 +164,7 @@ class WebConsoleWrapper {
   }
 
   destroy() {
-    // This component can be instantiated from mocha test, in which case we don't have
+    // This component can be instantiated from jest test, in which case we don't have
     // a parentNode reference.
     if (this.parentNode) {
       ReactDOM.unmountComponentAtNode(this.parentNode);
@@ -364,7 +364,13 @@ class WebConsoleWrapper {
     if (!this.throttledDispatchPromise) {
       return Promise.resolve();
     }
-    return this.throttledDispatchPromise;
+    // When closing the console during initialization,
+    // setTimeoutIfNeeded may never resolve its promise
+    // as window.setTimeout will be disabled on document destruction.
+    const onUnload = new Promise(r =>
+      window.addEventListener("unload", r, { once: true })
+    );
+    return Promise.race([this.throttledDispatchPromise, onUnload]);
   }
 
   setTimeoutIfNeeded() {
@@ -379,6 +385,7 @@ class WebConsoleWrapper {
           // The store is not initialized yet, we can call setTimeoutIfNeeded so the
           // messages will be handled in the next timeout when the store is ready.
           this.setTimeoutIfNeeded();
+          done();
           return;
         }
 

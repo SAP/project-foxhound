@@ -9,13 +9,11 @@ use crate::parser::{Parse, ParserContext};
 use crate::properties::{LonghandId, PropertyDeclarationId};
 use crate::properties::{PropertyId, ShorthandId};
 use crate::values::generics::box_::{
-    GenericAnimationIterationCount, GenericLineClamp, GenericPerspective,
-};
-use crate::values::generics::box_::{
-    GenericContainIntrinsicSize, GenericVerticalAlign, VerticalAlignKeyword,
+    GenericLineClamp, GenericPerspective, GenericContainIntrinsicSize, GenericVerticalAlign,
+    VerticalAlignKeyword,
 };
 use crate::values::specified::length::{LengthPercentage, NonNegativeLength};
-use crate::values::specified::{AllowQuirks, Integer, Number};
+use crate::values::specified::{AllowQuirks, Integer, NonNegativeNumber};
 use crate::values::{CustomIdent, KeyframesName, TimelineName};
 use crate::Atom;
 use cssparser::Parser;
@@ -429,11 +427,11 @@ impl ToCss for Display {
                     if self.is_list_item() {
                         if outside != DisplayOutside::Block {
                             outside.to_css(dest)?;
-                            dest.write_str(" ")?;
+                            dest.write_char(' ')?;
                         }
                         if inside != DisplayInside::Flow {
                             inside.to_css(dest)?;
-                            dest.write_str(" ")?;
+                            dest.write_char(' ')?;
                         }
                         dest.write_str("list-item")
                     } else {
@@ -663,30 +661,19 @@ impl Parse for VerticalAlign {
 }
 
 /// https://drafts.csswg.org/css-animations/#animation-iteration-count
-pub type AnimationIterationCount = GenericAnimationIterationCount<Number>;
-
-impl Parse for AnimationIterationCount {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut ::cssparser::Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if input
-            .try_parse(|input| input.expect_ident_matching("infinite"))
-            .is_ok()
-        {
-            return Ok(GenericAnimationIterationCount::Infinite);
-        }
-
-        let number = Number::parse_non_negative(context, input)?;
-        Ok(GenericAnimationIterationCount::Number(number))
-    }
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem)]
+pub enum AnimationIterationCount {
+    /// A `<number>` value.
+    Number(NonNegativeNumber),
+    /// The `infinite` keyword.
+    Infinite,
 }
 
 impl AnimationIterationCount {
     /// Returns the value `1.0`.
     #[inline]
     pub fn one() -> Self {
-        GenericAnimationIterationCount::Number(Number::new(1.0))
+        Self::Number(NonNegativeNumber::new(1.0))
     }
 }
 
@@ -705,6 +692,7 @@ impl AnimationIterationCount {
     ToShmem,
 )]
 #[value_info(other_values = "none")]
+#[repr(C)]
 pub struct AnimationName(pub KeyframesName);
 
 impl AnimationName {
@@ -775,9 +763,11 @@ impl Default for Scroller {
     }
 }
 
-/// A value for the <Axis> used in scroll().
+/// A value for the <Axis> used in scroll(), or a value for {scroll|view}-timeline-axis.
 ///
-/// https://drafts.csswg.org/scroll-animations-1/rewrite#typedef-axis
+/// https://drafts.csswg.org/scroll-animations-1/#typedef-axis
+/// https://drafts.csswg.org/scroll-animations-1/#scroll-timeline-axis
+/// https://drafts.csswg.org/scroll-animations-1/#view-timeline-axis
 #[derive(
     Clone,
     Debug,
@@ -818,7 +808,6 @@ fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 /// A value for the <single-animation-timeline>.
 ///
 /// https://drafts.csswg.org/css-animations-2/#typedef-single-animation-timeline
-/// cbindgen:private-default-tagged-enum-constructor=false
 #[derive(
     Clone,
     Debug,
@@ -836,8 +825,9 @@ fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 pub enum AnimationTimeline {
     /// Use default timeline. The animation’s timeline is a DocumentTimeline.
     Auto,
-    /// The scroll-timeline name.
+    /// The scroll-timeline name or view-timeline-name.
     /// https://drafts.csswg.org/scroll-animations-1/#scroll-timelines-named
+    /// https://drafts.csswg.org/scroll-animations-1/#view-timeline-name
     Timeline(TimelineName),
     /// The scroll() notation.
     /// https://drafts.csswg.org/scroll-animations-1/#scroll-notation
@@ -865,15 +855,6 @@ impl Parse for AnimationTimeline {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        // We are using the same parser for TimelineName and KeyframesName, but animation-timeline
-        // accepts "auto", so need to manually parse this. (We can not derive
-        // Parse because TimelineName excludes only the "none" keyword).
-        //
-        // FIXME: Bug 1733260: we may drop None based on the spec issue:
-        // https://github.com/w3c/csswg-drafts/issues/6674
-        //
-        // If `none` is removed, then we could potentially shrink this the same
-        // way we deal with animation-name.
         if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
             return Ok(Self::Auto);
         }
@@ -882,7 +863,7 @@ impl Parse for AnimationTimeline {
             return Ok(AnimationTimeline::Timeline(TimelineName::none()));
         }
 
-        // https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-notation
+        // https://drafts.csswg.org/scroll-animations-1/#scroll-notation
         if input
             .try_parse(|i| i.expect_function_matching("scroll"))
             .is_ok()
@@ -899,48 +880,8 @@ impl Parse for AnimationTimeline {
     }
 }
 
-/// A value for the scroll-timeline-name.
-///
-/// Note: The spec doesn't mention `auto` for scroll-timeline-name. However, `auto` is a keyword in
-/// animation-timeline, so we reject `auto` for scroll-timeline-name now.
-///
-/// https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-timeline-name
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-)]
-#[repr(C)]
-pub struct ScrollTimelineName(pub TimelineName);
-
-impl ScrollTimelineName {
-    /// Returns the `none` value.
-    pub fn none() -> Self {
-        Self(TimelineName::none())
-    }
-}
-
-impl Parse for ScrollTimelineName {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if let Ok(name) = input.try_parse(|input| TimelineName::parse(context, input)) {
-            return Ok(Self(name));
-        }
-
-        input.expect_ident_matching("none")?;
-        Ok(Self(TimelineName::none()))
-    }
-}
+/// A value for the scroll-timeline-name or view-timeline-name.
+pub type ScrollTimelineName = AnimationName;
 
 /// https://drafts.csswg.org/css-scroll-snap-1/#snap-axis
 #[allow(missing_docs)]
@@ -1056,7 +997,7 @@ impl ToCss for ScrollSnapType {
         }
         self.axis.to_css(dest)?;
         if self.strictness != ScrollSnapStrictness::Proximity {
-            dest.write_str(" ")?;
+            dest.write_char(' ')?;
             self.strictness.to_css(dest)?;
         }
         Ok(())
@@ -1141,7 +1082,7 @@ impl ToCss for ScrollSnapAlign {
     {
         self.block.to_css(dest)?;
         if self.block != self.inline {
-            dest.write_str(" ")?;
+            dest.write_char(' ')?;
             self.inline.to_css(dest)?;
         }
         Ok(())
@@ -2229,7 +2170,10 @@ impl Parse for Overflow {
             "clip" => Self::Clip,
             #[cfg(feature = "gecko")]
             "-moz-hidden-unscrollable" if static_prefs::pref!("layout.css.overflow-moz-hidden-unscrollable.enabled") => {
-               Overflow::Clip
+                Overflow::Clip
+            },
+            "overlay" if static_prefs::pref!("layout.css.overflow-overlay.enabled") => {
+                Overflow::Auto
             },
         })
     }

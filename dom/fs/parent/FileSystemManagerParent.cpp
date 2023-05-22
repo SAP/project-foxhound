@@ -9,6 +9,8 @@
 #include "FileSystemDatabaseManager.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/FileBlobImpl.h"
+#include "mozilla/dom/FileSystemAccessHandle.h"
+#include "mozilla/dom/FileSystemAccessHandleControlParent.h"
 #include "mozilla/dom/FileSystemAccessHandleParent.h"
 #include "mozilla/dom/FileSystemDataManager.h"
 #include "mozilla/dom/FileSystemLog.h"
@@ -16,6 +18,7 @@
 #include "mozilla/dom/FileSystemWritableFileStreamParent.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/QMResult.h"
+#include "mozilla/dom/quota/FileStreams.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -117,56 +120,68 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetAccessHandle(
   AssertIsOnIOTarget();
   MOZ_ASSERT(mDataManager);
 
-  if (!mDataManager->LockExclusive(aRequest.entryId())) {
-    aResolver(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
-    return IPC_OK();
-  }
+  EntryId entryId = aRequest.entryId();
 
-  auto autoUnlock =
-      MakeScopeExit([self = RefPtr<FileSystemManagerParent>(this), aRequest] {
-        self->mDataManager->UnlockExclusive(aRequest.entryId());
-      });
+  FileSystemAccessHandle::Create(mDataManager, entryId)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr(this), request = std::move(aRequest),
+           resolver = std::move(aResolver)](
+              FileSystemAccessHandle::CreatePromise::ResolveOrRejectValue&&
+                  aValue) {
+            if (!self->CanSend()) {
+              return;
+            }
 
-  auto reportError = [aResolver](nsresult rv) { aResolver(rv); };
+            if (aValue.IsReject()) {
+              resolver(aValue.RejectValue());
+              return;
+            }
 
-  nsString type;
-  fs::TimeStamp lastModifiedMilliSeconds;
-  fs::Path path;
-  nsCOMPtr<nsIFile> file;
-  QM_TRY(MOZ_TO_RESULT(mDataManager->MutableDatabaseManagerPtr()->GetFile(
-             aRequest.entryId(), type, lastModifiedMilliSeconds, path, file)),
-         IPC_OK(), reportError);
+            FileSystemAccessHandle::CreateResult result =
+                std::move(aValue.ResolveValue());
 
-  if (LOG_ENABLED()) {
-    nsAutoString path;
-    if (NS_SUCCEEDED(file->GetPath(path))) {
-      LOG(("Opening SyncAccessHandle %s", NS_ConvertUTF16toUTF8(path).get()));
-    }
-  }
+            fs::Registered<FileSystemAccessHandle> accessHandle =
+                std::move(result.first);
 
-  QM_TRY_UNWRAP(nsCOMPtr<nsIRandomAccessStream> stream,
-                NS_NewLocalFileRandomAccessStream(file), IPC_OK(), reportError);
+            RandomAccessStreamParams streamParams = std::move(result.second);
 
-  RandomAccessStreamParams streamParams =
-      mozilla::ipc::SerializeRandomAccessStream(
-          WrapMovingNotNullUnchecked(std::move(stream)));
+            auto accessHandleParent = MakeRefPtr<FileSystemAccessHandleParent>(
+                accessHandle.inspect());
 
-  auto accessHandleParent =
-      MakeRefPtr<FileSystemAccessHandleParent>(this, aRequest.entryId());
+            auto resolveAndReturn = [&resolver](nsresult rv) { resolver(rv); };
 
-  // Release the auto unlock helper just before calling
-  // SendPFileSystemAccessHandleConstructor which is responsible for destroying
-  // the actor if the sending fails (we call `UnlockExclusive` when the actor is
-  // destroyed).
-  autoUnlock.release();
+            ManagedEndpoint<PFileSystemAccessHandleChild>
+                accessHandleChildEndpoint =
+                    self->OpenPFileSystemAccessHandleEndpoint(
+                        accessHandleParent);
+            QM_TRY(MOZ_TO_RESULT(accessHandleChildEndpoint.IsValid()),
+                   resolveAndReturn);
 
-  if (!SendPFileSystemAccessHandleConstructor(accessHandleParent)) {
-    aResolver(NS_ERROR_FAILURE);
-    return IPC_OK();
-  }
+            accessHandle->RegisterActor(WrapNotNull(accessHandleParent));
 
-  aResolver(FileSystemAccessHandleProperties(streamParams, accessHandleParent,
-                                             nullptr));
+            auto accessHandleControlParent =
+                MakeRefPtr<FileSystemAccessHandleControlParent>(
+                    accessHandle.inspect());
+
+            Endpoint<PFileSystemAccessHandleControlParent>
+                accessHandleControlParentEndpoint;
+            Endpoint<PFileSystemAccessHandleControlChild>
+                accessHandleControlChildEndpoint;
+            MOZ_ALWAYS_SUCCEEDS(PFileSystemAccessHandleControl::CreateEndpoints(
+                &accessHandleControlParentEndpoint,
+                &accessHandleControlChildEndpoint));
+
+            accessHandleControlParentEndpoint.Bind(accessHandleControlParent);
+
+            accessHandle->RegisterControlActor(
+                WrapNotNull(accessHandleControlParent));
+
+            resolver(FileSystemAccessHandleProperties(
+                std::move(streamParams), std::move(accessHandleChildEndpoint),
+                std::move(accessHandleControlChildEndpoint)));
+          });
+
   return IPC_OK();
 }
 
@@ -175,10 +190,8 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetWritable(
   AssertIsOnIOTarget();
   MOZ_ASSERT(mDataManager);
 
-  if (!mDataManager->LockShared(aRequest.entryId())) {
-    aResolver(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
-    return IPC_OK();
-  }
+  QM_TRY(MOZ_TO_RESULT(mDataManager->LockShared(aRequest.entryId())), IPC_OK(),
+         ([aResolver](const nsresult& aRv) { aResolver(aRv); }));
 
   auto autoUnlock =
       MakeScopeExit([self = RefPtr<FileSystemManagerParent>(this), aRequest] {
@@ -202,22 +215,21 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetWritable(
     }
   }
 
-  FILE* fileHandle;
-  QM_TRY(MOZ_TO_RESULT(file->OpenANSIFileDesc(aRequest.keepData() ? "r+" : "w",
-                                              &fileHandle)),
-         IPC_OK(), reportError);
-
-  auto autoClose = MakeScopeExit([fileHandle]() {
-    QM_WARNONLY_TRY(MOZ_TO_RESULT(0 == fclose(fileHandle)));
-  });
-
-  FileDescriptor fileDescriptor =
-      mozilla::ipc::FILEToFileDescriptor(fileHandle);
-
-  LOG(("Opened"));
-
   auto writableFileStreamParent =
       MakeRefPtr<FileSystemWritableFileStreamParent>(this, aRequest.entryId());
+
+  QM_TRY_UNWRAP(
+      nsCOMPtr<nsIRandomAccessStream> stream,
+      CreateFileRandomAccessStream(quota::PERSISTENCE_TYPE_DEFAULT,
+                                   mDataManager->OriginMetadataRef(),
+                                   quota::Client::FILESYSTEM, file, -1, -1,
+                                   nsIFileRandomAccessStream::DEFER_OPEN),
+      IPC_OK(), reportError);
+
+  RandomAccessStreamParams streamParams =
+      mozilla::ipc::SerializeRandomAccessStream(
+          WrapMovingNotNullUnchecked(std::move(stream)),
+          writableFileStreamParent->GetOrCreateStreamCallbacks());
 
   // Release the auto unlock helper just before calling
   // SendPFileSystemWritableFileStreamConstructor which is responsible for
@@ -231,7 +243,8 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetWritable(
   }
 
   aResolver(FileSystemWritableFileStreamProperties(
-      fileDescriptor, writableFileStreamParent, nullptr));
+      std::move(streamParams), writableFileStreamParent, nullptr));
+
   return IPC_OK();
 }
 
@@ -454,11 +467,11 @@ void FileSystemManagerParent::RequestAllowToClose() {
 
   mRequestedAllowToClose.Flip();
 
-  InvokeAsync(mDataManager->MutableIOTargetPtr(), __func__,
+  InvokeAsync(mDataManager->MutableIOTaskQueuePtr(), __func__,
               [self = RefPtr<FileSystemManagerParent>(this)]() {
                 return self->SendCloseAll();
               })
-      ->Then(mDataManager->MutableIOTargetPtr(), __func__,
+      ->Then(mDataManager->MutableIOTaskQueuePtr(), __func__,
              [self = RefPtr<FileSystemManagerParent>(this)](
                  const CloseAllPromise::ResolveOrRejectValue& aValue) {
                self->Close();
@@ -471,9 +484,7 @@ void FileSystemManagerParent::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnIOTarget();
   MOZ_ASSERT(!mActorDestroyed);
 
-#ifdef DEBUG
-  mActorDestroyed = true;
-#endif
+  DEBUGONLY(mActorDestroyed = true);
 
   InvokeAsync(mDataManager->MutableBackgroundTargetPtr(), __func__,
               [self = RefPtr<FileSystemManagerParent>(this)]() {

@@ -28,13 +28,12 @@
 
 :root {
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
-  --toolbar-bgimage: var(--toolbar-non-lwt-bgimage);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
   --toolbarbutton-border-radius: 4px;
 
-  --tab-selected-bgimage: var(--tab-selected-non-lwt-bgimage);
   --tabs-navbar-shadow-size: 1px;
 
+  --panel-separator-color: color-mix(in srgb, currentColor 25%, transparent);
   --panel-shortcut-color: inherit;
   --panelui-subview-transition-duration: 150ms;
 
@@ -99,6 +98,7 @@
 @media (prefers-contrast) {
   :root {
     --autocomplete-popup-separator-color: color-mix(in srgb, currentColor 86%, transparent);
+    --panel-separator-color: currentColor;
     --urlbar-icon-fill-opacity: 1;
     --checkbox-checked-border-color: var(--checkbox-checked-bgcolor);
   }
@@ -116,10 +116,8 @@
 
 :root:-moz-lwtheme {
   --toolbar-bgcolor: rgba(255,255,255,.4);
-  --toolbar-bgimage: none;
   --toolbar-color: var(--lwt-text-color, inherit);
 
-  --tab-selected-bgimage: none;
   color: var(--lwt-text-color);
 }
 
@@ -714,6 +712,7 @@ menupopup::part(drop-indicator) {
 
 .webRTC-selectDevice-selector-container > menulist {
   flex: 1;
+  min-width: 0;
 }
 
 popupnotificationcontent {
@@ -836,4 +835,179 @@ popupnotificationcontent {
 
 #tab-notification-deck {
   display: block;
+}
+
+.relay-integration-header {
+  display: flex;
+  align-items: center;
+  font-size: 2em;
+}
+
+.relay-integration-header > div {
+  width: 32px;
+  height: 32px;
+  background-image: url("chrome://browser/content/logos/relay.svg");
+  background-repeat: no-repeat;
+}
+
+.relay-integration-header > span:first-of-type {
+  font-weight: bold;
+  margin-inline-start: 8px;
+}
+
+.relay-integration-header > span:last-of-type {
+  font-weight: normal;
+  white-space: pre;
+}
+
+.popup-notification-description[popupid="relay-integration-offer-notification"] > html|div:first-of-type {
+  font-weight: normal;
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto auto auto auto;
+}
+
+#relay-integration-reuse-masks-notification > popupnotificationcontent > div {
+  font-weight: normal;
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto auto auto auto;
+}
+
+.reusable-relay-masks {
+  display: flex;
+  flex-direction: column;
+}
+
+.reusable-relay-masks > button {
+  padding: 4px;
+  margin: 4px;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.reusable-relay-masks > button > span:first-child {
+  margin-inline-end: 20px;
+}
+
+.reusable-relay-masks > button > span:last-child {
+  opacity: 0.6;
+}
+
+#historySwipeAnimationPreviousArrow,
+#historySwipeAnimationNextArrow {
+  will-change: transform;
+}
+
+#historySwipeAnimationPreviousArrow:-moz-locale-dir(rtl),
+#historySwipeAnimationNextArrow:-moz-locale-dir(ltr) {
+  transform: scaleX(-1);
+}
+
+#historySwipeAnimationPreviousArrow > svg,
+#historySwipeAnimationNextArrow > svg {
+  margin: auto 0;
+}
+
+#historySwipeAnimationPreviousArrow,
+#historySwipeAnimationNextArrow {
+  --swipe-nav-icon-primary-color: #0060DF;
+  --swipe-nav-icon-accent-color: #FFFFFF;
+}
+
+@media (-moz-content-prefers-color-scheme: dark) {
+  #historySwipeAnimationPreviousArrow,
+  #historySwipeAnimationNextArrow {
+    --swipe-nav-icon-primary-color: #00DDFF;
+    --swipe-nav-icon-accent-color: #000000;
+  }
+}
+
+@media (prefers-contrast) {
+  #historySwipeAnimationPreviousArrow,
+  #historySwipeAnimationNextArrow {
+    --swipe-nav-icon-primary-color: SelectedItemText;
+    --swipe-nav-icon-accent-color: SelectedItem;
+  }
+}
+
+/*
+ * Styles for the swipe navigation SVG icon.
+ */
+.swipe-nav-icon path {
+  transition: fill 1s;
+}
+
+@media not (-moz-platform: macos) {
+  /*
+   * Styles for the swipe navigation SVG icon.
+   *
+   * `will-navigate` class name is added to the <svg> element when the user's
+   * swipe gesture reached to the point where history navigation will be
+   * triggered. It's used for triggering three animations, an arrow color change,
+   * a circle color change and a glowing effect outer the circle.
+   */
+  .swipe-nav-icon circle {
+    fill: var(--swipe-nav-icon-accent-color);
+    stroke: var(--swipe-nav-icon-primary-color);
+  }
+
+  .swipe-nav-icon circle:first-of-type {
+    fill: var(--swipe-nav-icon-primary-color);
+    transition: opacity 1s;
+    will-change: opacity; /* a workaround for bug 1804189 */
+    opacity: 0;
+  }
+
+  .swipe-nav-icon.will-navigate > circle:not(:first-of-type) {
+    fill: var(--swipe-nav-icon-primary-color);
+  }
+
+  .swipe-nav-icon circle:not(:first-of-type) {
+    transition: fill 1s;
+  }
+
+  .swipe-nav-icon.will-navigate > circle:first-of-type {
+    transition-delay: 0.2s;
+    opacity: 0.2;
+  }
+
+  .swipe-nav-icon.will-navigate > circle:not(:first-of-type) {
+    fill: var(--swipe-nav-icon-primary-color);
+  }
+
+  .swipe-nav-icon path {
+    fill: var(--swipe-nav-icon-primary-color);
+  }
+
+  .swipe-nav-icon.will-navigate > path {
+    fill: var(--swipe-nav-icon-accent-color);
+    stroke: var(--swipe-nav-icon-accent-color);
+  }
+}
+
+@media (-moz-platform: macos) {
+  /*
+   * Styles for the swipe navigation SVG icon.
+   *
+   * `will-navigate` class name is added to the <svg> element when the user's
+   * swipe gesture reached to the point where history navigation will be
+   * triggered.
+   */
+  .swipe-nav-icon path {
+    fill: var(--swipe-nav-icon-accent-color);
+    stroke: var(--swipe-nav-icon-primary-color);;
+  }
+  .swipe-nav-icon.will-navigate > path {
+    stroke: var(--swipe-nav-icon-accent-color);
+  }
+  .swipe-nav-icon.will-navigate > path:first-of-type {
+    fill: var(--swipe-nav-icon-primary-color);
+  }
+  @media (prefers-contrast) {
+    .swipe-nav-icon.will-navigate > path:not(:first-of-type) {
+      fill: var(--swipe-nav-icon-accent-color);
+    }
+  }
 }

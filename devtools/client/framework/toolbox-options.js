@@ -358,7 +358,8 @@ OptionsPanel.prototype = {
           visibilityswitch: pref,
 
           // Only local tabs are currently supported as targets.
-          isToolSupported: toolbox => toolbox.target.isLocalTab,
+          isToolSupported: toolbox =>
+            toolbox.commands.descriptorFront.isLocalTab,
         })
       );
     }
@@ -432,44 +433,6 @@ OptionsPanel.prototype = {
         l10nTooltipId: "options-enable-custom-formatters-tooltip",
         id: "devtools-custom-formatters",
         parentId: "context-options",
-      });
-    }
-
-    if (this.toolbox.isBrowserToolbox) {
-      // The Multiprocess Browser Toolbox is only displayed in the settings
-      // panel for the Browser Toolbox, or when debugging the main process in
-      // remote debugging.
-      prefDefinitions.push({
-        pref: "devtools.browsertoolbox.fission",
-        label: L10N.getStr("options.enableMultiProcessToolbox"),
-        id: "devtools-browsertoolbox-fission",
-        parentId: "context-options",
-        // createPreferenceOption already updates the value of the preference
-        // for the current profile when the checkbox changes. Here we need a
-        // custom behavior for the Browser Toolbox, so we pass an additional
-        // onChange callback.
-        onChange: async checked => {
-          if (!this.toolbox.isBrowserToolbox) {
-            // If we are debugging a parent process, but the toolbox is not a
-            // Browser Toolbox, it means we are remote debugging another
-            // browser. In this case, the value of devtools.browsertoolbox.fission
-            // should not be updated in the target browser.
-            return;
-          }
-
-          // When setting this preference from the BrowserToolbox, we need to
-          // update the preference on the debugged Firefox profile as well.
-          // The devtools.browsertoolbox.fission preference is copied from the
-          // regular Firefox Profile to the Browser Toolbox profile.
-          // If the preference is not updated on the regular Firefox profile, the
-          // new value will be lost on the next Browser Toolbox restart.
-          const { mainRoot } = this.commands.client;
-          const preferenceFront = await mainRoot.getFront("preference");
-          preferenceFront.setBoolPref(
-            "devtools.browsertoolbox.fission",
-            checked
-          );
-        },
       });
     }
 
@@ -582,7 +545,7 @@ OptionsPanel.prototype = {
       });
     }
 
-    if (!this.target.chrome) {
+    if (this.commands.descriptorFront.isTabDescriptor) {
       const isJavascriptEnabled = await this.commands.targetConfigurationCommand.isJavascriptEnabled();
       this.disableJSNode.checked = !isJavascriptEnabled;
       this.disableJSNode.addEventListener("click", this._disableJSClicked);

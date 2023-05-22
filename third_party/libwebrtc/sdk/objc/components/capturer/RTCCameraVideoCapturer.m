@@ -186,6 +186,7 @@ const int64_t kNanosecondsPerSecond = 1000000000;
                       [self updateOrientation];
                       [self updateDeviceCaptureFormat:format fps:fps];
                       [self updateVideoDataOutputPixelFormat:format];
+                      [_videoDataOutput setSampleBufferDelegate:self queue:self.frameQueue];
                       [self.captureSession startRunning];
                       [self.currentDevice unlockForConfiguration];
                       self.isRunning = YES;
@@ -205,6 +206,7 @@ const int64_t kNanosecondsPerSecond = 1000000000;
                       for (AVCaptureDeviceInput *oldInput in [self.captureSession.inputs copy]) {
                         [self.captureSession removeInput:oldInput];
                       }
+                      [_videoDataOutput setSampleBufferDelegate:nil queue:nil];
                       [self.captureSession stopRunning];
 
 #if TARGET_OS_IPHONE
@@ -215,6 +217,11 @@ const int64_t kNanosecondsPerSecond = 1000000000;
                         }
                       });
 #endif
+
+                      // Wait for any pending captureOutput tasks.
+                      dispatch_sync(self.frameQueue, ^{
+                                    });
+
                       self.isRunning = NO;
                       if (completionHandler) {
                         completionHandler();
@@ -464,7 +471,6 @@ const int64_t kNanosecondsPerSecond = 1000000000;
   _outputPixelFormat = _preferredOutputPixelFormat;
   videoDataOutput.videoSettings = @{(NSString *)kCVPixelBufferPixelFormatTypeKey : pixelFormat};
   videoDataOutput.alwaysDiscardsLateVideoFrames = NO;
-  [videoDataOutput setSampleBufferDelegate:self queue:self.frameQueue];
   _videoDataOutput = videoDataOutput;
 }
 
@@ -476,9 +482,16 @@ const int64_t kNanosecondsPerSecond = 1000000000;
 
   if (mediaSubType != _outputPixelFormat) {
     _outputPixelFormat = mediaSubType;
-    _videoDataOutput.videoSettings =
-        @{ (NSString *)kCVPixelBufferPixelFormatTypeKey : @(mediaSubType) };
   }
+
+  // Update videoSettings with dimensions, as some virtual cameras, e.g. Snap Camera, may not work
+  // otherwise.
+  CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+  _videoDataOutput.videoSettings = @{
+    (id)kCVPixelBufferWidthKey : @(dimensions.width),
+    (id)kCVPixelBufferHeightKey : @(dimensions.height),
+    (id)kCVPixelBufferPixelFormatTypeKey : @(_outputPixelFormat),
+  };
 }
 
 #pragma mark - Private, called inside capture queue

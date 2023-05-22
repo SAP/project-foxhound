@@ -431,6 +431,9 @@ var ExtensionsUI = {
         persistent: true,
         eventCallback,
         removeOnDismissal: true,
+        popupOptions: {
+          position: "bottomright topright",
+        },
       };
       // The prompt/notification machinery has a special affordance wherein
       // certain subsets of the header string can be designated "names", and
@@ -469,12 +472,6 @@ var ExtensionsUI = {
           },
         },
       ];
-
-      if (browser.ownerGlobal.gUnifiedExtensions.isEnabled) {
-        options.popupOptions = {
-          position: "bottomright topright",
-        };
-      }
 
       window.PopupNotifications.show(
         browser,
@@ -638,8 +635,10 @@ var ExtensionsUI = {
       return;
     }
 
-    let uri = popup.ownerGlobal.gBrowser.currentURI;
-    let state = lazy.OriginControls.getState(policy, uri);
+    let win = popup.ownerGlobal;
+    let tab = win.gBrowser.selectedTab;
+    let uri = tab.linkedBrowser?.currentURI;
+    let state = lazy.OriginControls.getState(policy, tab);
 
     let doc = popup.ownerDocument;
     let whenClicked, alwaysOn, allDomains;
@@ -669,9 +668,10 @@ var ExtensionsUI = {
         whenClicked,
         "origin-controls-option-when-clicked"
       );
-      whenClicked.addEventListener("command", () =>
-        lazy.OriginControls.setWhenClicked(policy, uri)
-      );
+      whenClicked.addEventListener("command", async () => {
+        await lazy.OriginControls.setWhenClicked(policy, uri);
+        win.gUnifiedExtensions.updateAttention();
+      });
     }
 
     if (state.alwaysOn) {
@@ -681,9 +681,10 @@ var ExtensionsUI = {
       doc.l10n.setAttributes(alwaysOn, "origin-controls-option-always-on", {
         domain: uri.host,
       });
-      alwaysOn.addEventListener("command", () =>
-        lazy.OriginControls.setAlwaysOn(policy, uri)
-      );
+      alwaysOn.addEventListener("command", async () => {
+        await lazy.OriginControls.setAlwaysOn(policy, uri);
+        win.gUnifiedExtensions.updateAttention();
+      });
     }
 
     // Insert all before Pin to toolbar OR Manage Extension, after any

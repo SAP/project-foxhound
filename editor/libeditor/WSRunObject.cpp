@@ -10,6 +10,7 @@
 #include "ErrorList.h"
 #include "HTMLEditHelpers.h"  // for MoveNodeResult, SplitNodeResult
 #include "HTMLEditor.h"
+#include "HTMLEditorNestedClasses.h"  // for AutoMoveOneLineHandler
 #include "HTMLEditUtils.h"
 #include "SelectionState.h"
 
@@ -283,25 +284,29 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
     //     behavior, we should mark as handled.
     ret.MarkAsHandled();
   } else {
-    // XXX Why do we ignore the result of
-    //     MoveOneHardLineContentsWithTransaction()?
+    // XXX Why do we ignore the result of AutoMoveOneLineHandler::Run()?
     NS_ASSERTION(rightBlockElement == afterRightBlockChild.GetContainer(),
                  "The relation is not guaranteed but assumed");
 #ifdef DEBUG
     Result<bool, nsresult> firstLineHasContent =
-        aHTMLEditor.CanMoveOrDeleteSomethingInHardLine(
+        HTMLEditor::AutoMoveOneLineHandler::CanMoveOrDeleteSomethingInLine(
             EditorDOMPoint(rightBlockElement, afterRightBlockChild.Offset()),
             aEditingHost);
 #endif  // #ifdef DEBUG
+    HTMLEditor::AutoMoveOneLineHandler lineMoverToEndOfLeftBlock(
+        aLeftBlockElement);
+    nsresult rv = lineMoverToEndOfLeftBlock.Prepare(
+        aHTMLEditor,
+        EditorDOMPoint(rightBlockElement, afterRightBlockChild.Offset()),
+        aEditingHost);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("AutoMoveOneLineHandler::Prepare() failed");
+      return Err(rv);
+    }
     Result<MoveNodeResult, nsresult> moveNodeResult =
-        aHTMLEditor.MoveOneHardLineContentsWithTransaction(
-            EditorDOMPoint(rightBlockElement, afterRightBlockChild.Offset()),
-            EditorDOMPoint(&aLeftBlockElement, 0u), aEditingHost,
-            HTMLEditor::MoveToEndOfContainer::Yes);
+        lineMoverToEndOfLeftBlock.Run(aHTMLEditor, aEditingHost);
     if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
-      NS_WARNING(
-          "HTMLEditor::MoveOneHardLineContentsWithTransaction("
-          "MoveToEndOfContainer::Yes) failed");
+      NS_WARNING("AutoMoveOneLineHandler::Run() failed");
       return moveNodeResult.propagateErr();
     }
 
@@ -508,6 +513,8 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
       // simple case, we will simply move the content in aRightBlockElement
       // out of its block.
       pointToMoveFirstLineContent = atLeftBlockChild;
+      MOZ_ASSERT(pointToMoveFirstLineContent.GetContainer() ==
+                 &aLeftBlockElement);
     } else {
       if (NS_WARN_IF(!aLeftContentInBlock.IsInComposedDoc())) {
         return Err(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
@@ -522,6 +529,9 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
       // unexpected position.  (see bug 200416) The new idea is to make the
       // moving content a sibling, next to the previous visible content.
       pointToMoveFirstLineContent.SetAfter(&aLeftContentInBlock);
+      if (NS_WARN_IF(!pointToMoveFirstLineContent.IsInContentNode())) {
+        return Err(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
+      }
     }
 
     MOZ_ASSERT(pointToMoveFirstLineContent.IsSetAndValid());
@@ -531,7 +541,7 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
 
 #ifdef DEBUG
     Result<bool, nsresult> firstLineHasContent =
-        aHTMLEditor.CanMoveOrDeleteSomethingInHardLine(
+        HTMLEditor::AutoMoveOneLineHandler::CanMoveOrDeleteSomethingInLine(
             EditorDOMPoint(&aRightBlockElement, 0u), aEditingHost);
 #endif  // #ifdef DEBUG
 
@@ -567,34 +577,41 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
             break;
           }
         }
+        if (NS_WARN_IF(!pointToMoveFirstLineContent.IsInContentNode())) {
+          return Err(NS_ERROR_FAILURE);
+        }
       } else if (unwrappedSplitNodeResult.Handled()) {
         // If se split something, we should move the first line contents before
         // the right elements.
         if (nsIContent* nextContentAtSplitPoint =
                 unwrappedSplitNodeResult.GetNextContent()) {
           pointToMoveFirstLineContent.Set(nextContentAtSplitPoint);
-          if (MOZ_UNLIKELY(!pointToMoveFirstLineContent.IsSet())) {
-            NS_WARNING("Next node of split point was orphaned");
-            return Err(NS_ERROR_NULL_POINTER);
+          if (NS_WARN_IF(!pointToMoveFirstLineContent.IsInContentNode())) {
+            return Err(NS_ERROR_FAILURE);
           }
         } else {
           pointToMoveFirstLineContent =
               unwrappedSplitNodeResult.AtSplitPoint<EditorDOMPoint>();
-          if (MOZ_UNLIKELY(!pointToMoveFirstLineContent.IsSet())) {
-            NS_WARNING("Split node was orphaned");
-            return Err(NS_ERROR_NULL_POINTER);
+          if (NS_WARN_IF(!pointToMoveFirstLineContent.IsInContentNode())) {
+            return Err(NS_ERROR_FAILURE);
           }
         }
       }
       MOZ_DIAGNOSTIC_ASSERT(pointToMoveFirstLineContent.IsSetAndValid());
     }
 
+    HTMLEditor::AutoMoveOneLineHandler lineMoverToPoint(
+        pointToMoveFirstLineContent);
+    nsresult rv = lineMoverToPoint.Prepare(
+        aHTMLEditor, EditorDOMPoint(&aRightBlockElement, 0u), aEditingHost);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("AutoMoveOneLineHandler::Prepare() failed");
+      return Err(rv);
+    }
     Result<MoveNodeResult, nsresult> moveNodeResult =
-        aHTMLEditor.MoveOneHardLineContentsWithTransaction(
-            EditorDOMPoint(&aRightBlockElement, 0u),
-            pointToMoveFirstLineContent, aEditingHost);
+        lineMoverToPoint.Run(aHTMLEditor, aEditingHost);
     if (moveNodeResult.isErr()) {
-      NS_WARNING("HTMLEditor::MoveOneHardLineContentsWithTransaction() failed");
+      NS_WARNING("AutoMoveOneLineHandler::Run() failed");
       return moveNodeResult.propagateErr();
     }
 
@@ -709,20 +726,23 @@ Result<EditActionResult, nsresult> WhiteSpaceVisibilityKeeper::
   } else {
 #ifdef DEBUG
     Result<bool, nsresult> firstLineHasContent =
-        aHTMLEditor.CanMoveOrDeleteSomethingInHardLine(
+        HTMLEditor::AutoMoveOneLineHandler::CanMoveOrDeleteSomethingInLine(
             EditorDOMPoint(&aRightBlockElement, 0u), aEditingHost);
 #endif  // #ifdef DEBUG
 
     // Nodes are dissimilar types.
+    HTMLEditor::AutoMoveOneLineHandler lineMoverToEndOfLeftBlock(
+        aLeftBlockElement);
+    nsresult rv = lineMoverToEndOfLeftBlock.Prepare(
+        aHTMLEditor, EditorDOMPoint(&aRightBlockElement, 0u), aEditingHost);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("AutoMoveOneLineHandler::Prepare() failed");
+      return Err(rv);
+    }
     Result<MoveNodeResult, nsresult> moveNodeResult =
-        aHTMLEditor.MoveOneHardLineContentsWithTransaction(
-            EditorDOMPoint(&aRightBlockElement, 0u),
-            EditorDOMPoint(&aLeftBlockElement, 0u), aEditingHost,
-            HTMLEditor::MoveToEndOfContainer::Yes);
+        lineMoverToEndOfLeftBlock.Run(aHTMLEditor, aEditingHost);
     if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
-      NS_WARNING(
-          "HTMLEditor::MoveOneHardLineContentsWithTransaction("
-          "MoveToEndOfContainer::Yes) failed");
+      NS_WARNING("AutoMoveOneLineHandler::Run() failed");
       return moveNodeResult.propagateErr();
     }
 

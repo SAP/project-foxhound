@@ -395,7 +395,7 @@ nsresult HttpBaseChannel::Init(nsIURI* aURI, uint32_t aCaps,
     mProxyInfo = aProxyInfo;
   }
 
-  mCurrentThread = GetCurrentEventTarget();
+  mCurrentThread = GetCurrentSerialEventTarget();
   return rv;
 }
 
@@ -1707,7 +1707,8 @@ HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
   MOZ_ASSERT(
       !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
   *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
-      mThirdPartyClassificationFlags);
+      mThirdPartyClassificationFlags,
+      mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0);
   return NS_OK;
 }
 
@@ -2229,13 +2230,21 @@ HttpBaseChannel::SetIsMainDocumentChannel(bool aValue) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetProtocolVersion(nsACString& aProtocolVersion) {
-  nsAutoCString protocol;
-  if (mSecurityInfo &&
-      NS_SUCCEEDED(mSecurityInfo->GetNegotiatedNPN(protocol)) &&
-      !protocol.IsEmpty()) {
-    // The negotiated protocol was not empty so we can use it.
-    aProtocolVersion = protocol;
-    return NS_OK;
+  // Try to use ALPN if available and if it is not for a proxy, i.e if an
+  // https proxy was not used or if https proxy was used but the connection to
+  // the origin server is also https. In the case, an https proxy was used and
+  // the connection to the origin server was http, mSecurityInfo will be from
+  // the proxy.
+  if (!mConnectionInfo || !mConnectionInfo->UsingHttpsProxy() ||
+      mConnectionInfo->EndToEndSSL()) {
+    nsAutoCString protocol;
+    if (mSecurityInfo &&
+        NS_SUCCEEDED(mSecurityInfo->GetNegotiatedNPN(protocol)) &&
+        !protocol.IsEmpty()) {
+      // The negotiated protocol was not empty so we can use it.
+      aProtocolVersion = protocol;
+      return NS_OK;
+    }
   }
 
   if (mResponseHead) {
@@ -2808,6 +2817,7 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
           Telemetry::LABELS_SCRIPT_BLOCK_INCORRECT_MIME_3::script_load);
       break;
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
+    case nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE:
     case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
       AccumulateCategorical(
           Telemetry::LABELS_SCRIPT_BLOCK_INCORRECT_MIME_3::worker_load);
@@ -2932,7 +2942,8 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
 
   // We restrict importScripts() in worker code to JavaScript MIME types.
   nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
-  if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS) {
+  if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE) {
     ReportMimeTypeMismatch(aChannel, "BlockImportScriptsWithWrongMimeType",
                            aURI, contentType, Report::Error);
     return NS_ERROR_CORRUPTED_CONTENT;
@@ -3093,13 +3104,20 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   if (!mCachedOpaqueResponseBlockingPref) {
-    return OpaqueResponse::Alllow;
+    return OpaqueResponse::Allow;
   }
 
   // https://whatpr.org/fetch/1442.html#http-fetch, step 6.4
   if (!ShouldBlockOpaqueResponse()) {
-    return OpaqueResponse::Alllow;
+    return OpaqueResponse::Allow;
   }
+
+  Telemetry::ScalarAdd(
+      Telemetry::ScalarID::
+          OPAQUE_RESPONSE_BLOCKING_CROSS_ORIGIN_OPAQUE_RESPONSE_COUNT,
+      1);
+
+  PROFILER_MARKER_TEXT("ORB safelist check", NETWORK, {}, "Before sniff"_ns);
 
   // https://whatpr.org/fetch/1442.html#orb-algorithm
   // Step 1
@@ -3117,7 +3135,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
                                          nosniff)) {
     case OpaqueResponseBlockedReason::ALLOWED_SAFE_LISTED:
       // Step 3.1
-      return OpaqueResponse::Alllow;
+      return OpaqueResponse::Allow;
     case OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED:
       // Step 3.2
       LOGORB("Blocked: BLOCKED_BLOCKLISTED_NEVER_SNIFFED");
@@ -3147,7 +3165,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
     bool isMediaInitialRequest;
     mLoadInfo->GetIsMediaInitialRequest(&isMediaInitialRequest);
     if (!isMediaInitialRequest) {
-      return OpaqueResponse::Alllow;
+      return OpaqueResponse::Allow;
     }
   }
 
@@ -3201,6 +3219,8 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
 // * `OpaqueResponseBlocker::ValidateJavaScript`
 OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
     const nsACString& aContentType, bool aNoSniff) {
+  PROFILER_MARKER_TEXT("ORB safelist check", NETWORK, {}, "After sniff"_ns);
+
   // https://whatpr.org/fetch/1442.html#orb-algorithm
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(mCachedOpaqueResponseBlockingPref);
@@ -3233,7 +3253,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
   // Step 13
   if (!mResponseHead || aContentType.IsEmpty()) {
     LOGORB("Allowed: mimeType is failure");
-    return OpaqueResponse::Alllow;
+    return OpaqueResponse::Allow;
   }
 
   // Step 14
@@ -3600,6 +3620,18 @@ NS_IMETHODIMP
 HttpBaseChannel::GetIsResolvedByTRR(bool* aResolvedByTRR) {
   NS_ENSURE_ARG_POINTER(aResolvedByTRR);
   *aResolvedByTRR = LoadResolvedByTRR();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetEffectiveTRRMode(nsIRequest::TRRMode* aEffectiveTRRMode) {
+  *aEffectiveTRRMode = mEffectiveTRRMode;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetTrrSkipReason(nsITRRSkipReason::value* aTrrSkipReason) {
+  *aTrrSkipReason = mTRRSkipReason;
   return NS_OK;
 }
 
@@ -4881,7 +4913,39 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
+  // we need to strip Authentication headers for cross-origin requests
+  // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
+  nsAutoCString authHeader;
+  if (StaticPrefs::network_http_redirect_stripAuthHeader() &&
+      NS_SUCCEEDED(
+          httpChannel->GetRequestHeader("Authorization"_ns, authHeader))) {
+    if (!IsNewChannelSameOrigin(httpChannel)) {
+      rv = httpChannel->SetRequestHeader("Authorization"_ns, ""_ns, false);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
+
   return NS_OK;
+}
+
+// check whether the new channel is of same origin as the current channel
+bool HttpBaseChannel::IsNewChannelSameOrigin(nsIChannel* aNewChannel) {
+  bool isSameOrigin = false;
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+
+  if (!ssm) {
+    return false;
+  }
+
+  nsCOMPtr<nsIURI> newURI;
+  NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
+
+  nsresult rv = ssm->CheckSameOriginURI(newURI, mURI, false, false);
+  if (NS_SUCCEEDED(rv)) {
+    isSameOrigin = true;
+  }
+
+  return isSameOrigin;
 }
 
 bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(
@@ -4895,19 +4959,13 @@ bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(
     return false;
   }
 
-  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  if (!ssm) {
-    return true;
-  }
-
-  nsCOMPtr<nsIURI> newURI;
-  NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
-  nsresult rv = ssm->CheckSameOriginURI(newURI, mURI, false, false);
-  if (NS_SUCCEEDED(rv)) {
+  // If new channel is not of same origin we need to taint unless
+  // mURI <-> mOriginalURI/LoadingPrincipal are same origin.
+  if (IsNewChannelSameOrigin(aNewChannel)) {
     return false;
   }
-  // If newURI <-> mURI are not same-origin we need to taint unless
-  // mURI <-> mOriginalURI/LoadingPrincipal are same origin.
+
+  nsresult rv;
 
   if (mLoadInfo->GetLoadingPrincipal()) {
     bool sameOrigin = false;
@@ -4918,6 +4976,11 @@ bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(
     return !sameOrigin;
   }
   if (!mOriginalURI) {
+    return true;
+  }
+
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  if (!ssm) {
     return true;
   }
 

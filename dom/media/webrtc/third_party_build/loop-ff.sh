@@ -1,18 +1,24 @@
 #!/bin/bash
 
+source dom/media/webrtc/third_party_build/use_config_env.sh
+
 # file for logging loop script output
-LOOP_OUTPUT_LOG=~/log-loop-ff.txt
+LOOP_OUTPUT_LOG=$LOG_DIR/log-loop-ff.txt
+
+function echo_log()
+{
+  echo "===loop-ff=== $@" 2>&1| tee -a $LOOP_OUTPUT_LOG
+}
 
 function show_error_msg()
 {
-  echo "*** ERROR *** $? line $1 $0 did not complete successfully!" 2>&1| tee -a $LOOP_OUTPUT_LOG
-  echo "$ERROR_HELP"
+  echo_log "*** ERROR *** $? line $1 $0 did not complete successfully!"
+  echo_log "$ERROR_HELP"
 }
+ERROR_HELP=""
 
 # Print an Error message if `set -eE` causes the script to exit due to a failed command
 trap 'show_error_msg $LINENO' ERR
-
-source dom/media/webrtc/third_party_build/use_config_env.sh
 
 # If DEBUG_LOOP_FF is set all commands should be printed as they are executed
 if [ ! "x$DEBUG_LOOP_FF" = "x" ]; then
@@ -29,14 +35,14 @@ if [ ! -d $MOZ_LIBWEBRTC_SRC ]; then
   exit
 fi
 
-if [ "x$MOZ_LIBWEBRTC_COMMIT" = "x" ]; then
-  echo "MOZ_LIBWEBRTC_COMMIT is not defined, see README.md"
+if [ "x$MOZ_LIBWEBRTC_BRANCH" = "x" ]; then
+  echo "MOZ_LIBWEBRTC_BRANCH is not defined, see README.md"
   exit
 fi
 
 if [ "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then
-  MOZ_STOP_AFTER_COMMIT=""
-  echo "No MOZ_STOP_AFTER_COMMIT variable defined - attempting unlimited advance"
+  MOZ_STOP_AFTER_COMMIT=`cd $MOZ_LIBWEBRTC_SRC ; git show $MOZ_TARGET_UPSTREAM_BRANCH_HEAD --format='%h' --name-only | head -1`
+  echo "No MOZ_STOP_AFTER_COMMIT variable defined - stopping at $MOZ_TARGET_UPSTREAM_BRANCH_HEAD"
 fi
 
 if [ "x$SKIP_NEXT_REVERT_CHK" = "x" ]; then
@@ -45,7 +51,6 @@ fi
 
 MOZ_CHANGED=0
 GIT_CHANGED=0
-ERROR_HELP=""
 HANDLE_NOOP_COMMIT=""
 
 # After this point:
@@ -63,8 +68,8 @@ hg revert -C third_party/libwebrtc/README.moz-ff-commit &> /dev/null
 
 # check for a resume situation from fast-forward-libwebrtc.sh
 RESUME=""
-if [ -f log_resume.txt ]; then
-  RESUME=`tail -1 log_resume.txt`
+if [ -f $STATE_DIR/resume_state ]; then
+  RESUME=`tail -1 $STATE_DIR/resume_state`
 fi
 
 ERROR_HELP=$"
@@ -83,7 +88,9 @@ It appears that initial vendoring verification has failed.
 if [ "x$RESUME" = "x" ]; then
   # start off by verifying the vendoring process to make sure no changes have
   # been added to elm to fix bugs.
+  echo_log "Verifying vendoring..."
   bash $SCRIPT_DIR/verify_vendoring.sh
+  echo_log "Done verifying vendoring."
 fi
 ERROR_HELP=""
 
@@ -92,7 +99,17 @@ for (( ; ; )); do
 find_base_commit
 find_next_commit
 
-echo "============ loop ff ============" 2>&1| tee -a $LOOP_OUTPUT_LOG
+if [ $MOZ_LIBWEBRTC_BASE == $MOZ_LIBWEBRTC_NEXT_BASE ]; then
+  echo_log "Processing complete, already at upstream $MOZ_LIBWEBRTC_BASE"
+  exit
+fi
+
+echo_log "==================="
+
+COMMITS_REMAINING=`cd $MOZ_LIBWEBRTC_SRC ; \
+   git log --oneline $MOZ_LIBWEBRTC_BASE..$MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
+   | wc -l | tr -d " "`
+echo_log "Commits remaining: $COMMITS_REMAINING"
 
 ERROR_HELP=$"Some portion of the detection and/or fixing of upstream revert commits
 has failed.  Please fix the state of the git hub repo at: $MOZ_LIBWEBRTC_SRC.
@@ -100,19 +117,19 @@ When fixed, please resume this script with the following command:
     SKIP_NEXT_REVERT_CHK=1 bash $SCRIPT_DIR/loop-ff.sh
 "
 if [ "x$SKIP_NEXT_REVERT_CHK" == "x0" ]; then
-  echo "===loop-ff=== Check for upcoming revert commit" 2>&1| tee -a $LOOP_OUTPUT_LOG
+  echo_log "Check for upcoming revert commit"
   AUTO_FIX_REVERT_AS_NOOP=1 bash $SCRIPT_DIR/detect_upstream_revert.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
 fi
 SKIP_NEXT_REVERT_CHK="0"
 ERROR_HELP=""
 
-echo "===loop-ff=== looking for ~/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg"
-if [ -f ~/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg ]; then
-  echo "===loop-ff=== detected special commit msg, setting HANDLE_NOOP_COMMIT=1"
+echo_log "Looking for $STATE_DIR/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg"
+if [ -f $STATE_DIR/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg ]; then
+  echo_log "Detected special commit msg, setting HANDLE_NOOP_COMMIT=1"
   HANDLE_NOOP_COMMIT="1"
 fi
 
-echo "===loop-ff=== Moving from moz-libwebrtc commit $MOZ_LIBWEBRTC_BASE to $MOZ_LIBWEBRTC_NEXT_BASE" 2>&1| tee -a $LOOP_OUTPUT_LOG
+echo_log "Moving from moz-libwebrtc commit $MOZ_LIBWEBRTC_BASE to $MOZ_LIBWEBRTC_NEXT_BASE"
 bash $SCRIPT_DIR/fast-forward-libwebrtc.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
 
 MOZ_CHANGED=`hg diff -c tip --stat \
@@ -120,7 +137,7 @@ MOZ_CHANGED=`hg diff -c tip --stat \
    | wc -l | tr -d " " || true`
 GIT_CHANGED=`cd $MOZ_LIBWEBRTC_SRC ; \
    git show --oneline --name-only $MOZ_LIBWEBRTC_NEXT_BASE \
-   | csplit -f gitshow -sk - 2 ; cat gitshow01 \
+   | csplit -f $TMP_DIR/gitshow -sk - 2 ; cat $TMP_DIR/gitshow01 \
    | egrep -ve "^CODE_OF_CONDUCT.md|^ENG_REVIEW_OWNERS|^PRESUBMIT.py|^README.chromium|^WATCHLISTS|^abseil-in-webrtc.md|^codereview.settings|^license_template.txt|^native-api.md|^presubmit_test.py|^presubmit_test_mocks.py|^pylintrc|^style-guide.md" \
    | wc -l | tr -d " " || true`
 FILE_CNT_MISMATCH_MSG=$"
@@ -138,11 +155,11 @@ remain for this commit:
   # do a (hopefully) quick test build
   ./mach build
 "
-echo "===loop-ff=== Verify number of files changed MOZ($MOZ_CHANGED) GIT($GIT_CHANGED)" 2>&1| tee -a $LOOP_OUTPUT_LOG
+echo_log "Verify number of files changed MOZ($MOZ_CHANGED) GIT($GIT_CHANGED)"
 if [ "x$HANDLE_NOOP_COMMIT" == "x1" ]; then
-  echo "===loop-ff=== NO-OP commit detected, we expect file changed counts to differ" 2>&1| tee -a $LOOP_OUTPUT_LOG
+  echo_log "NO-OP commit detected, we expect file changed counts to differ"
 elif [ $MOZ_CHANGED -ne $GIT_CHANGED ]; then
-  echo "MOZ_CHANGED $MOZ_CHANGED should equal GIT_CHANGED $GIT_CHANGED" 2>&1| tee -a $LOOP_OUTPUT_LOG
+  echo_log "MOZ_CHANGED $MOZ_CHANGED should equal GIT_CHANGED $GIT_CHANGED"
   echo "$FILE_CNT_MISMATCH_MSG"
   exit 1
 fi
@@ -153,26 +170,41 @@ MODIFIED_BUILD_RELATED_FILE_CNT=`hg diff -c tip --stat \
     --include 'third_party/libwebrtc/webrtc.gni' \
     | grep -v "files changed" \
     | wc -l | tr -d " " || true`
-echo "===loop-ff=== Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT" 2>&1| tee -a $LOOP_OUTPUT_LOG
+ERROR_HELP=$"
+Generating build files has failed.  This likely means changes to one or more
+BUILD.gn files are required.  Commit those changes following the instructions
+in https://wiki.mozilla.org/Media/WebRTC/libwebrtc_Update_Process#Operational_notes
+Then complete these steps:
+  # generate moz.build files (may not be necessary)
+  ./mach python python/mozbuild/mozbuild/gn_processor.py \\
+      $SCRIPT_DIR/gn-configs/webrtc.json
+  # commit the updated moz.build files with the appropriate commit msg
+  bash $SCRIPT_DIR/commit-build-file-changes.sh
+  # do a (hopefully) quick test build
+  ./mach build
+After a successful build, you may resume this script.
+"
+echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT"
 if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
-  echo "===loop-ff=== Regenerate build files" 2>&1| tee -a $LOOP_OUTPUT_LOG
+  echo_log "Regenerate build files"
   ./mach python python/mozbuild/mozbuild/gn_processor.py \
       $SCRIPT_DIR/gn-configs/webrtc.json 2>&1| tee -a $LOOP_OUTPUT_LOG
 
   MOZ_BUILD_CHANGE_CNT=`hg status third_party/libwebrtc \
       --include 'third_party/libwebrtc/**moz.build' | wc -l | tr -d " "`
   if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
-    echo "===loop-ff=== Detected modified moz.build files, commiting" 2>&1| tee -a $LOOP_OUTPUT_LOG
+    echo_log "Detected modified moz.build files, commiting"
   fi
 
   bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
 fi
+ERROR_HELP=""
 
 ERROR_HELP=$"
 The test build has failed.  Most likely this is due to an upstream api change that
 must be reflected in Mozilla code outside of the third_party/libwebrtc directory.
 "
-echo "===loop-ff=== Test build" 2>&1| tee -a $LOOP_OUTPUT_LOG
+echo_log "Test build"
 ./mach build 2>&1| tee -a $LOOP_OUTPUT_LOG
 ERROR_HELP=""
 
@@ -184,4 +216,4 @@ fi
 
 done
 
-echo "===loop-ff=== Completed fast-foward to $MOZ_STOP_AFTER_COMMIT" 2>&1| tee -a $LOOP_OUTPUT_LOG
+echo_log "Completed fast-foward to $MOZ_STOP_AFTER_COMMIT"

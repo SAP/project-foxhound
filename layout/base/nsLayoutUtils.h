@@ -116,8 +116,10 @@ class Image;
 class StackingContextHelper;
 class Layer;
 class WebRenderLayerManager;
-
 }  // namespace layers
+namespace widget {
+enum class TransparencyMode : uint8_t;
+}
 }  // namespace mozilla
 
 // Flags to customize the behavior of nsLayoutUtils::DrawString.
@@ -621,14 +623,6 @@ class nsLayoutUtils {
      * would be undesirable as a 'position:sticky' container for content).
      */
     SCROLLABLE_STOP_AT_PAGE = 0x20,
-    /**
-     * If the SCROLLABLE_FOLLOW_OOF_TO_PLACEHOLDER flag is set, we navigate
-     * from out-of-flow frames to their placeholder frame rather than their
-     * parent frame.
-     * Note, fixed-pos frames are out-of-flow frames, but
-     * SCROLLABLE_FIXEDPOS_FINDS_ROOT takes precedence over this.
-     */
-    SCROLLABLE_FOLLOW_OOF_TO_PLACEHOLDER = 0x40
   };
   /**
    * GetNearestScrollableFrame locates the first ancestor of aFrame
@@ -1068,15 +1062,6 @@ class nsLayoutUtils {
    * aFrame.
    */
   static nsRect ClampRectToScrollFrames(nsIFrame* aFrame, const nsRect& aRect);
-
-  /**
-   * Return true if a "layer transform" could be computed for aFrame,
-   * and optionally return the computed transform.  The returned
-   * transform is what would be set on the layer currently if a layers
-   * transaction were opened at the time this helper is called.
-   */
-  static bool GetLayerTransformForFrame(nsIFrame* aFrame,
-                                        Matrix4x4Flagged* aTransform);
 
   /**
    * Given a point in the global coordinate space, returns that point expressed
@@ -2083,8 +2068,9 @@ class nsLayoutUtils {
    *                           same.
    *   @return a value suitable for passing to SetWindowTranslucency.
    */
-  static nsTransparencyMode GetFrameTransparency(nsIFrame* aBackgroundFrame,
-                                                 nsIFrame* aCSSRootFrame);
+  using TransparencyMode = mozilla::widget::TransparencyMode;
+  static TransparencyMode GetFrameTransparency(nsIFrame* aBackgroundFrame,
+                                               nsIFrame* aCSSRootFrame);
 
   /**
    * A frame is a popup if it has its own floating window. Menus, panels
@@ -2208,6 +2194,8 @@ class nsLayoutUtils {
      * The surface might be different for, e.g., a EXIF-scaled raster image, if
      * we don't rescale during decode. */
     SFE_EXACT_SIZE_SURFACE = 1 << 6,
+    /* Use orientation from image */
+    SFE_ORIENTATION_FROM_IMAGE = 1 << 7
   };
 
   // This function can be called on any thread.

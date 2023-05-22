@@ -82,12 +82,10 @@ char16_t CharAt(int32_t aOffset);
 virtual int32_t OffsetAtPoint(int32_t aX, int32_t aY,
                               uint32_t aCoordType) override;
 
-bool SetSelectionBoundsAt(int32_t aSelectionNum, int32_t aStartOffset,
-                          int32_t aEndOffset);
+virtual bool SetSelectionBoundsAt(int32_t aSelectionNum, int32_t aStartOffset,
+                                  int32_t aEndOffset) override;
 
-bool AddToSelection(int32_t aStartOffset, int32_t aEndOffset);
-
-bool RemoveFromSelection(int32_t aSelectionNum);
+virtual bool RemoveFromSelection(int32_t aSelectionNum) override;
 
 void ScrollSubstringTo(int32_t aStartOffset, int32_t aEndOffset,
                        uint32_t aScrollType);
@@ -191,7 +189,7 @@ Accessible* ChildAtPoint(
 LayoutDeviceIntRect Bounds() const override;
 virtual nsIntRect BoundsInCSSPixels() const override;
 
-void Language(nsString& aLocale);
+virtual void Language(nsAString& aLocale) override;
 void DocType(nsString& aType);
 void Title(nsString& aTitle);
 void MimeType(nsString aMime);

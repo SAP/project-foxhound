@@ -18,6 +18,10 @@ const { setTimeout } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRollouts: "resource://normandy/lib/AddonRollouts.jsm",
   AddonStudies: "resource://normandy/lib/AddonStudies.jsm",
@@ -28,7 +32,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   PreferenceRollouts: "resource://normandy/lib/PreferenceRollouts.jsm",
   RecipeRunner: "resource://normandy/lib/RecipeRunner.jsm",
   ShieldPreferences: "resource://normandy/lib/ShieldPreferences.jsm",
-  TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
   RemoteSettingsExperimentLoader:
@@ -231,7 +234,7 @@ var Normandy = {
         targetPrefType !== Services.prefs.PREF_INVALID &&
         targetPrefType !== sourcePrefType
       ) {
-        Cu.reportError(
+        console.error(
           new Error(
             `Error setting startup pref ${prefName}; pref type does not match.`
           )
@@ -271,7 +274,7 @@ var Normandy = {
           originalValues[prefName] = null;
         } else {
           // Unexpected error, report it and move on
-          Cu.reportError(e);
+          console.error(e);
           continue;
         }
       }
@@ -298,7 +301,7 @@ var Normandy = {
         }
         default: {
           // This should never happen.
-          Cu.reportError(
+          console.error(
             new Error(
               `Error getting startup pref ${prefName}; unexpected value type ${sourcePrefType}.`
             )

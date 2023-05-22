@@ -5,7 +5,6 @@
 "use strict";
 
 const { openToolboxAndLog, reloadPageAndLog } = require("../head");
-const InspectorUtils = require("InspectorUtils");
 
 /*
  * These methods are used for working with debugger state changes in order
@@ -67,12 +66,13 @@ async function waitUntil(predicate, msg) {
   }
   return new Promise(resolve => {
     const timer = setInterval(() => {
-      if (predicate()) {
+      const predicateResult = predicate();
+      if (predicateResult) {
         clearInterval(timer);
         if (msg) {
           dump(`Finished Waiting until: ${msg}\n`);
         }
-        resolve();
+        resolve(predicateResult);
       }
     }, DEBUGGER_POLLING_INTERVAL);
   });
@@ -91,7 +91,7 @@ function getCM(dbg) {
 }
 exports.getCM = getCM;
 
-function waitForText(dbg, url, text) {
+function waitForText(dbg, text) {
   return waitUntil(() => {
     // the welcome box is removed once text is displayed
     const welcomebox = dbg.win.document.querySelector(".welcomebox");
@@ -128,6 +128,7 @@ function waitForSource(dbg, sourceURL) {
   }
   return waitForState(dbg, hasSource, `has source ${sourceURL}`);
 }
+exports.waitForSource = waitForSource;
 
 async function waitForPaused(dbg) {
   const onLoadedScope = waitForLoadedScopes(dbg);
@@ -227,7 +228,7 @@ async function openDebuggerAndLog(label, expected) {
     const dbg = await createContext(panel);
     await waitForSource(dbg, expected.sourceURL);
     await selectSource(dbg, expected.file);
-    await waitForText(dbg, expected.file, expected.text);
+    await waitForText(dbg, expected.text);
     await waitForSymbols(dbg);
   };
 
@@ -246,7 +247,7 @@ async function reloadDebuggerAndLog(label, toolbox, expected) {
     const dbg = await createContext(panel);
     await waitForDispatch(dbg, "NAVIGATE");
     await waitForSources(dbg, expected.sources);
-    await waitForText(dbg, expected.file, expected.text);
+    await waitForText(dbg, expected.text);
     await waitForSymbols(dbg);
   };
   await reloadPageAndLog(`${label}.jsdebugger`, toolbox, onReload);
@@ -308,7 +309,7 @@ async function step(dbg, stepType) {
 exports.step = step;
 
 async function hoverOnToken(dbg, cx, textToWaitFor, textToHover) {
-  await waitForText(dbg, null, textToWaitFor);
+  await waitForText(dbg, textToWaitFor);
   const tokenElement = [
     ...dbg.win.document.querySelectorAll(".CodeMirror span"),
   ].find(el => el.textContent === "window");

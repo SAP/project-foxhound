@@ -740,7 +740,7 @@ class RTCPeerConnection {
       }
       urls
         .map(url => nicerNewURI(url))
-        .forEach(({ scheme, spec }) => {
+        .forEach(({ scheme, spec, query }) => {
           if (scheme in { turn: 1, turns: 1 }) {
             if (username == undefined) {
               throw new this._win.DOMException(
@@ -768,6 +768,11 @@ class RTCPeerConnection {
               );
             }
             this._hasTurnServer = true;
+            // If this is not a TURN TCP/TLS server, it is also a STUN server
+            const parameters = query.split("&");
+            if (!parameters.includes("transport=tcp")) {
+              this._hasStunServer = true;
+            }
             stunServers += 1;
           } else if (scheme in { stun: 1, stuns: 1 }) {
             this._hasStunServer = true;
@@ -1390,9 +1395,9 @@ class RTCPeerConnection {
         streams,
         direction: "sendrecv",
       });
+      transceiver.setAddTrackMagic();
     }
 
-    transceiver.setAddTrackMagic();
     this.updateNegotiationNeeded();
     return transceiver.sender;
   }
@@ -1443,7 +1448,15 @@ class RTCPeerConnection {
       kind = sendTrack.kind;
     }
 
-    return this._pc.addTransceiver(init, kind, sendTrack);
+    try {
+      return this._pc.addTransceiver(init, kind, sendTrack);
+    } catch (e) {
+      // Exceptions thrown by c++ code do not propagate. In most cases, that's
+      // fine because we're using Promises, which can be copied. But this is
+      // not promise-based, so we have to do this sketchy stuff.
+      const holder = new StructuredCloneHolder(new ClonedErrorHolder(e));
+      throw holder.deserialize(this._win);
+    }
   }
 
   addTransceiver(sendTrackOrKind, init) {
@@ -1670,7 +1683,7 @@ class RTCPeerConnection {
       // At least 65536/2 UTF-16 characters. UTF-8 might be too long.
       // Spec says to check how long |protocol| and |label| are in _bytes_. This
       // is a little ambiguous. For now, examine the length of the utf-8 encoding.
-      const byteCounter = new TextEncoder("utf-8");
+      const byteCounter = new TextEncoder();
 
       if (byteCounter.encode(protocol).length > 65535) {
         throw new this._win.TypeError(
@@ -1680,7 +1693,7 @@ class RTCPeerConnection {
     }
 
     if (label.length > 32767) {
-      const byteCounter = new TextEncoder("utf-8");
+      const byteCounter = new TextEncoder();
       if (byteCounter.encode(label).length > 65535) {
         throw new this._win.TypeError(
           "label cannot be longer than 65535 bytes"

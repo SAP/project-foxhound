@@ -408,8 +408,7 @@ DocumentLoadListener::DocumentLoadListener(
     : mIsDocumentLoad(aIsDocumentLoad) {
   LOG(("DocumentLoadListener ctor [this=%p]", this));
   mParentChannelListener =
-      new ParentChannelListener(this, aLoadingBrowsingContext,
-                                aLoadingBrowsingContext->UsePrivateBrowsing());
+      new ParentChannelListener(this, aLoadingBrowsingContext);
 }
 
 DocumentLoadListener::~DocumentLoadListener() {
@@ -473,9 +472,7 @@ WindowGlobalParent* DocumentLoadListener::GetParentWindowContext() const {
 }
 
 bool CheckRecursiveLoad(CanonicalBrowsingContext* aLoadingContext,
-                        nsDocShellLoadState* aLoadState,
-                        DocumentLoadListener* aDLL, bool aIsDocumentLoad,
-                        LoadInfo* aLoadInfo) {
+                        nsDocShellLoadState* aLoadState, bool aIsDocumentLoad) {
   // Bug 136580: Check for recursive frame loading excluding about:srcdoc URIs.
   // srcdoc URIs require their contents to be specified inline, so it isn't
   // possible for undesirable recursion to occur without the aid of a
@@ -614,8 +611,7 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
 
   // Check for infinite recursive object or iframe loads
   if (aLoadState->OriginalFrameSrc() || !mIsDocumentLoad) {
-    if (!CheckRecursiveLoad(loadingContext, aLoadState, this, mIsDocumentLoad,
-                            aLoadInfo)) {
+    if (!CheckRecursiveLoad(loadingContext, aLoadState, mIsDocumentLoad)) {
       *aRv = NS_ERROR_RECURSIVE_DOCUMENT_LOAD;
       mParentChannelListener = nullptr;
       return nullptr;
@@ -2097,6 +2093,12 @@ DocumentLoadListener::RedirectToRealChannel(
 
     cp->TransmitBlobDataIfBlobURL(args.uri());
 
+    if (CanonicalBrowsingContext* bc = GetDocumentBrowsingContext()) {
+      if (bc->IsTop() && bc->IsActive()) {
+        nsContentUtils::RequestGeckoTaskBurst();
+      }
+    }
+
     return cp->SendCrossProcessRedirect(args,
                                         std::move(aStreamFilterEndpoints));
   }
@@ -2422,8 +2424,14 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
 
   auto* loadingContext = GetLoadingBrowsingContext();
   if (!loadingContext || loadingContext->IsDiscarded()) {
-    DisconnectListeners(NS_ERROR_UNEXPECTED, NS_ERROR_UNEXPECTED);
+    Cancel(NS_ERROR_UNEXPECTED, "No valid LoadingBrowsingContext."_ns);
     return NS_ERROR_UNEXPECTED;
+  }
+
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    Cancel(NS_ERROR_ILLEGAL_DURING_SHUTDOWN,
+           "Aborting OnStartRequest after shutdown started."_ns);
+    return NS_OK;
   }
 
   // Block top-level data URI navigations if triggered by the web. Logging is
@@ -2914,11 +2922,12 @@ NS_IMETHODIMP DocumentLoadListener::OnStatus(nsIRequest* aRequest,
   return NS_OK;
 }
 
-NS_IMETHODIMP DocumentLoadListener::EarlyHint(
-    const nsACString& aLinkHeader, const nsACString& aReferrerPolicy) {
+NS_IMETHODIMP DocumentLoadListener::EarlyHint(const nsACString& aLinkHeader,
+                                              const nsACString& aReferrerPolicy,
+                                              const nsACString& aCSPHeader) {
   LOG(("DocumentLoadListener::EarlyHint.\n"));
   mEarlyHintsService.EarlyHint(aLinkHeader, GetChannelCreationURI(), mChannel,
-                               aReferrerPolicy);
+                               aReferrerPolicy, aCSPHeader);
   return NS_OK;
 }
 

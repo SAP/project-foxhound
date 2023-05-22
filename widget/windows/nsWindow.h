@@ -163,7 +163,7 @@ class nsWindow final : public nsBaseWidget {
   [[nodiscard]] nsresult Create(nsIWidget* aParent,
                                 nsNativeWidget aNativeParent,
                                 const LayoutDeviceIntRect& aRect,
-                                nsWidgetInitData* aInitData = nullptr) override;
+                                InitData* aInitData = nullptr) override;
   void Destroy() override;
   void SetParent(nsIWidget* aNewParent) override;
   nsIWidget* GetParent(void) override;
@@ -190,9 +190,6 @@ class nsWindow final : public nsBaseWidget {
   void Resize(double aX, double aY, double aWidth, double aHeight,
               bool aRepaint) override;
   mozilla::Maybe<bool> IsResizingNativeWidget() override;
-  [[nodiscard]] nsresult BeginResizeDrag(mozilla::WidgetGUIEvent* aEvent,
-                                         int32_t aHorizontal,
-                                         int32_t aVertical) override;
   void PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget* aWidget,
                    bool aActivate) override;
   void SetSizeMode(nsSizeMode aMode) override;
@@ -226,14 +223,12 @@ class nsWindow final : public nsBaseWidget {
   nsresult SetTitle(const nsAString& aTitle) override;
   void SetIcon(const nsAString& aIconSpec) override;
   LayoutDeviceIntPoint WidgetToScreenOffset() override;
-  LayoutDeviceIntSize ClientToWindowSize(
-      const LayoutDeviceIntSize& aClientSize) override;
+  LayoutDeviceIntMargin ClientToWindowMargin() override;
   nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                          nsEventStatus& aStatus) override;
   void EnableDragDrop(bool aEnable) override;
-  void CaptureMouse(bool aCapture) override;
-  void CaptureRollupEvents(nsIRollupListener* aListener,
-                           bool aDoCapture) override;
+  void CaptureMouse(bool aCapture);
+  void CaptureRollupEvents(bool aDoCapture) override;
   [[nodiscard]] nsresult GetAttention(int32_t aCycleCount) override;
   bool HasPendingInputEvent() override;
   WindowRenderer* GetWindowRenderer() override;
@@ -274,10 +269,10 @@ class nsWindow final : public nsBaseWidget {
                        const InputContextAction& aAction) override;
   InputContext GetInputContext() override;
   TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
-  void SetTransparencyMode(nsTransparencyMode aMode) override;
-  nsTransparencyMode GetTransparencyMode() override;
+  void SetTransparencyMode(TransparencyMode aMode) override;
+  TransparencyMode GetTransparencyMode() override;
   void UpdateOpaqueRegion(const LayoutDeviceIntRegion& aOpaqueRegion) override;
-  nsresult SetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
+  nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
   void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
   void SetDrawsInTitlebar(bool aState) override;
   void UpdateWindowDraggingRegion(
@@ -460,8 +455,14 @@ class nsWindow final : public nsBaseWidget {
     explicit FrameState(nsWindow* aWindow);
 
     void ConsumePreXULSkeletonState(bool aWasMaximized);
-    void EnsureSizeMode(nsSizeMode aMode);
-    void EnsureFullscreenMode(bool aFullScreen);
+
+    // Whether we should call ShowWindow with the relevant size mode if needed.
+    // We want to avoid that when Windows is already performing the change for
+    // us (via the SWP_FRAMECHANGED messages).
+    enum class DoShowWindow : bool { No, Yes };
+
+    void EnsureSizeMode(nsSizeMode, DoShowWindow = DoShowWindow::Yes);
+    void EnsureFullscreenMode(bool, DoShowWindow = DoShowWindow::Yes);
     void OnFrameChanging();
     void OnFrameChanged();
 
@@ -470,13 +471,14 @@ class nsWindow final : public nsBaseWidget {
     void CheckInvariant() const;
 
    private:
-    void SetSizeModeInternal(nsSizeMode aMode);
+    void SetSizeModeInternal(nsSizeMode, DoShowWindow);
 
     nsSizeMode mSizeMode = nsSizeMode_Normal;
+    // XXX mLastSizeMode is rather bizarre and needs some documentation.
     nsSizeMode mLastSizeMode = nsSizeMode_Normal;
     // The old size mode before going into fullscreen mode. This should never
     // be nsSizeMode_Fullscreen.
-    nsSizeMode mOldSizeMode = nsSizeMode_Normal;
+    nsSizeMode mPreFullscreenSizeMode = nsSizeMode_Normal;
     // Whether we're in fullscreen. We need to keep this state out of band,
     // rather than just using mSizeMode, because a window can be minimized
     // while fullscreen, and we don't store the fullscreen state anywhere else.
@@ -542,14 +544,14 @@ class nsWindow final : public nsBaseWidget {
   HRGN ExcludeNonClientFromPaintRegion(HRGN aRegion);
   static const wchar_t* GetMainWindowClass();
   bool HasGlass() const {
-    return mTransparencyMode == eTransparencyBorderlessGlass;
+    return mTransparencyMode == TransparencyMode::BorderlessGlass;
   }
   HWND GetOwnerWnd() const { return ::GetWindow(mWnd, GW_OWNER); }
   bool IsOwnerForegroundWindow() const {
     HWND owner = GetOwnerWnd();
     return owner && owner == ::GetForegroundWindow();
   }
-  bool IsPopup() const { return mWindowType == eWindowType_popup; }
+  bool IsPopup() const { return mWindowType == WindowType::Popup; }
   bool IsCloaked() const { return mIsCloaked; }
 
   /**
@@ -596,8 +598,8 @@ class nsWindow final : public nsBaseWidget {
   bool OnTouch(WPARAM wParam, LPARAM lParam);
   bool OnHotKey(WPARAM wParam, LPARAM lParam);
   bool OnPaint(HDC aDC, uint32_t aNestingLevel);
+  void OnWindowPosChanging(WINDOWPOS* info);
   void OnWindowPosChanged(WINDOWPOS* wp);
-  void OnWindowPosChanging(LPWINDOWPOS& info);
   void OnSysColorChanged();
   void OnDPIChanged(int32_t x, int32_t y, int32_t width, int32_t height);
   bool OnPointerEvents(UINT msg, WPARAM wParam, LPARAM lParam);
@@ -613,8 +615,7 @@ class nsWindow final : public nsBaseWidget {
   DWORD WindowStyle();
   DWORD WindowExStyle();
 
-  static const wchar_t* ChooseWindowClass(nsWindowType,
-                                          bool aForMenupopupFrame);
+  static const wchar_t* ChooseWindowClass(WindowType, bool aForMenupopupFrame);
   // This method registers the given window class, and returns the class name.
   static const wchar_t* RegisterWindowClass(const wchar_t* aClassName,
                                             UINT aExtraStyle, LPWSTR aIconID);
@@ -640,8 +641,8 @@ class nsWindow final : public nsBaseWidget {
   /**
    * Window transparency helpers
    */
-  void SetWindowTranslucencyInner(nsTransparencyMode aMode);
-  nsTransparencyMode GetWindowTranslucencyInner() const {
+  void SetWindowTranslucencyInner(TransparencyMode aMode);
+  TransparencyMode GetWindowTranslucencyInner() const {
     return mTransparencyMode;
   }
   void UpdateGlass();
@@ -696,7 +697,7 @@ class nsWindow final : public nsBaseWidget {
                         uint32_t aOrientation = 90);
 
   void OnFullscreenWillChange(bool aFullScreen);
-  void OnFullscreenChanged(bool aFullScreen);
+  void OnFullscreenChanged(nsSizeMode aOldSizeMode, bool aFullScreen);
 
   static void OnCloakEvent(HWND aWnd, bool aCloaked);
   void OnCloakChanged(bool aCloaked);
@@ -780,6 +781,13 @@ class nsWindow final : public nsBaseWidget {
   HWND mLastKillFocusWindow = nullptr;
   PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate = nullptr;
 
+  LayoutDeviceIntMargin NonClientSizeMargin() const {
+    return NonClientSizeMargin(mNonClientOffset);
+  }
+  LayoutDeviceIntMargin NonClientSizeMargin(
+      const LayoutDeviceIntMargin& aNonClientOffset) const;
+  LayoutDeviceIntMargin NormalWindowNonClientOffset() const;
+
   // Non-client margin settings
   // Pre-calculated outward offset applied to default frames
   LayoutDeviceIntMargin mNonClientOffset;
@@ -820,7 +828,7 @@ class nsWindow final : public nsBaseWidget {
   ResizeState mResizeState = NOT_RESIZING;
 
   // Transparency
-  nsTransparencyMode mTransparencyMode = eTransparencyOpaque;
+  TransparencyMode mTransparencyMode = TransparencyMode::Opaque;
   nsIntRegion mPossiblyTransparentRegion;
   MARGINS mGlassMargins = {0, 0, 0, 0};
 

@@ -61,12 +61,6 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/widgets/tooltip/css-query-container-tooltip-helper.js",
   false
 );
-loader.lazyRequireGetter(
-  this,
-  "Telemetry",
-  "resource://devtools/client/shared/telemetry.js",
-  false
-);
 
 const PREF_IMAGE_TOOLTIP_SIZE = "devtools.inspector.imagePreviewTooltipSize";
 
@@ -90,7 +84,6 @@ const TOOLTIP_SHOWN_SCALAR = "devtools.tooltip.shown";
 function TooltipsOverlay(view) {
   this.view = view;
   this._instances = new Map();
-  this.telemetry = new Telemetry();
 
   this._onNewSelection = this._onNewSelection.bind(this);
   this.view.inspector.selection.on("new-node-front", this._onNewSelection);
@@ -99,10 +92,6 @@ function TooltipsOverlay(view) {
 }
 
 TooltipsOverlay.prototype = {
-  get _cssProperties() {
-    return this.view.inspector.cssProperties;
-  },
-
   get isEditing() {
     for (const [, tooltip] of this._instances) {
       if (typeof tooltip.isEditing == "function" && tooltip.isEditing()) {
@@ -164,11 +153,7 @@ TooltipsOverlay.prototype = {
     switch (name) {
       case "colorPicker":
         const SwatchColorPickerTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip.js");
-        tooltip = new SwatchColorPickerTooltip(
-          doc,
-          this.view.inspector,
-          this._cssProperties
-        );
+        tooltip = new SwatchColorPickerTooltip(doc, this.view.inspector);
         break;
       case "cubicBezier":
         const SwatchCubicBezierTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchCubicBezierTooltip.js");
@@ -438,7 +423,7 @@ TooltipsOverlay.prototype = {
    *        The node type from `devtools/client/inspector/shared/node-types` or the Tooltip type.
    */
   sendOpenScalarToTelemetry(type) {
-    this.telemetry.keyedScalarAdd(TOOLTIP_SHOWN_SCALAR, type, 1);
+    this.view.inspector.telemetry.keyedScalarAdd(TOOLTIP_SHOWN_SCALAR, type, 1);
   },
 
   /**
@@ -549,7 +534,6 @@ TooltipsOverlay.prototype = {
 
     this.view.inspector.selection.off("new-node-front", this._onNewSelection);
     this.view = null;
-    this.telemetry = null;
 
     this._isDestroyed = true;
   },

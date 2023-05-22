@@ -25,7 +25,11 @@
 #include "mozilla/dom/FileSystemWritableFileStreamChild.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/fs/IPCRejectReporter.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/RandomAccessStreamUtils.h"
 
 namespace mozilla::dom::fs {
@@ -39,6 +43,8 @@ void HandleFailedStatus(nsresult aError, const RefPtr<Promise>& aPromise) {
     case NS_ERROR_FILE_ACCESS_DENIED:
       aPromise->MaybeRejectWithNotAllowedError("Permission denied");
       break;
+    case NS_ERROR_FILE_NOT_FOUND:
+      [[fallthrough]];
     case NS_ERROR_DOM_NOT_FOUND_ERR:
       aPromise->MaybeRejectWithNotFoundError("Entry not found");
       break;
@@ -124,40 +130,13 @@ RefPtr<FileSystemSyncAccessHandle> MakeResolution(
     RefPtr<FileSystemManager>& aManager) {
   auto& properties = aResponse.get_FileSystemAccessHandleProperties();
 
-  QM_TRY_UNWRAP(nsCOMPtr<nsIRandomAccessStream> stream,
-                DeserializeRandomAccessStream(properties.streamParams()),
-                nullptr);
-
-  auto* const actor =
-      static_cast<FileSystemAccessHandleChild*>(properties.accessHandleChild());
-
-  RefPtr<FileSystemSyncAccessHandle> result = new FileSystemSyncAccessHandle(
-      aGlobal, aManager, actor, std::move(stream), aMetadata);
-
-  actor->SetAccessHandle(result);
-
-  return result;
-}
-
-RefPtr<FileSystemWritableFileStream> MakeResolution(
-    nsIGlobalObject* aGlobal,
-    FileSystemGetWritableFileStreamResponse&& aResponse,
-    const RefPtr<FileSystemWritableFileStream>& /* aReturns */,
-    const FileSystemEntryMetadata& aMetadata,
-    RefPtr<FileSystemManager>& aManager) {
-  const auto& properties =
-      aResponse.get_FileSystemWritableFileStreamProperties();
-
-  auto* const actor = static_cast<FileSystemWritableFileStreamChild*>(
-      properties.writableFileStreamChild());
-
-  RefPtr<FileSystemWritableFileStream> result =
-      FileSystemWritableFileStream::Create(
-          aGlobal, aManager, actor, properties.fileDescriptor(), aMetadata);
-
-  if (result) {
-    actor->SetStream(result);
-  }
+  QM_TRY_UNWRAP(
+      RefPtr<FileSystemSyncAccessHandle> result,
+      FileSystemSyncAccessHandle::Create(
+          aGlobal, aManager, std::move(properties.streamParams()),
+          std::move(properties.accessHandleChildEndpoint()),
+          std::move(properties.accessHandleControlChildEndpoint()), aMetadata),
+      nullptr);
 
   return result;
 }
@@ -253,6 +232,76 @@ void ResolveCallback(FileSystemResolveResponse&& aResponse,
   aPromise->MaybeResolve(JS::NullHandleValue);
 }
 
+// NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
+template <>
+void ResolveCallback(FileSystemGetWritableFileStreamResponse&& aResponse,
+                     // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                     RefPtr<Promise> aPromise,
+                     RefPtr<FileSystemManager>& aManager,
+                     const FileSystemEntryMetadata& aMetadata) {
+  using CreatePromise = FileSystemWritableFileStream::CreatePromise;
+  MOZ_ASSERT(aPromise);
+  QM_TRY(OkIf(Promise::PromiseState::Pending == aPromise->State()), QM_VOID);
+
+  if (FileSystemGetWritableFileStreamResponse::Tnsresult == aResponse.type()) {
+    HandleFailedStatus(aResponse.get_nsresult(), aPromise);
+    return;
+  }
+
+  auto& properties = aResponse.get_FileSystemWritableFileStreamProperties();
+
+  auto* const actor = static_cast<FileSystemWritableFileStreamChild*>(
+      properties.writableFileStreamChild());
+
+  mozilla::ipc::RandomAccessStreamParams params =
+      std::move(properties.streamParams());
+
+  FileSystemEntryMetadata metadata = aMetadata;
+
+  WorkerPrivate* const workerPrivate = GetCurrentThreadWorkerPrivate();
+  RefPtr<StrongWorkerRef> buildWorkerRef =
+      workerPrivate ? StrongWorkerRef::Create(
+                          workerPrivate, "FileSystemWritableFileStream::Create")
+                    : nullptr;
+
+  FileSystemWritableFileStream::Create(aPromise->GetParentObject(), aManager,
+                                       actor, std::move(params),
+                                       std::move(metadata))
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [buildWorkerRef,
+              aPromise](CreatePromise::ResolveOrRejectValue&& aValue) {
+               if (aValue.IsResolve()) {
+                 RefPtr<FileSystemWritableFileStream> stream =
+                     aValue.ResolveValue();
+
+                 if (buildWorkerRef) {
+                   RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
+                       buildWorkerRef->Private(),
+                       "FileSystemWritableFileStream", [stream]() {
+                         if (stream->IsOpen()) {
+                           // We don't need the promise, we just begin the
+                           // closing process.
+                           Unused << stream->BeginClose();
+                         }
+                       });
+
+                   stream->SetWorkerRef(std::move(workerRef));
+                 }
+
+                 aPromise->MaybeResolve(stream);
+                 return;
+               }
+
+               if (aValue.IsReject()) {
+                 aPromise->MaybeReject(aValue.RejectValue());
+                 return;
+               }
+
+               aPromise->MaybeRejectWithUnknownError(
+                   "Promise chain resolution is empty");
+             });
+}
+
 template <class TResponse, class TReturns, class... Args,
           std::enable_if_t<std::is_same<TReturns, void>::value, bool> = true>
 mozilla::ipc::ResolveCallback<TResponse> SelectResolveCallback(
@@ -276,30 +325,6 @@ mozilla::ipc::ResolveCallback<TResponse> SelectResolveCallback(
       // NOLINTNEXTLINE(modernize-avoid-bind)
       std::bind(static_cast<TOverload>(ResolveCallback), std::placeholders::_1,
                 aPromise, TReturns(), std::forward<Args>(args)...));
-}
-
-// TODO: Find a better way to deal with these errors
-void IPCRejectReporter(mozilla::ipc::ResponseRejectReason aReason) {
-  switch (aReason) {
-    case mozilla::ipc::ResponseRejectReason::ActorDestroyed:
-      // This is ok
-      break;
-    case mozilla::ipc::ResponseRejectReason::HandlerRejected:
-      QM_TRY(OkIf(false), QM_VOID);
-      break;
-    case mozilla::ipc::ResponseRejectReason::ChannelClosed:
-      QM_TRY(OkIf(false), QM_VOID);
-      break;
-    case mozilla::ipc::ResponseRejectReason::ResolverDestroyed:
-      QM_TRY(OkIf(false), QM_VOID);
-      break;
-    case mozilla::ipc::ResponseRejectReason::SendError:
-      QM_TRY(OkIf(false), QM_VOID);
-      break;
-    default:
-      QM_TRY(OkIf(false), QM_VOID);
-      break;
-  }
 }
 
 void RejectCallback(
@@ -342,6 +367,7 @@ void FileSystemRequestHandler::GetRootHandle(
     ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(aPromise);
+  LOG(("GetRootHandle"));
 
   if (aManager->IsShutdown()) {
     aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
@@ -366,7 +392,7 @@ void FileSystemRequestHandler::GetDirectoryHandle(
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aDirectory.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
-  LOG(("getDirectoryHandle"));
+  LOG(("GetDirectoryHandle"));
 
   if (aManager->IsShutdown()) {
     aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
@@ -398,7 +424,7 @@ void FileSystemRequestHandler::GetFileHandle(
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aFile.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
-  LOG(("getFileHandle"));
+  LOG(("GetFileHandle"));
 
   if (aManager->IsShutdown()) {
     aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
@@ -457,8 +483,7 @@ void FileSystemRequestHandler::GetWritable(RefPtr<FileSystemManager>& aManager,
        aKeepData));
 
   // XXX This should be removed once bug 1798513 is fixed.
-  if (NS_IsMainThread() &&
-      !StaticPrefs::dom_fs_main_thread_writable_file_stream()) {
+  if (!StaticPrefs::dom_fs_writable_file_stream_enabled()) {
     aError.Throw(NS_ERROR_NOT_IMPLEMENTED);
     return;
   }
@@ -471,9 +496,8 @@ void FileSystemRequestHandler::GetWritable(RefPtr<FileSystemManager>& aManager,
   aManager->BeginRequest(
       [request = FileSystemGetWritableRequest(aFile.entryId(), aKeepData),
        onResolve =
-           SelectResolveCallback<FileSystemGetWritableFileStreamResponse,
-                                 RefPtr<FileSystemWritableFileStream>>(
-               aPromise, aFile, aManager),
+           SelectResolveCallback<FileSystemGetWritableFileStreamResponse, void>(
+               aPromise, aManager, aFile),
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendGetWritable(request, std::move(onResolve),
                                std::move(onReject));
@@ -542,7 +566,7 @@ void FileSystemRequestHandler::RemoveEntry(
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aEntry.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
-  LOG(("removeEntry"));
+  LOG(("RemoveEntry"));
 
   if (aManager->IsShutdown()) {
     aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);

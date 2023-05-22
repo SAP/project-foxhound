@@ -1,4 +1,4 @@
-import { INITIAL_STATE, insertPinned, reducers } from "common/Reducers.jsm";
+import { INITIAL_STATE, insertPinned, reducers } from "common/Reducers.sys.mjs";
 const {
   TopSites,
   App,
@@ -12,7 +12,7 @@ const {
   Search,
   ASRouter,
 } = reducers;
-import { actionTypes as at } from "common/Actions.jsm";
+import { actionTypes as at } from "common/Actions.sys.mjs";
 
 describe("Reducers", () => {
   describe("App", () => {

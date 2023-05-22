@@ -7,6 +7,7 @@
 const statsExpectedByType = {
   "inbound-rtp": {
     expected: [
+      "trackIdentifier",
       "id",
       "timestamp",
       "type",
@@ -31,6 +32,7 @@ const statsExpectedByType = {
       "firCount",
       "pliCount",
       "framesDecoded",
+      "framesDropped",
       "discardedPackets",
       "framesPerSecond",
       "frameWidth",
@@ -493,6 +495,10 @@ function pedanticChecks(report) {
       // Required fields
       //
 
+      // trackIdentifier
+      is(typeof stat.trackIdentifier, "string");
+      isnot(stat.trackIdentifier, "");
+
       // packetsReceived
       ok(
         stat.packetsReceived >= 0 && stat.packetsReceived < 10 ** 5,
@@ -706,6 +712,13 @@ function pedanticChecks(report) {
           stat.framesDecoded > 0 && stat.framesDecoded < 1000000,
           `${stat.type}.framesDecoded is a sane number for a short ` +
             `${stat.kind} test. value=${stat.framesDecoded}`
+        );
+
+        // framesDropped
+        ok(
+          stat.framesDropped >= 0 && stat.framesDropped < 100,
+          `${stat.type}.framesDropped is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesDropped}`
         );
 
         // frameWidth

@@ -75,11 +75,14 @@ DtmfSender::DtmfSender(TaskQueueBase* signaling_thread,
       inter_tone_gap_(kDtmfDefaultGapMs),
       comma_delay_(kDtmfDefaultCommaDelayMs) {
   RTC_DCHECK(signaling_thread_);
-  if (provider_) {
-    RTC_DCHECK(provider_->GetOnDestroyedSignal());
-    provider_->GetOnDestroyedSignal()->connect(
-        this, &DtmfSender::OnProviderDestroyed);
-  }
+  RTC_DCHECK(provider_);
+}
+
+void DtmfSender::OnDtmfProviderDestroyed() {
+  RTC_DCHECK_RUN_ON(signaling_thread_);
+  RTC_DLOG(LS_INFO) << "The Dtmf provider is deleted. Clear the sending queue.";
+  StopSending();
+  provider_ = nullptr;
 }
 
 DtmfSender::~DtmfSender() {
@@ -139,7 +142,7 @@ bool DtmfSender::InsertDtmf(const std::string& tones,
   }
   safety_flag_ = PendingTaskSafetyFlag::Create();
   // Kick off a new DTMF task.
-  QueueInsertDtmf(RTC_FROM_HERE, 1 /*ms*/);
+  QueueInsertDtmf(1 /*ms*/);
   return true;
 }
 
@@ -163,8 +166,7 @@ int DtmfSender::comma_delay() const {
   return comma_delay_;
 }
 
-void DtmfSender::QueueInsertDtmf(const rtc::Location& posted_from,
-                                 uint32_t delay_ms) {
+void DtmfSender::QueueInsertDtmf(uint32_t delay_ms) {
   signaling_thread_->PostDelayedHighPrecisionTask(
       SafeTask(safety_flag_,
                [this] {
@@ -229,15 +231,7 @@ void DtmfSender::DoInsertDtmf() {
   tones_.erase(0, first_tone_pos + 1);
 
   // Continue with the next tone.
-  QueueInsertDtmf(RTC_FROM_HERE, tone_gap);
-}
-
-void DtmfSender::OnProviderDestroyed() {
-  RTC_DCHECK_RUN_ON(signaling_thread_);
-
-  RTC_LOG(LS_INFO) << "The Dtmf provider is deleted. Clear the sending queue.";
-  StopSending();
-  provider_ = nullptr;
+  QueueInsertDtmf(tone_gap);
 }
 
 void DtmfSender::StopSending() {

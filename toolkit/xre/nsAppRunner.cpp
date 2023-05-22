@@ -19,6 +19,7 @@
 #include "mozilla/ChaosMode.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/IOInterposer.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/Poison.h"
@@ -37,6 +38,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/JSONWriter.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/glean/GleanPings.h"
 #include "mozilla/widget/TextRecognition.h"
 #include "BaseProfiler.h"
 
@@ -71,7 +73,7 @@
 #include "prtime.h"
 
 #include "nsIAppStartup.h"
-#include "nsAppStartupNotifier.h"
+#include "nsCategoryManagerUtils.h"
 #include "nsIMutableArray.h"
 #include "nsCommandLine.h"
 #include "nsIComponentRegistrar.h"
@@ -118,6 +120,7 @@
 #  include "detect_win32k_conflicts.h"
 #  include "mozilla/PreXULSkeletonUI.h"
 #  include "mozilla/DllPrefetchExperimentRegistryInfo.h"
+#  include "mozilla/WindowsBCryptInitialization.h"
 #  include "mozilla/WindowsDllBlocklist.h"
 #  include "mozilla/WindowsProcessMitigations.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
@@ -904,25 +907,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetWin32kLockdownState() {
 //
 // - The 'fission.autostart' preference, if it has been configured by the user.
 static const char kPrefFissionAutostart[] = "fission.autostart";
-//
-// - The fission experiment enrollment status set during the previous run, which
-//   is controlled by the following preferences:
-//
-// The current enrollment status as controlled by Normandy. This value is only
-// stored in the default preference branch, and is not persisted across
-// sessions by the preference service. It therefore isn't available early
-// enough at startup, and needs to be synced to a preference in the user
-// branch which is persisted across sessions.
-static const char kPrefFissionExperimentEnrollmentStatus[] =
-    "fission.experiment.enrollmentStatus";
-//
-// The enrollment status to be used at browser startup. This automatically
-// synced from the above enrollmentStatus preference whenever the latter is
-// changed. It can have any of the values defined in the
-// `nsIXULRuntime_ExperimentStatus` enum. Meanings are documented in
-// the declaration of `nsIXULRuntime.fissionExperimentStatus`
-static const char kPrefFissionExperimentStartupEnrollmentStatus[] =
-    "fission.experiment.startupEnrollmentStatus";
 
 // The computed FissionAutostart value for the session, read by content
 // processes to initialize gFissionAutostart.
@@ -931,68 +915,13 @@ static const char kPrefFissionExperimentStartupEnrollmentStatus[] =
 // never be persisted in a profile.
 static const char kPrefFissionAutostartSession[] = "fission.autostart.session";
 
-static nsIXULRuntime::ExperimentStatus gFissionExperimentStatus =
-    nsIXULRuntime::eExperimentStatusUnenrolled;
+//
+// The computed FissionAutostart value for the session, read by content
+// processes to initialize gFissionAutostart.
+
 static bool gFissionAutostart = false;
 static bool gFissionAutostartInitialized = false;
 static nsIXULRuntime::FissionDecisionStatus gFissionDecisionStatus;
-
-namespace mozilla {
-
-bool FissionExperimentEnrolled() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-  return gFissionExperimentStatus == nsIXULRuntime::eExperimentStatusControl ||
-         gFissionExperimentStatus ==
-             nsIXULRuntime::eExperimentStatusTreatment ||
-         gFissionExperimentStatus == nsIXULRuntime::eExperimentStatusRollout;
-}
-
-}  // namespace mozilla
-
-static void FissionExperimentDisqualify() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-  // Setting this pref's user value will be detected by Normandy, causing the
-  // client to be unenrolled from the experiment.
-  Preferences::SetUint(kPrefFissionExperimentEnrollmentStatus,
-                       nsIXULRuntime::eExperimentStatusDisqualified);
-}
-
-static void OnFissionEnrollmentStatusChanged(const char* aPref, void* aData) {
-  Preferences::SetUint(
-      kPrefFissionExperimentStartupEnrollmentStatus,
-      Preferences::GetUint(kPrefFissionExperimentEnrollmentStatus,
-                           nsIXULRuntime::eExperimentStatusUnenrolled));
-}
-
-namespace {
-// This observer is notified during `profile-before-change`, and ensures that
-// the experiment enrollment status is synced over before the browser shuts
-// down, even if it was not modified since FissionAutostart was initialized.
-class FissionEnrollmentStatusShutdownObserver final : public nsIObserver {
- public:
-  NS_DECL_ISUPPORTS
-
-  NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) override {
-    MOZ_ASSERT(!strcmp("profile-before-change", aTopic));
-    OnFissionEnrollmentStatusChanged(kPrefFissionExperimentEnrollmentStatus,
-                                     nullptr);
-    return NS_OK;
-  }
-
- private:
-  ~FissionEnrollmentStatusShutdownObserver() = default;
-};
-NS_IMPL_ISUPPORTS(FissionEnrollmentStatusShutdownObserver, nsIObserver)
-}  // namespace
-
-static void OnFissionAutostartChanged(const char* aPref, void* aData) {
-  MOZ_ASSERT(FissionExperimentEnrolled());
-  if (Preferences::HasUserValue(kPrefFissionAutostart)) {
-    FissionExperimentDisqualify();
-  }
-}
-
 static void EnsureFissionAutostartInitialized() {
   if (gFissionAutostartInitialized) {
     return;
@@ -1004,48 +933,6 @@ static void EnsureFissionAutostartInitialized() {
     gFissionAutostart = Preferences::GetBool(kPrefFissionAutostartSession,
                                              false, PrefValueKind::Default);
     return;
-  }
-
-  // Initialize the fission experiment, configuring fission.autostart's
-  // default, before checking other overrides. This allows opting-out of a
-  // fission experiment through about:preferences or about:config from a
-  // safemode session.
-  uint32_t experimentRaw =
-      Preferences::GetUint(kPrefFissionExperimentStartupEnrollmentStatus,
-                           nsIXULRuntime::eExperimentStatusUnenrolled);
-  gFissionExperimentStatus =
-      experimentRaw < nsIXULRuntime::eExperimentStatusCount
-          ? nsIXULRuntime::ExperimentStatus(experimentRaw)
-          : nsIXULRuntime::eExperimentStatusDisqualified;
-
-  // Watch the experiment enrollment status pref to detect experiment
-  // disqualification, and ensure it is propagated for the next restart.
-  Preferences::RegisterCallback(&OnFissionEnrollmentStatusChanged,
-                                kPrefFissionExperimentEnrollmentStatus);
-  if (nsCOMPtr<nsIObserverService> observerService =
-          mozilla::services::GetObserverService()) {
-    nsCOMPtr<nsIObserver> shutdownObserver =
-        new FissionEnrollmentStatusShutdownObserver();
-    observerService->AddObserver(shutdownObserver, "profile-before-change",
-                                 false);
-  }
-
-  // If the user has overridden an active experiment by setting a user value for
-  // "fission.autostart", disqualify the user from the experiment.
-  if (Preferences::HasUserValue(kPrefFissionAutostart) &&
-      FissionExperimentEnrolled()) {
-    FissionExperimentDisqualify();
-    gFissionExperimentStatus = nsIXULRuntime::eExperimentStatusDisqualified;
-  }
-
-  // Configure the default branch for "fission.autostart" based on experiment
-  // enrollment status.
-  if (FissionExperimentEnrolled()) {
-    bool isTreatment =
-        gFissionExperimentStatus == nsIXULRuntime::eExperimentStatusTreatment ||
-        gFissionExperimentStatus == nsIXULRuntime::eExperimentStatusRollout;
-    Preferences::SetBool(kPrefFissionAutostart, isTreatment,
-                         PrefValueKind::Default);
   }
 
   if (!BrowserTabsRemoteAutostart()) {
@@ -1065,15 +952,7 @@ static void EnsureFissionAutostartInitialized() {
     // NOTE: This will take into account changes to the default due to
     // `InitializeFissionExperimentStatus`.
     gFissionAutostart = Preferences::GetBool(kPrefFissionAutostart, false);
-    if (gFissionExperimentStatus == nsIXULRuntime::eExperimentStatusControl) {
-      gFissionDecisionStatus = nsIXULRuntime::eFissionExperimentControl;
-    } else if (gFissionExperimentStatus ==
-               nsIXULRuntime::eExperimentStatusTreatment) {
-      gFissionDecisionStatus = nsIXULRuntime::eFissionExperimentTreatment;
-    } else if (gFissionExperimentStatus ==
-               nsIXULRuntime::eExperimentStatusRollout) {
-      gFissionDecisionStatus = nsIXULRuntime::eFissionEnabledByRollout;
-    } else if (Preferences::HasUserValue(kPrefFissionAutostart)) {
+    if (Preferences::HasUserValue(kPrefFissionAutostart)) {
       gFissionDecisionStatus = gFissionAutostart
                                    ? nsIXULRuntime::eFissionEnabledByUserPref
                                    : nsIXULRuntime::eFissionDisabledByUserPref;
@@ -1094,13 +973,6 @@ static void EnsureFissionAutostartInitialized() {
   Preferences::SetBool(kPrefFissionAutostartSession, gFissionAutostart,
                        PrefValueKind::Default);
   Preferences::Lock(kPrefFissionAutostartSession);
-
-  // If we're actively enrolled in the fission experiment, disqualify the user
-  // from the experiment if the fission pref is modified.
-  if (FissionExperimentEnrolled()) {
-    Preferences::RegisterCallback(&OnFissionAutostartChanged,
-                                  kPrefFissionAutostart);
-  }
 }
 
 namespace mozilla {
@@ -1461,17 +1333,6 @@ nsXULAppInfo::GetWin32kSessionStatus(
 }
 
 NS_IMETHODIMP
-nsXULAppInfo::GetFissionExperimentStatus(ExperimentStatus* aResult) {
-  if (!XRE_IsParentProcess()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  EnsureFissionAutostartInitialized();
-  *aResult = gFissionExperimentStatus;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsXULAppInfo::GetFissionDecisionStatus(FissionDecisionStatus* aResult) {
   if (!XRE_IsParentProcess()) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -1717,6 +1578,14 @@ nsXULAppInfo::GetContentThemeDerivedColorSchemeIsDark(bool* aResult) {
 NS_IMETHODIMP
 nsXULAppInfo::GetDrawInTitlebar(bool* aResult) {
   *aResult = LookAndFeel::DrawInTitlebar();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::GetDesktopEnvironment(nsACString& aDesktopEnvironment) {
+#ifdef MOZ_WIDGET_GTK
+  aDesktopEnvironment.Assign(GetDesktopEnvironmentIdentifier());
+#endif
   return NS_OK;
 }
 
@@ -4333,7 +4202,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
   // Set up ability to respond to system (Apple) events. This must occur before
   // ProcessUpdates to ensure that links clicked in external applications aren't
   // lost when updates are pending.
-  SetupMacApplicationDelegate();
+  SetupMacApplicationDelegate(&gRestartedByOS);
 
   if (EnvHasValue("MOZ_LAUNCHED_CHILD")) {
     // This is needed, on relaunch, to force the OS to use the "Cocoa Dock
@@ -5259,6 +5128,9 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     flagFile->Remove(true);
   }
 
+  // Flush any pending page load events.
+  mozilla::glean_pings::Pageload.Submit("startup"_ns);
+
   return 0;
 }
 
@@ -5476,19 +5348,6 @@ nsresult XREMain::XRE_mainRun() {
       }
     }
 
-#ifndef XP_WIN
-    nsCOMPtr<nsIFile> profileDir;
-    nsAutoCString path;
-    rv = mDirProvider.GetProfileStartupDir(getter_AddRefs(profileDir));
-    if (NS_SUCCEEDED(rv) && NS_SUCCEEDED(profileDir->GetNativePath(path)) &&
-        !IsUtf8(path)) {
-      PR_fprintf(
-          PR_STDERR,
-          "Error: The profile path is not valid UTF-8. Unable to continue.\n");
-      return NS_ERROR_FAILURE;
-    }
-#endif
-
     // Initialize user preferences before notifying startup observers so they're
     // ready in time for early consumers, such as the component loader.
     mDirProvider.InitializeUserPrefs();
@@ -5505,6 +5364,16 @@ nsresult XREMain::XRE_mainRun() {
     // files can't override JS engine start-up prefs.
     mDirProvider.FinishInitializingUserPrefs();
 
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+    // Now that we have preferences and the directory provider, we can
+    // finish initializing SandboxBroker. This must happen before the GFX
+    // platform is initialized (which will launch the GPU process), which
+    // occurs when the "app-startup" category is started up below
+    //
+    // After this completes, we are ready to launch sandboxed processes
+    mozilla::SandboxBroker::GeckoDependentInitialize();
+#endif
+
     nsCOMPtr<nsIFile> workingDir;
     rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR,
                                 getter_AddRefs(workingDir));
@@ -5519,7 +5388,9 @@ nsresult XREMain::XRE_mainRun() {
                        nsICommandLine::STATE_INITIAL_LAUNCH);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
-    nsAppStartupNotifier::NotifyObservers(APPSTARTUP_CATEGORY, cmdLine);
+    // "app-startup" is the name of both the category and the event
+    NS_CreateServicesFromCategory("app-startup", cmdLine, "app-startup",
+                                  nullptr);
 
     appStartup = components::AppStartup::Service();
     NS_ENSURE_TRUE(appStartup, NS_ERROR_FAILURE);
@@ -5929,9 +5800,16 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
     mAppData->directory = mAppData->xreDirectory;
   }
 
-#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+#if defined(XP_WIN)
+#  if defined(MOZ_SANDBOX)
   mAppData->sandboxBrokerServices = aConfig.sandboxBrokerServices;
-#endif
+#  endif  // defined(MOZ_SANDBOX)
+
+  {
+    DebugOnly<bool> result = WindowsBCryptInitialization();
+    MOZ_ASSERT(result);
+  }
+#endif  // defined(XP_WIN)
 
   // Once we unset the exception handler, we lose the ability to properly
   // detect hangs -- they show up as crashes.  We do this as late as possible.
@@ -6124,16 +6002,28 @@ bool XRE_IsE10sParentProcess() {
 #undef GECKO_PROCESS_TYPE
 
 bool XRE_UseNativeEventProcessing() {
+  switch (XRE_GetProcessType()) {
 #if defined(XP_MACOSX) || defined(XP_WIN)
-  if (XRE_IsRDDProcess() || XRE_IsSocketProcess() || XRE_IsUtilityProcess()) {
-    return false;
+    case GeckoProcessType_RDD:
+    case GeckoProcessType_Socket:
+      return false;
+    case GeckoProcessType_Utility: {
+#  if defined(XP_WIN)
+      auto upc = mozilla::ipc::UtilityProcessChild::Get();
+      MOZ_ASSERT(upc);
+      // WindowsUtils is for Windows APIs, which typically require a Windows
+      // native event loop.
+      return upc->mSandbox == mozilla::ipc::SandboxingKind::WINDOWS_UTILS;
+#  else
+      return false;
+#  endif  // defined(XP_WIN)
+    }
+#endif  // defined(XP_MACOSX) || defined(XP_WIN)
+    case GeckoProcessType_Content:
+      return StaticPrefs::dom_ipc_useNativeEventProcessing_content();
+    default:
+      return true;
   }
-#endif
-  if (XRE_IsContentProcess()) {
-    return StaticPrefs::dom_ipc_useNativeEventProcessing_content();
-  }
-
-  return true;
 }
 
 namespace mozilla {

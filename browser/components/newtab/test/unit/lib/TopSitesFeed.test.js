@@ -1,12 +1,15 @@
 "use strict";
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { FakePrefs, GlobalOverrider } from "test/unit/utils";
 import {
   insertPinned,
   TOP_SITES_DEFAULT_ROWS,
   TOP_SITES_MAX_SITES_PER_ROW,
-} from "common/Reducers.jsm";
+} from "common/Reducers.sys.mjs";
 import { getDefaultOptions } from "lib/ActivityStreamStorage.jsm";
 import injector from "inject!lib/TopSitesFeed.jsm";
 import { Screenshots } from "lib/Screenshots.jsm";

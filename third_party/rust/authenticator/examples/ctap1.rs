@@ -30,7 +30,7 @@ fn u2f_get_key_handle_from_register_response(register_response: &[u8]) -> io::Re
 }
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options]", program);
+    let brief = format!("Usage: {program} [options]");
     print!("{}", opts.usage(&brief));
 }
 
@@ -82,7 +82,7 @@ fn main() {
             timeout_s * 1_000
         }
         Err(e) => {
-            println!("{}", e);
+            println!("{e}");
             print_usage(&program, opts);
             return;
         }
@@ -108,13 +108,13 @@ fn main() {
     thread::spawn(move || loop {
         match status_rx.recv() {
             Ok(StatusUpdate::DeviceAvailable { dev_info }) => {
-                println!("STATUS: device available: {}", dev_info)
+                println!("STATUS: device available: {dev_info}")
             }
             Ok(StatusUpdate::DeviceUnavailable { dev_info }) => {
-                println!("STATUS: device unavailable: {}", dev_info)
+                println!("STATUS: device unavailable: {dev_info}")
             }
             Ok(StatusUpdate::Success { dev_info }) => {
-                println!("STATUS: success using device: {}", dev_info);
+                println!("STATUS: success using device: {dev_info}");
             }
             Ok(StatusUpdate::PinError(..))
             | Ok(StatusUpdate::SelectDeviceNotice)
@@ -154,7 +154,7 @@ fn main() {
 
     println!("Register result: {}", base64::encode(&register_data));
     println!("Device info: {}", &device_info);
-    println!("");
+    println!();
     println!("*********************************************************************");
     println!("Asking a security key to sign now, with the data from the register...");
     println!("*********************************************************************");
@@ -193,8 +193,8 @@ fn main() {
     if let SignResult::CTAP1(_, handle_used, sign_data, device_info) =
         sign_result.expect("Sign failed")
     {
-        println!("Sign result: {}", base64::encode(&sign_data));
-        println!("Key handle used: {}", base64::encode(&handle_used));
+        println!("Sign result: {}", base64::encode(sign_data));
+        println!("Key handle used: {}", base64::encode(handle_used));
         println!("Device info: {}", &device_info);
         println!("Done.");
     } else {

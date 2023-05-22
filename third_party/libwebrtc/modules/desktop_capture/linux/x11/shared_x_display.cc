@@ -15,6 +15,7 @@
 
 #include <algorithm>
 
+#include "absl/strings/string_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -31,9 +32,9 @@ SharedXDisplay::~SharedXDisplay() {
 
 // static
 rtc::scoped_refptr<SharedXDisplay> SharedXDisplay::Create(
-    const std::string& display_name) {
-  Display* display =
-      XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
+    absl::string_view display_name) {
+  Display* display = XOpenDisplay(
+      display_name.empty() ? NULL : std::string(display_name).c_str());
   if (!display) {
     RTC_LOG(LS_ERROR) << "Unable to open display";
     return nullptr;
@@ -47,10 +48,12 @@ rtc::scoped_refptr<SharedXDisplay> SharedXDisplay::CreateDefault() {
 }
 
 void SharedXDisplay::AddEventHandler(int type, XEventHandler* handler) {
+  MutexLock lock(&mutex_);
   event_handlers_[type].push_back(handler);
 }
 
 void SharedXDisplay::RemoveEventHandler(int type, XEventHandler* handler) {
+  MutexLock lock(&mutex_);
   EventHandlersMap::iterator handlers = event_handlers_.find(type);
   if (handlers == event_handlers_.end())
     return;
@@ -68,6 +71,10 @@ void SharedXDisplay::ProcessPendingXEvents() {
   // Hold reference to `this` to prevent it from being destroyed while
   // processing events.
   rtc::scoped_refptr<SharedXDisplay> self(this);
+
+  // Protect access to `event_handlers_` after incrementing the refcount for
+  // `this` to ensure the instance is still valid when the lock is acquired.
+  MutexLock lock(&mutex_);
 
   // Find the number of events that are outstanding "now."  We don't just loop
   // on XPending because we want to guarantee this terminates.

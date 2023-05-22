@@ -35,6 +35,7 @@ compile_commands\.json
 ^\.clang-tidy
 ^\.mozconfig
 ^mozconfig*
+^\.moz-fast-forward
 ^old-configure$
 ^config\.cache$
 ^config\.log$
@@ -112,21 +113,27 @@ _OPT\.OBJ/
 ^remote/test/puppeteer/.*\.tsbuildinfo
 ^remote/test/puppeteer/\.github
 ^remote/test/puppeteer/\.husky
-^remote/test/puppeteer/\.local-chromium/
-^remote/test/puppeteer/\.local-firefox/
 ^remote/test/puppeteer/coverage/
+^remote/test/puppeteer/.devcontainer/
 ^remote/test/puppeteer/docker/
+^remote/test/puppeteer/docs/puppeteer-core\.api\.json
 ^remote/test/puppeteer/docs/puppeteer\.api\.json
 ^remote/test/puppeteer/experimental/
 ^remote/test/puppeteer/lib/
 ^remote/test/puppeteer/node_modules/
 ^remote/test/puppeteer/package-lock\.json
-^remote/test/puppeteer/puppeteer.*\.tgz
+^remote/test/puppeteer/packages/ng-schematics/test/build
 ^remote/test/puppeteer/src/generated
 ^remote/test/puppeteer/test/build
+^remote/test/puppeteer/test/installation/puppeteer.*\.tgz
 ^remote/test/puppeteer/test/output-firefox
 ^remote/test/puppeteer/test/output-chromium
+^remote/test/puppeteer/testserver/lib/
+^remote/test/puppeteer/utils/mochaRunner/lib/
 ^remote/test/puppeteer/website
+
+^third_party/js/PKI.js/node_modules/
+^third_party/js/PKI.js/package-lock.json
 
 # git checkout of libstagefright
 ^media/libstagefright/android$
@@ -240,10 +247,6 @@ gfx/wgpu/target
 gfx/wgpu/.*/build
 gfx/wr/target/
 
-# Ignore this files in certviewer
-toolkit/components/certviewer/content/node_modules/
-toolkit/components/certviewer/content/package-lock.json
-
 # Ignore Rust/Cargo output from running `cargo` directly for image_builder docker image
 ^taskcluster/docker/image_builder/build-image/target
 
@@ -260,9 +263,16 @@ toolkit/components/certviewer/content/package-lock.json
 # Ignore Storybook generated files
 ^browser/components/storybook/node_modules/
 ^browser/components/storybook/storybook-static/
+^browser/components/storybook/.storybook/rewrites.js
+^browser/components/storybook/custom-elements.json
 
 # Ignore jscodeshift installed by mach esmify on windows
 ^tools/esmify/jscodeshift
 ^tools/esmify/jscodeshift.cmd
 ^tools/esmify/jscodeshift.ps1
 ^tools/esmify/package-lock.json
+
+# Ignore support files for en-US dictionary updates
+^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/scowl
+^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/support_files/
+^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/*en_US-mozilla*

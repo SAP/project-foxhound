@@ -977,6 +977,9 @@ pub struct Capabilities {
     /// Whether we must perform a full unscissored glClear on alpha targets
     /// prior to rendering.
     pub requires_alpha_target_full_clear: bool,
+    /// Whether clearing a render target (immediately after binding it) is faster using a scissor
+    /// rect to clear just the required area, or clearing the entire target without a scissor rect.
+    pub prefers_clear_scissor: bool,
     /// Whether the driver can correctly invalidate render targets. This can be
     /// a worthwhile optimization, but is buggy on some devices.
     pub supports_render_target_invalidate: bool,
@@ -1790,6 +1793,13 @@ impl Device {
         let is_adreno_4xx = renderer_name.starts_with("Adreno (TM) 4");
         let requires_alpha_target_full_clear = is_adreno_4xx;
 
+        // Testing on Intel and nVidia GPUs, as well as software webrender, showed large performance
+        // wins applying a scissor rect when clearing render targets. Assume this is the best
+        // default. On mobile GPUs, however, it can be much more efficient to clear the entire
+        // render target. For now, enable the scissor everywhere except Android hardware
+        // webrender. We can tweak this further if needs be.
+        let prefers_clear_scissor = !cfg!(target_os = "android") || is_software_webrender;
+
         let mut supports_render_target_invalidate = true;
 
         // On PowerVR Rogue devices we have seen that invalidating render targets after we are done
@@ -1855,6 +1865,7 @@ impl Device {
                 requires_batched_texture_uploads,
                 supports_alpha_target_clears,
                 requires_alpha_target_full_clear,
+                prefers_clear_scissor,
                 supports_render_target_invalidate,
                 supports_r8_texture_upload,
                 uses_native_clip_mask,

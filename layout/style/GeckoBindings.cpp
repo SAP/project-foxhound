@@ -1132,12 +1132,22 @@ static void EnsureStyleAutoArrayLength(StyleType* aArray, size_t aLen) {
 }
 
 void Gecko_EnsureStyleAnimationArrayLength(void* aArray, size_t aLen) {
-  auto base = static_cast<nsStyleAutoArray<StyleAnimation>*>(aArray);
+  auto* base = static_cast<nsStyleAutoArray<StyleAnimation>*>(aArray);
   EnsureStyleAutoArrayLength(base, aLen);
 }
 
 void Gecko_EnsureStyleTransitionArrayLength(void* aArray, size_t aLen) {
-  auto base = reinterpret_cast<nsStyleAutoArray<StyleTransition>*>(aArray);
+  auto* base = reinterpret_cast<nsStyleAutoArray<StyleTransition>*>(aArray);
+  EnsureStyleAutoArrayLength(base, aLen);
+}
+
+void Gecko_EnsureStyleScrollTimelineArrayLength(void* aArray, size_t aLen) {
+  auto* base = static_cast<nsStyleAutoArray<StyleScrollTimeline>*>(aArray);
+  EnsureStyleAutoArrayLength(base, aLen);
+}
+
+void Gecko_EnsureStyleViewTimelineArrayLength(void* aArray, size_t aLen) {
+  auto* base = static_cast<nsStyleAutoArray<StyleViewTimeline>*>(aArray);
   EnsureStyleAutoArrayLength(base, aLen);
 }
 
@@ -1431,17 +1441,20 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
   nsPresContext* presContext = const_cast<nsPresContext*>(aPresContext);
   RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetMetricsFor(
       presContext, aIsVertical, aFont, aFontSize, aUseUserFontSet);
-  RefPtr<gfxFont> font = fm->GetThebesFontGroup()->GetFirstValidFont();
-  const auto& metrics = font->GetMetrics(fm->Orientation());
+  auto* fontGroup = fm->GetThebesFontGroup();
+  auto metrics = fontGroup->GetMetricsForCSSUnits(fm->Orientation());
 
   float scriptPercentScaleDown = 0;
   float scriptScriptPercentScaleDown = 0;
-  if (aRetrieveMathScales && font->TryGetMathTable()) {
-    scriptPercentScaleDown = static_cast<float>(
-        font->MathTable()->Constant(gfxMathTable::ScriptPercentScaleDown));
-    scriptScriptPercentScaleDown =
-        static_cast<float>(font->MathTable()->Constant(
-            gfxMathTable::ScriptScriptPercentScaleDown));
+  if (aRetrieveMathScales) {
+    RefPtr<gfxFont> font = fontGroup->GetFirstValidFont();
+    if (font->TryGetMathTable()) {
+      scriptPercentScaleDown = static_cast<float>(
+          font->MathTable()->Constant(gfxMathTable::ScriptPercentScaleDown));
+      scriptScriptPercentScaleDown =
+          static_cast<float>(font->MathTable()->Constant(
+              gfxMathTable::ScriptScriptPercentScaleDown));
+    }
   }
 
   int32_t d2a = aPresContext->AppUnitsPerDevPixel();
@@ -1703,6 +1716,10 @@ bool Gecko_IsFontFormatSupported(StyleFontFaceSourceFormatKeyword aFormat) {
 bool Gecko_IsFontTechSupported(StyleFontFaceSourceTechFlags aFlag) {
   return gfxPlatform::GetPlatform()->IsFontFormatSupported(
       StyleFontFaceSourceFormatKeyword::None, aFlag);
+}
+
+bool Gecko_IsKnownIconFontFamily(const nsAtom* aFamilyName) {
+  return gfxPlatform::GetPlatform()->IsKnownIconFontFamily(aFamilyName);
 }
 
 bool Gecko_IsInServoTraversal() { return ServoStyleSet::IsInServoTraversal(); }

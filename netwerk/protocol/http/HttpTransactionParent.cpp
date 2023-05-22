@@ -101,7 +101,7 @@ nsresult HttpTransactionParent::Init(
   }
 
   mEventsink = eventsink;
-  mTargetThread = GetCurrentEventTarget();
+  mTargetThread = GetCurrentSerialEventTarget();
   mChannelId = channelId;
   mTransactionObserver = std::move(transactionObserver);
   mOnPushCallback = std::move(aOnPushCallback);
@@ -220,7 +220,7 @@ already_AddRefed<nsIEventTarget> HttpTransactionParent::GetODATarget() {
   }
 
   if (!target) {
-    target = GetMainThreadEventTarget();
+    target = GetMainThreadSerialEventTarget();
   }
   return target.forget();
 }
@@ -400,7 +400,7 @@ already_AddRefed<nsHttpConnectionInfo> HttpTransactionParent::GetConnInfo()
 }
 
 already_AddRefed<nsIEventTarget> HttpTransactionParent::GetNeckoTarget() {
-  nsCOMPtr<nsIEventTarget> target = GetMainThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> target = GetMainThreadSerialEventTarget();
   return target.forget();
 }
 
@@ -668,13 +668,17 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnH2PushStream(
 }  // namespace net
 
 mozilla::ipc::IPCResult HttpTransactionParent::RecvEarlyHint(
-    const nsCString& aValue, const nsACString& aReferrerPolicy) {
-  LOG(("HttpTransactionParent::RecvEarlyHint header=%s aReferrerPolicy=%s",
+    const nsCString& aValue, const nsACString& aReferrerPolicy,
+    const nsACString& aCSPHeader) {
+  LOG(
+      ("HttpTransactionParent::RecvEarlyHint header=%s aReferrerPolicy=%s "
+       "aCSPHeader=%s",
        PromiseFlatCString(aValue).get(),
-       PromiseFlatCString(aReferrerPolicy).get()));
+       PromiseFlatCString(aReferrerPolicy).get(),
+       PromiseFlatCString(aCSPHeader).get()));
   nsCOMPtr<nsIEarlyHintObserver> obs = do_QueryInterface(mChannel);
   if (obs) {
-    Unused << obs->EarlyHint(aValue, aReferrerPolicy);
+    Unused << obs->EarlyHint(aValue, aReferrerPolicy, aCSPHeader);
   }
 
   return IPC_OK();

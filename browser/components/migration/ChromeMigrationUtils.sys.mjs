@@ -68,7 +68,7 @@ export var ChromeMigrationUtils = {
         }
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
     return extensionList;
   },
@@ -129,7 +129,7 @@ export var ChromeMigrationUtils = {
         }
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
     return extensionInformation;
   },
@@ -190,7 +190,7 @@ export var ChromeMigrationUtils = {
         localeString = localeFile[key].message;
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
     return localeString;
   },
@@ -240,7 +240,7 @@ export var ChromeMigrationUtils = {
     } catch (ex) {
       // Don't report the error if it's just a file not existing.
       if (ex.name != "NotFoundError") {
-        Cu.reportError(ex);
+        console.error(ex);
       }
       throw ex;
     }
@@ -296,11 +296,11 @@ export var ChromeMigrationUtils = {
         "Chrome Beta": ["google-chrome-beta"],
         "Chrome Dev": ["google-chrome-unstable"],
         Chromium: ["chromium"],
-        "Opera GX": ["Opera-GX"],
+        // Opera GX is not available on Linux.
         // Canary is not available on Linux.
         // Edge is not available on Linux.
-        Opera: ["Opera"],
-        Vivaldi: ["Vivaldi"],
+        Opera: ["opera"],
+        Vivaldi: ["vivaldi"],
       },
     };
     let subfolders = SUB_DIRECTORIES[AppConstants.platform][chromeProjectName];
@@ -337,7 +337,7 @@ export var ChromeMigrationUtils = {
       return target.path;
     } catch (ex) {
       // The path logic here shouldn't error, so log it:
-      Cu.reportError(ex);
+      console.error(ex);
     }
     return null;
   },
@@ -364,7 +364,7 @@ export var ChromeMigrationUtils = {
         }
       }
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
       entries = [];
     }
 
@@ -432,12 +432,12 @@ export var ChromeMigrationUtils = {
         }
 
         // Check each profile for logins.
-        const dataPath = await migrator.wrappedJSObject._getChromeUserDataPathIfExists();
+        const dataPath = await migrator._getChromeUserDataPathIfExists();
         for (const profile of await migrator.getSourceProfiles()) {
           const path = PathUtils.join(dataPath, profile.id, "Login Data");
           // Skip if login data is missing.
           if (!(await IOUtils.exists(path))) {
-            Cu.reportError(`Missing file at ${path}`);
+            console.error(`Missing file at ${path}`);
             continue;
           }
 
@@ -463,13 +463,13 @@ export var ChromeMigrationUtils = {
                   entries.push(browserId);
                 }
               } catch (ex) {
-                Cu.reportError(
+                console.error(
                   `Failed to process importable url ${url} from ${browserId} ${ex}`
                 );
               }
             }
           } catch (ex) {
-            Cu.reportError(
+            console.error(
               `Failed to get importable logins from ${browserId} ${ex}`
             );
           }

@@ -8,6 +8,8 @@
 #define vm_Caches_h
 
 #include "mozilla/Array.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MruCache.h"
 
 #include "frontend/ScopeBindingCache.h"
 #include "gc/Tracer.h"
@@ -15,6 +17,7 @@
 #include "js/TypeDecls.h"
 #include "vm/JSScript.h"
 #include "vm/StencilCache.h"  // js::StencilCache
+#include "vm/StringType.h"
 
 namespace js {
 
@@ -236,11 +239,121 @@ class MegamorphicCache {
   }
 };
 
-// Cache for AtomizeString, mapping JSLinearString* to the corresponding
-// JSAtom*. The cache has two different optimizations:
+class MegamorphicSetPropCache {
+ public:
+  // We can get more hits if we increase this, but this seems to be around
+  // the sweet spot where we are getting most of the hits we would get with
+  // an infinitely sized cache
+  static constexpr size_t NumEntries = 256;
+  // log2(alignof(Shape))
+  static constexpr uint8_t ShapeHashShift1 = 3;
+  // ShapeHashShift1 + log2(NumEntries)
+  static constexpr uint8_t ShapeHashShift2 = ShapeHashShift1 + 8;
+
+  class Entry {
+    Shape* beforeShape_ = nullptr;
+    Shape* afterShape_ = nullptr;
+
+    // The atom or symbol property being accessed.
+    PropertyKey key_;
+
+    // This entry is valid iff the generation matches the cache's generation.
+    uint16_t generation_ = 0;
+
+    // Slot number of the data property.
+    static constexpr size_t MaxSlotNumber = UINT16_MAX;
+    uint16_t slot_ = 0;
+
+    friend class MegamorphicSetPropCache;
+
+   public:
+    void init(Shape* beforeShape, Shape* afterShape, PropertyKey key,
+              uint16_t generation, uint16_t slot) {
+      beforeShape_ = beforeShape;
+      afterShape_ = afterShape;
+      key_ = key;
+      generation_ = generation;
+      slot_ = slot;
+      MOZ_ASSERT(slot_ == slot, "slot must fit in slot_");
+    }
+    uint16_t slot() const { return slot_; }
+    Shape* afterShape() const { return afterShape_; }
+
+    static constexpr size_t offsetOfShape() {
+      return offsetof(Entry, beforeShape_);
+    }
+    static constexpr size_t offsetOfAfterShape() {
+      return offsetof(Entry, afterShape_);
+    }
+
+    static constexpr size_t offsetOfKey() { return offsetof(Entry, key_); }
+
+    static constexpr size_t offsetOfGeneration() {
+      return offsetof(Entry, generation_);
+    }
+
+    static constexpr size_t offsetOfSlot() { return offsetof(Entry, slot_); }
+  };
+
+ private:
+  mozilla::Array<Entry, NumEntries> entries_;
+
+  // Generation counter used to invalidate all entries.
+  uint16_t generation_ = 0;
+
+  Entry& getEntry(Shape* beforeShape, PropertyKey key) {
+    static_assert(mozilla::IsPowerOfTwo(NumEntries),
+                  "NumEntries must be a power-of-two for fast modulo");
+    uintptr_t hash = uintptr_t(beforeShape) >> ShapeHashShift1;
+    hash ^= uintptr_t(beforeShape) >> ShapeHashShift2;
+    hash += HashAtomOrSymbolPropertyKey(key);
+    return entries_[hash % NumEntries];
+  }
+
+ public:
+  void bumpGeneration() {
+    generation_++;
+    if (generation_ == 0) {
+      // Generation overflowed. Invalidate the whole cache.
+      for (size_t i = 0; i < NumEntries; i++) {
+        entries_[i].beforeShape_ = nullptr;
+      }
+    }
+  }
+  void set(Shape* beforeShape, Shape* afterShape, PropertyKey key,
+           uint32_t slot) {
+    if (slot > Entry::MaxSlotNumber) {
+      return;
+    }
+    Entry& entry = getEntry(beforeShape, key);
+    entry.init(beforeShape, afterShape, key, generation_, slot);
+  }
+
+#ifdef DEBUG
+  bool lookup(Shape* beforeShape, PropertyKey key, Entry** entryp) {
+    Entry& entry = getEntry(beforeShape, key);
+    *entryp = &entry;
+    return (entry.beforeShape_ == beforeShape && entry.key_ == key &&
+            entry.generation_ == generation_);
+  }
+#endif
+
+  static constexpr size_t offsetOfEntries() {
+    return offsetof(MegamorphicSetPropCache, entries_);
+  }
+
+  static constexpr size_t offsetOfGeneration() {
+    return offsetof(MegamorphicSetPropCache, generation_);
+  }
+};
+
+// Cache for AtomizeString, mapping JSString* or JS::Latin1Char* to the
+// corresponding JSAtom*. The cache has three different optimizations:
 //
 // * The two most recent lookups are cached. This has a hit rate of 30-65% on
 //   typical web workloads.
+//
+// * MruCache is used for short JS::Latin1Char strings.
 //
 // * For longer strings, there's also a JSLinearString* => JSAtom* HashMap,
 //   because hashing the string characters repeatedly can be slow.
@@ -248,38 +361,67 @@ class MegamorphicCache {
 //
 // This cache is purged on minor and major GC.
 class StringToAtomCache {
-  using Map = HashMap<JSLinearString*, JSAtom*, PointerHasher<JSLinearString*>,
-                      SystemAllocPolicy>;
-  Map map_;
-
-  struct LastEntry {
-    JSLinearString* string = nullptr;
+ public:
+  struct LastLookup {
+    JSString* string = nullptr;
     JSAtom* atom = nullptr;
+
+    static constexpr size_t offsetOfString() {
+      return offsetof(LastLookup, string);
+    }
+
+    static constexpr size_t offsetOfAtom() {
+      return offsetof(LastLookup, atom);
+    }
   };
-  static constexpr size_t NumLastEntries = 2;
-  mozilla::Array<LastEntry, NumLastEntries> lastLookups_;
+  static constexpr size_t NumLastLookups = 2;
+
+  struct AtomTableKey {
+    explicit AtomTableKey(const JS::Latin1Char* str, size_t len)
+        : string_(str), length_(len) {
+      hash_ = mozilla::HashString(string_, length_);
+    }
+
+    const JS::Latin1Char* string_;
+    size_t length_;
+    uint32_t hash_;
+  };
+
+ private:
+  struct RopeAtomCache
+      : public mozilla::MruCache<AtomTableKey, JSAtom*, RopeAtomCache> {
+    static HashNumber Hash(const AtomTableKey& key) { return key.hash_; }
+    static bool Match(const AtomTableKey& key, const JSAtom* val) {
+      JS::AutoCheckCannotGC nogc;
+      return val->length() == key.length_ &&
+             EqualChars(key.string_, val->latin1Chars(nogc), key.length_);
+    }
+  };
+  using Map =
+      HashMap<JSString*, JSAtom*, PointerHasher<JSString*>, SystemAllocPolicy>;
+  Map map_;
+  mozilla::Array<LastLookup, NumLastLookups> lastLookups_;
+  RopeAtomCache ropeCharCache_;
 
  public:
   // Don't use the cache for short strings. Hashing them is less expensive.
+  // But the length needs to long enough to cover common identifiers in React.
   // Taintfox: need to increase this due to additional taint pointer
-  static constexpr size_t MinStringLength = 40;
+  static constexpr size_t MinStringLength = 39;
 
-  JSAtom* lookupInMap(JSLinearString* s) const {
+  JSAtom* lookupInMap(JSString* s) const {
     MOZ_ASSERT(s->inStringToAtomCache());
     MOZ_ASSERT(s->length() >= MinStringLength);
 
     auto p = map_.lookup(s);
     JSAtom* atom = p ? p->value() : nullptr;
-    MOZ_ASSERT_IF(atom, EqualStrings(s, atom));
     return atom;
   }
 
-  MOZ_ALWAYS_INLINE JSAtom* lookup(JSLinearString* s) const {
+  MOZ_ALWAYS_INLINE JSAtom* lookup(JSString* s) const {
     MOZ_ASSERT(!s->isAtom());
-
-    for (const LastEntry& entry : lastLookups_) {
+    for (const LastLookup& entry : lastLookups_) {
       if (entry.string == s) {
-        MOZ_ASSERT(EqualStrings(s, entry.atom));
         return entry.atom;
       }
     }
@@ -292,10 +434,27 @@ class StringToAtomCache {
     return lookupInMap(s);
   }
 
-  void maybePut(JSLinearString* s, JSAtom* atom) {
-    MOZ_ASSERT(!s->isAtom());
+  MOZ_ALWAYS_INLINE JSAtom* lookupWithRopeChars(
+      const JS::Latin1Char* str, size_t len,
+      mozilla::Maybe<AtomTableKey>& key) {
+    MOZ_ASSERT(len < MinStringLength);
+    key.emplace(str, len);
+    if (auto p = ropeCharCache_.Lookup(key.value())) {
+      return p.Data();
+    }
+    return nullptr;
+  }
 
-    for (size_t i = NumLastEntries - 1; i > 0; i--) {
+  static constexpr size_t offsetOfLastLookups() {
+    return offsetof(StringToAtomCache, lastLookups_);
+  }
+
+  void maybePut(JSString* s, JSAtom* atom, mozilla::Maybe<AtomTableKey>& key) {
+    if (key.isSome()) {
+      ropeCharCache_.Put(key.value(), atom);
+    }
+
+    for (size_t i = NumLastLookups - 1; i > 0; i--) {
       lastLookups_[i] = lastLookups_[i - 1];
     }
     lastLookups_[0].string = s;
@@ -312,16 +471,19 @@ class StringToAtomCache {
 
   void purge() {
     map_.clearAndCompact();
-    for (LastEntry& entry : lastLookups_) {
+    for (LastLookup& entry : lastLookups_) {
       entry.string = nullptr;
       entry.atom = nullptr;
     }
+
+    ropeCharCache_.Clear();
   }
 };
 
 class RuntimeCaches {
  public:
   MegamorphicCache megamorphicCache;
+  MegamorphicSetPropCache megamorphicSetPropCache;
   GSNCache gsnCache;
   UncompressedSourceCache uncompressedSourceCache;
   EvalCache evalCache;
@@ -350,6 +512,7 @@ class RuntimeCaches {
     evalCache.clear();
     stringToAtomCache.purge();
     megamorphicCache.bumpGeneration();
+    megamorphicSetPropCache.bumpGeneration();
     scopeCache.purge();
   }
 

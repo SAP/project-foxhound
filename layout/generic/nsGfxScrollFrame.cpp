@@ -445,6 +445,19 @@ ScrollReflowInput::ScrollReflowInput(nsHTMLScrollFrame* aFrame,
 
     GetScrollbarMetrics(mBoxState, hScrollbarBox, &mHScrollbarMinSize,
                         &mHScrollbarPrefSize);
+
+    // A zero minimum size is a bug with non-overlay scrollbars. That
+    // means we'll always try to place the scrollbar, even if it will ultimately
+    // not fit, see bug 1809630. XUL collapsing is the exception because the
+    // front-end uses it.
+    MOZ_ASSERT(aFrame->PresContext()->UseOverlayScrollbars() ||
+                   hScrollbarBox->IsXULCollapsed() ||
+                   (mHScrollbarMinSize.width && mHScrollbarMinSize.height),
+               "Shouldn't have a zero horizontal min-scrollbar-size");
+    MOZ_ASSERT(mHScrollbarPrefSize.width >= mHScrollbarMinSize.width &&
+                   mHScrollbarPrefSize.height >= mHScrollbarMinSize.height,
+               "Scrollbar pref size should be >= min size");
+
   } else {
     mHScrollbar = ShowScrollbar::Never;
     mHScrollbarAllowedForScrollingVVInsideLV = false;
@@ -455,6 +468,15 @@ ScrollReflowInput::ScrollReflowInput(nsHTMLScrollFrame* aFrame,
 
     GetScrollbarMetrics(mBoxState, vScrollbarBox, &mVScrollbarMinSize,
                         &mVScrollbarPrefSize);
+
+    // See above.
+    MOZ_ASSERT(aFrame->PresContext()->UseOverlayScrollbars() ||
+                   vScrollbarBox->IsXULCollapsed() ||
+                   (mVScrollbarMinSize.width && mVScrollbarMinSize.height),
+               "Shouldn't have a zero vertical min-size");
+    MOZ_ASSERT(mVScrollbarPrefSize.width >= mVScrollbarMinSize.width &&
+                   mVScrollbarPrefSize.height >= mVScrollbarMinSize.height,
+               "Scrollbar pref size should be >= min size");
   } else {
     mVScrollbar = ShowScrollbar::Never;
     mVScrollbarAllowedForScrollingVVInsideLV = false;
@@ -1641,10 +1663,9 @@ nscoord nsIScrollableFrame::GetNondisappearingScrollbarWidth(nsPresContext* aPc,
   // We use this to size the combobox dropdown button. For that, we need to have
   // the proper big, non-overlay scrollbar size, regardless of whether we're
   // using e.g. scrollbar-width: thin, or overlay scrollbars.
-  auto sizes = aPc->Theme()->GetScrollbarSizes(aPc, StyleScrollbarWidth::Auto,
-                                               nsITheme::Overlay::No);
-  return aPc->DevPixelsToAppUnits(aWM.IsVertical() ? sizes.mHorizontal
-                                                   : sizes.mVertical);
+  auto size = aPc->Theme()->GetScrollbarSize(aPc, StyleScrollbarWidth::Auto,
+                                             nsITheme::Overlay::No);
+  return aPc->DevPixelsToAppUnits(size);
 }
 
 void ScrollFrameHelper::HandleScrollbarStyleSwitching() {
@@ -4198,18 +4219,8 @@ void ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   {
-    // Note that setting the current scroll parent id here means that positioned
-    // children of this scroll info layer will pick up the scroll info layer as
-    // their scroll handoff parent. This is intentional because that is what
-    // happens for positioned children of scroll layers, and we want to maintain
-    // consistent behaviour between scroll layers and scroll info layers.
-    nsDisplayListBuilder::AutoCurrentScrollParentIdSetter idSetter(
-        aBuilder,
-        couldBuildLayer && mScrolledFrame->GetContent()
-            ? nsLayoutUtils::FindOrCreateIDFor(mScrolledFrame->GetContent())
-            : aBuilder->GetCurrentScrollParentId());
-
     DisplayListClipState::AutoSaveRestore clipState(aBuilder);
+
     // If we're building an async zoom container, clip the contents inside
     // to the layout viewport (scrollPortClip). The composition bounds clip
     // (clipRect) will be applied to the zoom container itself in
@@ -4236,8 +4247,14 @@ void ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
     nsDisplayListBuilder::AutoCurrentActiveScrolledRootSetter asrSetter(
         aBuilder);
+
     if (mWillBuildScrollableLayer && aBuilder->IsPaintingToWindow()) {
       asrSetter.EnterScrollFrame(sf);
+    }
+
+    if (couldBuildLayer && mScrolledFrame->GetContent()) {
+      asrSetter.SetCurrentScrollParentId(
+          nsLayoutUtils::FindOrCreateIDFor(mScrolledFrame->GetContent()));
     }
 
     if (mWillBuildScrollableLayer && aBuilder->BuildCompositorHitTestInfo()) {
@@ -4342,13 +4359,14 @@ void ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     if (aBuilder->IsPaintingToWindow()) {
       mIsParentToActiveScrollFrames =
           ShouldActivateAllScrollFrames()
-              ? idSetter.GetContainsNonMinimalDisplayPort()
-              : idSetter.ShouldForceLayerForScrollParent();
+              ? asrSetter.GetContainsNonMinimalDisplayPort()
+              : asrSetter.ShouldForceLayerForScrollParent();
     }
-    if (idSetter.ShouldForceLayerForScrollParent()) {
+
+    if (asrSetter.ShouldForceLayerForScrollParent()) {
       // Note that forcing layerization of scroll parents follows the scroll
       // handoff chain which is subject to the out-of-flow-frames caveat noted
-      // above (where the idSetter variable is created).
+      // above (where the asrSetter variable is created).
       MOZ_ASSERT(couldBuildLayer && mScrolledFrame->GetContent() &&
                  aBuilder->IsPaintingToWindow());
       if (!mWillBuildScrollableLayer) {
@@ -6992,7 +7010,7 @@ void ScrollFrameHelper::UpdateSticky() {
 void ScrollFrameHelper::UpdatePrevScrolledRect() {
   // The layout scroll range is determinated by the scrolled rect and the scroll
   // port, so if the scrolled rect is updated, we may have to schedule the
-  // associated scroll-linked animations' restyles.
+  // associated scroll-driven animations' restyles.
   nsRect currScrolledRect = GetScrolledRect();
   if (!currScrolledRect.IsEqualEdges(mPrevScrolledRect)) {
     mMayScheduleScrollAnimations = true;
@@ -7203,18 +7221,18 @@ void ScrollFrameHelper::LayoutScrollbars(nsBoxLayoutState& aState,
     auto scrollbarWidth = nsLayoutUtils::StyleForScrollbar(mOuter)
                               ->StyleUIReset()
                               ->ScrollbarWidth();
-    auto sizes = pc->Theme()->GetScrollbarSizes(pc, scrollbarWidth,
-                                                nsITheme::Overlay::No);
+    auto scrollbarSize = pc->Theme()->GetScrollbarSize(pc, scrollbarWidth,
+                                                       nsITheme::Overlay::No);
     nsSize resizerMinSize = mResizerBox->GetXULMinSize(aState);
 
     nsRect r;
-    nscoord vScrollbarWidth = pc->DevPixelsToAppUnits(sizes.mVertical);
+    nscoord vScrollbarWidth = pc->DevPixelsToAppUnits(scrollbarSize);
     r.width =
         std::max(std::max(r.width, vScrollbarWidth), resizerMinSize.width);
     r.x = scrollbarOnLeft ? aInsideBorderArea.x
                           : aInsideBorderArea.XMost() - r.width;
 
-    nscoord hScrollbarHeight = pc->DevPixelsToAppUnits(sizes.mHorizontal);
+    nscoord hScrollbarHeight = pc->DevPixelsToAppUnits(scrollbarSize);
     r.height =
         std::max(std::max(r.height, hScrollbarHeight), resizerMinSize.height);
     r.y = aInsideBorderArea.YMost() - r.height;

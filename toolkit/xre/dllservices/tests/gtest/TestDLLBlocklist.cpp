@@ -80,6 +80,17 @@ TEST(TestDllBlocklist, AllowDllByVersion)
   EXPECT_TRUE(!!::GetModuleHandleW(kLeafName.get()));
 }
 
+TEST(TestDllBlocklist, GPUProcessOnly_AllowInMainProcess)
+{
+  constexpr auto kLeafName = u"TestDllBlocklist_GPUProcessOnly.dll"_ns;
+  nsString dllPath = GetFullPath(kLeafName);
+
+  nsModuleHandle hDll(::LoadLibraryW(dllPath.get()));
+
+  EXPECT_TRUE(!!hDll);
+  EXPECT_TRUE(!!::GetModuleHandleW(kLeafName.get()));
+}
+
 TEST(TestDllBlocklist, SocketProcessOnly_AllowInMainProcess)
 {
   constexpr auto kLeafName = u"TestDllBlocklist_SocketProcessOnly.dll"_ns;
@@ -123,6 +134,25 @@ TEST(TestDllBlocklist, NoOpEntryPoint)
   EXPECT_TRUE(!!hDll);
   EXPECT_TRUE(!!::GetModuleHandleW(kLeafName.get()));
 #  endif
+}
+
+// User blocklist needs the launcher process
+TEST(TestDllBlocklist, UserBlocked)
+{
+  constexpr auto kLeafName = u"TestDllBlocklist_UserBlocked.dll"_ns;
+  nsString dllPath = GetFullPath(kLeafName);
+
+  nsModuleHandle hDll(::LoadLibraryW(dllPath.get()));
+
+// With ASAN, the test uses mozglue's blocklist where
+// the user blocklist is not used.
+#  if !defined(MOZ_ASAN)
+  EXPECT_TRUE(!hDll);
+  EXPECT_TRUE(!::GetModuleHandleW(kLeafName.get()));
+#  endif
+  hDll.own(::LoadLibraryExW(dllPath.get(), nullptr, LOAD_LIBRARY_AS_DATAFILE));
+  // Mapped as MEM_MAPPED + PAGE_READONLY
+  EXPECT_TRUE(hDll);
 }
 #endif  // defined(MOZ_LAUNCHER_PROCESS)
 

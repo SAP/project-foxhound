@@ -14,7 +14,7 @@
  * for your subclass to wrap, and optionally implement and override the tracker.
  */
 
-const { Changeset, SyncEngine, Tracker } = ChromeUtils.import(
+const { SyncEngine, Tracker } = ChromeUtils.import(
   "resource://services-sync/engines.js"
 );
 const { RawCryptoWrapper } = ChromeUtils.import(
@@ -317,8 +317,6 @@ function BridgedEngine(name, service) {
 }
 
 BridgedEngine.prototype = {
-  __proto__: SyncEngine.prototype,
-
   /**
    * The Rust implemented bridge. Must be set by the engine which subclasses us.
    */
@@ -494,6 +492,7 @@ BridgedEngine.prototype = {
     await this._bridge.reset();
   },
 };
+Object.setPrototypeOf(BridgedEngine.prototype, SyncEngine.prototype);
 
 function transformError(code, message) {
   switch (code) {
@@ -502,39 +501,5 @@ function transformError(code, message) {
 
     default:
       return new BridgeError(code, message);
-  }
-}
-
-class BridgedChangeset extends Changeset {
-  // Only `_reconcile` calls `getModifiedTimestamp` and `has`, and the buffered
-  // engine does its own reconciliation.
-  getModifiedTimestamp(id) {
-    throw new Error("Don't use timestamps to resolve bridged engine conflicts");
-  }
-
-  has(id) {
-    throw new Error(
-      "Don't use the changeset to resolve bridged engine conflicts"
-    );
-  }
-
-  delete(id) {
-    let change = this.changes[id];
-    if (change) {
-      // Mark the change as synced without removing it from the set. Depending
-      // on how we implement `trackRemainingChanges`, this may not be necessary.
-      // It's copied from the bookmarks changeset now.
-      change.synced = true;
-    }
-  }
-
-  ids() {
-    let results = [];
-    for (let id in this.changes) {
-      if (!this.changes[id].synced) {
-        results.push(id);
-      }
-    }
-    return results;
   }
 }

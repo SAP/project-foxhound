@@ -14,8 +14,8 @@ const CERTDB_CONTRACTID = "@mozilla.org/security/x509certdb;1";
 const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 const { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
@@ -288,7 +288,7 @@ var AddonTestUtils = {
     );
     Services.prefs.setCharPref(
       "services.settings.server",
-      "http://localhost/dummy-kinto/v1"
+      "data:,#remote-settings-dummy/v1"
     );
 
     // By default ignore bundled add-ons
@@ -966,7 +966,7 @@ var AddonTestUtils = {
         data = JSON.stringify(data);
       }
       if (!(data instanceof ArrayBuffer)) {
-        data = new TextEncoder("utf-8").encode(data).buffer;
+        data = new TextEncoder().encode(data).buffer;
       }
 
       let stream = ArrayBufferInputStream(data, 0, data.byteLength);

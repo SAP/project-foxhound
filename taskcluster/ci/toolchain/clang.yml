@@ -92,9 +92,8 @@ macosx64-clang-14-raw:
         fetch:
             - clang-14
         toolchain:
-            - linux64-cctools-port
             - linux64-clang-14-stage1
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
 
 linux64-clang-15-mingw-x86:
     description: "MinGW-Clang 15 x86 toolchain build"
@@ -105,6 +104,8 @@ linux64-clang-15-mingw-x86:
         script: build-clang-mingw.sh
         arguments:
             - 'x86'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
         toolchain-alias:
             by-project:
                 toolchains: null
@@ -129,6 +130,8 @@ linux64-clang-15-mingw-x64:
         script: build-clang-mingw.sh
         arguments:
             - 'x64'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
         toolchain-alias:
             by-project:
                 toolchains: null
@@ -277,10 +280,9 @@ macosx64-clang-15-raw:
         fetch:
             - clang-15
         toolchain:
-            - linux64-cctools-port
             - linux64-clang-15-stage1
             - linux64-clang-15-profile
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
             - macosx64-x64-compiler-rt-15
 
 macosx64-clang-15:
@@ -324,18 +326,18 @@ macosx64-aarch64-clang-15-raw:
         symbol: TM(clang-15-aarch64-raw)
     worker-type: b-linux-large-gcp
     worker:
-        env:
-            OSX_ARCH: arm64
         max-run-time: 3600
     run:
         script: build-clang.sh
         arguments:
             - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/macosx64-aarch64.json'
             - 'build/build-clang/clang-15.json'
             - 'build/build-clang/skip-3-stages.json'
             - 'build/build-clang/4stages-pgo.json'
         resources:
             - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/macosx64-aarch64.json'
             - 'build/build-clang/clang-15.json'
             - 'build/build-clang/skip-3-stages.json'
             - 'build/build-clang/4stages-pgo.json'
@@ -344,10 +346,9 @@ macosx64-aarch64-clang-15-raw:
         fetch:
             - clang-15
         toolchain:
-            - linux64-cctools-port
             - linux64-clang-15-stage1
             - linux64-clang-15-profile
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
             - macosx64-aarch64-compiler-rt-15
 
 macosx64-aarch64-clang-15:
@@ -387,7 +388,6 @@ win64-clang-15-stage1:
     description: "Clang-cl 15 toolchain build stage 1"
     treeherder:
         symbol: TW64(clang-15-stage1)
-    worker-type: b-win2012
     run:
         script: build-clang.sh
         arguments:
@@ -406,9 +406,8 @@ win64-clang-15-stage1:
     fetches:
         fetch:
             - clang-15
-            - cmake
-            - ninja
         toolchain:
+            - linux64-clang-15-stage1
             - win64-vs2019
 
 win64-clang-15-raw:
@@ -485,6 +484,8 @@ linux64-clang-trunk-mingw-x86:
         script: build-clang-mingw.sh
         arguments:
             - 'x86'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
         toolchain-alias:
             by-project:
                 toolchains: linux64-clang-mingw-x86
@@ -511,6 +512,8 @@ linux64-clang-trunk-mingw-x64:
         script: build-clang-mingw.sh
         arguments:
             - 'x64'
+        resources:
+            - 'taskcluster/scripts/misc/mingw-*.patch'
         toolchain-alias:
             by-project:
                 toolchains: linux64-clang-mingw-x64
@@ -667,10 +670,9 @@ macosx64-clang-trunk-raw:
         fetch:
             - clang-trunk
         toolchain:
-            - linux64-cctools-port
             - linux64-clang-trunk-stage1
             - linux64-clang-trunk-profile
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
             - macosx64-x64-compiler-rt-trunk
 
 macosx64-clang-trunk:
@@ -716,18 +718,18 @@ macosx64-aarch64-clang-trunk-raw:
         symbol: TM(clang-trunk-aarch64-raw)
     worker-type: b-linux-large-gcp
     worker:
-        env:
-            OSX_ARCH: arm64
         max-run-time: 3600
     run:
         script: build-clang.sh
         arguments:
             - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/macosx64-aarch64.json'
             - 'build/build-clang/clang-trunk.json'
             - 'build/build-clang/skip-3-stages.json'
             - 'build/build-clang/4stages-pgo.json'
         resources:
             - 'build/build-clang/macosx64.json'
+            - 'build/build-clang/macosx64-aarch64.json'
             - 'build/build-clang/clang-trunk.json'
             - 'build/build-clang/skip-3-stages.json'
             - 'build/build-clang/4stages-pgo.json'
@@ -736,10 +738,9 @@ macosx64-aarch64-clang-trunk-raw:
         fetch:
             - clang-trunk
         toolchain:
-            - linux64-cctools-port
             - linux64-clang-trunk-stage1
             - linux64-clang-trunk-profile
-            - macosx64-sdk
+            - macosx64-sdk-toolchain
             - macosx64-aarch64-compiler-rt-trunk
 
 macosx64-aarch64-clang-trunk:
@@ -781,7 +782,6 @@ win64-clang-trunk-stage1:
         cached_task: false
     treeherder:
         symbol: TW64(clang-trunk-stage1)
-    worker-type: b-win2012
     run:
         script: build-clang.sh
         arguments:
@@ -800,9 +800,8 @@ win64-clang-trunk-stage1:
     fetches:
         fetch:
             - clang-trunk
-            - cmake
-            - ninja
         toolchain:
+            - linux64-clang-trunk-stage1
             - win64-vs2019
 
 win64-clang-trunk-raw:

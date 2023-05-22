@@ -17,10 +17,6 @@
 
 class nsITransferable;
 
-@interface UTIHelper : NSObject
-+ (NSString*)stringFromPboardType:(NSString*)aType;
-@end
-
 class nsClipboard : public nsBaseClipboard {
  public:
   nsClipboard();
@@ -32,7 +28,7 @@ class nsClipboard : public nsBaseClipboard {
                      int32_t aWhichClipboard) override;
   NS_IMETHOD HasDataMatchingFlavors(const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard,
                                     bool* _retval) override;
-  NS_IMETHOD SupportsFindClipboard(bool* _retval) override;
+  NS_IMETHOD IsClipboardTypeSupported(int32_t aWhichClipboard, bool* _retval) override;
   NS_IMETHOD EmptyClipboard(int32_t aWhichClipboard) override;
 
   // On macOS, cache the transferable of the current selection (chrome/content)

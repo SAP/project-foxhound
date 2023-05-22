@@ -44,13 +44,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsICaptivePortalService"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "gDNSService",
-  "@mozilla.org/network/dns-service;1",
-  "nsIDNSService"
-);
-
 // The canonical domain whose subdomains we will be resolving.
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -110,17 +103,17 @@ class DNSLookup {
     this.retryCount++;
     try {
       this.usedDomain = this._domain || getRandomSubdomain();
-      lazy.gDNSService.asyncResolve(
+      Services.dns.asyncResolve(
         this.usedDomain,
         Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
         Ci.nsIDNSService.RESOLVE_BYPASS_CACHE,
-        lazy.gDNSService.newAdditionalInfo(this.trrServer, -1),
+        Services.dns.newAdditionalInfo(this.trrServer, -1),
         this,
         Services.tm.currentThread,
         {}
       );
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
   }
 
@@ -162,7 +155,7 @@ class LookupAggregator {
 
   run() {
     if (this._ran || this._aborted) {
-      Cu.reportError("Trying to re-run a LookupAggregator.");
+      console.error("Trying to re-run a LookupAggregator.");
       return;
     }
 
@@ -218,7 +211,7 @@ class LookupAggregator {
           domain.includes(lazy.kCanonicalDomain)
         )
       ) {
-        Cu.reportError("Expected known domain for reporting, got " + domain);
+        console.error("Expected known domain for reporting, got ", domain);
         return;
       }
 

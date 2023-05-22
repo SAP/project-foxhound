@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ReadableByteStreamController.h"
+
+#include "ReadIntoRequest.h"
 #include "js/ArrayBuffer.h"
 #include "js/ErrorReport.h"
 #include "js/Exception.h"
@@ -19,9 +22,7 @@
 #include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/ReadableByteStreamController.h"
 #include "mozilla/dom/ReadableByteStreamControllerBinding.h"
-#include "mozilla/dom/ReadIntoRequest.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
 #include "mozilla/dom/ReadableStreamBYOBRequest.h"
@@ -40,10 +41,12 @@
 
 namespace mozilla::dom {
 
+using namespace streams_abstract;
+
 NS_IMPL_CYCLE_COLLECTION_CLASS(ReadableByteStreamController)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ReadableByteStreamController,
                                                 ReadableStreamController)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mByobRequest, mStream)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mByobRequest)
   tmp->ClearPendingPullIntos();
   tmp->ClearQueue();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -51,7 +54,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ReadableByteStreamController,
                                                   ReadableStreamController)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mByobRequest, mStream)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mByobRequest)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ReadableByteStreamController,
@@ -105,6 +108,7 @@ void ReadableByteStreamController::ClearPendingPullIntos() {
   mPendingPullIntos.clear();
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamcontrollergetbyobrequest
 already_AddRefed<ReadableStreamBYOBRequest>
 ReadableByteStreamControllerGetBYOBRequest(
@@ -149,6 +153,7 @@ ReadableByteStreamControllerGetBYOBRequest(
   RefPtr<ReadableStreamBYOBRequest> request(aController->GetByobRequest());
   return request.forget();
 }
+}  // namespace streams_abstract
 
 already_AddRefed<ReadableStreamBYOBRequest>
 ReadableByteStreamController::GetByobRequest(JSContext* aCx, ErrorResult& aRv) {
@@ -184,6 +189,8 @@ JSObject* ReadableByteStreamController::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return ReadableByteStreamController_Binding::Wrap(aCx, this, aGivenProto);
 }
+
+namespace streams_abstract {
 
 // https://streams.spec.whatwg.org/#readable-byte-stream-controller-invalidate-byob-request
 static void ReadableByteStreamControllerInvalidateBYOBRequest(
@@ -315,6 +322,8 @@ void ReadableByteStreamControllerClose(
   ReadableStreamClose(aCx, stream, aRv);
 }
 
+}  // namespace streams_abstract
+
 // https://streams.spec.whatwg.org/#rbs-controller-close
 void ReadableByteStreamController::Close(JSContext* aCx, ErrorResult& aRv) {
   // Step 1.
@@ -332,6 +341,8 @@ void ReadableByteStreamController::Close(JSContext* aCx, ErrorResult& aRv) {
   // Step 3.
   ReadableByteStreamControllerClose(aCx, this, aRv);
 }
+
+namespace streams_abstract {
 
 // https://streams.spec.whatwg.org/#readable-byte-stream-controller-enqueue-chunk-to-queue
 void ReadableByteStreamControllerEnqueueChunkToQueue(
@@ -927,6 +938,8 @@ void ReadableByteStreamControllerEnqueue(
   ReadableByteStreamControllerCallPullIfNeeded(aCx, aController, aRv);
 }
 
+}  // namespace streams_abstract
+
 // https://streams.spec.whatwg.org/#rbs-controller-enqueue
 void ReadableByteStreamController::Enqueue(JSContext* aCx,
                                            const ArrayBufferView& aChunk,
@@ -999,6 +1012,7 @@ already_AddRefed<Promise> ReadableByteStreamController::CancelSteps(
   return result.forget();
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#readable-byte-stream-controller-handle-queue-drain
 void ReadableByteStreamControllerHandleQueueDrain(
     JSContext* aCx, ReadableByteStreamController* aController,
@@ -1021,6 +1035,7 @@ void ReadableByteStreamControllerHandleQueueDrain(
   // Step 3.1
   ReadableByteStreamControllerCallPullIfNeeded(aCx, aController, aRv);
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#rbs-controller-private-pull
 void ReadableByteStreamController::PullSteps(JSContext* aCx,
@@ -1108,6 +1123,8 @@ void ReadableByteStreamController::ReleaseSteps() {
     PendingPullIntos().insertBack(firstPendingPullInto);
   }
 }
+
+namespace streams_abstract {
 
 // https://streams.spec.whatwg.org/#readable-byte-stream-controller-shift-pending-pull-into
 already_AddRefed<PullIntoDescriptor>
@@ -1894,10 +1911,8 @@ void SetUpReadableByteStreamController(
   }
 
   // Let startPromise be a promise resolved with startResult.
-  RefPtr<Promise> startPromise = Promise::Create(GetIncumbentGlobal(), aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+  RefPtr<Promise> startPromise =
+      Promise::CreateInfallible(aStream->GetParentObject());
   startPromise->MaybeResolve(startResult);
 
   // Step 16+17
@@ -1963,5 +1978,7 @@ void SetUpReadableByteStreamControllerFromUnderlyingSource(
   SetUpReadableByteStreamController(aCx, aStream, controller, algorithms,
                                     aHighWaterMark, autoAllocateChunkSize, aRv);
 }
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom

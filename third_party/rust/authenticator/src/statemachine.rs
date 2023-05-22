@@ -10,6 +10,7 @@ use crate::ctap2::commands::reset::Reset;
 use crate::ctap2::commands::{
     repackage_pin_errors, CommandError, PinAuthCommand, Request, StatusCode,
 };
+use crate::ctap2::server::{RelyingParty, RelyingPartyWrapper};
 use crate::errors::{self, AuthenticatorError, UnsupportedOption};
 use crate::statecallback::StateCallback;
 use crate::transport::device_selector::{
@@ -349,33 +350,30 @@ impl StateMachineCtap2 {
             .ok()?;
 
         // Blocking recv. DeviceSelector will tell us what to do
-        loop {
-            match rx.recv() {
-                Ok(DeviceCommand::Blink) => match dev.block_and_blink() {
-                    BlinkResult::DeviceSelected => {
-                        // User selected us. Let DeviceSelector know, so it can cancel all other
-                        // outstanding open blink-requests.
-                        selector
-                            .send(DeviceSelectorEvent::SelectedToken(dev.id()))
-                            .ok()?;
-                        break;
-                    }
-                    BlinkResult::Cancelled => {
-                        info!("Device {:?} was not selected", dev.id());
-                        return None;
-                    }
-                },
-                Ok(DeviceCommand::Removed) => {
-                    info!("Device {:?} was removed", dev.id());
+        match rx.recv() {
+            Ok(DeviceCommand::Blink) => match dev.block_and_blink() {
+                BlinkResult::DeviceSelected => {
+                    // User selected us. Let DeviceSelector know, so it can cancel all other
+                    // outstanding open blink-requests.
+                    selector
+                        .send(DeviceSelectorEvent::SelectedToken(dev.id()))
+                        .ok()?;
+                }
+                BlinkResult::Cancelled => {
+                    info!("Device {:?} was not selected", dev.id());
                     return None;
                 }
-                Ok(DeviceCommand::Continue) => {
-                    break;
-                }
-                Err(_) => {
-                    warn!("Error when trying to receive messages from DeviceSelector! Exiting.");
-                    return None;
-                }
+            },
+            Ok(DeviceCommand::Removed) => {
+                info!("Device {:?} was removed", dev.id());
+                return None;
+            }
+            Ok(DeviceCommand::Continue) => {
+                // Just continue
+            }
+            Err(_) => {
+                warn!("Error when trying to receive messages from DeviceSelector! Exiting.");
+                return None;
             }
         }
         Some(dev)
@@ -397,7 +395,7 @@ impl StateMachineCtap2 {
                 // locked token). If it is deemed unrecoverable, we error out the 'normal' way with the same error.
                 error!("Callback dropped the channel, so we forward the error to the results-callback: {:?}", error);
                 callback.call(Err(AuthenticatorError::PinError(error)));
-                return Err(());
+                Err(())
             }
         }
     }
@@ -529,7 +527,6 @@ impl StateMachineCtap2 {
                         callback.call(Ok(RegisterResult::CTAP1(data, dev.get_device_info())))
                     }
 
-                    Err(HIDError::DeviceNotSupported) | Err(HIDError::UnsupportedCommand) => {}
                     Err(HIDError::Command(CommandError::StatusCode(
                         StatusCode::ChannelBusy,
                         _,
@@ -610,7 +607,16 @@ impl StateMachineCtap2 {
                 debug!("{:?}", getassertion);
                 debug!("------------------------------------------------------------------");
 
-                let resp = dev.send_msg(&getassertion);
+                let mut resp = dev.send_msg(&getassertion);
+                if resp.is_err() {
+                    // Retry with a different RP ID if one was supplied. This is intended to be
+                    // used with the AppID provided in the WebAuthn FIDO AppID extension.
+                    if let Some(alternate_rp_id) = getassertion.alternate_rp_id {
+                        getassertion.rp = RelyingPartyWrapper::Data(RelyingParty{id: alternate_rp_id, ..Default::default()});
+                        getassertion.alternate_rp_id = None;
+                        resp = dev.send_msg(&getassertion);
+                    }
+                }
                 if resp.is_ok() {
                     send_status(
                         &status,
@@ -639,11 +645,6 @@ impl StateMachineCtap2 {
                     Ok(GetAssertionResult::CTAP2(assertion, client_data)) => {
                         callback.call(Ok(SignResult::CTAP2(assertion, client_data)))
                     }
-                    // TODO(baloo): if key_handle is invalid for this device, it
-                    //              should reply something like:
-                    //              CTAP2_ERR_INVALID_CREDENTIAL
-                    //              have to check
-                    Err(HIDError::DeviceNotSupported) | Err(HIDError::UnsupportedCommand) => {}
                     Err(HIDError::Command(CommandError::StatusCode(
                         StatusCode::ChannelBusy,
                         _,

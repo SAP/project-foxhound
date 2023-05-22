@@ -50,8 +50,6 @@ function TargetMixin(parentClass) {
       // be able to interact with any commands while it is frequently useful.
       this.commands = null;
 
-      this._forceChrome = false;
-
       this.destroy = this.destroy.bind(this);
 
       this.threadFront = null;
@@ -120,42 +118,6 @@ function TargetMixin(parentClass) {
       return true;
     }
 
-    /**
-     * Get the descriptor front for this target.
-     *
-     * TODO: Should be removed. This is misleading as only the top level target should have a descriptor.
-     * This will return null for targets created by the Watcher actor and will still be defined
-     * by targets created by RootActor methods (listSomething methods).
-     */
-    get descriptorFront() {
-      if (this.isDestroyed()) {
-        throw new Error("Descriptor already destroyed for target: " + this);
-      }
-
-      if (this.isWorkerTarget) {
-        return this;
-      }
-
-      if (this._descriptorFront) {
-        return this._descriptorFront;
-      }
-
-      if (this.parentFront.typeName.endsWith("Descriptor")) {
-        return this.parentFront;
-      }
-      throw new Error("Missing descriptor for target: " + this);
-    }
-
-    /**
-     * Top-level targets created on the server will not be created and managed
-     * by a descriptor front. Instead they are created by the Watcher actor.
-     * On the client side we manually re-establish a link between the descriptor
-     * and the new top-level target.
-     */
-    setDescriptor(descriptorFront) {
-      this._descriptorFront = descriptorFront;
-    }
-
     get targetType() {
       return this._targetType;
     }
@@ -179,36 +141,6 @@ function TargetMixin(parentClass) {
       if (!this.getTrait("supportsTopLevelTargetFlag")) {
         this._isTopLevel = isTopLevel;
       }
-    }
-
-    /**
-     * Get the top level WatcherFront for this target.
-     *
-     * The targets should all ultimately be managed by a unique Watcher actor,
-     * created from the unique Descriptor actor which is passed to the Toolbox.
-     * For now, the top level target is still created by the top level Descriptor,
-     * but it is also meant to be created by the Watcher.
-     *
-     * @return {TargetMixin} the parent target.
-     */
-    getWatcherFront() {
-      // All additional frame targets are spawn by the WatcherActor and are managed by it.
-      if (this.parentFront.typeName == "watcher") {
-        return this.parentFront;
-      }
-
-      // Otherwise, for top level targets, the parent front is a Descriptor, from which we can retrieve the Watcher.
-      // TODO: top level target should also be exposed by the Watcher actor, like any target.
-      if (
-        this.parentFront.typeName.endsWith("Descriptor") &&
-        this.parentFront.traits &&
-        this.parentFront.traits.watcher
-      ) {
-        return this.parentFront.getWatcher();
-      }
-
-      // For WebExtension, the descriptor doesn't expose a watcher yet (See Bug 1675456).
-      return null;
     }
 
     /**
@@ -246,9 +178,14 @@ function TargetMixin(parentClass) {
      * @return {TargetMixin} the requested target.
      */
     async getWindowGlobalTarget(browsingContextID) {
+      // Just for sanity as commands attribute is set late from TargetCommand._onTargetAvailable
+      // but ideally target front should be used before this happens.
+      if (!this.commands) {
+        return null;
+      }
       // Tab and Process Descriptors expose a Watcher, which is creating the
       // targets and should be used to fetch any.
-      const watcherFront = await this.getWatcherFront();
+      const { watcherFront } = this.commands;
       if (watcherFront) {
         // Safety check, in theory all watcher should support frames.
         if (watcherFront.traits.frame) {
@@ -297,29 +234,6 @@ function TargetMixin(parentClass) {
       return this.client.traits[traitName];
     }
 
-    get isLocalTab() {
-      // Worker Target is also the Descriptor,
-      // so avoid infinite loop.
-      if (this.isWorkerTarget) {
-        return false;
-      }
-      return !!this.descriptorFront?.isLocalTab;
-    }
-
-    get localTab() {
-      // Worker Target is also the Descriptor,
-      // so avoid infinite loop.
-      if (this.isWorkerTarget) {
-        return null;
-      }
-      return this.descriptorFront?.localTab || null;
-    }
-
-    // Get a promise of the RootActor's form
-    get root() {
-      return this.client.mainRoot.rootForm;
-    }
-
     // Get a Front for a target-scoped actor.
     // i.e. an actor served by RootActor.listTabs or RootActorActor.getTab requests
     async getFront(typeName) {
@@ -362,23 +276,6 @@ function TargetMixin(parentClass) {
       return this._client;
     }
 
-    // Tells us if we are debugging content document
-    // or if we are debugging chrome stuff.
-    // Allows to controls which features are available against
-    // a chrome or a content document.
-    get chrome() {
-      return (
-        this.isAddon ||
-        this.isContentProcess ||
-        this.isParentProcess ||
-        this._forceChrome
-      );
-    }
-
-    forceChrome() {
-      this._forceChrome = true;
-    }
-
     // Tells us if the related actor implements WindowGlobalTargetActor
     // interface and requires to call `attach` request before being used and
     // `detach` during cleanup.
@@ -387,7 +284,7 @@ function TargetMixin(parentClass) {
     }
 
     get name() {
-      if (this.isAddon || this.isContentProcess) {
+      if (this.isWebExtension || this.isContentProcess) {
         return this.targetForm.name;
       }
       return this.title;
@@ -401,22 +298,10 @@ function TargetMixin(parentClass) {
       return this._url;
     }
 
-    get isAddon() {
-      return this.isLegacyAddon || this.isWebExtension;
-    }
-
     get isWorkerTarget() {
       // XXX Remove the check on `workerDescriptor` as part of Bug 1667404.
       return (
         this.typeName === "workerTarget" || this.typeName === "workerDescriptor"
-      );
-    }
-
-    get isLegacyAddon() {
-      return !!(
-        this.targetForm &&
-        this.targetForm.actor &&
-        this.targetForm.actor.match(/conn\d+\.addon(Target)?\d+/)
       );
     }
 
@@ -449,10 +334,6 @@ function TargetMixin(parentClass) {
         this.targetForm.actor &&
         this.targetForm.actor.match(/conn\d+\.parentProcessTarget\d+/)
       );
-    }
-
-    get isMultiProcess() {
-      return !this.window;
     }
 
     getExtensionPathName(url) {

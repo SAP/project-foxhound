@@ -105,6 +105,14 @@ add_task(async function mouse_insideTipButNotOnButtons() {
  *   to pick the main button instead.
  */
 async function doTest({ click, buttonUrl = undefined, helpUrl = undefined }) {
+  if (UrlbarPrefs.get("resultMenu") && helpUrl) {
+    todo(
+      false,
+      "help telemetry for the result menu to be implemented in bug 1790020"
+    );
+    return;
+  }
+
   // Open a new tab for the test if we expect to load a URL.
   let tab;
   if (buttonUrl || helpUrl) {
@@ -139,10 +147,10 @@ async function doTest({ click, buttonUrl = undefined, helpUrl = undefined }) {
   let helpButton = row._buttons.get("help");
   let target = helpUrl ? helpButton : mainButton;
 
-  // If we're picking the tip with the keyboard, arrow down to select the proper
+  // If we're picking the tip with the keyboard, TAB to select the proper
   // target.
   if (!click) {
-    EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: helpUrl ? 2 : 1 });
+    EventUtils.synthesizeKey("KEY_Tab", { repeat: helpUrl ? 2 : 1 });
     Assert.equal(
       UrlbarTestUtils.getSelectedElement(window),
       target,

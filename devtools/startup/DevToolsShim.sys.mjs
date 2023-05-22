@@ -125,7 +125,7 @@ export const DevToolsShim = {
 
   /**
    * This method is used by browser/components/extensions/ext-devtools.js for the events:
-   * - toolbox-created
+   * - toolbox-ready
    * - toolbox-destroyed
    */
   on(event, listener) {
@@ -149,7 +149,7 @@ export const DevToolsShim = {
   },
 
   /**
-   * Called from SessionStore.jsm in mozilla-central when saving the current state.
+   * Called from SessionStore.sys.mjs in mozilla-central when saving the current state.
    *
    * @param {Object} state
    *                 A SessionStore state object that gets modified by reference
@@ -163,7 +163,7 @@ export const DevToolsShim = {
   },
 
   /**
-   * Called from SessionStore.jsm in mozilla-central when restoring a previous session.
+   * Called from SessionStore.sys.mjs in mozilla-central when restoring a previous session.
    * Will always be called, even if the session does not contain DevTools related items.
    */
   restoreDevToolsSession(session) {

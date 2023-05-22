@@ -94,7 +94,6 @@ class ArrayBufferDataStream {
         this.pos += 8;
     }
 
-
     readFloat32() {
         let rv = this.dataView.getFloat32(this.pos);
         this.pos += 4;
@@ -193,18 +192,23 @@ class UniFFIError {
     constructor(message) {
         this.message = message;
     }
+
+    toString() {
+        return `UniFFIError: ${this.message}`
+    }
 }
 
 class UniFFIInternalError extends UniFFIError {}
 
 // Base class for FFI converters
 class FfiConverter {
-    static checkType(name, value) {
+    // throw `UniFFITypeError` if a value to be converted has an invalid type
+    static checkType(value) {
         if (value === undefined ) {
-            throw TypeError(`${name} is undefined`);
+            throw new UniFFITypeError(`undefined`);
         }
         if (value === null ) {
-            throw TypeError(`${name} is null`);
+            throw new UniFFITypeError(`null`);
         }
     }
 }
@@ -227,3 +231,4 @@ class FfiConverterArrayBuffer extends FfiConverter {
 // can only be used with a proper UniFFI pointer
 const uniffiObjectPtr = Symbol("uniffiObjectPtr");
 const constructUniffiObject = Symbol("constructUniffiObject");
+UnitTestObjs.uniffiObjectPtr = uniffiObjectPtr;

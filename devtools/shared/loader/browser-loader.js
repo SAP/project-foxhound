@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const BaseLoader = ChromeUtils.import(
-  "resource://devtools/shared/loader/base-loader.js"
+const BaseLoader = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/base-loader.sys.mjs"
 );
 const { require: devtoolsRequire, loader } = ChromeUtils.importESModule(
   "resource://devtools/shared/loader/Loader.sys.mjs"
@@ -35,10 +35,8 @@ const BROWSER_BASED_DIRS = [
   "resource://devtools/client/jsonview",
   "resource://devtools/client/netmonitor/src/utils",
   "resource://devtools/client/shared/fluent-l10n",
-  "resource://devtools/client/shared/source-map-loader",
   "resource://devtools/client/shared/redux",
   "resource://devtools/client/shared/vendor",
-  "resource://devtools/client/shared/worker-utils",
 ];
 
 const COMMON_LIBRARY_DIRS = ["resource://devtools/client/shared/vendor"];

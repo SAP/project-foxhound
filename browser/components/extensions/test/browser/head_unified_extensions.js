@@ -9,34 +9,16 @@
             ensureMaximizedWindow,
             getUnifiedExtensionsItem,
             openExtensionsPanel,
-            openUnifiedExtensionsContextMenu,
-            promiseDisableUnifiedExtensions,
-            promiseEnableUnifiedExtensions
+            openUnifiedExtensionsContextMenu
 */
 
-const promiseEnableUnifiedExtensions = async (options = {}) => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.unifiedExtensions.enabled", true]],
-  });
-
-  return BrowserTestUtils.openNewBrowserWindow(options);
-};
-
-const promiseDisableUnifiedExtensions = async () => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.unifiedExtensions.enabled", false]],
-  });
-
-  return BrowserTestUtils.openNewBrowserWindow();
-};
-
-const getListView = win => {
+const getListView = (win = window) => {
   const { panel } = win.gUnifiedExtensions;
   ok(panel, "expected panel to be created");
   return panel.querySelector("#unified-extensions-view");
 };
 
-const openExtensionsPanel = async win => {
+const openExtensionsPanel = async (win = window) => {
   const { button } = win.gUnifiedExtensions;
   ok(button, "expected button");
 
@@ -48,7 +30,7 @@ const openExtensionsPanel = async win => {
   await viewShown;
 };
 
-const closeExtensionsPanel = async win => {
+const closeExtensionsPanel = async (win = window) => {
   const { button } = win.gUnifiedExtensions;
   ok(button, "expected button");
 
@@ -61,7 +43,7 @@ const closeExtensionsPanel = async win => {
   await hidden;
 };
 
-const getUnifiedExtensionsItem = (win, extensionId) => {
+const getUnifiedExtensionsItem = (extensionId, win = window) => {
   const view = getListView(win);
 
   // First try to find a CUI widget, otherwise a custom element when the
@@ -72,8 +54,8 @@ const getUnifiedExtensionsItem = (win, extensionId) => {
   );
 };
 
-const openUnifiedExtensionsContextMenu = async (win, extensionId) => {
-  const item = getUnifiedExtensionsItem(win, extensionId);
+const openUnifiedExtensionsContextMenu = async (extensionId, win = window) => {
+  const item = getUnifiedExtensionsItem(extensionId, win);
   ok(item, `expected item for extensionId=${extensionId}`);
   const button = item.querySelector(".unified-extensions-item-menu-button");
   ok(button, "expected menu button");
@@ -101,7 +83,7 @@ const clickUnifiedExtensionsItem = async (
   // The panel should be closed automatically when we click an extension item.
   await openExtensionsPanel(win);
 
-  const item = getUnifiedExtensionsItem(win, extensionId);
+  const item = getUnifiedExtensionsItem(extensionId, win);
   ok(item, `expected item for ${extensionId}`);
 
   // The action button should be disabled when users aren't supposed to click
@@ -148,18 +130,50 @@ const createExtensions = (
  * the available screen size (unless the window is already maximized).
  */
 const ensureMaximizedWindow = async win => {
-  let resizeDone = Promise.resolve();
+  info("ensuring maximized window...");
 
+  // Make sure we wait for window position to have settled
+  // to avoid unexpected failures.
+  let samePositionTimes = 0;
+  let lastScreenTop = win.screen.top;
+  let lastScreenLeft = win.screen.left;
   win.moveTo(0, 0);
+  await TestUtils.waitForCondition(() => {
+    let isSamePosition =
+      lastScreenTop === win.screen.top && lastScreenLeft === win.screen.left;
+    if (!isSamePosition) {
+      lastScreenTop = win.screen.top;
+      lastScreenLeft = win.screen.left;
+    }
+    samePositionTimes = isSamePosition ? samePositionTimes + 1 : 0;
+    return samePositionTimes === 10;
+  }, "Wait for the chrome window position to settle");
 
-  const widthDiff = win.screen.availWidth - win.outerWidth;
-  const heightDiff = win.screen.availHeight - win.outerHeight;
+  const widthDiff = Math.max(win.screen.availWidth - win.outerWidth, 0);
+  const heightDiff = Math.max(win.screen.availHeight - win.outerHeight, 0);
 
   if (widthDiff || heightDiff) {
-    resizeDone = BrowserTestUtils.waitForEvent(win, "resize", false);
+    info(
+      `resizing window... widthDiff=${widthDiff} - heightDiff=${heightDiff}`
+    );
     win.windowUtils.ensureDirtyRootFrame();
     win.resizeBy(widthDiff, heightDiff);
+  } else {
+    info(`not resizing window!`);
   }
 
-  return resizeDone;
+  // Make sure we wait for window size to have settled.
+  let lastOuterWidth = win.outerWidth;
+  let lastOuterHeight = win.outerHeight;
+  let sameSizeTimes = 0;
+  await TestUtils.waitForCondition(() => {
+    const isSameSize =
+      win.outerWidth === lastOuterWidth && win.outerHeight === lastOuterHeight;
+    if (!isSameSize) {
+      lastOuterWidth = win.outerWidth;
+      lastOuterHeight = win.outerHeight;
+    }
+    sameSizeTimes = isSameSize ? sameSizeTimes + 1 : 0;
+    return sameSizeTimes === 10;
+  }, "Wait for the chrome window size to settle");
 };

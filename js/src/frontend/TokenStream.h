@@ -217,12 +217,11 @@
 #include "util/Unicode.h"
 #include "vm/ErrorReporting.h"
 
-struct JS_PUBLIC_API JSContext;
 struct KeywordInfo;
 
 namespace js {
 
-class ErrorContext;
+class FrontendContext;
 
 namespace frontend {
 
@@ -433,7 +432,7 @@ class SourceCoords {
   }
 
  public:
-  SourceCoords(ErrorContext* ec, uint32_t initialLineNumber,
+  SourceCoords(FrontendContext* fc, uint32_t initialLineNumber,
                uint32_t initialOffset);
 
   [[nodiscard]] bool add(uint32_t lineNum, uint32_t lineStartOffset);
@@ -566,9 +565,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
  private:
   // Constant-at-construction fields.
 
-  JSContext* const cx;
-
-  ErrorContext* const ec;
+  FrontendContext* const fc;
 
   /** Options used for parsing/tokenizing. */
   const JS::ReadOnlyCompileOptions& options_;
@@ -727,7 +724,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
   // End of fields.
 
  public:
-  TokenStreamAnyChars(JSContext* cx, ErrorContext* ec,
+  TokenStreamAnyChars(FrontendContext* fc,
                       const JS::ReadOnlyCompileOptions& options,
                       StrictModeGetter* smg);
 
@@ -881,8 +878,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
 
   char16_t* sourceMapURL() { return sourceMapURL_.get(); }
 
-  ErrorContext* context() const { return ec; }
-  JSContext* jsContext() const { return cx; }
+  FrontendContext* context() const { return fc; }
 
   using LineToken = SourceCoords::LineToken;
 
@@ -1573,8 +1569,7 @@ using CharBuffer = Vector<char16_t, 32>;
 
 class TokenStreamCharsShared {
  protected:
-  JSContext* cx;
-  ErrorContext* ec;
+  FrontendContext* fc;
 
   /**
    * Buffer transiently used to store sequences of identifier or string code
@@ -1590,12 +1585,12 @@ class TokenStreamCharsShared {
   StringTaint _taint;
 
  protected:
-  explicit TokenStreamCharsShared(JSContext* cx, ErrorContext* ec,
+  explicit TokenStreamCharsShared(FrontendContext* fc,
                                   ParserAtomsTable* parserAtoms, const StringTaint& taint)
-      : cx(cx), ec(ec), charBuffer(ec), parserAtoms(parserAtoms), _taint(taint) {}
+      : fc(fc), charBuffer(fc), parserAtoms(parserAtoms), _taint(taint) {}
 
   [[nodiscard]] bool copyCharBufferTo(
-      JSContext* cx, UniquePtr<char16_t[], JS::FreePolicy>* destination);
+      UniquePtr<char16_t[], JS::FreePolicy>* destination);
 
   /**
    * Determine whether a code unit constitutes a complete ASCII code point.
@@ -1609,7 +1604,7 @@ class TokenStreamCharsShared {
 
   TaggedParserAtomIndex drainCharBufferIntoAtom() {
     // Add to parser atoms table.
-    auto atom = this->parserAtoms->internChar16(ec, charBuffer.begin(),
+    auto atom = this->parserAtoms->internChar16(fc, charBuffer.begin(),
                                                 charBuffer.length());
     charBuffer.clear();
     return atom;
@@ -1638,9 +1633,8 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
   // End of fields.
 
  protected:
-  TokenStreamCharsBase(JSContext* cx, ErrorContext* ec,
-                       ParserAtomsTable* parserAtoms, const Unit* units,
-                       size_t length, const StringTaint& taint, size_t startOffset);
+  TokenStreamCharsBase(FrontendContext* fc, ParserAtomsTable* parserAtoms,
+                       const Unit* units, size_t length, const StringTaint& taint, size_t startOffset);
 
   /**
    * Convert a non-EOF code unit returned by |getCodeUnit()| or
@@ -1741,14 +1735,14 @@ template <>
 MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<char16_t>::atomizeSourceChars(
     mozilla::Span<const char16_t> units) {
-  return this->parserAtoms->internChar16(ec, units.data(), units.size());
+  return this->parserAtoms->internChar16(fc, units.data(), units.size());
 }
 
 template <>
 /* static */ MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<mozilla::Utf8Unit>::atomizeSourceChars(
     mozilla::Span<const mozilla::Utf8Unit> units) {
-  return this->parserAtoms->internUtf8(ec, units.data(), units.size());
+  return this->parserAtoms->internUtf8(fc, units.data(), units.size());
 }
 
 template <typename Unit>
@@ -2498,8 +2492,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   friend class TokenStreamPosition;
 
  public:
-  TokenStreamSpecific(JSContext* cx, ErrorContext* ec,
-                      ParserAtomsTable* parserAtoms,
+  TokenStreamSpecific(FrontendContext* fc, ParserAtomsTable* parserAtoms,
                       const JS::ReadOnlyCompileOptions& options,
                       const Unit* units, size_t length, const StringTaint& taint);
 
@@ -2557,7 +2550,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
  private:
   // Implement ErrorReportMixin.
 
-  ErrorContext* getContext() const override {
+  FrontendContext* getContext() const override {
     return anyCharsAccess().context();
   }
 
@@ -2938,19 +2931,19 @@ class MOZ_STACK_CLASS TokenStream
   using Unit = char16_t;
 
  public:
-  TokenStream(JSContext* cx, ErrorContext* ec, ParserAtomsTable* parserAtoms,
+  TokenStream(FrontendContext* fc, ParserAtomsTable* parserAtoms,
               const JS::ReadOnlyCompileOptions& options, const Unit* units,
               size_t length, const StringTaint& taint, StrictModeGetter* smg)
-      : TokenStreamAnyChars(cx, ec, options, smg),
+      : TokenStreamAnyChars(fc, options, smg),
         TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(
-            cx, ec, parserAtoms, options, units, length, taint) {}
+            fc, parserAtoms, options, units, length, taint) {}
 };
 
 class MOZ_STACK_CLASS DummyTokenStream final : public TokenStream {
  public:
-  DummyTokenStream(JSContext* cx, ErrorContext* ec,
+  DummyTokenStream(FrontendContext* fc,
                    const JS::ReadOnlyCompileOptions& options)
-      : TokenStream(cx, ec, nullptr, options, nullptr, 0, EmptyTaint, nullptr) {}
+      : TokenStream(fc, nullptr, options, nullptr, 0, EmptyTaint, nullptr) {}
 };
 
 template <class TokenStreamSpecific>

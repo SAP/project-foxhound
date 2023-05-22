@@ -490,6 +490,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
       mozilla::StyleFontFaceSourceFormatKeyword aFormatHint,
       mozilla::StyleFontFaceSourceTechFlags aTechFlags);
 
+  bool IsKnownIconFontFamily(const nsAtom* aFamilyName) const;
+
   virtual bool DidRenderingDeviceReset(
       DeviceResetReason* aResetReason = nullptr) {
     return false;
@@ -818,6 +820,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   virtual void InitWebGPUConfig();
   virtual void InitWindowOcclusionConfig();
   void InitBackdropFilterConfig();
+  void InitAcceleratedCanvas2DConfig();
 
   virtual void GetPlatformDisplayInfo(mozilla::widget::InfoObject& aObj) {}
 

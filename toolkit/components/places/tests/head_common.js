@@ -41,6 +41,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
@@ -66,6 +67,12 @@ XPCOMUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function() {
       "uNCIvPg0KICA8cmVjdCB4PSI0NSIgeT0iMzkuOSIgd2lkdGg9IjEwLjEi" +
       "IGhlaWdodD0iNDEuOCIvPg0KPC9zdmc%2BDQo%3D"
   );
+});
+
+XPCOMUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
 });
 
 var gTestDir = do_get_cwd();

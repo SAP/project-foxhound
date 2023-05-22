@@ -52,7 +52,7 @@ class SourceText;
 
 namespace js {
 
-class ErrorContext;
+class FrontendContext;
 class ScriptSource;
 
 class VarScope;
@@ -648,7 +648,7 @@ class ScriptSource {
       js_delete(this);
     }
   }
-  [[nodiscard]] bool initFromOptions(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool initFromOptions(FrontendContext* fc,
                                      const JS::ReadOnlyCompileOptions& options);
 
   /**
@@ -657,8 +657,9 @@ class ScriptSource {
    */
   static constexpr size_t MinimumCompressibleLength = 256;
 
-  SharedImmutableString getOrCreateStringZ(ErrorContext* ec, UniqueChars&& str);
-  SharedImmutableTwoByteString getOrCreateStringZ(ErrorContext* ec,
+  SharedImmutableString getOrCreateStringZ(FrontendContext* fc,
+                                           UniqueChars&& str);
+  SharedImmutableTwoByteString getOrCreateStringZ(FrontendContext* fc,
                                                   UniqueTwoByteChars&& str);
 
  private:
@@ -673,7 +674,7 @@ class ScriptSource {
 
   // Assign source data from |srcBuf| to this recently-created |ScriptSource|.
   template <typename Unit>
-  [[nodiscard]] bool assignSource(ErrorContext* ec,
+  [[nodiscard]] bool assignSource(FrontendContext* fc,
                                   const JS::ReadOnlyCompileOptions& options,
                                   JS::SourceText<Unit>& srcBuf);
 
@@ -1000,16 +1001,15 @@ class ScriptSource {
   const char* filename() const {
     return filename_ ? filename_.chars() : nullptr;
   }
-  [[nodiscard]] bool setFilename(JSContext* cx, ErrorContext* ec,
-                                 const char* filename);
-  [[nodiscard]] bool setFilename(ErrorContext* ec, UniqueChars&& filename);
+  [[nodiscard]] bool setFilename(FrontendContext* fc, const char* filename);
+  [[nodiscard]] bool setFilename(FrontendContext* fc, UniqueChars&& filename);
 
   const char* introducerFilename() const {
     return introducerFilename_ ? introducerFilename_.chars() : filename();
   }
-  [[nodiscard]] bool setIntroducerFilename(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool setIntroducerFilename(FrontendContext* fc,
                                            const char* filename);
-  [[nodiscard]] bool setIntroducerFilename(ErrorContext* ec,
+  [[nodiscard]] bool setIntroducerFilename(FrontendContext* fc,
                                            UniqueChars&& filename);
 
   bool hasIntroductionType() const { return introductionType_; }
@@ -1021,17 +1021,15 @@ class ScriptSource {
   uint32_t id() const { return id_; }
 
   // Display URLs
-  [[nodiscard]] bool setDisplayURL(JSContext* cx, ErrorContext* ec,
-                                   const char16_t* url);
-  [[nodiscard]] bool setDisplayURL(JSContext* cx, ErrorContext* ec,
+  [[nodiscard]] bool setDisplayURL(FrontendContext* fc, const char16_t* url);
+  [[nodiscard]] bool setDisplayURL(FrontendContext* fc,
                                    UniqueTwoByteChars&& url);
   bool hasDisplayURL() const { return bool(displayURL_); }
   const char16_t* displayURL() { return displayURL_.chars(); }
 
   // Source maps
-  [[nodiscard]] bool setSourceMapURL(JSContext* cx, ErrorContext* ec,
-                                     const char16_t* url);
-  [[nodiscard]] bool setSourceMapURL(ErrorContext* ec,
+  [[nodiscard]] bool setSourceMapURL(FrontendContext* fc, const char16_t* url);
+  [[nodiscard]] bool setSourceMapURL(FrontendContext* fc,
                                      UniqueTwoByteChars&& url);
   bool hasSourceMapURL() const { return bool(sourceMapURL_); }
   const char16_t* sourceMapURL() { return sourceMapURL_.chars(); }
@@ -1117,6 +1115,7 @@ class ScriptSourceObject : public NativeObject {
   }
 
   void setPrivate(JSRuntime* rt, const Value& value);
+  void clearPrivate(JSRuntime* rt);
 
   void setIntroductionScript(const Value& introductionScript) {
     setReservedSlot(INTRODUCTION_SCRIPT_SLOT, introductionScript);
@@ -1241,9 +1240,9 @@ class ScriptWarmUpData {
     MOZ_ASSERT(isWarmUpCount());
     setWarmUpCount(count);
   }
-  void incWarmUpCount(uint32_t amount) {
+  void incWarmUpCount() {
     MOZ_ASSERT(isWarmUpCount());
-    data_ += uintptr_t(amount) << NumTagBits;
+    data_ += uintptr_t(1) << NumTagBits;
   }
 
   jit::JitScript* toJitScript() const {
@@ -1900,7 +1899,7 @@ class JSScript : public js::BaseScript {
 
  public:
   inline uint32_t getWarmUpCount() const;
-  inline void incWarmUpCounter(uint32_t amount = 1);
+  inline void incWarmUpCounter();
   inline void resetWarmUpCounterForGC();
 
   void resetWarmUpCounterToDelayIonCompilation();
@@ -2179,8 +2178,7 @@ struct ScriptAndCounts {
   }
 };
 
-extern JS::UniqueChars FormatIntroducedFilename(JSContext* cx,
-                                                const char* filename,
+extern JS::UniqueChars FormatIntroducedFilename(const char* filename,
                                                 unsigned lineno,
                                                 const char* introducer);
 

@@ -55,12 +55,14 @@ var PREF_EM_CHECK_COMPATIBILITY = MOZ_COMPATIBILITY_NIGHTLY
   ? PREF_EM_CHECK_COMPATIBILITY_BASE + ".nightly"
   : undefined;
 
-const WEBAPI_INSTALL_HOSTS = ["addons.mozilla.org"];
-const WEBAPI_TEST_INSTALL_HOSTS = [
-  "addons.allizom.org",
-  "addons-dev.allizom.org",
-  "example.com",
-];
+const WEBAPI_INSTALL_HOSTS =
+  AppConstants.MOZ_APP_NAME !== "thunderbird"
+    ? ["addons.mozilla.org"]
+    : ["addons.thunderbird.net"];
+const WEBAPI_TEST_INSTALL_HOSTS =
+  AppConstants.MOZ_APP_NAME !== "thunderbird"
+    ? ["addons.allizom.org", "addons-dev.allizom.org", "example.com"]
+    : ["addons-stage.thunderbird.net", "example.com"];
 
 const AMO_ATTRIBUTION_ALLOWED_SOURCES = ["amo", "disco"];
 const AMO_ATTRIBUTION_DATA_KEYS = [
@@ -76,29 +78,14 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 );
 // This global is overridden by xpcshell tests, and therefore cannot be
 // a const.
-var { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+var { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 const { PromiseUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 const lazy = {};
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
-  AbuseReporter: "resource://gre/modules/AbuseReporter.jsm",
-  Extension: "resource://gre/modules/Extension.jsm",
-  RemoteSettings: "resource://services-settings/remote-settings.js",
-  TelemetryTimestamps: "resource://gre/modules/TelemetryTimestamps.jsm",
-});
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "WEBEXT_POSTDOWNLOAD_THIRD_PARTY",
-  PREF_EM_POSTDOWNLOAD_THIRD_PARTY,
-  false
-);
 
 ChromeUtils.defineESModuleGetters(lazy, {
   isGatedPermissionType:
@@ -107,7 +94,22 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
   isPrincipalInSitePermissionsBlocklist:
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
+  TelemetryTimestamps: "resource://gre/modules/TelemetryTimestamps.sys.mjs",
 });
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
+  AbuseReporter: "resource://gre/modules/AbuseReporter.jsm",
+  Extension: "resource://gre/modules/Extension.jsm",
+  RemoteSettings: "resource://services-settings/remote-settings.js",
+});
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "WEBEXT_POSTDOWNLOAD_THIRD_PARTY",
+  PREF_EM_POSTDOWNLOAD_THIRD_PARTY,
+  false
+);
 
 // Initialize the WebExtension process script service as early as possible,
 // since it needs to be able to track things like new frameLoader globals that
@@ -1303,6 +1305,11 @@ var AddonManagerInternal = {
             })
           );
         }
+        Services.obs.notifyObservers(
+          null,
+          "addons-background-updates-found",
+          updates.length
+        );
         await Promise.all(updates);
       }
 

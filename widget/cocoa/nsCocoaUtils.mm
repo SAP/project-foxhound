@@ -13,6 +13,7 @@
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "ImageRegion.h"
+#include "nsClipboard.h"
 #include "nsCocoaUtils.h"
 #include "nsChildView.h"
 #include "nsMenuBarX.h"
@@ -25,14 +26,17 @@
 #include "nsIRunnable.h"
 #include "nsIAppWindow.h"
 #include "nsIBaseWindow.h"
+#include "nsITransferable.h"
 #include "nsMenuUtilsX.h"
 #include "nsNetUtil.h"
+#include "nsPrimitiveHelpers.h"
 #include "nsToolkit.h"
 #include "nsCRT.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -68,6 +72,41 @@ LazyLogModule gCocoaUtilsLog("nsCocoaUtils");
 nsCocoaUtils::PromiseArray nsCocoaUtils::sVideoCapturePromises;
 nsCocoaUtils::PromiseArray nsCocoaUtils::sAudioCapturePromises;
 StaticMutex nsCocoaUtils::sMediaCaptureMutex;
+
+/**
+ * Pasteboard types
+ */
+NSString* const kPublicUrlPboardType = @"public.url";
+NSString* const kPublicUrlNamePboardType = @"public.url-name";
+NSString* const kUrlsWithTitlesPboardType = @"WebURLsWithTitlesPboardType";
+NSString* const kMozWildcardPboardType = @"org.mozilla.MozillaWildcard";
+NSString* const kMozCustomTypesPboardType = @"org.mozilla.custom-clipdata";
+NSString* const kMozFileUrlsPboardType = @"org.mozilla.file-urls";
+
+@implementation UTIHelper
+
++ (NSString*)stringFromPboardType:(NSString*)aType {
+  if ([aType isEqualToString:kMozWildcardPboardType] ||
+      [aType isEqualToString:kMozCustomTypesPboardType] ||
+      [aType isEqualToString:kPublicUrlPboardType] ||
+      [aType isEqualToString:kPublicUrlNamePboardType] ||
+      [aType isEqualToString:kMozFileUrlsPboardType] ||
+      [aType isEqualToString:(NSString*)kPasteboardTypeFileURLPromise] ||
+      [aType isEqualToString:(NSString*)kPasteboardTypeFilePromiseContent] ||
+      [aType isEqualToString:(NSString*)kUTTypeFileURL] ||
+      [aType isEqualToString:NSPasteboardTypeString] ||
+      [aType isEqualToString:NSPasteboardTypeHTML] || [aType isEqualToString:NSPasteboardTypeRTF] ||
+      [aType isEqualToString:NSPasteboardTypeTIFF] || [aType isEqualToString:NSPasteboardTypePNG]) {
+    return [NSString stringWithString:aType];
+  }
+  NSString* dynamicType = (NSString*)UTTypeCreatePreferredIdentifierForTag(
+      kUTTagClassNSPboardType, (CFStringRef)aType, kUTTypeData);
+  NSString* result = [NSString stringWithString:dynamicType];
+  [dynamicType release];
+  return result;
+}
+
+@end  // UTIHelper
 
 static float MenuBarScreenHeight() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
@@ -211,6 +250,55 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget() {
   }
 
   return hiddenWindowWidget;
+}
+
+BOOL nsCocoaUtils::WasLaunchedAtLogin() {
+  ProcessSerialNumber processSerialNumber = {0, kCurrentProcess};
+  ProcessInfoRec processInfoRec = {};
+  processInfoRec.processInfoLength = sizeof(processInfoRec);
+
+  // There is currently no replacement for ::GetProcessInformation, which has
+  // been deprecated since macOS 10.9.
+  if (::GetProcessInformation(&processSerialNumber, &processInfoRec) == noErr) {
+    ProcessInfoRec parentProcessInfo = {};
+    parentProcessInfo.processInfoLength = sizeof(parentProcessInfo);
+    if (::GetProcessInformation(&processInfoRec.processLauncher, &parentProcessInfo) == noErr) {
+      return parentProcessInfo.processSignature == 'lgnw';
+    }
+  }
+  return NO;
+}
+
+BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLoginImpl() {
+  // Check if we were launched by macOS as a result of having
+  // "Reopen windows..." selected during a restart.
+  if (!WasLaunchedAtLogin()) {
+    return NO;
+  }
+
+  CFStringRef lgnwPlistName = CFSTR("com.apple.loginwindow");
+  CFStringRef saveStateKey = CFSTR("TALLogoutSavesState");
+  CFPropertyListRef lgnwPlist =
+      (CFPropertyListRef)(::CFPreferencesCopyAppValue(saveStateKey, lgnwPlistName));
+  // The .plist doesn't exist unless the user changed the "Reopen windows..."
+  // preference. If it doesn't exist, restore by default (as this is the macOS
+  // default).
+  // https://developer.apple.com/library/mac/documentation/macosx/conceptual/bpsystemstartup/chapters/CustomLogin.html
+  if (!lgnwPlist) {
+    return YES;
+  }
+
+  if (CFBooleanRef shouldRestoreState = static_cast<CFBooleanRef>(lgnwPlist)) {
+    return ::CFBooleanGetValue(shouldRestoreState);
+  }
+
+  return NO;
+}
+
+BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
+  BOOL shouldRestore = ShouldRestoreStateDueToLaunchAtLoginImpl();
+  Telemetry::ScalarSet(Telemetry::ScalarID::STARTUP_IS_RESTORED_BY_MACOS, !!shouldRestore);
+  return shouldRestore;
 }
 
 void nsCocoaUtils::PrepareForNativeAppModalDialog() {
@@ -372,7 +460,7 @@ nsresult nsCocoaUtils::CreateNSImageFromCGImage(CGImageRef aInputImage, NSImage*
   [NSGraphicsContext setCurrentContext:context];
 
   // Get the Quartz context and draw.
-  CGContextRef imageContext = (CGContextRef)[[NSGraphicsContext currentContext] graphicsPort];
+  CGContextRef imageContext = [[NSGraphicsContext currentContext] CGContext];
   ::CGContextDrawImage(imageContext, *(CGRect*)&imageRect, aInputImage);
 
   [NSGraphicsContext restoreGraphicsState];
@@ -625,7 +713,6 @@ void nsCocoaUtils::InitInputEvent(WidgetInputEvent& aInputEvent, NSEvent* aNativ
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   aInputEvent.mModifiers = ModifiersForEvent(aNativeEvent);
-  aInputEvent.mTime = PR_IntervalNow();
   aInputEvent.mTimeStamp = GetEventTimeStamp([aNativeEvent timestamp]);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
@@ -1494,9 +1581,11 @@ bool static ShouldConsiderStartingSwipeFromEvent(NSEvent* anEvent) {
          [anEvent hasPreciseScrollingDeltas] && [NSEvent isSwipeTrackingFromScrollEventsEnabled];
 }
 
-PanGestureInput nsCocoaUtils::CreatePanGestureEvent(
-    NSEvent* aNativeEvent, uint32_t aTime, TimeStamp aTimeStamp, const ScreenPoint& aPanStartPoint,
-    const ScreenPoint& aPreciseDelta, const gfx::IntPoint& aLineOrPageDelta, Modifiers aModifiers) {
+PanGestureInput nsCocoaUtils::CreatePanGestureEvent(NSEvent* aNativeEvent, TimeStamp aTimeStamp,
+                                                    const ScreenPoint& aPanStartPoint,
+                                                    const ScreenPoint& aPreciseDelta,
+                                                    const gfx::IntPoint& aLineOrPageDelta,
+                                                    Modifiers aModifiers) {
   PanGestureInput::PanGestureType type = PanGestureTypeForEvent(aNativeEvent);
   // Always force zero deltas on event types that shouldn't cause any scrolling,
   // so that we don't dispatch DOM wheel events for them.
@@ -1504,7 +1593,7 @@ PanGestureInput nsCocoaUtils::CreatePanGestureEvent(
       type == PanGestureInput::PANGESTURE_MAYSTART || type == PanGestureInput::PANGESTURE_CANCELLED;
 
   PanGestureInput panEvent(
-      type, aTime, aTimeStamp, aPanStartPoint, !shouldIgnoreDeltas ? aPreciseDelta : ScreenPoint(),
+      type, aTimeStamp, aPanStartPoint, !shouldIgnoreDeltas ? aPreciseDelta : ScreenPoint(),
       aModifiers,
       PanGestureInput::IsEligibleForSwipe(ShouldConsiderStartingSwipeFromEvent(aNativeEvent)));
 
@@ -1513,4 +1602,216 @@ PanGestureInput nsCocoaUtils::CreatePanGestureEvent(
   }
 
   return panEvent;
+}
+
+bool nsCocoaUtils::IsValidPasteboardType(NSString* aAvailableType, bool aAllowFileURL) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  // Prevent exposing fileURL for non-fileURL type.
+  // We need URL provided by dropped webloc file, but don't need file's URL.
+  // kUTTypeFileURL is returned by [NSPasteboard availableTypeFromArray:] for
+  // kPublicUrlPboardType, since it conforms to kPublicUrlPboardType.
+  bool isValid = true;
+  if (!aAllowFileURL &&
+      [aAvailableType isEqualToString:[UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL]]) {
+    isValid = false;
+  }
+
+  return isValid;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(false);
+}
+
+NSString* nsCocoaUtils::GetStringForTypeFromPasteboardItem(NSPasteboardItem* aItem,
+                                                           const NSString* aType,
+                                                           bool aAllowFileURL) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* availableType =
+      [aItem availableTypeFromArray:[NSArray arrayWithObjects:(id)aType, nil]];
+  if (availableType && IsValidPasteboardType(availableType, aAllowFileURL)) {
+    return [aItem stringForType:(id)availableType];
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+NSString* nsCocoaUtils::GetFilePathFromPasteboardItem(NSPasteboardItem* aItem) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* urlString = GetStringForTypeFromPasteboardItem(
+      aItem, [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL], true);
+  if (urlString) {
+    NSURL* url = [NSURL URLWithString:urlString];
+    if (url) {
+      return [url path];
+    }
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+NSString* nsCocoaUtils::GetTitleForURLFromPasteboardItem(NSPasteboardItem* item) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  NSString* name = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+      item, [UTIHelper stringFromPboardType:kPublicUrlNamePboardType]);
+  if (name) {
+    return name;
+  }
+
+  NSString* filePath = nsCocoaUtils::GetFilePathFromPasteboardItem(item);
+  if (filePath) {
+    return [filePath lastPathComponent];
+  }
+
+  return nil;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+void nsCocoaUtils::SetTransferDataForTypeFromPasteboardItem(nsITransferable* aTransferable,
+                                                            const nsCString& aFlavor,
+                                                            NSPasteboardItem* aItem) {
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  if (!aTransferable || !aItem) {
+    return;
+  }
+
+  MOZ_LOG(gCocoaUtilsLog, LogLevel::Info,
+          ("nsCocoaUtils::SetTransferDataForTypeFromPasteboardItem: looking for pasteboard data of "
+           "type %s\n",
+           aFlavor.get()));
+
+  if (aFlavor.EqualsLiteral(kFileMime)) {
+    NSString* filePath = nsCocoaUtils::GetFilePathFromPasteboardItem(aItem);
+    if (!filePath) {
+      return;
+    }
+
+    unsigned int stringLength = [filePath length];
+    unsigned int dataLength = (stringLength + 1) * sizeof(char16_t);  // in bytes
+    char16_t* clipboardDataPtr = (char16_t*)malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+
+    [filePath getCharacters:reinterpret_cast<unichar*>(clipboardDataPtr)];
+    clipboardDataPtr[stringLength] = 0;  // null terminate
+
+    nsCOMPtr<nsIFile> file;
+    nsresult rv = NS_NewLocalFile(nsDependentString(clipboardDataPtr), true, getter_AddRefs(file));
+    free(clipboardDataPtr);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    aTransferable->SetTransferData(aFlavor.get(), file);
+    return;
+  }
+
+  if (aFlavor.EqualsLiteral(kCustomTypesMime)) {
+    NSString* availableType =
+        [aItem availableTypeFromArray:[NSArray arrayWithObject:kMozCustomTypesPboardType]];
+    if (!availableType || !nsCocoaUtils::IsValidPasteboardType(availableType, false)) {
+      return;
+    }
+    NSData* pasteboardData = [aItem dataForType:availableType];
+    if (!pasteboardData) {
+      return;
+    }
+
+    unsigned int dataLength = [pasteboardData length];
+    void* clipboardDataPtr = malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+    [pasteboardData getBytes:clipboardDataPtr length:dataLength];
+
+    nsCOMPtr<nsISupports> genericDataWrapper;
+    nsPrimitiveHelpers::CreatePrimitiveForData(aFlavor, clipboardDataPtr, dataLength,
+                                               getter_AddRefs(genericDataWrapper));
+
+    aTransferable->SetTransferData(aFlavor.get(), genericDataWrapper);
+    free(clipboardDataPtr);
+    return;
+  }
+
+  NSString* pString = nil;
+  if (aFlavor.EqualsLiteral(kTextMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeString]);
+  } else if (aFlavor.EqualsLiteral(kHTMLMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeHTML]);
+  } else if (aFlavor.EqualsLiteral(kURLMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:kPublicUrlPboardType]);
+    if (pString) {
+      NSString* title = GetTitleForURLFromPasteboardItem(aItem);
+      if (!title) {
+        title = pString;
+      }
+      pString = [NSString stringWithFormat:@"%@\n%@", pString, title];
+    }
+  } else if (aFlavor.EqualsLiteral(kURLDataMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:kPublicUrlPboardType]);
+  } else if (aFlavor.EqualsLiteral(kURLDescriptionMime)) {
+    pString = GetTitleForURLFromPasteboardItem(aItem);
+  } else if (aFlavor.EqualsLiteral(kRTFMime)) {
+    pString = nsCocoaUtils::GetStringForTypeFromPasteboardItem(
+        aItem, [UTIHelper stringFromPboardType:NSPasteboardTypeRTF]);
+  }
+  if (pString) {
+    NSData* stringData;
+    bool isRTF = aFlavor.EqualsLiteral(kRTFMime);
+    if (isRTF) {
+      stringData = [pString dataUsingEncoding:NSASCIIStringEncoding];
+    } else {
+      stringData = [pString dataUsingEncoding:NSUnicodeStringEncoding];
+    }
+    unsigned int dataLength = [stringData length];
+    void* clipboardDataPtr = malloc(dataLength);
+    if (!clipboardDataPtr) {
+      return;
+    }
+    [stringData getBytes:clipboardDataPtr length:dataLength];
+
+    // The DOM only wants LF, so convert from MacOS line endings to DOM line endings.
+    int32_t signedDataLength = dataLength;
+    nsLinebreakHelpers::ConvertPlatformToDOMLinebreaks(isRTF, &clipboardDataPtr, &signedDataLength);
+    dataLength = signedDataLength;
+
+    // skip BOM (Byte Order Mark to distinguish little or big endian)
+    char16_t* clipboardDataPtrNoBOM = (char16_t*)clipboardDataPtr;
+    if ((dataLength > 2) &&
+        ((clipboardDataPtrNoBOM[0] == 0xFEFF) || (clipboardDataPtrNoBOM[0] == 0xFFFE))) {
+      dataLength -= sizeof(char16_t);
+      clipboardDataPtrNoBOM += 1;
+    }
+
+    nsCOMPtr<nsISupports> genericDataWrapper;
+    nsPrimitiveHelpers::CreatePrimitiveForData(aFlavor, clipboardDataPtrNoBOM, dataLength,
+                                               getter_AddRefs(genericDataWrapper));
+    aTransferable->SetTransferData(aFlavor.get(), genericDataWrapper);
+    free(clipboardDataPtr);
+    return;
+  }
+
+  // We have never supported this on Mac OS X, we should someday. Normally dragging images
+  // in is accomplished with a file path drag instead of the image data itself.
+  /*
+  if (aFlavor.EqualsLiteral(kPNGImageMime) || aFlavor.EqualsLiteral(kJPEGImageMime) ||
+      aFlavor.EqualsLiteral(kJPGImageMime) || aFlavor.EqualsLiteral(kGIFImageMime)) {
+
+  }
+  */
+
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }

@@ -14,12 +14,12 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Region: "resource://gre/modules/Region.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
 });
 
 const PREF_URLBAR_BRANCH = "browser.urlbar.";
@@ -130,7 +130,8 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Applies URL highlighting and other styling to the text in the urlbar input.
   ["formatting.enabled", true],
 
-  // Whether search engagement telemetry should be recorded.
+  // Whether search engagement telemetry should be recorded. This pref is a
+  // fallback for the Nimbus variable `searchEngagementTelemetryEnabled`.
   ["searchEngagementTelemetry.enabled", false],
 
   // Interval time until taking pause impression telemetry.
@@ -178,16 +179,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // are styled to look like search engine results instead of the usual history
   // results.
   ["restyleSearches", false],
-
-  // Controls the composition of results.  The default value is computed by
-  // calling:
-  //   makeResultGroups({
-  //     showSearchSuggestionsFirst: UrlbarPrefs.get(
-  //       "showSearchSuggestionsFirst"
-  //     ),
-  //   });
-  // The value of this pref is a JSON string of the root group.  See below.
-  ["resultGroups", ""],
 
   // If true, we show tail suggestions when available.
   ["richSuggestions.tail", true],
@@ -253,11 +244,13 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether we will match QuickActions within a phrase and not only a prefix.
   ["quickactions.matchInPhrase", true],
 
-  // Whether we show QuickActions when in zero-prefix.
-  ["quickactions.showInZeroPrefix", false],
-
   // Show multiple actions in a random order.
   ["quickactions.randomOrderActions", false],
+
+  // The minumum amount of characters required for the user to input before
+  // matching actions. Setting this to 0 will show the actions in the
+  // zero prefix state.
+  ["quickactions.minimumSearchString", 3],
 
   // Whether results will include non-sponsored quick suggest suggestions.
   ["suggest.quicksuggest.nonsponsored", false],
@@ -397,6 +390,11 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Feature gate pref for weather suggestions in the urlbar.
   ["weather.featureGate", false],
+
+  // If true, weather suggestions will be shown on "zero prefix", which means
+  // when the user focuses the urlbar without typing anything. If false, the
+  // user must type weather-related keywords to show weather suggestions.
+  ["weather.zeroPrefix", true],
 ]);
 const PREF_OTHER_DEFAULTS = new Map([
   ["browser.fixup.dns_first_for_single_words", false],
@@ -486,13 +484,13 @@ function makeResultGroups({ showSearchSuggestionsFirst }) {
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
         ],
       },
       // extensions using the omnibox API
       {
         group: lazy.UrlbarUtils.RESULT_GROUP.OMNIBOX,
-        availableSpan: lazy.UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
       },
     ],
   };
@@ -674,20 +672,13 @@ class Preferences {
     return makeResultGroups(options);
   }
 
-  /**
-   * Sets the value of the resultGroups pref to the current default groups.
-   * This should be called from BrowserGlue._migrateUI when the default groups
-   * are modified.
-   */
-  migrateResultGroups() {
-    this.set(
-      "resultGroups",
-      JSON.stringify(
-        makeResultGroups({
-          showSearchSuggestionsFirst: this.get("showSearchSuggestionsFirst"),
-        })
-      )
-    );
+  get resultGroups() {
+    if (!this.#resultGroups) {
+      this.#resultGroups = makeResultGroups({
+        showSearchSuggestionsFirst: this.get("showSearchSuggestionsFirst"),
+      });
+    }
+    return this.#resultGroups;
   }
 
   /**
@@ -900,7 +891,7 @@ class Preferences {
     }
     if (!this.FIREFOX_SUGGEST_DEFAULT_PREFS.hasOwnProperty(scenario)) {
       scenario = "history";
-      Cu.reportError(`Unrecognized Firefox Suggest scenario "${scenario}"`);
+      console.error(`Unrecognized Firefox Suggest scenario "${scenario}"`);
     }
     return scenario;
   }
@@ -1010,7 +1001,7 @@ class Preferences {
       try {
         this[methodName](scenario);
       } catch (error) {
-        Cu.reportError(
+        console.error(
           `Error migrating Firefox Suggest prefs to version ${nextVersion}: ` +
             error
         );
@@ -1268,12 +1259,7 @@ class Preferences {
         this._map.delete("autoFillAdaptiveHistoryUseCountThreshold");
         return;
       case "showSearchSuggestionsFirst":
-        this.set(
-          "resultGroups",
-          JSON.stringify(
-            makeResultGroups({ showSearchSuggestionsFirst: this.get(pref) })
-          )
-        );
+        this.#resultGroups = null;
         return;
     }
 
@@ -1387,13 +1373,6 @@ class Preferences {
         }
         return val;
       }
-      case "resultGroups":
-        try {
-          return JSON.parse(this._readPref(pref));
-        } catch (ex) {}
-        return makeResultGroups({
-          showSearchSuggestionsFirst: this.get("showSearchSuggestionsFirst"),
-        });
       case "shouldHandOffToSearchMode":
         return this.shouldHandOffToSearchModePrefs.some(
           prefName => !this.get(prefName)
@@ -1483,7 +1462,7 @@ class Preferences {
   /**
    * Initializes the showSearchSuggestionsFirst pref based on the matchGroups
    * pref.  This function can be removed when the corresponding UI migration in
-   * BrowserGlue.jsm is no longer needed.
+   * BrowserGlue.sys.mjs is no longer needed.
    */
   initializeShowSearchSuggestionsFirstPref() {
     let matchGroups = [];
@@ -1517,6 +1496,21 @@ class Preferences {
       this.onPrefChanged("showSearchSuggestionsFirst");
     }
   }
+
+  /**
+   * Return whether or not persisted search terms is enabled.
+   *
+   * @returns {boolean} true: if enabled.
+   */
+  isPersistedSearchTermsEnabled() {
+    return (
+      this.get("showSearchTermsFeatureGate") &&
+      this.get("showSearchTerms.enabled") &&
+      !this.get("browser.search.widget.inNavBar")
+    );
+  }
+
+  #resultGroups = null;
 }
 
 export var UrlbarPrefs = new Preferences();

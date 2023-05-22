@@ -397,6 +397,12 @@ static const unsigned PushedFP = 16;
 static const unsigned SetFP = 20;
 static const unsigned PoppedFP = 4;
 static const unsigned PoppedFPJitEntry = 0;
+#elif defined(JS_CODEGEN_RISCV64)
+static const unsigned PushedRetAddr = 8;
+static const unsigned PushedFP = 16;
+static const unsigned SetFP = 20;
+static const unsigned PoppedFP = 4;
+static const unsigned PoppedFPJitEntry = 0;
 #elif defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_WASM32)
 // Synthetic values to satisfy asserts and avoid compiler warnings.
 static const unsigned PushedRetAddr = 0;
@@ -441,7 +447,6 @@ void wasm::ClearExitFP(MacroAssembler& masm, Register scratch) {
 
 static void GenerateCallablePrologue(MacroAssembler& masm, uint32_t* entry) {
   AutoCreatedBy acb(masm, "GenerateCallablePrologue");
-
   masm.setFramePushed(0);
 
   // ProfilingFrameIterator needs to know the offsets of several key
@@ -449,11 +454,6 @@ static void GenerateCallablePrologue(MacroAssembler& masm, uint32_t* entry) {
   // constants and assert that they match the actual codegen below. On ARM,
   // this requires AutoForbidPoolsAndNops to prevent a constant pool from being
   // randomly inserted between two instructions.
-
-  // The size of the prologue is constrained to be no larger than the difference
-  // between WasmCheckedTailEntryOffset and WasmCheckedCallEntryOffset; to
-  // conserve code space / avoid excessive padding, this difference is made as
-  // tight as possible.
 
 #if defined(JS_CODEGEN_MIPS64)
   {
@@ -470,6 +470,17 @@ static void GenerateCallablePrologue(MacroAssembler& masm, uint32_t* entry) {
   {
     *entry = masm.currentOffset();
 
+    masm.ma_push(ra);
+    MOZ_ASSERT_IF(!masm.oom(), PushedRetAddr == masm.currentOffset() - *entry);
+    masm.ma_push(FramePointer);
+    MOZ_ASSERT_IF(!masm.oom(), PushedFP == masm.currentOffset() - *entry);
+    masm.moveStackPtrTo(FramePointer);
+    MOZ_ASSERT_IF(!masm.oom(), SetFP == masm.currentOffset() - *entry);
+  }
+#elif defined(JS_CODEGEN_RISCV64)
+  {
+    *entry = masm.currentOffset();
+    BlockTrampolinePoolScope block_trampoline_pool(&masm, 5);
     masm.ma_push(ra);
     MOZ_ASSERT_IF(!masm.oom(), PushedRetAddr == masm.currentOffset() - *entry);
     masm.ma_push(FramePointer);
@@ -562,6 +573,18 @@ static void GenerateCallableEpilogue(MacroAssembler& masm, unsigned framePushed,
   masm.addToStackPtr(Imm32(sizeof(Frame)));
   masm.as_jirl(zero, ra, BOffImm16(0));
 
+#elif defined(JS_CODEGEN_RISCV64)
+  {
+    BlockTrampolinePoolScope block_trampoline_pool(&masm, 20);
+    masm.loadPtr(Address(StackPointer, Frame::callerFPOffset()), FramePointer);
+    poppedFP = masm.currentOffset();
+    masm.loadPtr(Address(StackPointer, Frame::returnAddressOffset()), ra);
+
+    *ret = masm.currentOffset();
+    masm.addToStackPtr(Imm32(sizeof(Frame)));
+    masm.jalr(zero, ra, 0);
+    masm.nop();
+  }
 #elif defined(JS_CODEGEN_ARM64)
 
   // See comment at equivalent place in |GenerateCallablePrologue| above.
@@ -620,20 +643,23 @@ void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
                                     FuncOffsets* offsets) {
   AutoCreatedBy acb(masm, "wasm::GenerateFunctionPrologue");
 
-  // These constants reflect statically-determined offsets between a function's
-  // checked call entry and the checked tail's entry, see diagram below.  The
-  // Entry is a call target, so must have CodeAlignment, but the TailEntry is
-  // only a jump target from a stub.
+  // We are going to generate this code layout:
+  // ---------------------------------------------
+  // checked call entry:    callable prologue
+  //                        check signature
+  //                        jump functionBody ──┐
+  // unchecked call entry:  callable prologue   │
+  //                        functionBody  <─────┘
+  // -----------------------------------------------
+  // checked call entry - used for call_indirect when we have to check the
+  // signature.
   //
-  // The CheckedCallEntryOffset is normally zero.
-  //
-  // CheckedTailEntryOffset > CheckedCallEntryOffset, and if CPSIZE is the size
-  // of the callable prologue then TailEntryOffset - CallEntryOffset >= CPSIZE.
-  // It is a goal to keep that difference as small as possible to reduce the
-  // amount of padding inserted in the prologue.
+  // unchecked call entry - used for regular direct same-instance calls.
+
+  // The checked call entry is a call target, so must have CodeAlignment.
+  // Its offset is normally zero.
   static_assert(WasmCheckedCallEntryOffset % CodeAlignment == 0,
                 "code aligned");
-  static_assert(WasmCheckedTailEntryOffset > WasmCheckedCallEntryOffset);
 
   // Flush pending pools so they do not get dumped between the 'begin' and
   // 'uncheckedCallEntry' offsets since the difference must be less than
@@ -642,85 +668,70 @@ void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
   masm.flushBuffer();
   masm.haltingAlign(CodeAlignment);
 
-  // We are going to generate the next code layout:
-  // ---------------------------------------------
-  // checked call entry:    callable prologue
-  // checked tail entry:    check signature
-  //                        jump functionBody
-  // unchecked call entry:  callable prologue
-  //                        functionBody
-  // -----------------------------------------------
-  // checked call entry - used for call_indirect when we have to check the
-  // signature.
-  //
-  // checked tail entry - used by indirect call trampolines which already
-  // had pushed Frame on the callee’s behalf.
-  //
-  // unchecked call entry - used for regular direct same-instance calls.
-
   Label functionBody;
 
-  // Generate checked call entry. The BytecodeOffset of the trap is fixed up to
-  // be the bytecode offset of the callsite by JitActivation::startWasmTrap.
   offsets->begin = masm.currentOffset();
-  MOZ_ASSERT_IF(!masm.oom(), masm.currentOffset() - offsets->begin ==
-                                 WasmCheckedCallEntryOffset);
-  uint32_t dummy;
-  GenerateCallablePrologue(masm, &dummy);
 
-  // Check that we did not overshoot the space budget for the prologue.
-  MOZ_ASSERT_IF(!masm.oom(), masm.currentOffset() - offsets->begin <=
-                                 WasmCheckedTailEntryOffset);
-
-  // Pad to WasmCheckedTailEntryOffset.  Don't use nopAlign because the target
-  // offset is not necessarily a power of two.  The expected number of NOPs here
-  // is very small.
-  while (masm.currentOffset() - offsets->begin < WasmCheckedTailEntryOffset) {
-    masm.nop();
-  }
-
-  // Signature check starts at WasmCheckedTailEntryOffset.
-  MOZ_ASSERT_IF(!masm.oom(), masm.currentOffset() - offsets->begin ==
-                                 WasmCheckedTailEntryOffset);
-  switch (callIndirectId.kind()) {
-    case CallIndirectIdKind::Global: {
-      Register scratch = WasmTableCallScratchReg0;
-      masm.loadWasmGlobalPtr(callIndirectId.globalDataOffset(), scratch);
-      masm.branchPtr(Assembler::Condition::Equal, WasmTableCallSigReg, scratch,
-                     &functionBody);
-      masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
-      break;
-    }
-    case CallIndirectIdKind::Immediate: {
-      masm.branch32(Assembler::Condition::Equal, WasmTableCallSigReg,
-                    Imm32(callIndirectId.immediate()), &functionBody);
-      masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
-      break;
-    }
-    case CallIndirectIdKind::None:
-      masm.jump(&functionBody);
-      break;
-  }
-
-  // The preceding code may have generated a small constant pool to support the
-  // comparison in the signature check.  But if we flush the pool here we will
-  // also force the creation of an unused branch veneer in the pool for the jump
-  // to functionBody from the signature check on some platforms, thus needlessly
-  // inflating the size of the prologue.
+  // Only first-class functions (those that can be referenced in a table) need
+  // the checked call prologue w/ signature check. It is impossible to perform
+  // a checked call otherwise.
   //
-  // On no supported platform that uses a pool (arm, arm64) is there any risk at
-  // present of that branch or other elements in the pool going out of range
-  // while we're generating the following padding and prologue, therefore no
-  // pool elements will be emitted in the prologue, therefore it is safe not to
-  // flush here.
-  //
-  // We assert that this holds at runtime by comparing the expected entry offset
-  // to the recorded ditto; if they are not the same then
-  // GenerateCallablePrologue flushed a pool before the prologue code, contrary
-  // to assumption.
+  // asm.js function tables are homogeneous and don't need a signature check.
+  // However, they can be put in tables which expect a checked call entry point,
+  // so we generate a no-op entry point for consistency. If asm.js performance
+  // was important we could refine this in the future.
+  if (callIndirectId.kind() != CallIndirectIdKind::None) {
+    // Generate checked call entry. The BytecodeOffset of the trap is fixed up
+    // to be the bytecode offset of the callsite by
+    // JitActivation::startWasmTrap.
+    MOZ_ASSERT_IF(!masm.oom(), masm.currentOffset() - offsets->begin ==
+                                   WasmCheckedCallEntryOffset);
+    uint32_t dummy;
+    GenerateCallablePrologue(masm, &dummy);
+
+    switch (callIndirectId.kind()) {
+      case CallIndirectIdKind::Global: {
+        Register scratch = WasmTableCallScratchReg0;
+        masm.loadWasmGlobalPtr(callIndirectId.globalDataOffset(), scratch);
+        masm.branchPtr(Assembler::Condition::Equal, WasmTableCallSigReg,
+                       scratch, &functionBody);
+        masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
+        break;
+      }
+      case CallIndirectIdKind::Immediate: {
+        masm.branch32(Assembler::Condition::Equal, WasmTableCallSigReg,
+                      Imm32(callIndirectId.immediate()), &functionBody);
+        masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
+        break;
+      }
+      case CallIndirectIdKind::AsmJS:
+        masm.jump(&functionBody);
+        break;
+      case CallIndirectIdKind::None:
+        break;
+    }
+
+    // The preceding code may have generated a small constant pool to support
+    // the comparison in the signature check.  But if we flush the pool here we
+    // will also force the creation of an unused branch veneer in the pool for
+    // the jump to functionBody from the signature check on some platforms, thus
+    // needlessly inflating the size of the prologue.
+    //
+    // On no supported platform that uses a pool (arm, arm64) is there any risk
+    // at present of that branch or other elements in the pool going out of
+    // range while we're generating the following padding and prologue,
+    // therefore no pool elements will be emitted in the prologue, therefore it
+    // is safe not to flush here.
+    //
+    // We assert that this holds at runtime by comparing the expected entry
+    // offset to the recorded ditto; if they are not the same then
+    // GenerateCallablePrologue flushed a pool before the prologue code,
+    // contrary to assumption.
+
+    masm.nopAlign(CodeAlignment);
+  }
 
   // Generate unchecked call entry:
-  masm.nopAlign(CodeAlignment);
   DebugOnly<uint32_t> expectedEntry = masm.currentOffset();
   GenerateCallablePrologue(masm, &offsets->uncheckedCallEntry);
   MOZ_ASSERT(expectedEntry == offsets->uncheckedCallEntry);
@@ -834,6 +845,10 @@ void wasm::GenerateJitEntryPrologue(MacroAssembler& masm,
 #elif defined(JS_CODEGEN_LOONG64)
     offsets->begin = masm.currentOffset();
     masm.push(ra);
+#elif defined(JS_CODEGEN_RISCV64)
+    BlockTrampolinePoolScope block_trampoline_pool(&masm, 10);
+    offsets->begin = masm.currentOffset();
+    masm.push(ra);
 #elif defined(JS_CODEGEN_ARM64)
     AutoForbidPoolsAndNops afp(&masm,
                                /* number of instructions in scope = */ 4);
@@ -849,7 +864,6 @@ void wasm::GenerateJitEntryPrologue(MacroAssembler& masm,
 #endif
     MOZ_ASSERT_IF(!masm.oom(),
                   PushedRetAddr == masm.currentOffset() - offsets->begin);
-
     // Save jit frame pointer, so unwinding from wasm to jit frames is trivial.
 #if defined(JS_CODEGEN_ARM64)
     static_assert(JitFrameLayout::offsetOfCallerFramePtr() == 0);
@@ -1179,6 +1193,25 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
         fixedFP = fp;
         AssertMatchesCallSite(fixedPC, fixedFP);
       } else
+#elif defined(JS_CODEGEN_RISCV64)
+      if (codeRange->isThunk()) {
+        // The FarJumpIsland sequence temporary scrambles ra.
+        // Don't unwind to caller.
+        fixedPC = pc;
+        fixedFP = fp;
+        *unwoundCaller = false;
+        AssertMatchesCallSite(
+            Frame::fromUntaggedWasmExitFP(fp)->returnAddress(),
+            Frame::fromUntaggedWasmExitFP(fp)->rawCaller());
+      } else if (offsetFromEntry < PushedFP) {
+        // On Riscv64 we rely on register state instead of state saved on
+        // stack until the wasm::Frame is completely built.
+        // On entry the return address is in ra (registers.lr) and
+        // fp holds the caller's fp.
+        fixedPC = (uint8_t*)registers.lr;
+        fixedFP = fp;
+        AssertMatchesCallSite(fixedPC, fixedFP);
+      } else
 #elif defined(JS_CODEGEN_ARM64)
       if (offsetFromEntry < PushedFP || codeRange->isThunk()) {
         // Constraints above ensure that this covers BeforePushRetAddr and
@@ -1224,6 +1257,16 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
         fixedFP = fp;
         AssertMatchesCallSite(fixedPC, fixedFP);
 #elif defined(JS_CODEGEN_LOONG64)
+      } else if (offsetInCode >= codeRange->ret() - PoppedFP &&
+                 offsetInCode <= codeRange->ret()) {
+        // The fixedFP field of the Frame has been loaded into fp.
+        // The ra might also be loaded, but the Frame structure is still on
+        // stack, so we can acess the ra from there.
+        MOZ_ASSERT(*sp == fp);
+        fixedPC = Frame::fromUntaggedWasmExitFP(sp)->returnAddress();
+        fixedFP = fp;
+        AssertMatchesCallSite(fixedPC, fixedFP);
+#elif defined(JS_CODEGEN_RISCV64)
       } else if (offsetInCode >= codeRange->ret() - PoppedFP &&
                  offsetInCode <= codeRange->ret()) {
         // The fixedFP field of the Frame has been loaded into fp.
@@ -1610,6 +1653,7 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native filtering GC prebarrier (in wasm)";
     case SymbolicAddress::PostBarrier:
     case SymbolicAddress::PostBarrierPrecise:
+    case SymbolicAddress::PostBarrierPreciseWithOffset:
     case SymbolicAddress::PostBarrierFiltering:
       return "call to native GC postbarrier (in wasm)";
     case SymbolicAddress::StructNew:

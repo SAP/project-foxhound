@@ -32,19 +32,19 @@ const { AppConstants } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   Dictionary: "resource://gre/modules/Extension.jsm",
   Extension: "resource://gre/modules/Extension.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   Langpack: "resource://gre/modules/Extension.jsm",
   SitePermission: "resource://gre/modules/Extension.jsm",
-  TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
   XPIDatabase: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIDatabaseReconcile: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIInstall: "resource://gre/modules/addons/XPIInstall.jsm",
@@ -1832,6 +1832,7 @@ class BootstrapScope {
         builtIn: addon.location.isBuiltin,
         isSystem: addon.location.isSystem,
         isPrivileged: addon.isPrivileged,
+        locationHidden: addon.location.hidden,
         recommendationState: addon.recommendationState,
       };
 
@@ -2174,7 +2175,18 @@ var XPIProvider = {
   // Have we started shutting down bootstrap add-ons?
   _closing: false,
 
+  // Promises awaited by the XPIProvider before resolving providerReadyPromise,
+  // (pushed into the array by XPIProvider maybeInstallBuiltinAddon and startup
+  // methods).
   startupPromises: [],
+
+  // Array of the bootstrap startup promises for the enabled addons being
+  // initiated during the XPIProvider startup.
+  //
+  // NOTE: XPIProvider will wait for these promises (and the startupPromises one)
+  // to have settled before allowing the application to proceed with shutting down
+  // (see quitApplicationGranted blocker at the end of the XPIProvider.startup).
+  enabledAddonsStartupPromises: [],
 
   databaseReady: Promise.all([dbReadyPromise, providerReadyPromise]),
 
@@ -2567,7 +2579,9 @@ var XPIProvider = {
             ) {
               reason = BOOTSTRAP_REASONS.ADDON_ENABLE;
             }
-            BootstrapScope.get(addon).startup(reason);
+            this.enabledAddonsStartupPromises.push(
+              BootstrapScope.get(addon).startup(reason)
+            );
           } catch (e) {
             logger.error(
               "Failed to load bootstrap addon " +
@@ -2593,6 +2607,13 @@ var XPIProvider = {
       lazy.AsyncShutdown.quitApplicationGranted.addBlocker(
         "XPIProvider shutdown",
         async () => {
+          // Do not enter shutdown before we actually finished starting as this
+          // can lead to hangs as seen in bug 1814104.
+          await Promise.allSettled([
+            ...this.startupPromises,
+            ...this.enabledAddonsStartupPromises,
+          ]);
+
           XPIProvider._closing = true;
 
           await XPIProvider.cleanupTemporaryAddons();

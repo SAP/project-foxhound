@@ -240,11 +240,13 @@ already_AddRefed<gfxFont> gfxFontCache::Lookup(
   }
 
   RefPtr<gfxFont> font = entry->mFont;
-  MarkUsedLocked(font, lock);
+  if (font->GetExpirationState()->IsTracked()) {
+    RemoveObjectLocked(font, lock);
+  }
   return font.forget();
 }
 
-already_AddRefed<gfxFont> gfxFontCache::MaybeInsert(RefPtr<gfxFont>&& aFont) {
+already_AddRefed<gfxFont> gfxFontCache::MaybeInsert(gfxFont* aFont) {
   MOZ_ASSERT(aFont);
   MutexAutoLock lock(mMutex);
 
@@ -252,35 +254,69 @@ already_AddRefed<gfxFont> gfxFontCache::MaybeInsert(RefPtr<gfxFont>&& aFont) {
           aFont->GetUnicodeRangeMap());
   HashEntry* entry = mFonts.PutEntry(key);
   if (!entry) {
-    return aFont.forget();
+    return do_AddRef(aFont);
   }
 
   // If it is null, then we are inserting a new entry. Otherwise we are
   // attempting to replace an existing font, probably due to a thread race, in
   // which case stick with the original font.
   if (!entry->mFont) {
-    entry->mFont = std::move(aFont);
-    AddObjectLocked(entry->mFont, lock);
+    entry->mFont = aFont;
     // Assert that we can find the entry we just put in (this fails if the key
     // has a NaN float value in it, e.g. 'sizeAdjust').
     MOZ_ASSERT(entry == mFonts.GetEntry(key));
   } else {
-    MarkUsedLocked(entry->mFont, lock);
+    MOZ_ASSERT(entry->mFont != aFont);
+    aFont->Destroy();
+    if (entry->mFont->GetExpirationState()->IsTracked()) {
+      RemoveObjectLocked(entry->mFont, lock);
+    }
   }
 
   return do_AddRef(entry->mFont);
 }
 
-void gfxFontCache::NotifyExpiredLocked(gfxFont* aFont, const AutoLock& aLock) {
-  // If there are outstanding references to the font outside the cache, we
-  // should just mark it as used.
-  if (aFont->GetRefCount() > 1) {
-    MarkUsedLocked(aFont, aLock);
-    return;
+bool gfxFontCache::MaybeDestroy(gfxFont* aFont) {
+  MOZ_ASSERT(aFont);
+  MutexAutoLock lock(mMutex);
+
+  // If the font has a non-zero refcount, then we must have lost the race with
+  // gfxFontCache::Lookup and the same font was reacquired.
+  if (aFont->GetRefCount() > 0) {
+    return false;
   }
 
-  // We should have the last reference to the font.
+  Key key(aFont->GetFontEntry(), aFont->GetStyle(),
+          aFont->GetUnicodeRangeMap());
+  HashEntry* entry = mFonts.GetEntry(key);
+  if (!entry || entry->mFont != aFont) {
+    MOZ_ASSERT(!aFont->GetExpirationState()->IsTracked());
+    return true;
+  }
+
+  // If the font is being tracked, we must have then also lost another race with
+  // gfxFontCache::MaybeDestroy which re-added it to the tracker.
+  if (aFont->GetExpirationState()->IsTracked()) {
+    return false;
+  }
+
+  // Typically this won't fail, but it may during startup/shutdown if the timer
+  // service is not available.
+  nsresult rv = AddObjectLocked(aFont, lock);
+  if (NS_SUCCEEDED(rv)) {
+    return false;
+  }
+
+  mFonts.RemoveEntry(entry);
+  return true;
+}
+
+void gfxFontCache::NotifyExpiredLocked(gfxFont* aFont, const AutoLock& aLock) {
+  MOZ_ASSERT(aFont->GetRefCount() == 0);
+
   RemoveObjectLocked(aFont, aLock);
+  mTrackerDiscard.AppendElement(aFont);
+
   Key key(aFont->GetFontEntry(), aFont->GetStyle(),
           aFont->GetUnicodeRangeMap());
   HashEntry* entry = mFonts.GetEntry(key);
@@ -289,12 +325,11 @@ void gfxFontCache::NotifyExpiredLocked(gfxFont* aFont, const AutoLock& aLock) {
     return;
   }
 
-  mTrackerDiscard.AppendElement(std::move(entry->mFont));
   mFonts.RemoveEntry(entry);
 }
 
 void gfxFontCache::NotifyHandlerEnd() {
-  nsTArray<RefPtr<gfxFont>> discard;
+  nsTArray<gfxFont*> discard;
   {
     MutexAutoLock lock(mMutex);
     discard = std::move(mTrackerDiscard);
@@ -302,27 +337,47 @@ void gfxFontCache::NotifyHandlerEnd() {
   DestroyDiscard(discard);
 }
 
-void gfxFontCache::DestroyDiscard(nsTArray<RefPtr<gfxFont>>& aDiscard) {
+void gfxFontCache::DestroyDiscard(nsTArray<gfxFont*>& aDiscard) {
   for (auto& font : aDiscard) {
-    NS_ASSERTION(font->GetRefCount() == 1,
+    NS_ASSERTION(font->GetRefCount() == 0,
                  "Destroying with refs outside cache!");
     font->ClearCachedWords();
+    font->Destroy();
   }
   aDiscard.Clear();
 }
 
 void gfxFontCache::Flush() {
-  nsTHashtable<HashEntry> discard;
+  nsTArray<gfxFont*> discard;
   {
     MutexAutoLock lock(mMutex);
+    discard.SetCapacity(mFonts.Count());
     for (auto iter = mFonts.Iter(); !iter.Done(); iter.Next()) {
       HashEntry* entry = static_cast<HashEntry*>(iter.Get());
-      RemoveObjectLocked(entry->mFont, lock);
+      if (!entry || !entry->mFont) {
+        MOZ_ASSERT_UNREACHABLE("Invalid font?");
+        continue;
+      }
+
+      if (entry->mFont->GetRefCount() == 0) {
+        // If we are not tracked, then we must have won the race with
+        // gfxFont::MaybeDestroy and it is waiting on the mutex. To avoid a
+        // double free, we let gfxFont::MaybeDestroy handle the freeing when it
+        // acquires the mutex and discovers there is no matching entry in the
+        // hashtable.
+        if (entry->mFont->GetExpirationState()->IsTracked()) {
+          RemoveObjectLocked(entry->mFont, lock);
+          discard.AppendElement(entry->mFont);
+        }
+      } else {
+        MOZ_ASSERT(!entry->mFont->GetExpirationState()->IsTracked());
+      }
     }
     MOZ_ASSERT(IsEmptyLocked(lock),
                "Cache tracker still has fonts after flush!");
-    discard = std::move(mFonts);
+    mFonts.Clear();
   }
+  DestroyDiscard(discard);
 }
 
 /*static*/
@@ -587,12 +642,18 @@ void gfxFontShaper::MergeFontFeatures(
     }
   }
 
+  auto disableOptionalLigatures = [&]() -> void {
+    mergedFeatures.InsertOrUpdate(HB_TAG('l', 'i', 'g', 'a'), 0);
+    mergedFeatures.InsertOrUpdate(HB_TAG('c', 'l', 'i', 'g'), 0);
+    mergedFeatures.InsertOrUpdate(HB_TAG('d', 'l', 'i', 'g'), 0);
+    mergedFeatures.InsertOrUpdate(HB_TAG('h', 'l', 'i', 'g'), 0);
+  };
+
   // Add features that are already resolved to tags & values in the style.
   if (styleRuleFeatures.IsEmpty()) {
-    // Disable common ligatures if non-zero letter-spacing is in effect.
+    // Disable optional ligatures if non-zero letter-spacing is in effect.
     if (aDisableLigatures) {
-      mergedFeatures.InsertOrUpdate(HB_TAG('l', 'i', 'g', 'a'), 0);
-      mergedFeatures.InsertOrUpdate(HB_TAG('c', 'l', 'i', 'g'), 0);
+      disableOptionalLigatures();
     }
   } else {
     for (const gfxFontFeature& feature : styleRuleFeatures) {
@@ -607,8 +668,7 @@ void gfxFontShaper::MergeFontFeatures(
       } else if (aDisableLigatures) {
         // Handle ligature-disabling setting at the boundary between high-
         // and low-level features.
-        mergedFeatures.InsertOrUpdate(HB_TAG('l', 'i', 'g', 'a'), 0);
-        mergedFeatures.InsertOrUpdate(HB_TAG('c', 'l', 'i', 'g'), 0);
+        disableOptionalLigatures();
       }
     }
   }
@@ -810,11 +870,15 @@ void gfxShapedText::AdjustAdvancesForSyntheticBold(float aSynBoldOffset,
 }
 
 float gfxFont::AngleForSyntheticOblique() const {
-  // If the style doesn't call for italic/oblique, or if the face already
-  // provides it, no synthetic style should be added.
-  if (mStyle.style == FontSlantStyle::NORMAL || !mStyle.allowSyntheticStyle ||
-      !mFontEntry->IsUpright()) {
-    return 0.0f;
+  // First check conditions that mean no synthetic slant should be used:
+  if (mStyle.style == FontSlantStyle::NORMAL) {
+    return 0.0f;  // Requested style is 'normal'.
+  }
+  if (!mStyle.allowSyntheticStyle) {
+    return 0.0f;  // Synthetic obliquing is disabled.
+  }
+  if (!mFontEntry->MayUseSyntheticSlant()) {
+    return 0.0f;  // The resource supports "real" slant, so don't synthesize.
   }
 
   // If style calls for italic, and face doesn't support it, use default
@@ -825,7 +889,7 @@ float gfxFont::AngleForSyntheticOblique() const {
                : FontSlantStyle::DEFAULT_OBLIQUE_DEGREES;
   }
 
-  // Default or custom oblique angle
+  // OK, we're going to use synthetic oblique: return the requested angle.
   return mStyle.style.ObliqueAngle();
 }
 
@@ -4152,6 +4216,7 @@ void gfxFont::CreateVerticalMetrics() {
 
   // Read real vertical metrics if available.
   metrics->ideographicWidth = -1.0;
+  metrics->zeroWidth = -1.0;
   gfxFontEntry::AutoTable vheaTable(mFontEntry, kVheaTableTag);
   if (vheaTable && mFUnitsConvFactor >= 0.0) {
     const MetricsHeader* vhea = reinterpret_cast<const MetricsHeader*>(
@@ -4178,9 +4243,19 @@ void gfxFont::CreateVerticalMetrics() {
         uint32_t gid = ProvidesGetGlyph()
                            ? GetGlyph(kWaterIdeograph, 0)
                            : shaper->GetNominalGlyph(kWaterIdeograph);
-        int32_t advance = shaper->GetGlyphVAdvance(gid);
-        metrics->ideographicWidth =
-            advance < 0 ? metrics->aveCharWidth : mFUnitsConvFactor * advance;
+        if (gid) {
+          int32_t advance = shaper->GetGlyphVAdvance(gid);
+          // Convert 16.16 fixed-point advance from the shaper to a float.
+          metrics->ideographicWidth =
+              advance < 0 ? metrics->aveCharWidth : advance / 65536.0;
+        }
+        gid = ProvidesGetGlyph() ? GetGlyph('0', 0)
+                                 : shaper->GetNominalGlyph('0');
+        if (gid) {
+          int32_t advance = shaper->GetGlyphVAdvance(gid);
+          metrics->zeroWidth =
+              advance < 0 ? metrics->aveCharWidth : advance / 65536.0;
+        }
       }
     }
   }
@@ -4238,10 +4313,13 @@ void gfxFont::CreateVerticalMetrics() {
 
   // Somewhat arbitrary values for now, subject to future refinement...
   metrics->spaceWidth = metrics->aveCharWidth;
-  metrics->zeroWidth = metrics->aveCharWidth;
   metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
+
+  if (metrics->zeroWidth < 0.0) {
+    metrics->zeroWidth = metrics->aveCharWidth;
+  }
 
   if (!mVerticalMetrics.compareExchange(nullptr, metrics)) {
     delete metrics;

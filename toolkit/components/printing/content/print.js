@@ -84,10 +84,9 @@ function cancelDeferredTasks() {
 document.addEventListener(
   "DOMContentLoaded",
   e => {
-    window._initialized = PrintEventHandler.init().catch(e =>
-      Cu.reportError(e)
-    );
+    window._initialized = PrintEventHandler.init().catch(e => console.error(e));
     ourBrowser.setAttribute("flex", "0");
+    ourBrowser.setAttribute("selectmenuconstrained", "false");
     ourBrowser.classList.add("printSettingsBrowser");
     ourBrowser.closest(".dialogBox")?.classList.add("printDialogBox");
   },
@@ -317,8 +316,35 @@ var PrintEventHandler = {
       await this.print(settings);
     });
 
-    let settingsToChange = await this.refreshSettings(selectedPrinter.value);
-    await this.updateSettings(settingsToChange, true);
+    let originalError;
+    const printersByPriority = [
+      selectedPrinter.value,
+      ...Object.getOwnPropertyNames(printersByName).filter(
+        name => name != selectedPrinter.value
+      ),
+    ];
+
+    // Try to update settings, falling back to any available printer
+    for (const printerName of printersByPriority) {
+      try {
+        let settingsToChange = await this.refreshSettings(printerName);
+        await this.updateSettings(settingsToChange, true);
+        originalError = null;
+        break;
+      } catch (e) {
+        if (!originalError) {
+          originalError = e;
+          // Report on how often fetching the last used printer settings fails.
+          this.reportPrintingError("PRINTER_SETTINGS_LAST_USED");
+        }
+      }
+    }
+
+    // Only throw original error if no fallback was possible
+    if (originalError) {
+      this.reportPrintingError("PRINTER_SETTINGS");
+      throw originalError;
+    }
 
     let initialPreviewDone = this._updatePrintPreview();
 
@@ -399,7 +425,7 @@ var PrintEventHandler = {
       let bc = this.printPreviewEl.currentBrowsingContext;
       await this._doPrint(bc, settings);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
 
     if (settings.printerName == PrintUtils.SAVE_TO_PDF_PRINTER) {
@@ -834,7 +860,7 @@ var PrintEventHandler = {
       }));
     } catch (e) {
       this.reportPrintingError("PRINT_PREVIEW");
-      Cu.reportError(e);
+      console.error(e);
       throw e;
     }
 
@@ -1592,10 +1618,6 @@ class PrintUIForm extends PrintUIControlMixin(HTMLFormElement) {
       // Move the Print button to the end if this isn't Windows.
       this.printButton.parentElement.append(this.printButton);
     }
-    this.querySelector("#pages-per-sheet").hidden = !Services.prefs.getBoolPref(
-      "print.pages_per_sheet.enabled",
-      false
-    );
   }
 
   removeNonPdfSettings() {

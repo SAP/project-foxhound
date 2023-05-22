@@ -132,9 +132,9 @@ class CookieBannerParent extends JSWindowActorParent {
         // is disabled. We will fallback to global pref setting if any errors
         // occur.
         if (e.result == Cr.NS_ERROR_NOT_AVAILABLE) {
-          Cu.reportError("The cookie banner handling service is not available");
+          console.error("The cookie banner handling service is not available");
         } else {
-          Cu.reportError("Fail on getting domain pref:" + e);
+          console.error("Fail on getting domain pref:", e);
         }
       }
     }
@@ -164,8 +164,7 @@ class CookieBannerParent extends JSWindowActorParent {
     // Determine whether we can fall back to opt-in rules. This includes the
     // detect-only mode where don't interact with the banner.
     let modeAllowsOptIn =
-      mode == Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT ||
-      mode == Ci.nsICookieBannerService.MODE_DETECT_ONLY;
+      mode == Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT;
     return rules.map(rule => {
       let target = rule.optOut;
 

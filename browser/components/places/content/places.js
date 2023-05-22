@@ -467,9 +467,9 @@ var PlacesOrganizer = {
    */
   importFromBrowser: function PO_importFromBrowser() {
     // We pass in the type of source we're using for use in telemetry:
-    MigrationUtils.showMigrationWizard(window, [
-      MigrationUtils.MIGRATION_ENTRYPOINTS.PLACES,
-    ]);
+    MigrationUtils.showMigrationWizard(window, {
+      entrypoint: MigrationUtils.MIGRATION_ENTRYPOINTS.PLACES,
+    });
   },
 
   /**
@@ -482,7 +482,7 @@ var PlacesOrganizer = {
         var { BookmarkHTMLUtils } = ChromeUtils.importESModule(
           "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
         );
-        BookmarkHTMLUtils.importFromURL(fp.fileURL.spec).catch(Cu.reportError);
+        BookmarkHTMLUtils.importFromURL(fp.fileURL.spec).catch(console.error);
       }
     };
 
@@ -505,7 +505,7 @@ var PlacesOrganizer = {
         var { BookmarkHTMLUtils } = ChromeUtils.importESModule(
           "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
         );
-        BookmarkHTMLUtils.exportToFile(fp.file.path).catch(Cu.reportError);
+        BookmarkHTMLUtils.exportToFile(fp.file.path).catch(console.error);
       }
     };
 
@@ -694,7 +694,7 @@ var PlacesOrganizer = {
       if (aResult != Ci.nsIFilePicker.returnCancel) {
         // There is no OS.File version of the filepicker yet (Bug 937812).
         PlacesBackups.saveBookmarksToJSONFile(fp.file.path).catch(
-          Cu.reportError
+          console.error
         );
       }
     };
@@ -740,10 +740,10 @@ var PlacesOrganizer = {
       // don't update the panel if we are already editing this node unless we're
       // in multi-edit mode
       if (selectedNode) {
-        let concreteId = PlacesUtils.getConcreteItemId(selectedNode);
+        let concreteGuid = PlacesUtils.getConcreteItemGuid(selectedNode);
         var nodeIsSame =
           gEditItemOverlay.itemId == selectedNode.itemId ||
-          gEditItemOverlay.itemId == concreteId ||
+          gEditItemOverlay._paneInfo.itemGuid == concreteGuid ||
           (selectedNode.itemId == -1 &&
             gEditItemOverlay.uri &&
             gEditItemOverlay.uri == selectedNode.uri);

@@ -60,7 +60,6 @@ if CONFIG["OS_TARGET"] == "Android":
     DEFINES["__STDC_FORMAT_MACROS"] = True
 
     OS_LIBS += [
-        "GLESv2",
         "log"
     ]
 
@@ -90,7 +89,6 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["__STDC_FORMAT_MACROS"] = True
 
     OS_LIBS += [
-        "dl",
         "rt"
     ]
 
@@ -190,6 +188,10 @@ if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Android":
 
 if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Android":
 
+    CXXFLAGS += [
+        "-msse2"
+    ]
+
     OS_LIBS += [
         "android_support"
     ]
@@ -205,6 +207,10 @@ if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Linux":
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Linux":
+
+    CXXFLAGS += [
+        "-msse2"
+    ]
 
     DEFINES["WEBRTC_ENABLE_AVX2"] = True
     DEFINES["_GNU_SOURCE"] = True

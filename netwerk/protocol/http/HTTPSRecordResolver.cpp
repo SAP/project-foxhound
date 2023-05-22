@@ -41,7 +41,8 @@ nsresult HTTPSRecordResolver::FetchHTTPSRRInternal(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  uint32_t flags = nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
+  nsIDNSService::DNSFlags flags =
+      nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
   if (mCaps & NS_HTTP_REFRESH_DNS) {
     flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
   }
@@ -94,7 +95,7 @@ void HTTPSRecordResolver::PrefetchAddrRecord(const nsACString& aTargetName,
     return;
   }
 
-  uint32_t flags = nsIDNSService::GetFlagsFromTRRMode(
+  nsIDNSService::DNSFlags flags = nsIDNSService::GetFlagsFromTRRMode(
       mTransaction->ConnectionInfo()->GetTRRMode());
   if (aRefreshDNS) {
     flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
@@ -105,7 +106,7 @@ void HTTPSRecordResolver::PrefetchAddrRecord(const nsACString& aTargetName,
   Unused << dns->AsyncResolveNative(
       aTargetName, nsIDNSService::RESOLVE_TYPE_DEFAULT,
       flags | nsIDNSService::RESOLVE_SPECULATE, nullptr, this,
-      GetCurrentEventTarget(),
+      GetCurrentSerialEventTarget(),
       mTransaction->ConnectionInfo()->GetOriginAttributes(),
       getter_AddRefs(tmpOutstanding));
 }

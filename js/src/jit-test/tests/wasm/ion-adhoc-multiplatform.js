@@ -124,7 +124,7 @@ codegenTestMultiplatform_adhoc(
              03 c0     add %eax, %eax`,
      x86:   `8b 45 10  movl 0x10\\(%rbp\\), %eax
              03 c0     add %eax, %eax`,
-     arm64: `2b000000  adds w0, w0, w0`,
+     arm64: `0b000000  add w0, w0, w0`,
      arm:   `e0900000  adds r0, r0, r0`},
     {x86: {no_prefix:true}}
 );
@@ -270,7 +270,7 @@ codegenTestMultiplatform_adhoc(
              03 c0     add %eax, %eax`,
      x86:   `8b 45 10  movl 0x10\\(%rbp\\), %eax
              03 c0     add %eax, %eax`,
-     arm64: `2b000000  adds w0, w0, w0`,
+     arm64: `0b000000  add w0, w0, w0`,
      arm:   `e0900000  adds r0, r0, r0`},
     {x86: {no_prefix:true}}
 );
@@ -500,9 +500,10 @@ codegenTestMultiplatform_adhoc(
     {x64:   `48 8b cf  mov %rdi, %rcx
              48 8b c1  mov %rcx, %rax
              48 03 c1  add %rcx, %rax`,
-     x86:   `8b 5d 14        movl 0x14\\(%rbp\\), %ebx
+     x86:   // -0x21524111 is 0xDEADBEEF
+            `8b 5d 14        movl 0x14\\(%rbp\\), %ebx
              8b 4d 10        movl 0x10\\(%rbp\\), %ecx
-             bf ef be ad de  mov \\$0xDEADBEEF, %edi
+             bf ef be ad de  mov \\$-0x21524111, %edi
              8b 55 14        movl 0x14\\(%rbp\\), %edx
              8b 45 10        movl 0x10\\(%rbp\\), %eax
              03 c1           add %ecx, %eax
@@ -609,9 +610,10 @@ codegenTestMultiplatform_adhoc(
     {x64:   `48 8b cf        mov %rdi, %rcx
              48 8b c1        mov %rcx, %rax
              48 2b c1        sub %rcx, %rax`,
-     x86:   `8b 5d 14        movl 0x14\\(%rbp\\), %ebx
+     x86:   // -0x21524111 is 0xDEADBEEF
+            `8b 5d 14        movl 0x14\\(%rbp\\), %ebx
              8b 4d 10        movl 0x10\\(%rbp\\), %ecx
-             bf ef be ad de  mov  \\$0xDEADBEEF, %edi
+             bf ef be ad de  mov  \\$-0x21524111, %edi
              8b 55 14        movl 0x14\\(%rbp\\), %edx
              8b 45 10        movl 0x10\\(%rbp\\), %eax
              2b c1           sub %ecx, %eax

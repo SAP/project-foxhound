@@ -73,7 +73,7 @@ interface nsIXULRuntime : nsISupports
   };
 
   // If you update this enum, don't forget to raise the limit in
-  // TelemetryEnvironmentTesting.jsm and record the new value in
+  // TelemetryEnvironmentTesting.sys.mjs and record the new value in
   // environment.rst
   cenum ContentWin32kLockdownState : 8 {
     LockdownEnabled = 1,  // no longer used
@@ -153,17 +153,6 @@ interface nsIXULRuntime : nsISupports
    * session.
    */
   readonly attribute boolean fissionAutostart;
-
-  /**
-   * The user's enrollment status in the Fission experiment at process startup.
-   * See `ExperimentStatus` for the potential values.
-   *
-   * Only available in the parent process.
-   *
-   * This value is guaranteed to remain constant for the length of a browser
-   * session.
-   */
-  readonly attribute nsIXULRuntime_ExperimentStatus fissionExperimentStatus;
 
   /**
    * The deciding factor which caused Fission to be enabled or disabled in
@@ -356,6 +345,9 @@ interface nsIXULRuntime : nsISupports
 
   /** Whether we should draw over the titlebar */
   readonly attribute boolean drawInTitlebar;
+
+  /** Returns the desktop environment identifier. Only meaningful on GTK */
+  readonly attribute ACString desktopEnvironment;
 
   /**
    * The path of the shortcut used to start the current process, or "" if none.

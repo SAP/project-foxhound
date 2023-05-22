@@ -139,7 +139,7 @@ impl BitsRequest {
     ) -> Result<RefPtr<BitsRequest>, BitsTaskError> {
         let _ = context;
         let action: Action = action.into();
-        let monitor_thread = create_thread(&format!("BitsMonitor {}", id)).map_err(|rv| {
+        let monitor_thread = create_thread("BitsMonitor").map_err(|rv| {
             BitsTaskError::from_nsresult(FailedToStartThread, action, MainThread, rv)
         })?;
 
@@ -713,16 +713,16 @@ impl BitsRequest {
     }
 
     xpcom_method!(
-        get_trr_mode => GetTRRMode() -> u8
+        get_trr_mode => GetTRRMode() -> u32
     );
-    fn get_trr_mode(&self) -> Result<u8, nsresult> {
+    fn get_trr_mode(&self) -> Result<u32, nsresult> {
         Err(NS_ERROR_NOT_IMPLEMENTED)
     }
 
     xpcom_method!(
-        set_trr_mode => SetTRRMode(_trr_mode: u8)
+        set_trr_mode => SetTRRMode(_trr_mode: u32)
     );
-    fn set_trr_mode(&self, _trr_mode: u8) -> Result<(), nsresult> {
+    fn set_trr_mode(&self, _trr_mode: u32) -> Result<(), nsresult> {
         Err(NS_ERROR_NOT_IMPLEMENTED)
     }
 

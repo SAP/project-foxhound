@@ -53,14 +53,14 @@ whereas subesource range specified start {subresource_base_mip_level} and count 
     InvalidTextureLevelRange {
         texture_level_range: Range<u32>,
         subresource_base_mip_level: u32,
-        subresource_mip_level_count: Option<NonZeroU32>,
+        subresource_mip_level_count: Option<u32>,
     },
     #[error("image subresource layer range is outside of the texture's layer range. texture range is {texture_layer_range:?},  \
 whereas subesource range specified start {subresource_base_array_layer} and count {subresource_array_layer_count:?}")]
     InvalidTextureLayerRange {
         texture_layer_range: Range<u32>,
         subresource_base_array_layer: u32,
-        subresource_array_layer_count: Option<NonZeroU32>,
+        subresource_array_layer_count: Option<u32>,
     },
 }
 
@@ -165,7 +165,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         if let Some(ref mut list) = cmd_buf.commands {
             list.push(TraceCommand::ClearTexture {
                 dst,
-                subresource_range: subresource_range.clone(),
+                subresource_range: *subresource_range,
             });
         }
 
@@ -188,12 +188,9 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         };
 
         // Check if subresource level range is valid
-        let subresource_level_end = match subresource_range.mip_level_count {
-            Some(count) => subresource_range.base_mip_level + count.get(),
-            None => dst_texture.full_range.mips.end,
-        };
-        if dst_texture.full_range.mips.start > subresource_range.base_mip_level
-            || dst_texture.full_range.mips.end < subresource_level_end
+        let subresource_mip_range = subresource_range.mip_range(dst_texture.full_range.mips.end);
+        if dst_texture.full_range.mips.start > subresource_mip_range.start
+            || dst_texture.full_range.mips.end < subresource_mip_range.end
         {
             return Err(ClearError::InvalidTextureLevelRange {
                 texture_level_range: dst_texture.full_range.mips.clone(),
@@ -202,12 +199,10 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             });
         }
         // Check if subresource layer range is valid
-        let subresource_layer_end = match subresource_range.array_layer_count {
-            Some(count) => subresource_range.base_array_layer + count.get(),
-            None => dst_texture.full_range.layers.end,
-        };
-        if dst_texture.full_range.layers.start > subresource_range.base_array_layer
-            || dst_texture.full_range.layers.end < subresource_layer_end
+        let subresource_layer_range =
+            subresource_range.layer_range(dst_texture.full_range.layers.end);
+        if dst_texture.full_range.layers.start > subresource_layer_range.start
+            || dst_texture.full_range.layers.end < subresource_layer_range.end
         {
             return Err(ClearError::InvalidTextureLayerRange {
                 texture_layer_range: dst_texture.full_range.layers.clone(),
@@ -222,8 +217,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             &*texture_guard,
             Valid(dst),
             TextureInitRange {
-                mip_range: subresource_range.base_mip_level..subresource_level_end,
-                layer_range: subresource_range.base_array_layer..subresource_layer_end,
+                mip_range: subresource_mip_range,
+                layer_range: subresource_layer_range,
             },
             cmd_buf.encoder.open(),
             &mut cmd_buf.trackers.textures,
@@ -266,16 +261,22 @@ pub(crate) fn clear_texture<A: HalApi>(
         layers: range.layer_range.clone(),
     };
 
-    // If we're in a texture-init usecase, we know that the texture is already tracked since whatever caused the init requirement,
-    // will have caused the usage tracker to be aware of the texture. Meaning, that it is safe to call call change_replace_tracked if the life_guard is already gone
-    // (i.e. the user no longer holds on to this texture).
-    // On the other hand, when coming via command_encoder_clear_texture, the life_guard is still there since in order to call it a texture object is needed.
+    // If we're in a texture-init usecase, we know that the texture is already
+    // tracked since whatever caused the init requirement, will have caused the
+    // usage tracker to be aware of the texture. Meaning, that it is safe to
+    // call call change_replace_tracked if the life_guard is already gone (i.e.
+    // the user no longer holds on to this texture).
     //
-    // We could in theory distinguish these two scenarios in the internal clear_texture api in order to remove this check and call the cheaper change_replace_tracked whenever possible.
+    // On the other hand, when coming via command_encoder_clear_texture, the
+    // life_guard is still there since in order to call it a texture object is
+    // needed.
+    //
+    // We could in theory distinguish these two scenarios in the internal
+    // clear_texture api in order to remove this check and call the cheaper
+    // change_replace_tracked whenever possible.
     let dst_barrier = texture_tracker
-        .set_single(storage, dst_texture_id.0, selector, clear_usage)
+        .set_single(dst_texture, dst_texture_id.0, selector, clear_usage)
         .unwrap()
-        .1
         .map(|pending| pending.into_hal(dst_texture));
     unsafe {
         encoder.transition_textures(dst_barrier.into_iter());
@@ -302,7 +303,7 @@ pub(crate) fn clear_texture<A: HalApi>(
 }
 
 fn clear_texture_via_buffer_copies<A: hal::Api>(
-    texture_desc: &wgt::TextureDescriptor<()>,
+    texture_desc: &wgt::TextureDescriptor<(), Vec<wgt::TextureFormat>>,
     alignments: &hal::Alignments,
     zero_buffer: &A::Buffer, // Buffer of size device::ZERO_BUFFER_SIZE
     range: TextureInitRange,
@@ -332,8 +333,13 @@ fn clear_texture_via_buffer_copies<A: hal::Api>(
         // round down to a multiple of rows needed by the texture format
         let max_rows_per_copy = max_rows_per_copy / format_desc.block_dimensions.1 as u32
             * format_desc.block_dimensions.1 as u32;
-        assert!(max_rows_per_copy > 0, "Zero buffer size is too small to fill a single row of a texture with format {:?} and desc {:?}",
-                texture_desc.format, texture_desc.size);
+        assert!(
+            max_rows_per_copy > 0,
+            "Zero buffer size is too small to fill a single row \
+                 of a texture with format {:?} and desc {:?}",
+            texture_desc.format,
+            texture_desc.size
+        );
 
         let z_range = 0..(if texture_desc.dimension == wgt::TextureDimension::D3 {
             mip_size.depth_or_array_layers
@@ -344,7 +350,8 @@ fn clear_texture_via_buffer_copies<A: hal::Api>(
         for array_layer in range.layer_range.clone() {
             // TODO: Only doing one layer at a time for volume textures right now.
             for z in z_range.clone() {
-                // May need multiple copies for each subresource! However, we assume that we never need to split a row.
+                // May need multiple copies for each subresource! However, we
+                // assume that we never need to split a row.
                 let mut num_rows_left = mip_size.height;
                 while num_rows_left > 0 {
                     let num_rows = num_rows_left.min(max_rows_per_copy);
@@ -396,11 +403,11 @@ fn clear_texture_via_render_passes<A: hal::Api>(
     };
 
     let sample_count = dst_texture.desc.sample_count;
-    let is_3d_texture = dst_texture.desc.dimension == wgt::TextureDimension::D3;
     for mip_level in range.mip_range {
-        let extent = extent_base.mip_level_size(mip_level, is_3d_texture);
+        let extent = extent_base.mip_level_size(mip_level, dst_texture.desc.dimension);
         let layer_or_depth_range = if dst_texture.desc.dimension == wgt::TextureDimension::D3 {
-            // TODO: We assume that we're allowed to do clear operations on volume texture slices, this is not properly specified.
+            // TODO: We assume that we're allowed to do clear operations on
+            // volume texture slices, this is not properly specified.
             0..extent.depth_or_array_layers
         } else {
             range.layer_range.clone()

@@ -41,7 +41,7 @@ extern bool js::IsExtendedPrimitive(const JSObject& obj);
 namespace js {
 
 inline uint32_t NativeObject::numFixedSlotsMaybeForwarded() const {
-  return gc::MaybeForwarded(shape())->numFixedSlots();
+  return gc::MaybeForwarded(JSObject::shape())->asNative().numFixedSlots();
 }
 
 inline uint8_t* NativeObject::fixedData(size_t nslots) const {
@@ -843,19 +843,21 @@ inline bool IsPackedArray(JSObject* obj) {
 
 // Like AddDataProperty but optimized for plain objects. Plain objects don't
 // have an addProperty hook.
-MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(JSContext* cx,
-                                                    Handle<PlainObject*> obj,
-                                                    HandleId id,
-                                                    HandleValue v) {
+MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(
+    JSContext* cx, Handle<PlainObject*> obj, HandleId id, HandleValue v,
+    uint32_t* resultSlot = nullptr) {
   MOZ_ASSERT(!id.isInt());
 
   uint32_t slot;
-  if (!NativeObject::addProperty(cx, obj, id,
-                                 PropertyFlags::defaultDataPropFlags, &slot)) {
+  if (!resultSlot) {
+    resultSlot = &slot;
+  }
+  if (!NativeObject::addProperty(
+          cx, obj, id, PropertyFlags::defaultDataPropFlags, resultSlot)) {
     return false;
   }
 
-  obj->initSlot(slot, v);
+  obj->initSlot(*resultSlot, v);
 
   MOZ_ASSERT(!obj->getClass()->getAddProperty());
   return true;

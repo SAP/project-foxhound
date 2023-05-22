@@ -49,10 +49,13 @@ mozilla::LazyLogModule ModuleLoaderBase::gModuleLoaderBaseLog(
 
 #define LOG_ENABLED() \
   MOZ_LOG_TEST(ModuleLoaderBase::gModuleLoaderBaseLog, mozilla::LogLevel::Debug)
+
+//////////////////////////////////////////////////////////////
 // ModuleLoaderBase
 //////////////////////////////////////////////////////////////
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ModuleLoaderBase)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION(ModuleLoaderBase, mFetchedModules,
@@ -75,8 +78,14 @@ void ModuleLoaderBase::EnsureModuleHooksInitialized() {
   JS::SetModuleMetadataHook(rt, HostPopulateImportMeta);
   JS::SetScriptPrivateReferenceHooks(rt, HostAddRefTopLevelScript,
                                      HostReleaseTopLevelScript);
-  JS::SetSupportedAssertionsHook(rt, HostGetSupportedImportAssertions);
   JS::SetModuleDynamicImportHook(rt, HostImportModuleDynamically);
+
+  JS::ImportAssertionVector assertions;
+  // ImportAssertionVector has inline storage for one element so this cannot
+  // fail.
+  MOZ_ALWAYS_TRUE(assertions.reserve(1));
+  assertions.infallibleAppend(JS::ImportAssertion::Type);
+  JS::SetSupportedImportAssertions(rt, assertions);
 }
 
 // 8.1.3.8.1 HostResolveImportedModule(referencingModule, moduleRequest)
@@ -317,20 +326,6 @@ bool ModuleLoaderBase::HostImportModuleDynamically(
   return true;
 }
 
-bool ModuleLoaderBase::HostGetSupportedImportAssertions(
-    JSContext* aCx, JS::ImportAssertionVector& aValues) {
-  MOZ_ASSERT(aValues.empty());
-
-  if (!aValues.reserve(1)) {
-    JS_ReportOutOfMemory(aCx);
-    return false;
-  }
-
-  aValues.infallibleAppend(JS::ImportAssertion::Type);
-
-  return true;
-}
-
 // static
 ModuleLoaderBase* ModuleLoaderBase::GetCurrentModuleLoader(JSContext* aCx) {
   auto reportError = mozilla::MakeScopeExit([aCx]() {
@@ -566,7 +561,7 @@ nsresult ModuleLoaderBase::OnFetchComplete(ModuleLoadRequest* aRequest,
   MOZ_ASSERT(NS_SUCCEEDED(rv) == bool(aRequest->mModuleScript));
   SetModuleFetchFinishedAndResumeWaitingRequests(aRequest, rv);
 
-  if (aRequest->mModuleScript && !aRequest->mModuleScript->HasParseError()) {
+  if (!aRequest->IsErrored()) {
     StartFetchingModuleDependencies(aRequest);
   }
 
@@ -761,7 +756,6 @@ nsresult ModuleLoaderBase::ResolveRequestedModules(
   JS::Rooted<JSObject*> moduleRecord(cx, ms->ModuleRecord());
   uint32_t length = JS::GetRequestedModulesCount(cx, moduleRecord);
 
-  JS::Rooted<JS::Value> requestedModule(cx);
   for (uint32_t i = 0; i < length; i++) {
     JS::Rooted<JSString*> str(
         cx, JS::GetRequestedModuleSpecifier(cx, moduleRecord, i));
@@ -989,7 +983,9 @@ void ModuleLoaderBase::Shutdown() {
   MOZ_ASSERT(mFetchingModules.IsEmpty());
 
   for (const auto& entry : mFetchedModules) {
-    entry.GetData()->Shutdown();
+    if (entry.GetData()) {
+      entry.GetData()->Shutdown();
+    }
   }
 
   mFetchedModules.Clear();
@@ -1216,6 +1212,12 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
   // ModuleEvaluate will usually set a pending exception if it returns false,
   // unless the user cancels execution.
   MOZ_ASSERT_IF(ok, !JS_IsExceptionPending(aCx));
+
+  // For long running scripts, the request may be cancelled abruptly. This
+  // may also happen if the loader is collected before we get here.
+  if (request->IsCanceled() || !mLoader) {
+    return NS_ERROR_ABORT;
+  }
 
   if (!ok) {
     LOG(("ScriptLoadRequest (%p):   evaluation failed", aRequest));

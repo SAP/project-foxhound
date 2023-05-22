@@ -9,31 +9,20 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
-  --toolbar-non-lwt-bgcolor: -moz-dialog;
+  --toolbar-non-lwt-bgcolor: color-mix(in srgb, -moz-dialog 85%, white);
   --toolbar-non-lwt-textcolor: -moz-dialogtext;
-  --toolbar-non-lwt-bgimage: linear-gradient(rgba(255,255,255,.15), rgba(255,255,255,.15));
-
-  --panel-separator-color: ThreeDLightShadow;
 
   --chrome-content-separator-color: ThreeDShadow;
 }
 
 @media (-moz-windows-default-theme) {
   :root {
-    --toolbar-non-lwt-bgimage: none;
-
-    --panel-separator-color: hsla(210,4%,10%,.14);
+    --toolbar-non-lwt-bgcolor: -moz-dialog;
   }
 }
 
 :root:-moz-lwtheme {
   --chrome-content-separator-color: rgba(0,0,0,.3);
-
-  --panel-separator-color: hsla(210,4%,10%,.14);
-}
-
-:root[lwt-popup-brighttext] {
-  --panel-separator-color: rgba(249,249,250,.1);
 }
 
 #menubar-items {
@@ -90,7 +79,6 @@
 
 .browser-toolbar:not(.titlebar-color) {
   background-color: var(--toolbar-bgcolor);
-  background-image: var(--toolbar-bgimage);
   background-clip: padding-box;
   color: var(--toolbar-color);
 }
@@ -568,23 +556,4 @@ menupopup[touchmode] :is(menu, menuitem, menucaption) {
     margin-top: 0;
     margin-inline: 0;
   }
-}
-
-#historySwipeAnimationPreviousArrow {
-  background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 192px 192px no-repeat transparent;
-  will-change: transform;
-  -moz-context-properties: fill;
-}
-#historySwipeAnimationPreviousArrow:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-#historySwipeAnimationNextArrow {
-  background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 192px 192px no-repeat transparent;
-  will-change: transform;
-  -moz-context-properties: fill;
-}
-#historySwipeAnimationNextArrow:-moz-locale-dir(ltr) {
-  transform: scaleX(-1);
 }

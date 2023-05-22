@@ -27,7 +27,7 @@ add_task(async function test_searchEngine_autoFill() {
     uri,
     title: "Example bookmark",
   });
-  await PlacesTestUtils.promiseAsyncUpdates();
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   ok(
     frecencyForUrl(uri) > 10000,
     "Added URI should have expected high frecency"
@@ -66,12 +66,11 @@ add_task(async function test_searchEngine_noautoFill() {
     context,
     autofilled: "my.search.com/",
     completed: "http://my.search.com/",
-    hasAutofillTitle: false,
     matches: [
       // Note this result is a normal Autofill result and not a priority engine.
       makeVisitResult(context, {
         uri: "http://my.search.com/",
-        title: "my.search.com",
+        fallbackTitle: "my.search.com",
         heuristic: true,
       }),
       makeSearchResult(context, {

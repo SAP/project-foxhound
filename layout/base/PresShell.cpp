@@ -49,6 +49,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/gfx/Types.h"
+#include "nsBoxLayoutState.h"
 #include <algorithm>
 
 #ifdef XP_WIN
@@ -153,7 +154,6 @@
 // For style data reconstruction
 #include "nsStyleChangeList.h"
 #include "nsCSSFrameConstructor.h"
-#include "nsMenuFrame.h"
 #include "nsTreeBodyFrame.h"
 #include "XULTreeElement.h"
 #include "nsMenuPopupFrame.h"
@@ -587,63 +587,6 @@ class MOZ_STACK_CLASS AutoPointerEventTargetUpdater final {
   nsIContent** mTargetContent;
 };
 
-void PresShell::DirtyRootsList::Add(nsIFrame* aFrame) {
-  // Is this root already scheduled for reflow?
-  // FIXME: This could possibly be changed to a uniqueness assertion, with some
-  // work in ResizeReflowIgnoreOverride (and maybe others?)
-  if (mList.Contains(aFrame)) {
-    // We don't expect frame to change depths.
-    MOZ_ASSERT(aFrame->GetDepthInFrameTree() ==
-               mList[mList.IndexOf(aFrame)].mDepth);
-    return;
-  }
-
-  mList.InsertElementSorted(
-      FrameAndDepth{aFrame, aFrame->GetDepthInFrameTree()},
-      FrameAndDepth::CompareByReverseDepth{});
-}
-
-void PresShell::DirtyRootsList::Remove(nsIFrame* aFrame) {
-  mList.RemoveElement(aFrame);
-}
-
-nsIFrame* PresShell::DirtyRootsList::PopShallowestRoot() {
-  // List is sorted in order of decreasing depth, so there are no deeper
-  // frames than the last one.
-  const FrameAndDepth& lastFAD = mList.PopLastElement();
-  nsIFrame* frame = lastFAD.mFrame;
-  // We don't expect frame to change depths.
-  MOZ_ASSERT(frame->GetDepthInFrameTree() == lastFAD.mDepth);
-  return frame;
-}
-
-void PresShell::DirtyRootsList::Clear() { mList.Clear(); }
-
-bool PresShell::DirtyRootsList::Contains(nsIFrame* aFrame) const {
-  return mList.Contains(aFrame);
-}
-
-bool PresShell::DirtyRootsList::IsEmpty() const { return mList.IsEmpty(); }
-
-bool PresShell::DirtyRootsList::FrameIsAncestorOfDirtyRoot(
-    nsIFrame* aFrame) const {
-  MOZ_ASSERT(aFrame);
-
-  // Look for a path from any dirty roots to aFrame, following GetParent().
-  // This check mirrors what FrameNeedsReflow() would have done if the reflow
-  // root didn't get in the way.
-  for (nsIFrame* dirtyFrame : mList) {
-    do {
-      if (dirtyFrame == aFrame) {
-        return true;
-      }
-      dirtyFrame = dirtyFrame->GetParent();
-    } while (dirtyFrame);
-  }
-
-  return false;
-}
-
 bool PresShell::sDisableNonTestMouseEvents = false;
 
 LazyLogModule PresShell::gLog("PresShell");
@@ -856,7 +799,9 @@ PresShell::PresShell(Document* aDocument)
       mForceUseLegacyNonPrimaryDispatch(false),
       mInitializedWithClickEventDispatchingBlacklist(false),
       mMouseLocationWasSetBySynthesizedMouseEventForTests(false),
-      mHasTriedFastUnsuppress(false) {
+      mHasTriedFastUnsuppress(false),
+      mProcessingReflowCommands(false),
+      mPendingDidDoReflow(false) {
   MOZ_LOG(gLog, LogLevel::Debug, ("PresShell::PresShell this=%p", this));
   MOZ_ASSERT(aDocument);
 
@@ -2154,6 +2099,7 @@ bool PresShell::ResizeReflowIgnoreOverride(nscoord aWidth, nscoord aHeight,
   // Now, we may have been destroyed by the destructor of
   // `nsAutoCauseReflowNotifier`.
 
+  mPendingDidDoReflow = true;
   DidDoReflow(true);
 
   // the reflow above should've set our bsize if it was NS_UNCONSTRAINEDSIZE,
@@ -4184,29 +4130,29 @@ void PresShell::CancelPostedReflowCallbacks() {
 }
 
 void PresShell::HandlePostedReflowCallbacks(bool aInterruptible) {
-  bool shouldFlush = false;
-
-  while (mFirstCallbackEventRequest) {
-    nsCallbackEventRequest* node = mFirstCallbackEventRequest;
-    mFirstCallbackEventRequest = node->next;
-    if (!mFirstCallbackEventRequest) {
-      mLastCallbackEventRequest = nullptr;
-    }
-    nsIReflowCallback* callback = node->callback;
-    FreeByObjectID(eArenaObjectID_nsCallbackEventRequest, node);
-    if (callback) {
-      if (callback->ReflowFinished()) {
+  while (true) {
+    // Call all our callbacks, tell us if we need to flush again.
+    bool shouldFlush = false;
+    while (mFirstCallbackEventRequest) {
+      nsCallbackEventRequest* node = mFirstCallbackEventRequest;
+      mFirstCallbackEventRequest = node->next;
+      if (!mFirstCallbackEventRequest) {
+        mLastCallbackEventRequest = nullptr;
+      }
+      nsIReflowCallback* callback = node->callback;
+      FreeByObjectID(eArenaObjectID_nsCallbackEventRequest, node);
+      if (callback && callback->ReflowFinished()) {
         shouldFlush = true;
       }
     }
-  }
 
-  FlushType flushType =
-      aInterruptible ? FlushType::InterruptibleLayout : FlushType::Layout;
-  if (shouldFlush && !mIsDestroying && nsContentUtils::IsSafeToRunScript()) {
-    // We don't want to flush when not allowed to run script (e.g., like when
-    // running container query updates), since that trivially executes script.
-    // We'll flush layout again at the end of that process if necessary.
+    if (!shouldFlush || mIsDestroying) {
+      return;
+    }
+
+    // The flush might cause us to have more callbacks.
+    const auto flushType =
+        aInterruptible ? FlushType::InterruptibleLayout : FlushType::Layout;
     FlushPendingNotifications(flushType);
   }
 }
@@ -4454,10 +4400,10 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
     FlushPendingScrollResnap();
 
     if (MOZ_LIKELY(!mIsDestroying)) {
-      // Try to trigger pending scroll-linked animations after we flush
+      // Try to trigger pending scroll-driven animations after we flush
       // style and layout (if any). If we try to trigger them after flushing
       // style but the frame tree is not ready, we will check them again after
-      // we flush layout because the requirement to trigger scroll-linked
+      // we flush layout because the requirement to trigger scroll-driven
       // animations is that the associated scroll containers are ready (i.e. the
       // scroll-timeline is active), and this depends on the readiness of the
       // scrollable frame and the primary frame of the scroll container.
@@ -4687,7 +4633,7 @@ void PresShell::NotifyCounterStylesAreDirty() {
 }
 
 bool PresShell::FrameIsAncestorOfDirtyRoot(nsIFrame* aFrame) const {
-  return mDirtyRoots.FrameIsAncestorOfDirtyRoot(aFrame);
+  return mDirtyRoots.FrameIsAncestorOfAnyElement(aFrame);
 }
 
 void PresShell::ReconstructFrames() {
@@ -5563,8 +5509,9 @@ PresShell::CanvasBackground PresShell::ComputeCanvasBackground() const {
 
 nscolor PresShell::ComputeBackstopColor(nsView* aDisplayRoot) {
   nsIWidget* widget = aDisplayRoot->GetWidget();
-  if (widget && (widget->GetTransparencyMode() != eTransparencyOpaque ||
-                 widget->WidgetPaintsBackground())) {
+  if (widget &&
+      (widget->GetTransparencyMode() != widget::TransparencyMode::Opaque ||
+       widget->WidgetPaintsBackground())) {
     // Within a transparent widget, so the backstop color must be
     // totally transparent.
     return NS_RGBA(0, 0, 0, 0);
@@ -5735,7 +5682,7 @@ static nsView* FindViewContaining(nsView* aRelativeToView,
                                   nsView* aView, nsPoint aPt) {
   MOZ_ASSERT(aRelativeToView->GetFrame());
 
-  if (aView->GetVisibility() == nsViewVisibility_kHide) {
+  if (aView->GetVisibility() == ViewVisibility::Hide) {
     return nullptr;
   }
 
@@ -5915,7 +5862,6 @@ void PresShell::ProcessSynthMouseMoveEvent(bool aFromScroll) {
                          WidgetMouseEvent::eSynthesized);
   event.mRefPoint =
       LayoutDeviceIntPoint::FromAppUnitsToNearest(refpoint, viewAPD);
-  event.mTime = PR_IntervalNow();
   // XXX set event.mModifiers ?
   // XXX mnakano I think that we should get the latest information from widget.
 
@@ -6128,7 +6074,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
           }
         }
       }
-      MarkFramesInSubtreeApproximatelyVisible(child, r);
+      MarkFramesInSubtreeApproximatelyVisible(child, r, aRemoveOnly);
     }
   }
 }
@@ -6418,7 +6364,8 @@ void PresShell::PaintInternal(nsView* aViewToPaint, PaintInternalFlags aFlags) {
     uri = contentRoot->GetDocumentURI();
   }
   url = uri ? uri->GetSpecOrDefault() : "N/A"_ns;
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS("Paint", GRAPHICS, url);
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
+      "Paint", GRAPHICS, Substring(url, std::min(size_t(128), url.Length())));
 
   Maybe<js::AutoAssertNoContentJS> nojs;
 
@@ -8692,7 +8639,8 @@ nsresult PresShell::EventHandler::DispatchEventToDOM(
     }
   }
   if (eventTarget) {
-    if (aEvent->IsBlockedForFingerprintingResistance()) {
+    if (eventTarget->OwnerDoc()->ShouldResistFingerprinting() &&
+        aEvent->IsBlockedForFingerprintingResistance()) {
       aEvent->mFlags.mOnlySystemGroupDispatchInContent = true;
     } else if (aEvent->mMessage == eKeyPress) {
       // If eKeyPress event is marked as not dispatched in the default event
@@ -8909,12 +8857,11 @@ bool PresShell::EventHandler::AdjustContextMenuKeyEvent(
     WidgetMouseEvent* aMouseEvent) {
   // if a menu is open, open the context menu relative to the active item on the
   // menu.
-  nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-  if (pm) {
-    nsIFrame* popupFrame = pm->GetTopPopup(ePopupTypeMenu);
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
+    nsIFrame* popupFrame = pm->GetTopPopup(widget::PopupType::Menu);
     if (popupFrame) {
-      nsIFrame* itemFrame =
-          (static_cast<nsMenuPopupFrame*>(popupFrame))->GetCurrentMenuItem();
+      nsIFrame* itemFrame = (static_cast<nsMenuPopupFrame*>(popupFrame))
+                                ->GetCurrentMenuItemFrame();
       if (!itemFrame) itemFrame = popupFrame;
 
       nsCOMPtr<nsIWidget> widget = popupFrame->GetNearestWidget();
@@ -9488,9 +9435,22 @@ void PresShell::WillDoReflow() {
 }
 
 void PresShell::DidDoReflow(bool aInterruptible) {
+  MOZ_ASSERT(mPendingDidDoReflow);
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    // If we're reflowing while script-blocked (e.g. from container query
+    // updates), defer our reflow callbacks until the end of our next layout
+    // flush.
+    SetNeedLayoutFlush();
+    return;
+  }
+
+  auto clearPendingDidDoReflow =
+      MakeScopeExit([&] { mPendingDidDoReflow = false; });
+
   mHiddenContentInForcedLayout.Clear();
 
   HandlePostedReflowCallbacks(aInterruptible);
+
   if (mIsDestroying) {
     return;
   }
@@ -9713,16 +9673,17 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
 
   target->SetSize(boundsRelativeToTarget.Size());
 
-  // Always use boundsRelativeToTarget here, not
-  // desiredSize.InkOverflowRect(), because for root frames (where they
-  // could be different, since root frames are allowed to have overflow) the
-  // root view bounds need to match the viewport bounds; the view manager
-  // "window dimensions" code depends on it.
-  nsContainerFrame::SyncFrameViewAfterReflow(
-      mPresContext, target, target->GetView(), boundsRelativeToTarget);
-  nsContainerFrame::SyncWindowProperties(mPresContext, target,
-                                         target->GetView(), rcx,
-                                         nsContainerFrame::SET_ASYNC);
+  // Always use boundsRelativeToTarget here, not desiredSize.InkOverflowRect(),
+  // because for root frames (where they could be different, since root frames
+  // are allowed to have overflow) the root view bounds need to match the
+  // viewport bounds; the view manager "window dimensions" code depends on it.
+  if (target->HasView()) {
+    nsContainerFrame::SyncFrameViewAfterReflow(
+        mPresContext, target, target->GetView(), boundsRelativeToTarget);
+    if (target->IsViewportFrame()) {
+      SyncWindowProperties(/* aSync = */ false);
+    }
+  }
 
   target->DidReflow(mPresContext, nullptr);
   if (target->IsInScrollAnchorChain()) {
@@ -9828,12 +9789,18 @@ void PresShell::DoVerifyReflow() {
 #define NS_LONG_REFLOW_TIME_MS 5000
 
 bool PresShell::ProcessReflowCommands(bool aInterruptible) {
-  if (mDirtyRoots.IsEmpty() && !mShouldUnsuppressPainting) {
+  if (mDirtyRoots.IsEmpty() && !mShouldUnsuppressPainting &&
+      !mPendingDidDoReflow) {
     // Nothing to do; bail out
     return true;
   }
 
-  mozilla::TimeStamp timerStart = mozilla::TimeStamp::Now();
+  const bool wasProcessingReflowCommands = mProcessingReflowCommands;
+  auto restoreProcessingReflowCommands = MakeScopeExit(
+      [&] { mProcessingReflowCommands = wasProcessingReflowCommands; });
+  mProcessingReflowCommands = true;
+
+  auto timerStart = mozilla::TimeStamp::Now();
   bool interrupted = false;
   if (!mDirtyRoots.IsEmpty()) {
 #ifdef DEBUG
@@ -9849,68 +9816,68 @@ bool PresShell::ProcessReflowCommands(bool aInterruptible) {
             : (PRIntervalTime)0;
 
     // Scope for the reflow entry point
-    {
-      nsAutoScriptBlocker scriptBlocker;
-      WillDoReflow();
-      AUTO_LAYOUT_PHASE_ENTRY_POINT(GetPresContext(), Reflow);
-      nsViewManager::AutoDisableRefresh refreshBlocker(mViewManager);
+    nsAutoScriptBlocker scriptBlocker;
+    WillDoReflow();
+    AUTO_LAYOUT_PHASE_ENTRY_POINT(GetPresContext(), Reflow);
+    nsViewManager::AutoDisableRefresh refreshBlocker(mViewManager);
 
-      OverflowChangedTracker overflowTracker;
+    OverflowChangedTracker overflowTracker;
 
-      do {
-        // Send an incremental reflow notification to the target frame.
-        nsIFrame* target = mDirtyRoots.PopShallowestRoot();
+    do {
+      // Send an incremental reflow notification to the target frame.
+      nsIFrame* target = mDirtyRoots.PopShallowestRoot();
 
-        if (!target->IsSubtreeDirty()) {
-          // It's not dirty anymore, which probably means the notification
-          // was posted in the middle of a reflow (perhaps with a reflow
-          // root in the middle).  Don't do anything.
-          continue;
-        }
-
-        interrupted = !DoReflow(target, aInterruptible, &overflowTracker);
-
-        // Keep going until we're out of reflow commands, or we've run
-        // past our deadline, or we're interrupted.
-      } while (!interrupted && !mDirtyRoots.IsEmpty() &&
-               (!aInterruptible || PR_IntervalNow() < deadline));
-
-      interrupted = !mDirtyRoots.IsEmpty();
-
-      overflowTracker.Flush();
-
-      if (!interrupted) {
-        // We didn't get interrupted. Go ahead and perform scroll anchor
-        // adjustments.
-        FlushPendingScrollAnchorAdjustments();
+      if (!target->IsSubtreeDirty()) {
+        // It's not dirty anymore, which probably means the notification
+        // was posted in the middle of a reflow (perhaps with a reflow
+        // root in the middle).  Don't do anything.
+        continue;
       }
-    }
 
-    // Exiting the scriptblocker might have killed us
-    if (!mIsDestroying) {
-      DidDoReflow(aInterruptible);
-    }
+      interrupted = !DoReflow(target, aInterruptible, &overflowTracker);
 
-    // DidDoReflow might have killed us
-    if (!mIsDestroying) {
+      // Keep going until we're out of reflow commands, or we've run
+      // past our deadline, or we're interrupted.
+    } while (!interrupted && !mDirtyRoots.IsEmpty() &&
+             (!aInterruptible || PR_IntervalNow() < deadline));
+
+    interrupted = !mDirtyRoots.IsEmpty();
+
+    overflowTracker.Flush();
+
+    if (!interrupted) {
+      // We didn't get interrupted. Go ahead and perform scroll anchor
+      // adjustments.
+      FlushPendingScrollAnchorAdjustments();
+    }
+    mPendingDidDoReflow = true;
+  }
+
+  // Exiting the scriptblocker might have killed us. If we were processing
+  // scroll commands, let the outermost call deal with it.
+  if (!mIsDestroying && mPendingDidDoReflow && !wasProcessingReflowCommands) {
+    DidDoReflow(aInterruptible);
+  }
+
+  // DidDoReflow might have killed us
+  if (!mIsDestroying) {
 #ifdef DEBUG
-      if (VerifyReflowFlags::DumpCommands & gVerifyReflowFlags) {
-        printf("\nPresShell::ProcessReflowCommands() finished: this=%p\n",
-               (void*)this);
-      }
-      DoVerifyReflow();
+    if (VerifyReflowFlags::DumpCommands & gVerifyReflowFlags) {
+      printf("\nPresShell::ProcessReflowCommands() finished: this=%p\n",
+             (void*)this);
+    }
+    DoVerifyReflow();
 #endif
 
-      // If any new reflow commands were enqueued during the reflow, schedule
-      // another reflow event to process them.  Note that we want to do this
-      // after DidDoReflow(), since that method can change whether there are
-      // dirty roots around by flushing, and there's no point in posting a
-      // reflow event just to have the flush revoke it.
-      if (!mDirtyRoots.IsEmpty()) {
-        MaybeScheduleReflow();
-        // And record that we might need flushing
-        SetNeedLayoutFlush();
-      }
+    // If any new reflow commands were enqueued during the reflow, schedule
+    // another reflow event to process them.  Note that we want to do this
+    // after DidDoReflow(), since that method can change whether there are
+    // dirty roots around by flushing, and there's no point in posting a
+    // reflow event just to have the flush revoke it.
+    if (!mDirtyRoots.IsEmpty()) {
+      MaybeScheduleReflow();
+      // And record that we might need flushing
+      SetNeedLayoutFlush();
     }
   }
 
@@ -11559,13 +11526,118 @@ bool PresShell::DetermineFontSizeInflationState() {
   return true;
 }
 
-void PresShell::SyncWindowProperties(nsView* aView) {
-  nsIFrame* frame = aView->GetFrame();
-  if (frame && mPresContext) {
-    // CreateReferenceRenderingContext can return nullptr
-    RefPtr<gfxContext> rcx(CreateReferenceRenderingContext());
-    nsContainerFrame::SyncWindowProperties(mPresContext, frame, aView, rcx, 0);
+static nsIWidget* GetPresContextContainerWidget(nsPresContext* aPresContext) {
+  nsCOMPtr<nsISupports> container = aPresContext->Document()->GetContainer();
+  nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container);
+  if (!baseWindow) {
+    return nullptr;
   }
+
+  nsCOMPtr<nsIWidget> mainWidget;
+  baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
+  return mainWidget;
+}
+
+static bool IsTopLevelWidget(nsIWidget* aWidget) {
+  using WindowType = mozilla::widget::WindowType;
+
+  auto windowType = aWidget->GetWindowType();
+  return windowType == WindowType::TopLevel ||
+         windowType == WindowType::Dialog || windowType == WindowType::Popup ||
+         windowType == WindowType::Sheet;
+}
+
+PresShell::WindowSizeConstraints PresShell::GetWindowSizeConstraints() {
+  nsSize minSize(0, 0);
+  nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+  nsIFrame* rootFrame = FrameConstructor()->GetRootElementStyleFrame();
+  if (!rootFrame || !mPresContext) {
+    return {minSize, maxSize};
+  }
+  if (rootFrame->IsXULBoxFrame()) {
+    RefPtr<gfxContext> rcx(CreateReferenceRenderingContext());
+    if (!rcx) {
+      return {minSize, maxSize};
+    }
+    nsBoxLayoutState state(mPresContext, rcx);
+    minSize = rootFrame->GetXULMinSize(state);
+    maxSize = rootFrame->GetXULMaxSize(state);
+  } else {
+    const auto* pos = rootFrame->StylePosition();
+    if (pos->mMinWidth.ConvertsToLength()) {
+      minSize.width = pos->mMinWidth.ToLength();
+    }
+    if (pos->mMinHeight.ConvertsToLength()) {
+      minSize.height = pos->mMinHeight.ToLength();
+    }
+    if (pos->mMaxWidth.ConvertsToLength()) {
+      maxSize.width = pos->mMaxWidth.ToLength();
+    }
+    if (pos->mMaxHeight.ConvertsToLength()) {
+      maxSize.height = pos->mMaxHeight.ToLength();
+    }
+  }
+  return {minSize, maxSize};
+}
+
+void PresShell::SyncWindowProperties(bool aSync) {
+  nsView* view = mViewManager->GetRootView();
+  if (!view || !view->HasWidget()) {
+    return;
+  }
+  RefPtr pc = mPresContext;
+  if (!pc) {
+    return;
+  }
+
+  nsCOMPtr<nsIWidget> windowWidget = GetPresContextContainerWidget(pc);
+  if (!windowWidget || !IsTopLevelWidget(windowWidget)) {
+    return;
+  }
+
+  nsIFrame* rootFrame = FrameConstructor()->GetRootElementStyleFrame();
+  if (!rootFrame) {
+    return;
+  }
+
+  if (!aSync) {
+    view->SetNeedsWindowPropertiesSync();
+    return;
+  }
+
+  AutoWeakFrame weak(rootFrame);
+  if (!GetRootScrollFrame()) {
+    // Scrollframes use native widgets which don't work well with
+    // translucent windows, at least in Windows XP. So if the document
+    // has a root scrollrame it's useless to try to make it transparent,
+    // we'll just get something broken.
+    // We can change this to allow translucent toplevel HTML documents
+    // (e.g. to do something like Dashboard widgets), once we
+    // have broad support for translucent scrolled documents, but be
+    // careful because apparently some Firefox extensions expect
+    // openDialog("something.html") to produce an opaque window
+    // even if the HTML doesn't have a background-color set.
+    auto* canvas = GetCanvasFrame();
+    widget::TransparencyMode mode = nsLayoutUtils::GetFrameTransparency(
+        canvas ? canvas : rootFrame, rootFrame);
+    StyleWindowShadow shadow = rootFrame->StyleUIReset()->mWindowShadow;
+    nsCOMPtr<nsIWidget> viewWidget = view->GetWidget();
+    viewWidget->SetTransparencyMode(mode);
+    windowWidget->SetWindowShadowStyle(shadow);
+
+    // For macOS, apply color scheme overrides to the top level window widget.
+    if (auto scheme = pc->GetOverriddenOrEmbedderColorScheme()) {
+      windowWidget->SetColorScheme(scheme);
+    }
+  }
+
+  if (!weak.IsAlive()) {
+    return;
+  }
+
+  const auto& constraints = GetWindowSizeConstraints();
+  nsContainerFrame::SetSizeConstraints(pc, windowWidget, constraints.mMinSize,
+                                       constraints.mMaxSize);
 }
 
 nsresult PresShell::HasRuleProcessorUsedByMultipleStyleSets(uint32_t aSheetType,

@@ -13,6 +13,7 @@
 #include "js/ContextOptions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Maybe.h"
@@ -31,12 +32,14 @@
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/dom/Worker.h"
+#include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerLoadInfo.h"
 #include "mozilla/dom/WorkerStatus.h"
 #include "mozilla/dom/workerinternals/JSSettings.h"
 #include "mozilla/dom/workerinternals/Queue.h"
 #include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -140,6 +143,13 @@ class WorkerPrivate final
   };
 
   NS_INLINE_DECL_REFCOUNTING(WorkerPrivate)
+
+  static already_AddRefed<WorkerPrivate> Constructor(
+      JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
+      WorkerKind aWorkerKind, RequestCredentials aRequestCredentials,
+      const WorkerType aWorkerType, const nsAString& aWorkerName,
+      const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
+      ErrorResult& aRv, nsString aId = u""_ns);
 
   static already_AddRefed<WorkerPrivate> Constructor(
       JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
@@ -440,7 +450,7 @@ class WorkerPrivate final
     return data->mOnLine;
   }
 
-  void StopSyncLoop(nsIEventTarget* aSyncLoopTarget, bool aResult);
+  void StopSyncLoop(nsIEventTarget* aSyncLoopTarget, nsresult aResult);
 
   bool AllPendingRunnablesShouldBeCanceled() const {
     return mCancelAllPendingRunnables;
@@ -636,6 +646,8 @@ class WorkerPrivate final
   const nsString& ScriptURL() const { return mScriptURL; }
 
   const nsString& WorkerName() const { return mWorkerName; }
+  RequestCredentials WorkerCredentials() const { return mCredentialsMode; }
+  enum WorkerType WorkerType() const { return mWorkerType; }
 
   WorkerKind Kind() const { return mWorkerKind; }
 
@@ -737,35 +749,28 @@ class WorkerPrivate final
     mLoadInfo.mChannelInfo = aChannelInfo;
   }
 
-  nsIPrincipal* GetPrincipal() const {
-    AssertIsOnMainThread();
-    return mLoadInfo.mPrincipal;
-  }
+  nsIPrincipal* GetPrincipal() const { return mLoadInfo.mPrincipal; }
 
   nsIPrincipal* GetLoadingPrincipal() const {
-    AssertIsOnMainThread();
     return mLoadInfo.mLoadingPrincipal;
   }
 
   nsIPrincipal* GetPartitionedPrincipal() const {
-    AssertIsOnMainThread();
     return mLoadInfo.mPartitionedPrincipal;
   }
 
-  const nsAString& OriginNoSuffix() const { return mLoadInfo.mOriginNoSuffix; }
-
-  const nsACString& Origin() const { return mLoadInfo.mOrigin; }
-
-  const nsACString& EffectiveStoragePrincipalOrigin() const;
+  nsIPrincipal* GetEffectiveStoragePrincipal() const;
 
   nsILoadGroup* GetLoadGroup() const {
     AssertIsOnMainThread();
     return mLoadInfo.mLoadGroup;
   }
 
-  bool UsesSystemPrincipal() const { return mLoadInfo.mPrincipalIsSystem; }
+  bool UsesSystemPrincipal() const {
+    return GetPrincipal()->IsSystemPrincipal();
+  }
   bool UsesAddonOrExpandedAddonPrincipal() const {
-    return mLoadInfo.mPrincipalIsAddonOrExpandedAddon;
+    return GetPrincipal()->GetIsAddonOrExpandedAddonPrincipal();
   }
 
   const mozilla::ipc::PrincipalInfo& GetPrincipalInfo() const {
@@ -774,10 +779,6 @@ class WorkerPrivate final
 
   const mozilla::ipc::PrincipalInfo& GetPartitionedPrincipalInfo() const {
     return *mLoadInfo.mPartitionedPrincipalInfo;
-  }
-
-  uint32_t GetPrincipalHashValue() const {
-    return mLoadInfo.mPrincipalHashValue;
   }
 
   const mozilla::ipc::PrincipalInfo& GetEffectiveStoragePrincipalInfo() const;
@@ -880,6 +881,11 @@ class WorkerPrivate final
     // Any thread.
     MOZ_ASSERT(mLoadInfo.mCookieJarSettings);
     return mLoadInfo.mCookieJarSettings;
+  }
+
+  const net::CookieJarSettingsArgs& CookieJarSettingsArgs() const {
+    MOZ_ASSERT(mLoadInfo.mCookieJarSettings);
+    return mLoadInfo.mCookieJarSettingsArgs;
   }
 
   const OriginAttributes& GetOriginAttributes() const {
@@ -1051,10 +1057,13 @@ class WorkerPrivate final
   void IncreaseWorkerFinishedRunnableCount() { ++mWorkerFinishedRunnableCount; }
   void DecreaseWorkerFinishedRunnableCount() { --mWorkerFinishedRunnableCount; }
 
+  void RunShutdownTasks();
+
  private:
   WorkerPrivate(
       WorkerPrivate* aParent, const nsAString& aScriptURL, bool aIsChromeWorker,
-      WorkerKind aWorkerKind, const nsAString& aWorkerName,
+      WorkerKind aWorkerKind, RequestCredentials aRequestCredentials,
+      enum WorkerType aWorkerType, const nsAString& aWorkerName,
       const nsACString& aServiceWorkerScope, WorkerLoadInfo& aLoadInfo,
       nsString&& aId, const nsID& aAgentClusterId,
       const nsILoadInfo::CrossOriginOpenerPolicy aAgentClusterOpenerPolicy);
@@ -1118,9 +1127,9 @@ class WorkerPrivate final
   already_AddRefed<nsISerialEventTarget> CreateNewSyncLoop(
       WorkerStatus aFailStatus);
 
-  bool RunCurrentSyncLoop();
+  nsresult RunCurrentSyncLoop();
 
-  bool DestroySyncLoop(uint32_t aLoopIndex);
+  nsresult DestroySyncLoop(uint32_t aLoopIndex);
 
   void InitializeGCTimers();
 
@@ -1128,6 +1137,10 @@ class WorkerPrivate final
 
   void SetGCTimerMode(GCTimerMode aMode);
 
+ public:
+  void CancelGCTimers() { SetGCTimerMode(NoTimer); }
+
+ private:
   void ShutdownGCTimers();
 
   friend class WorkerRef;
@@ -1143,6 +1156,12 @@ class WorkerPrivate final
     return !(data->mChildWorkers.IsEmpty() && data->mTimeouts.IsEmpty() &&
              data->mWorkerRefs.IsEmpty());
   }
+
+  friend class WorkerEventTarget;
+
+  bool RegisterShutdownTask(nsITargetShutdownTask* aTask);
+
+  bool UnregisterShutdownTask(nsITargetShutdownTask* aTask);
 
   // Internal logic to dispatch a runnable. This is separate from Dispatch()
   // to allow runnables to be atomically dispatched in bulk.
@@ -1198,6 +1217,8 @@ class WorkerPrivate final
 
   // This is the worker name for shared workers and dedicated workers.
   const nsString mWorkerName;
+  const RequestCredentials mCredentialsMode;
+  enum WorkerType mWorkerType;
 
   const WorkerKind mWorkerKind;
 
@@ -1255,8 +1276,8 @@ class WorkerPrivate final
     explicit SyncLoopInfo(EventTarget* aEventTarget);
 
     RefPtr<EventTarget> mEventTarget;
+    nsresult mResult;
     bool mCompleted;
-    bool mResult;
 #ifdef DEBUG
     bool mHasRun;
 #endif
@@ -1324,7 +1345,8 @@ class WorkerPrivate final
     nsCOMPtr<nsITimer> mTimer;
     nsCOMPtr<nsITimerCallback> mTimerRunnable;
 
-    nsCOMPtr<nsITimer> mGCTimer;
+    nsCOMPtr<nsITimer> mPeriodicGCTimer;
+    nsCOMPtr<nsITimer> mIdleGCTimer;
 
     RefPtr<MemoryReporter> mMemoryReporter;
 
@@ -1470,6 +1492,11 @@ class WorkerPrivate final
 
   Atomic<uint32_t> mTopLevelWorkerFinishedRunnableCount;
   Atomic<uint32_t> mWorkerFinishedRunnableCount;
+
+  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
+      MOZ_GUARDED_BY(mMutex);
+  bool mRunShutdownTasksStarted MOZ_GUARDED_BY(mMutex) = false;
+  bool mRunShutdownTasksFinished MOZ_GUARDED_BY(mMutex) = false;
 };
 
 class AutoSyncLoopHolder {
@@ -1490,12 +1517,12 @@ class AutoSyncLoopHolder {
   ~AutoSyncLoopHolder() {
     if (mWorkerPrivate && mTarget) {
       mWorkerPrivate->AssertIsOnWorkerThread();
-      mWorkerPrivate->StopSyncLoop(mTarget, false);
+      mWorkerPrivate->StopSyncLoop(mTarget, NS_ERROR_FAILURE);
       mWorkerPrivate->DestroySyncLoop(mIndex);
     }
   }
 
-  bool Run() {
+  nsresult Run() {
     CheckedUnsafePtr<WorkerPrivate> workerPrivate = mWorkerPrivate;
     mWorkerPrivate = nullptr;
 

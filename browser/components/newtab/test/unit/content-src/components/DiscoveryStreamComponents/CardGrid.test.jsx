@@ -5,14 +5,17 @@ import {
   DSSubHeader,
 } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { combineReducers, createStore } from "redux";
-import { INITIAL_STATE, reducers } from "common/Reducers.jsm";
+import { INITIAL_STATE, reducers } from "common/Reducers.sys.mjs";
 import { Provider } from "react-redux";
 import {
   DSCard,
   PlaceholderDSCard,
 } from "content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
 import { TopicsWidget } from "content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget";
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import React from "react";
 import { shallow, mount } from "enzyme";
 

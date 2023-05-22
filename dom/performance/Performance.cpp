@@ -101,20 +101,9 @@ Performance::Performance(nsIGlobalObject* aGlobal)
       mResourceTimingBufferSize(kDefaultResourceTimingBufferSize),
       mPendingNotificationObserversTask(false),
       mPendingResourceTimingBufferFullEvent(false),
-      mRTPCallerType(
-          RTPCallerType::Normal /* to be updated in CreateForFoo */) {
-  MOZ_ASSERT(!NS_IsMainThread());
-}
-
-Performance::Performance(nsPIDOMWindowInner* aWindow)
-    : DOMEventTargetHelper(aWindow),
-      mResourceTimingBufferSize(kDefaultResourceTimingBufferSize),
-      mPendingNotificationObserversTask(false),
-      mPendingResourceTimingBufferFullEvent(false),
-      mRTPCallerType(
-          RTPCallerType::Normal /* to be updated in CreateForFoo */) {
-  MOZ_ASSERT(NS_IsMainThread());
-}
+      mRTPCallerType(aGlobal->GetRTPCallerType()),
+      mCrossOriginIsolated(aGlobal->CrossOriginIsolated()),
+      mShouldResistFingerprinting(aGlobal->ShouldResistFingerprinting()) {}
 
 Performance::~Performance() = default;
 
@@ -168,12 +157,6 @@ JSObject* Performance::WrapObject(JSContext* aCx,
 }
 
 void Performance::GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   aRetval = mResourceEntries.Clone();
   aRetval.AppendElements(mUserEntries);
   aRetval.Sort(PerformanceEntryComparator());
@@ -181,12 +164,6 @@ void Performance::GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
 
 void Performance::GetEntriesByType(
     const nsAString& aEntryType, nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   if (aEntryType.EqualsLiteral("resource")) {
     aRetval = mResourceEntries.Clone();
     return;
@@ -208,11 +185,6 @@ void Performance::GetEntriesByName(
     const nsAString& aName, const Optional<nsAString>& aEntryType,
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
   aRetval.Clear();
-
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    return;
-  }
 
   RefPtr<nsAtom> name = NS_Atomize(aName);
   RefPtr<nsAtom> entryType =
@@ -338,7 +310,8 @@ struct UserTimingMarker {
     schema.SetAllLabels("{marker.data.name}");
     schema.AddStaticLabelValue("Marker", "UserTiming");
     schema.AddKeyLabelFormat("entryType", "Entry Type", MS::Format::String);
-    schema.AddKeyLabelFormat("name", "Name", MS::Format::String);
+    schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
+                                       MS::Searchable::Searchable);
     schema.AddKeyLabelFormat("startMark", "Start Mark", MS::Format::String);
     schema.AddKeyLabelFormat("endMark", "End Mark", MS::Format::String);
     schema.AddStaticLabelValue("Description",
@@ -369,17 +342,7 @@ already_AddRefed<PerformanceMark> Performance::Mark(
     return nullptr;
   }
 
-  // To avoid fingerprinting in User Timing L2, we didn't add marks to the
-  // buffer so the user could not get timing data (which can be used to
-  // fingerprint) from the API. This may no longer be necessary (since
-  // performance.now() has reduced precision to protect against fingerprinting
-  // and performance.mark's primary fingerprinting issue is probably this timing
-  // data) but we need to do a more thorough reanalysis before we remove the
-  // fingerprinting protection. For now, we preserve the User Timing L2 behavior
-  // while supporting User Timing L3.
-  if (!nsContentUtils::ShouldResistFingerprinting()) {
-    InsertUserEntry(performanceMark);
-  }
+  InsertUserEntry(performanceMark);
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     Maybe<uint64_t> innerWindowId;
@@ -597,19 +560,6 @@ already_AddRefed<PerformanceMeasure> Performance::Measure(
   if (!GetParentObject()) {
     aRv.ThrowInvalidStateError("Global object is unavailable");
     return nullptr;
-  }
-
-  // When resisting fingerprinting, we don't add marks to the buffer. Since
-  // measure relies on relationships between marks in the buffer, this method
-  // will throw if we look for user-entered marks so we return a dummy measure
-  // instead of continuing. We could instead return real values for performance
-  // timing attributes and dummy values for user-entered marks but this adds
-  // complexity that doesn't seem worth the effort because these fingerprinting
-  // protections may not longer be necessary (since performance.now() already
-  // has reduced precision).
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    return do_AddRef(new PerformanceMeasure(GetParentObject(), aName, 0, 0,
-                                            JS::NullHandleValue));
   }
 
   // Maybe is more readable than using the union type directly.
@@ -854,9 +804,7 @@ MOZ_ALWAYS_INLINE bool Performance::CanAddResourceTimingEntry() {
 void Performance::InsertResourceEntry(PerformanceEntry* aEntry) {
   MOZ_ASSERT(aEntry);
 
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    return;
-  }
+  QueueEntry(aEntry);
 
   /*
    * Let new entry be the input PerformanceEntry to be added.
@@ -870,7 +818,6 @@ void Performance::InsertResourceEntry(PerformanceEntry* aEntry) {
      * Increase resource timing buffer current size by 1.
      */
     mResourceEntries.InsertElementSorted(aEntry, PerformanceEntryComparator());
-    QueueEntry(aEntry);
     return;
   }
 

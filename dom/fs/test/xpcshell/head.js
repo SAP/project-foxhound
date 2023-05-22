@@ -57,11 +57,15 @@ add_setup(async function() {
     setStoragePrefs,
     clearStoragePrefs,
     clearStoragesForOrigin,
+    resetStorage,
   } = ChromeUtils.importESModule(
     "resource://testing-common/dom/quota/test/modules/StorageUtils.sys.mjs"
   );
 
-  const optionalPrefsToSet = [["dom.fs.enabled", true]];
+  const optionalPrefsToSet = [
+    ["dom.fs.enabled", true],
+    ["dom.fs.writable_file_stream.enabled", true],
+  ];
 
   setStoragePrefs(optionalPrefsToSet);
 
@@ -72,7 +76,16 @@ add_setup(async function() {
 
     await clearStoragesForOrigin(principal);
 
-    const optionalPrefsToClear = ["dom.fs.enabled"];
+    Services.prefs.clearUserPref(
+      "dom.quotaManager.temporaryStorage.fixedLimit"
+    );
+
+    await resetStorage();
+
+    const optionalPrefsToClear = [
+      "dom.fs.enabled",
+      "dom.fs.writable_file_stream.enabled",
+    ];
 
     clearStoragePrefs(optionalPrefsToClear);
   });

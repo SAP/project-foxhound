@@ -48,6 +48,7 @@
 #include "nsAppRunner.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCSSProps.h"
+#include "nsContentUtils.h"
 
 #include "gfxCrashReporterUtils.h"
 #include "gfxPlatform.h"
@@ -869,12 +870,10 @@ void gfxPlatform::Init() {
         StaticPrefs::layers_d3d11_force_warp_AtStartup());
     // WebGL prefs
     forcedPrefs.AppendPrintf(
-        "-W%d%d%d%d%d%d%d%d", StaticPrefs::webgl_angle_force_d3d11(),
+        "-W%d%d%d%d%d%d%d", StaticPrefs::webgl_angle_force_d3d11(),
         StaticPrefs::webgl_angle_force_warp(), StaticPrefs::webgl_disabled(),
         StaticPrefs::webgl_disable_angle(), StaticPrefs::webgl_dxgl_enabled(),
-        StaticPrefs::webgl_force_enabled(),
-        StaticPrefs::webgl_force_layers_readback(),
-        StaticPrefs::webgl_msaa_force());
+        StaticPrefs::webgl_force_enabled(), StaticPrefs::webgl_msaa_force());
     // Prefs that don't fit into any of the other sections
     forcedPrefs.AppendPrintf("-T%d%d%d) ",
                              StaticPrefs::gfx_android_rgb16_force_AtStartup(),
@@ -924,6 +923,7 @@ void gfxPlatform::Init() {
   gPlatform->InitWebGPUConfig();
   gPlatform->InitWindowOcclusionConfig();
   gPlatform->InitBackdropFilterConfig();
+  gPlatform->InitAcceleratedCanvas2DConfig();
 
 #if defined(XP_WIN)
   // When using WebRender, we defer initialization of the D3D11 devices until
@@ -1845,6 +1845,11 @@ bool gfxPlatform::IsFontFormatSupported(
   return true;
 }
 
+bool gfxPlatform::IsKnownIconFontFamily(const nsAtom* aFamilyName) const {
+  return gfxPlatformFontList::PlatformFontList()->IsKnownIconFontFamily(
+      aFamilyName);
+}
+
 gfxFontEntry* gfxPlatform::LookupLocalFont(nsPresContext* aPresContext,
                                            const nsACString& aFontName,
                                            WeightRange aWeightForEntry,
@@ -2443,7 +2448,7 @@ void gfxPlatform::InitAcceleration() {
         gfxPlatformGtk::GetPlatform()->InitVAAPIConfig(
             StaticPrefs::
                 media_hardware_video_decoding_force_enabled_AtStartup() ||
-            StaticPrefs::media_ffmpeg_vaapi_enabled());
+            StaticPrefs::media_ffmpeg_vaapi_enabled_AtStartup());
 #else
     if (
 #  ifdef XP_WIN
@@ -2721,6 +2726,11 @@ void gfxPlatform::InitWebRenderConfig() {
     gfxVars::SetUseWebRenderDCompVideoOverlayWin(true);
   }
 
+  if (useVideoOverlay &&
+      StaticPrefs::gfx_webrender_dcomp_video_sw_overlay_win_AtStartup()) {
+    gfxVars::SetUseWebRenderDCompSwVideoOverlayWin(true);
+  }
+
   bool useHwVideoZeroCopy = false;
   if (StaticPrefs::media_wmf_zero_copy_nv12_textures_AtStartup()) {
     // XXX relax limitation to Windows 8.1
@@ -2903,7 +2913,21 @@ void gfxPlatform::InitWebGLConfig() {
 
   bool allowWebGLOop =
       IsFeatureOk(nsIGfxInfo::FEATURE_ALLOW_WEBGL_OUT_OF_PROCESS);
-  gfxVars::SetAllowWebglOop(allowWebGLOop);
+  if (!kIsAndroid) {
+    gfxVars::SetAllowWebglOop(allowWebGLOop);
+  } else {
+    // On android, enable out-of-process WebGL only when GPU process exists.
+    gfxVars::SetAllowWebglOop(allowWebGLOop &&
+                              gfxConfig::IsEnabled(Feature::GPU_PROCESS));
+    // Enable gl::SharedSurface of AndroidHardwareBuffer when API version is 26+
+    // and out-of-process WebGL is enabled.
+#ifdef MOZ_WIDGET_ANDROID
+    if (gfxVars::AllowWebglOop() && jni::GetAPIVersion() >= 26 &&
+        StaticPrefs::webgl_out_of_process_enable_ahardwarebuffer_AtStartup()) {
+      gfxVars::SetUseAHardwareBufferSharedSurfaceWebglOop(true);
+    }
+#endif
+  }
 
   bool threadsafeGL = IsFeatureOk(nsIGfxInfo::FEATURE_THREADSAFE_GL);
   threadsafeGL |= StaticPrefs::webgl_threadsafe_gl_force_enabled_AtStartup();
@@ -2929,11 +2953,13 @@ void gfxPlatform::InitWebGLConfig() {
   gfxVars::SetWebglOopAsyncPresentForceSync(webglOopAsyncPresentForceSync);
 
   if (kIsAndroid) {
-    // Don't enable robust buffer access on Adreno 630 devices.
-    // It causes the linking of some shaders to fail. See bug 1485441.
+    // Don't enable robust buffer access on Adreno 620 and 630 devices.
+    // It causes the linking of some shaders to fail. See bug 1485441 and
+    // bug 1810693.
     nsAutoString renderer;
     gfxInfo->GetAdapterDeviceID(renderer);
-    if (renderer.Find(u"Adreno (TM) 630") != -1) {
+    if ((renderer.Find(u"Adreno (TM) 620") != -1) ||
+        (renderer.Find(u"Adreno (TM) 630") != -1)) {
       gfxVars::SetAllowEglRbab(false);
     }
   }
@@ -2964,6 +2990,10 @@ void gfxPlatform::InitWebGPUConfig() {
   FeatureState& feature = gfxConfig::GetFeature(Feature::WEBGPU);
   feature.SetDefaultFromPref("dom.webgpu.enabled", true, false);
 
+  if (StaticPrefs::gfx_webgpu_force_enabled_AtStartup()) {
+    feature.UserForceEnable("Force-enabled by pref");
+  }
+
   nsCString message;
   nsCString failureId;
   if (!IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_WEBGPU, &message, failureId)) {
@@ -2974,10 +3004,6 @@ void gfxPlatform::InitWebGPUConfig() {
   feature.ForceDisable(FeatureStatus::Blocked,
                        "WebGPU cannot be enabled in release or beta",
                        "WEBGPU_DISABLE_RELEASE_OR_BETA"_ns);
-#else
-  if (StaticPrefs::gfx_webgpu_force_enabled_AtStartup()) {
-    feature.UserForceEnable("Force-enabled by pref");
-  }
 #endif
 
   gfxVars::SetAllowWebGPU(feature.IsEnabled());
@@ -3087,6 +3113,63 @@ void gfxPlatform::InitBackdropFilterConfig() {
           StaticPrefs::GetPrefName_layout_css_backdrop_filter_force_enabled()));
 }
 
+static void AcceleratedCanvas2DPrefChangeCallback(const char*, void*) {
+  FeatureState& feature = gfxConfig::GetFeature(Feature::ACCELERATED_CANVAS2D);
+
+  // Reset to track toggling prefs and ensure force-enable does not happen
+  // after blocklist.
+  feature.Reset();
+
+  // gfx.canvas.accelerated pref controls whether platform enables the feature,
+  // but it still allows blocklisting to override it later.
+  feature.SetDefaultFromPref(
+      StaticPrefs::GetPrefName_gfx_canvas_accelerated(), true,
+      StaticPrefs::GetPrefDefault_gfx_canvas_accelerated());
+
+  // gfx.canvas.accelerated.force-enabled overrides the blocklist.
+  if (StaticPrefs::gfx_canvas_accelerated_force_enabled()) {
+    feature.UserForceEnable("Force-enabled by pref");
+  }
+
+  if (kIsAndroid && !gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
+    feature.Disable(FeatureStatus::Blocked, "Disabled by GPU Process disabled",
+                    "FEATURE_FAILURE_DISABLED_BY_GPU_PROCESS_DISABLED"_ns);
+  } else if (!gfxConfig::IsEnabled(Feature::WEBRENDER)) {
+    // There isn't much benefit to accelerating Canvas2D if we can't accelerate
+    // WebRender itself.
+    feature.Disable(FeatureStatus::Blocked, "Disabled by Software WebRender",
+                    "FEATURE_FAILURE_DISABLED_BY_SOFTWARE_WEBRENDER"_ns);
+  }
+
+  // Check if blocklisted despite the default pref.
+  nsCString message;
+  nsCString failureId;
+  if (!gfxPlatform::IsGfxInfoStatusOkay(
+          nsIGfxInfo::FEATURE_ACCELERATED_CANVAS2D, &message, failureId)) {
+    feature.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+  }
+
+  gfxVars::SetUseAcceleratedCanvas2D(feature.IsEnabled());
+}
+
+void gfxPlatform::InitAcceleratedCanvas2DConfig() {
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+
+  // Decide during pref changes whether or not to enable acceleration. This
+  // allows easily toggling acceleration on and off to test performance.
+  AcceleratedCanvas2DPrefChangeCallback(nullptr, nullptr);
+
+  Preferences::RegisterCallback(
+      AcceleratedCanvas2DPrefChangeCallback,
+      nsDependentCString(StaticPrefs::GetPrefName_gfx_canvas_accelerated()));
+  Preferences::RegisterCallback(
+      AcceleratedCanvas2DPrefChangeCallback,
+      nsDependentCString(
+          StaticPrefs::GetPrefName_gfx_canvas_accelerated_force_enabled()));
+}
+
 bool gfxPlatform::CanUseHardwareVideoDecoding() {
   // this function is called from the compositor thread, so it is not
   // safe to init the prefs etc. from here.
@@ -3176,7 +3259,8 @@ bool gfxPlatform::IsInLayoutAsapMode() {
 
 static int LayoutFrameRateFromPrefs() {
   auto val = StaticPrefs::layout_frame_rate();
-  if (StaticPrefs::privacy_resistFingerprinting()) {
+  if (nsContentUtils::ShouldResistFingerprinting(
+          "The frame rate is a global property.")) {
     val = 60;
   }
   return val;
@@ -3634,6 +3718,15 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
 /* static */
 void gfxPlatform::DisableGPUProcess() {
   gfxVars::SetRemoteCanvasEnabled(false);
+  if (kIsAndroid) {
+    // On android, enable out-of-process WebGL only when GPU process exists.
+    gfxVars::SetAllowWebglOop(false);
+    // On android, enable accelerated canvas only when GPU process exists.
+    gfxVars::SetUseAcceleratedCanvas2D(false);
+    gfxConfig::Disable(Feature::ACCELERATED_CANVAS2D, FeatureStatus::Blocked,
+                       "Disabled by GPU Process disabled",
+                       "FEATURE_FAILURE_DISABLED_BY_GPU_PROCESS_DISABLED"_ns);
+  }
 
   RemoteTextureMap::Init();
   if (gfxVars::UseCanvasRenderThread()) {

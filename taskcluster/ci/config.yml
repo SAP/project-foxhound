@@ -78,9 +78,6 @@ treeherder:
         'M-swr-a11y-checks-nofis': 'Mochitests with software webrender and accessibility checks enabled without fission enabled'
         'M-swr-1proc': 'Mochitests with software webrender enabled without e10s'
         'M-swr-nofis': 'Mochitests with software webrender without fission enabled'
-        'M-swr-wayland': 'Mochitests with software webrender and Wayland backend enabled'
-        'M-wayland': 'Mochitests with Wayland backend enabled'
-        'M-wayland-1proc': 'Mochitests with Wayland backend enabled without e10s'
         'M-wmfme': 'Mochitests with Windows Media Foundation media engine enabled'
         'M-f': 'Mochitest failures'
         'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT without fission enabled'
@@ -89,13 +86,13 @@ treeherder:
         'MSIs': 'Signing of Repacked installers of MSIs'
         'MSIX': 'Repack into MSIX package'
         'MSIXs': 'Signing of Repack into MSIX package'
+        'Pup': "Puppeteer tests"
         'R': 'Reftests'
         'R-fis': 'Reftests with fission enabled'
         'R-nofis': 'Reftests without fission enabled'
         'R-swr': 'Reftests with software webrender enabled'
         'R-swr-nofis': 'Reftests with software webrender enabled without fission enabled'
         'R-swr-fis': 'Reftests with software webrender with fission enabled'
-        'R-wayland': 'Reftests with Wayland backend enabled'
         'R-wr-dc0': 'Reftests with dcomp disabled'
         'R-wr-dc1-p': 'Reftests with dcomp present but not overlays'
         'R-wr-dc2-o': 'Reftests with dcomp overlays but not compositing'
@@ -108,7 +105,6 @@ treeherder:
         'Rap-ChR': 'Raptor performance tests on Google Chrome Release'
         'Rap-Cr': 'Raptor performance tests on Google Chromium'
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
-        'remote': 'Remote debugging protocol tests'
         'T': 'Talos performance tests'
         'T-fis': 'Talos performance tests with fission enabled'
         'T-gli': 'Talos performance tests with WebGL over IPC'
@@ -142,6 +138,7 @@ treeherder:
         'X-spi-nw-nofis': 'Xpcshell tests with networking on socket process without fission enabled'
         'X-f': 'Xpcshell tests that fail on a given config'
         'X-f-spi-nw': 'Xpcshell tests that fail on a given config w/socket process'
+        'X-msix': 'Xpcshell tests on msix packages'
         'L10n': 'Localised Repacks'
         'L10n-Rpk': 'Localized Repackaged Repacks'
         'BM': 'Beetmover'
@@ -205,6 +202,7 @@ treeherder:
         'l10n': 'Localization checks'
         'fxrec': 'Desktop startup recorder (fxrecord)'
         'wc': 'webcompat'
+        'Boot': 'Bootstrap'
 
 index:
     products:
@@ -478,7 +476,7 @@ workers:
             provisioner: '{trust-domain}-{level}'
             implementation: generic-worker
             os: windows
-            worker-type: '{alias}'
+            worker-type: '{alias}-azure'
         image:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -648,11 +646,16 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        t-win7-32(|-gpu):
+        t-win7-32-gpu:
             provisioner: '{trust-domain}-t'
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
+        t-win7-32:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: windows
+            worker-type: 'gecko-{alias}-hw'
         t-win64-aarch64-laptop:
             provisioner: bitbar
             implementation: generic-worker
@@ -667,7 +670,7 @@ workers:
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: misc
+            worker-type: misc-gcp
 
 
 mac-notarization:

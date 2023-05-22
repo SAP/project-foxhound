@@ -34,7 +34,8 @@ namespace mozilla::dom {
 class ExecutionRunnable final : public Runnable {
  public:
   ExecutionRunnable(WorkletFetchHandler* aHandler, WorkletImpl* aWorkletImpl,
-                    JS::UniqueTwoByteChars aScriptBuffer, size_t aScriptLength)
+                    UniquePtr<Utf8Unit[], JS::FreePolicy> aScriptBuffer,
+                    size_t aScriptLength)
       : Runnable("Worklet::ExecutionRunnable"),
         mHandler(aHandler),
         mWorkletImpl(aWorkletImpl),
@@ -59,7 +60,7 @@ class ExecutionRunnable final : public Runnable {
 
   RefPtr<WorkletFetchHandler> mHandler;
   RefPtr<WorkletImpl> mWorkletImpl;
-  JS::UniqueTwoByteChars mScriptBuffer;
+  UniquePtr<Utf8Unit[], JS::FreePolicy> mScriptBuffer;
   size_t mScriptLength;
   JSRuntime* mParentRuntime;
   nsresult mResult;
@@ -243,11 +244,11 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
       return NS_OK;
     }
 
-    JS::UniqueTwoByteChars scriptTextBuf;
+    UniquePtr<Utf8Unit[], JS::FreePolicy> scriptTextBuf;
     size_t scriptTextLength;
     nsresult rv =
-        ScriptLoader::ConvertToUTF16(nullptr, aString, aStringLen, u"UTF-8"_ns,
-                                     nullptr, scriptTextBuf, scriptTextLength);
+        ScriptLoader::ConvertToUTF8(nullptr, aString, aStringLen, u"UTF-8"_ns,
+                                    nullptr, scriptTextBuf, scriptTextLength);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       RejectPromises(rv);
       return NS_OK;
@@ -387,7 +388,7 @@ bool ExecutionRunnable::ParseAndLinkModule(
   compileOptions.setIsRunOnce(true);
   compileOptions.setNoScriptRval(true);
 
-  JS::SourceText<char16_t> buffer;
+  JS::SourceText<Utf8Unit> buffer;
   if (!buffer.init(aCx, std::move(mScriptBuffer), mScriptLength)) {
     return false;
   }
@@ -405,9 +406,8 @@ bool ExecutionRunnable::ParseAndLinkModule(
 }
 
 void ExecutionRunnable::RunOnWorkletThread() {
-  WorkletThread* workletThread =
-      static_cast<WorkletThread*>(NS_GetCurrentThread());
-  workletThread->EnsureCycleCollectedJSContext(mParentRuntime);
+  // This can be called on a GraphRunner thread or a DOM Worklet thread.
+  WorkletThread::EnsureCycleCollectedJSContext(mParentRuntime);
 
   WorkletGlobalScope* globalScope = mWorkletImpl->GetGlobalScope();
   if (!globalScope) {

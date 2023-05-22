@@ -28,7 +28,6 @@ MouseEvent::MouseEvent(EventTarget* aOwner, nsPresContext* aPresContext,
     mEventIsInternal = false;
   } else {
     mEventIsInternal = true;
-    mEvent->mTime = PR_Now();
     mEvent->mRefPoint = LayoutDeviceIntPoint(0, 0);
     mouseEvent->mInputSource = MouseEvent_Binding::MOZ_SOURCE_UNKNOWN;
   }
@@ -222,7 +221,8 @@ CSSIntPoint MouseEvent::ScreenPoint(CallerType aCallerType) const {
     return {};
   }
 
-  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+  if (aCallerType != CallerType::System &&
+      nsContentUtils::ShouldResistFingerprinting(GetParentObject())) {
     // Sanitize to something sort of like client cooords, but not quite
     // (defaulting to (0,0) instead of our pre-specified client coords).
     return Event::GetClientCoords(mPresContext, mEvent, mEvent->mRefPoint,

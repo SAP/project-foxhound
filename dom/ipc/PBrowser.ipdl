@@ -49,13 +49,13 @@ using mozilla::LayoutDevicePoint from "Units.h";
 using mozilla::ScreenIntCoord from "Units.h";
 using mozilla::ScreenIntMargin from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
-using ScreenRect from "Units.h";
+using mozilla::ScreenRect from "Units.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::GeckoContentController_TapType from "mozilla/layers/GeckoContentControllerTypes.h";
-using ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::WindowsHandle from "mozilla/ipc/IPCTypes.h";
 using class mozilla::WidgetCompositionEvent from "ipc/nsGUIEventIPC.h";
@@ -83,6 +83,7 @@ using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsIWidget::TouchpadGesturePhase from "nsIWidget.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
+using struct mozilla::DimensionRequest from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
@@ -100,7 +101,7 @@ using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
-using CallerType from "mozilla/dom/BindingDeclarations.h";
+using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
 using mozilla::IntrinsicSize from "nsIFrame.h";
 using mozilla::AspectRatio from "mozilla/AspectRatio.h";
@@ -240,21 +241,6 @@ parent:
      * the next or previous focusable element or document.
      */
     async MoveFocus(bool forward, bool forDocumentNavigation);
-
-    /**
-     * SizeShellTo request propagation to parent.
-     *
-     * aFlag            Can indicate if one of the dimensions should be ignored.
-     *                  If only one dimension has changed it has to be indicated
-     *                  by the nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_* flags.
-     * aShellItemWidth,
-     * aShellItemHeight On parent side we won't be able to decide the dimensions
-     *                  of the shell item parameter in the original SizeShellTo
-     *                  call so we send over its dimensions that will be used
-     *                  for the actual resize.
-     **/
-    async SizeShellTo(uint32_t aFlag, int32_t aWidth, int32_t aHeight,
-                      int32_t aShellItemWidth, int32_t aShellItemHeight);
 
     /**
      * Called by the child to inform the parent that links are dropped into
@@ -436,7 +422,7 @@ parent:
      * Create an asynchronous color picker on the parent side,
      * but don't open it yet.
      */
-    async PColorPicker(nsString title, nsString initialColor);
+    async PColorPicker(nsString title, nsString initialColor, nsString[] defaultColors);
 
     async PFilePicker(nsString aTitle, int16_t aMode);
 
@@ -622,10 +608,14 @@ parent:
 
     /**
      * Sent by the child to the parent to inform it that an update to the
-     * dimensions has been requested, likely through win.moveTo or resizeTo
+     * dimensions has been requested.
+     *
+     * @param aRequest  The requested change of inner or outer dimensions.
+     * @param aScale    The scale at the time of the request. This is to allow
+     *                  the parent to recompute the dimensions in case of an
+     *                  ongoing scale change.
      */
-    async SetDimensions(uint32_t aFlags, int32_t aX, int32_t aY,
-                        int32_t aCx, int32_t aCy, double aScale);
+    async SetDimensions(DimensionRequest aRequest, double aScale);
 
     [Nested=inside_sync] sync DispatchWheelEvent(WidgetWheelEvent event);
     [Nested=inside_sync] sync DispatchMouseEvent(WidgetMouseEvent event);
@@ -638,7 +628,8 @@ parent:
                             LayoutDeviceIntRect dragRect,
                             nsIPrincipal principal, nsIContentSecurityPolicy csp,
                             CookieJarSettingsArgs cookieJarSettings,
-                            MaybeDiscardedWindowContext sourceWindowContext);
+                            MaybeDiscardedWindowContext sourceWindowContext,
+                            MaybeDiscardedWindowContext sourceTopWindowContext);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
@@ -717,8 +708,6 @@ child:
     async DynamicToolbarMaxHeightChanged(ScreenIntCoord height);
 
     async DynamicToolbarOffsetChanged(ScreenIntCoord height);
-
-    async SetKeyboardIndicators(UIStateChangeType showFocusRings);
 
     /**
      * StopIMEStateManagement() is called when the process loses focus and

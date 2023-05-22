@@ -19,6 +19,7 @@
 #include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/layers/KeyboardScrollAction.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ipc/IPCForwards.h"
 
 template <class E>
 struct already_AddRefed;
@@ -76,14 +77,8 @@ class InputData {
   // Warning, this class is serialized and sent over IPC. Any change to its
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
   InputType mInputType;
-  // Time in milliseconds that this data is relevant to. This only really
-  // matters when this data is used as an event. We use uint32_t instead of
-  // TimeStamp because it is easier to convert from WidgetInputEvent. The time
-  // is platform-specific but it in the case of B2G and Fennec it is since
-  // startup.
-  uint32_t mTime;
-  // Set in parallel to mTime until we determine it is safe to drop
-  // platform-specific event times (see bug 77992).
+  // Time that this data is relevant to. This only really matters when this data
+  // is used as an event.
   TimeStamp mTimeStamp;
   // The sequence number of the last potentially focus changing event handled
   // by APZ. This is used to track when that event has been processed by
@@ -108,8 +103,7 @@ class InputData {
   explicit InputData(InputType aInputType);
 
  protected:
-  InputData(InputType aInputType, uint32_t aTime, TimeStamp aTimeStamp,
-            Modifiers aModifiers);
+  InputData(InputType aInputType, TimeStamp aTimeStamp, Modifiers aModifiers);
 };
 
 /**
@@ -196,9 +190,9 @@ class SingleTouchData {
   // How hard the screen is being pressed.
   float mForce;
 
-  uint32_t mTiltX = 0;
-  uint32_t mTiltY = 0;
-  uint32_t mTwist = 0;
+  int32_t mTiltX = 0;
+  int32_t mTiltY = 0;
+  int32_t mTwist = 0;
 };
 
 /**
@@ -264,6 +258,7 @@ class MouseInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   MouseInput();
 
@@ -293,8 +288,8 @@ class MouseInput : public InputData {
   // clang-format on
 
   MouseInput(MouseType aType, ButtonType aButtonType, uint16_t aInputSource,
-             int16_t aButtons, const ScreenPoint& aPoint, uint32_t aTime,
-             TimeStamp aTimeStamp, Modifiers aModifiers);
+             int16_t aButtons, const ScreenPoint& aPoint, TimeStamp aTimeStamp,
+             Modifiers aModifiers);
   explicit MouseInput(const WidgetMouseEventBase& aMouseEvent);
 
   bool IsLeftButton() const;
@@ -328,6 +323,7 @@ class PanGestureInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   PanGestureInput();
 
@@ -396,12 +392,12 @@ class PanGestureInput : public InputData {
   ));
   // clang-format on
 
-  PanGestureInput(PanGestureType aType, uint32_t aTime, TimeStamp aTimeStamp,
+  PanGestureInput(PanGestureType aType, TimeStamp aTimeStamp,
                   const ScreenPoint& aPanStartPoint,
                   const ScreenPoint& aPanDisplacement, Modifiers aModifiers);
 
   enum class IsEligibleForSwipe : bool { No, Yes };
-  PanGestureInput(PanGestureType aType, uint32_t aTime, TimeStamp aTimeStamp,
+  PanGestureInput(PanGestureType aType, TimeStamp aTimeStamp,
                   const ScreenPoint& aPanStartPoint,
                   const ScreenPoint& aPanDisplacement, Modifiers aModifiers,
                   IsEligibleForSwipe aIsEligibleForSwipe);
@@ -506,6 +502,7 @@ class PinchGestureInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   PinchGestureInput();
 
@@ -540,8 +537,7 @@ class PinchGestureInput : public InputData {
 
   // Construct a pinch gesture from a Screen point.
   PinchGestureInput(PinchGestureType aType, PinchGestureSource aSource,
-                    uint32_t aTime, TimeStamp aTimeStamp,
-                    const ExternalPoint& aScreenOffset,
+                    TimeStamp aTimeStamp, const ExternalPoint& aScreenOffset,
                     const ScreenPoint& aFocusPoint, ScreenCoord aCurrentSpan,
                     ScreenCoord aPreviousSpan, Modifiers aModifiers);
 
@@ -618,6 +614,7 @@ class TapGestureInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   TapGestureInput();
 
@@ -637,12 +634,12 @@ class TapGestureInput : public InputData {
 
   // Construct a tap gesture from a Screen point.
   // mLocalPoint remains (0,0) unless it's set later.
-  TapGestureInput(TapGestureType aType, uint32_t aTime, TimeStamp aTimeStamp,
+  TapGestureInput(TapGestureType aType, TimeStamp aTimeStamp,
                   const ScreenIntPoint& aPoint, Modifiers aModifiers);
 
   // Construct a tap gesture from a ParentLayer point.
   // mPoint remains (0,0) unless it's set later.
-  TapGestureInput(TapGestureType aType, uint32_t aTime, TimeStamp aTimeStamp,
+  TapGestureInput(TapGestureType aType, TimeStamp aTimeStamp,
                   const ParentLayerPoint& aLocalPoint, Modifiers aModifiers);
 
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
@@ -668,6 +665,7 @@ class ScrollWheelInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   typedef mozilla::layers::APZWheelAction APZWheelAction;
 
@@ -692,7 +690,7 @@ class ScrollWheelInput : public InputData {
   );
   // clang-format on
 
-  ScrollWheelInput(uint32_t aTime, TimeStamp aTimeStamp, Modifiers aModifiers,
+  ScrollWheelInput(TimeStamp aTimeStamp, Modifiers aModifiers,
                    ScrollMode aScrollMode, ScrollDeltaType aDeltaType,
                    const ScreenPoint& aOrigin, double aDeltaX, double aDeltaY,
                    bool aAllowToOverrideSystemScrollSpeed,
@@ -827,6 +825,7 @@ class KeyboardInput : public InputData {
  protected:
   friend mozilla::layers::APZInputBridgeChild;
   friend mozilla::layers::PAPZInputBridgeParent;
+  ALLOW_DEPRECATED_READPARAM
 
   KeyboardInput();
 };

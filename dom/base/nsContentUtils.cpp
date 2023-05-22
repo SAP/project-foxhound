@@ -171,7 +171,6 @@
 #include "mozilla/dom/FileBlobImpl.h"
 #include "mozilla/dom/FileSystemSecurity.h"
 #include "mozilla/dom/FilteredNodeIterator.h"
-#include "mozilla/dom/FontTableURIProtocolHandler.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/HTMLFormElement.h"
@@ -198,6 +197,7 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/XULCommandEvent.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/2D.h"
@@ -259,6 +259,7 @@
 #include "nsHtml5StringParser.h"
 #include "nsIAboutModule.h"
 #include "nsIAnonymousContentCreator.h"
+#include "nsIAppShell.h"
 #include "nsIArray.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIBidiKeyboard.h"
@@ -331,7 +332,7 @@
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIURIWithSpecialOrigin.h"
 #endif
-#include "nsIUserIdleService.h"
+#include "nsIUserIdleServiceInternal.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebNavigationInfo.h"
@@ -368,6 +369,7 @@
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsStringBuffer.h"
+#include "nsStringBundle.h"
 #include "nsStringFlags.h"
 #include "nsStringFwd.h"
 #include "nsStringIterator.h"
@@ -385,6 +387,7 @@
 #include "nsURLHelper.h"
 #include "nsUnicodeProperties.h"
 #include "nsVariant.h"
+#include "nsWidgetsCID.h"
 #include "nsView.h"
 #include "nsViewManager.h"
 #include "nsXPCOM.h"
@@ -428,7 +431,10 @@ nsTHashMap<nsStringHashKey, EventNameMapping>*
     nsContentUtils::sStringEventTable = nullptr;
 nsTArray<RefPtr<nsAtom>>* nsContentUtils::sUserDefinedEvents = nullptr;
 nsIStringBundleService* nsContentUtils::sStringBundleService;
-nsIStringBundle* nsContentUtils::sStringBundles[PropertiesFile_COUNT];
+
+static StaticRefPtr<nsIStringBundle>
+    sStringBundles[nsContentUtils::PropertiesFile_COUNT];
+
 nsIContentPolicy* nsContentUtils::sContentPolicyService;
 bool nsContentUtils::sTriedToGetContentPolicy = false;
 StaticRefPtr<nsIBidiKeyboard> nsContentUtils::sBidiKeyboard;
@@ -1604,21 +1610,6 @@ void nsContentUtils::SplitMimeType(const nsAString& aValue, nsString& aType,
   aType.StripWhitespace();
 }
 
-nsresult nsContentUtils::IsUserIdle(uint32_t aRequestedIdleTimeInMS,
-                                    bool* aUserIsIdle) {
-  nsresult rv;
-  nsCOMPtr<nsIUserIdleService> idleService =
-      do_GetService("@mozilla.org/widget/useridleservice;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  uint32_t idleTimeInMS;
-  rv = idleService->GetIdleTime(&idleTimeInMS);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  *aUserIsIdle = idleTimeInMS >= aRequestedIdleTimeInMS;
-  return NS_OK;
-}
-
 /**
  * A helper function that parses a sandbox attribute (of an <iframe> or a CSP
  * directive) and converts it to the set of flags used internally.
@@ -1920,8 +1911,9 @@ void nsContentUtils::Shutdown() {
 
   NS_IF_RELEASE(sContentPolicyService);
   sTriedToGetContentPolicy = false;
-  uint32_t i;
-  for (i = 0; i < PropertiesFile_COUNT; ++i) NS_IF_RELEASE(sStringBundles[i]);
+  for (StaticRefPtr<nsIStringBundle>& bundle : sStringBundles) {
+    bundle = nullptr;
+  }
 
   NS_IF_RELEASE(sStringBundleService);
   NS_IF_RELEASE(sConsoleService);
@@ -2189,7 +2181,7 @@ bool nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled(
 
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting() {
-  return StaticPrefs::privacy_resistFingerprinting();
+  return StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly();
 }
 
 /* static */
@@ -2237,14 +2229,21 @@ const unsigned int sSpecificDomainsExemptMask = 0x04;
 const char* kExemptedDomainsPrefName =
     "privacy.resistFingerprinting.exemptedDomains";
 
-// --------------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(const char* aJustification) {
   // See comment in header file for information about usage
   return ShouldResistFingerprinting();
 }
 
-// ----------------------------------------------------------------------
+/* static */
+bool nsContentUtils::ShouldResistFingerprinting(
+    CallerType aCallerType, nsIGlobalObject* aGlobalObject) {
+  if (aCallerType == CallerType::System) {
+    return false;
+  }
+  return ShouldResistFingerprinting(aGlobalObject);
+}
+
 bool nsContentUtils::ShouldResistFingerprinting(nsIDocShell* aDocShell) {
   if (!aDocShell) {
     MOZ_LOG(nsContentUtils::ResistFingerprintingLog(), LogLevel::Info,
@@ -2262,7 +2261,6 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIDocShell* aDocShell) {
   return doc->ShouldResistFingerprinting();
 }
 
-// ----------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
   if (!ShouldResistFingerprinting("Legacy quick-check")) {
@@ -2341,7 +2339,6 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
   return ShouldResistFingerprinting(loadInfo);
 }
 
-// ----------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting_dangerous(
     nsIURI* aURI, const mozilla::OriginAttributes& aOriginAttributes,
@@ -2367,7 +2364,7 @@ bool nsContentUtils::ShouldResistFingerprinting_dangerous(
 
   if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
       sWebExtensionExemptMask) {
-    if (aURI->SchemeIs("web-extension")) {
+    if (aURI->SchemeIs("moz-extension")) {
       return false;
     }
   }
@@ -2390,7 +2387,6 @@ bool nsContentUtils::ShouldResistFingerprinting_dangerous(
   return !isExemptDomain;
 }
 
-// ----------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(nsILoadInfo* aLoadInfo) {
   MOZ_ASSERT(aLoadInfo->GetExternalContentPolicyType() !=
@@ -2419,7 +2415,6 @@ bool nsContentUtils::ShouldResistFingerprinting(nsILoadInfo* aLoadInfo) {
   return ShouldResistFingerprinting_dangerous(principal, "Internal Call");
 }
 
-// ----------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting_dangerous(
     nsIPrincipal* aPrincipal, const char* aJustification) {
@@ -2504,7 +2499,6 @@ bool nsContentUtils::ShouldResistFingerprinting_dangerous(
   return !isExemptDomain;
 }
 
-// ------------------------------------------------------------------
 /* static */
 void nsContentUtils::CalcRoundedWindowSizeForResistingFingerprinting(
     int32_t aChromeWidth, int32_t aChromeHeight, int32_t aScreenWidth,
@@ -3426,8 +3420,6 @@ nsIPrincipal* nsContentUtils::SubjectPrincipal() {
 
 // static
 nsIPrincipal* nsContentUtils::ObjectPrincipal(JSObject* aObj) {
-  MOZ_ASSERT(NS_IsMainThread());
-
 #ifdef DEBUG
   JS::AssertObjectBelongsToCurrentThread(aObj);
 #endif
@@ -3867,7 +3859,7 @@ nsresult nsContentUtils::LoadImage(
 
   nsIURI* documentURI = aLoadingDocument->GetDocumentURI();
 
-  NS_ASSERTION(loadGroup || IsFontTableURI(documentURI),
+  NS_ASSERTION(loadGroup || aLoadingDocument->IsSVGGlyphsDocument(),
                "Could not get loadgroup; onload may fire too early");
 
   // XXXbz using "documentURI" for the initialDocumentURI is not quite
@@ -4120,17 +4112,18 @@ static const char* gPropertiesFiles[nsContentUtils::PropertiesFile_COUNT] = {
 
 /* static */
 nsresult nsContentUtils::EnsureStringBundle(PropertiesFile aFile) {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(),
+                        "Should not create bundles off main thread.");
   if (!sStringBundles[aFile]) {
     if (!sStringBundleService) {
       nsresult rv =
           CallGetService(NS_STRINGBUNDLE_CONTRACTID, &sStringBundleService);
       NS_ENSURE_SUCCESS(rv, rv);
     }
-    nsIStringBundle* bundle;
-    nsresult rv =
-        sStringBundleService->CreateBundle(gPropertiesFiles[aFile], &bundle);
-    NS_ENSURE_SUCCESS(rv, rv);
-    sStringBundles[aFile] = bundle;  // transfer ownership
+    RefPtr<nsIStringBundle> bundle;
+    MOZ_TRY(sStringBundleService->CreateBundle(gPropertiesFiles[aFile],
+                                               getter_AddRefs(bundle)));
+    sStringBundles[aFile] = bundle.forget();
   }
   return NS_OK;
 }
@@ -4206,10 +4199,7 @@ nsresult nsContentUtils::GetMaybeLocalizedString(PropertiesFile aFile,
 nsresult nsContentUtils::GetLocalizedString(PropertiesFile aFile,
                                             const char* aKey,
                                             nsAString& aResult) {
-  nsresult rv = EnsureStringBundle(aFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsIStringBundle* bundle = sStringBundles[aFile];
-  return bundle->GetStringFromName(aKey, aResult);
+  return FormatLocalizedString(aFile, aKey, {}, aResult);
 }
 
 /* static */
@@ -4221,18 +4211,71 @@ nsresult nsContentUtils::FormatMaybeLocalizedString(
       aResult);
 }
 
+class FormatLocalizedStringRunnable final : public WorkerMainThreadRunnable {
+ public:
+  FormatLocalizedStringRunnable(WorkerPrivate* aWorkerPrivate,
+                                nsContentUtils::PropertiesFile aFile,
+                                const char* aKey,
+                                const nsTArray<nsString>& aParams,
+                                nsAString& aLocalizedString)
+      : WorkerMainThreadRunnable(aWorkerPrivate,
+                                 "FormatLocalizedStringRunnable"_ns),
+        mFile(aFile),
+        mKey(aKey),
+        mParams(aParams),
+        mLocalizedString(aLocalizedString) {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+  }
+
+  bool MainThreadRun() override {
+    AssertIsOnMainThread();
+
+    mResult = nsContentUtils::FormatLocalizedString(mFile, mKey, mParams,
+                                                    mLocalizedString);
+    Unused << NS_WARN_IF(NS_FAILED(mResult));
+    return true;
+  }
+
+  nsresult GetResult() const { return mResult; }
+
+ private:
+  const nsContentUtils::PropertiesFile mFile;
+  const char* mKey;
+  const nsTArray<nsString>& mParams;
+  nsresult mResult = NS_ERROR_FAILURE;
+  nsAString& mLocalizedString;
+};
+
 /* static */
 nsresult nsContentUtils::FormatLocalizedString(
     PropertiesFile aFile, const char* aKey, const nsTArray<nsString>& aParams,
     nsAString& aResult) {
-  nsresult rv = EnsureStringBundle(aFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsIStringBundle* bundle = sStringBundles[aFile];
+  if (!NS_IsMainThread()) {
+    // nsIStringBundle is thread-safe but its creation is not, and in particular
+    // we don't create and store nsIStringBundle objects in a thread-safe way.
+    //
+    // TODO(emilio): Maybe if we already have the right bundle created we could
+    // just call into it, but we should make sure that Shutdown() doesn't get
+    // called on the main thread when that happens which is a bit tricky to
+    // prove?
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    if (NS_WARN_IF(!workerPrivate)) {
+      return NS_ERROR_UNEXPECTED;
+    }
 
+    auto runnable = MakeRefPtr<FormatLocalizedStringRunnable>(
+        workerPrivate, aFile, aKey, aParams, aResult);
+
+    runnable->Dispatch(Canceling, IgnoreErrors());
+    return runnable->GetResult();
+  }
+
+  MOZ_TRY(EnsureStringBundle(aFile));
+  nsIStringBundle* bundle = sStringBundles[aFile];
   if (aParams.IsEmpty()) {
     return bundle->GetStringFromName(aKey, aResult);
   }
-
   return bundle->FormatStringFromName(aKey, aParams, aResult);
 }
 
@@ -4587,8 +4630,6 @@ nsresult nsContentUtils::DispatchEvent(Document* aDoc, nsISupports* aTarget,
 
   nsCOMPtr<EventTarget> target(do_QueryInterface(aTarget));
 
-  aEvent.mTime = PR_Now();
-
   aEvent.mSpecifiedEventType = GetEventTypeFromMessage(aEventMessage);
   aEvent.SetDefaultComposed();
   aEvent.SetDefaultComposedInNativeAnonymousContent();
@@ -4663,9 +4704,6 @@ nsresult nsContentUtils::DispatchInputEvent(
     widgetEvent.mSpecifiedEventType = nsGkAtoms::oninput;
     widgetEvent.mFlags.mCancelable = false;
     widgetEvent.mFlags.mComposed = true;
-    // Using same time as nsContentUtils::DispatchEvent() for backward
-    // compatibility.
-    widgetEvent.mTime = PR_Now();
     (new AsyncEventDispatcher(aEventTargetElement, widgetEvent))
         ->RunDOMEventWhenSafe();
     return NS_OK;
@@ -4710,10 +4748,6 @@ nsresult nsContentUtils::DispatchInputEvent(
       !aOptions.mNeverCancelable && aEventMessage == eEditorBeforeInput &&
       IsCancelableBeforeInputEvent(aEditorInputType);
   MOZ_ASSERT(!inputEvent.mFlags.mCancelable || aEventStatus);
-
-  // Using same time as old event dispatcher in EditorBase for backward
-  // compatibility.
-  inputEvent.mTime = static_cast<uint64_t>(PR_Now() / 1000);
 
   // If there is an editor, set isComposing to true when it has composition.
   // Note that EditorBase::IsIMEComposing() may return false even when we
@@ -6049,10 +6083,13 @@ bool nsContentUtils::IsInStableOrMetaStableState() {
 
 /* static */
 void nsContentUtils::HidePopupsInDocument(Document* aDocument) {
-  nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-  if (pm && aDocument) {
-    nsCOMPtr<nsIDocShellTreeItem> docShellToHide = aDocument->GetDocShell();
-    if (docShellToHide) pm->HidePopupsInDocShell(docShellToHide);
+  RefPtr<nsXULPopupManager> pm = nsXULPopupManager::GetInstance();
+  if (!pm || !aDocument) {
+    return;
+  }
+  nsCOMPtr<nsIDocShellTreeItem> docShellToHide = aDocument->GetDocShell();
+  if (docShellToHide) {
+    pm->HidePopupsInDocShell(docShellToHide);
   }
 }
 
@@ -6938,8 +6975,9 @@ bool nsContentUtils::IsPDFJS(nsIPrincipal* aPrincipal) {
   return spec.EqualsLiteral("resource://pdf.js/web/viewer.html");
 }
 
-bool nsContentUtils::IsPDFJS(JSContext* aCx, JSObject*) {
-  return IsPDFJS(SubjectPrincipal(aCx));
+bool nsContentUtils::IsSystemOrPDFJS(JSContext* aCx, JSObject*) {
+  nsIPrincipal* principal = SubjectPrincipal(aCx);
+  return principal && (principal->IsSystemPrincipal() || IsPDFJS(principal));
 }
 
 already_AddRefed<nsIDocumentLoaderFactory>
@@ -7780,29 +7818,10 @@ void nsContentUtils::CallOnAllRemoteChildren(
   }
 }
 
-struct UIStateChangeInfo {
-  UIStateChangeType mShowFocusRings;
-
-  explicit UIStateChangeInfo(UIStateChangeType aShowFocusRings)
-      : mShowFocusRings(aShowFocusRings) {}
-};
-
-void nsContentUtils::SetKeyboardIndicatorsOnRemoteChildren(
-    nsPIDOMWindowOuter* aWindow, UIStateChangeType aShowFocusRings) {
-  UIStateChangeInfo stateInfo(aShowFocusRings);
-  CallOnAllRemoteChildren(aWindow, [&stateInfo](BrowserParent* aBrowserParent) {
-    Unused << aBrowserParent->SendSetKeyboardIndicators(
-        stateInfo.mShowFocusRings);
-    return CallState::Continue;
-  });
-}
-
 bool nsContentUtils::IPCDataTransferItemHasKnownFlavor(
     const IPCDataTransferItem& aItem) {
   // Unknown types are converted to kCustomTypesMime.
-  // FIXME(bug 1776879) text/plain is converted to text/unicode still.
-  if (aItem.flavor().EqualsASCII(kCustomTypesMime) ||
-      aItem.flavor().EqualsASCII(kUnicodeMime)) {
+  if (aItem.flavor().EqualsASCII(kCustomTypesMime)) {
     return true;
   }
 
@@ -7910,10 +7929,9 @@ nsresult nsContentUtils::IPCTransferableToTransferable(
 }
 
 nsresult nsContentUtils::IPCTransferableItemToVariant(
-    const IPCDataTransferItem& aDataTransferItem, nsIWritableVariant* aVariant,
-    IProtocol* aActor) {
+    const IPCDataTransferItem& aDataTransferItem,
+    nsIWritableVariant* aVariant) {
   MOZ_ASSERT(aVariant);
-  MOZ_ASSERT(aActor);
 
   switch (aDataTransferItem.data().type()) {
     case IPCDataTransferData::TIPCDataTransferString: {
@@ -8456,7 +8474,6 @@ nsresult nsContentUtils::SendMouseEvent(
   event.mPressure = aPressure;
   event.mInputSource = aInputSourceArg;
   event.mClickCount = aClickCount;
-  event.mTime = PR_IntervalNow();
   event.mFlags.mIsSynthesizedForTests = aIsDOMEventSynthesized;
   event.mExitFrom = exitFrom;
 
@@ -8700,7 +8717,7 @@ bool nsContentUtils::IsFirstPartyTrackingResourceWindow(
       classifiedChannel->GetFirstPartyClassificationFlags();
 
   return mozilla::net::UrlClassifierCommon::IsTrackingClassificationFlag(
-      classificationFlags);
+      classificationFlags, NS_UsePrivateBrowsing(document->GetChannel()));
 }
 
 namespace {
@@ -10092,10 +10109,6 @@ void nsContentUtils::StructuredClone(JSContext* aCx, nsIGlobalObject* aGlobal,
   if (aGlobal->IsSharedMemoryAllowed()) {
     clonePolicy.allowSharedMemoryObjects();
   }
-  // Stack principals can't be cloned on Worker threads.
-  if (NS_IsMainThread()) {
-    clonePolicy.allowErrorStackFrames();
-  }
 
   StructuredCloneHolder holder(StructuredCloneHolder::CloningSupported,
                                StructuredCloneHolder::TransferringSupported,
@@ -10434,7 +10447,14 @@ nsContentUtils::UserInteractionObserver::Observe(nsISupports* aSubject,
   } else if (!strcmp(aTopic, kUserInteractionActive)) {
     if (!sUserActive && XRE_IsParentProcess()) {
       glean::RecordPowerMetrics();
+
+      nsCOMPtr<nsIUserIdleServiceInternal> idleService =
+          do_GetService("@mozilla.org/widget/useridleservice;1");
+      if (idleService) {
+        idleService->ResetIdleTimeOut(0);
+      }
     }
+
     sUserActive = true;
   } else {
     NS_WARNING("Unexpected observer notification");
@@ -10661,12 +10681,10 @@ bool nsContentUtils::
   return false;
 }
 
-/* static */
-nsGlobalWindowInner* nsContentUtils::CallerInnerWindow() {
-  nsIGlobalObject* global = GetIncumbentGlobal();
-  NS_ENSURE_TRUE(global, nullptr);
+static nsGlobalWindowInner* GetInnerWindowForGlobal(nsIGlobalObject* aGlobal) {
+  NS_ENSURE_TRUE(aGlobal, nullptr);
 
-  if (auto* window = global->AsInnerWindow()) {
+  if (auto* window = aGlobal->AsInnerWindow()) {
     return nsGlobalWindowInner::Cast(window);
   }
 
@@ -10676,7 +10694,7 @@ nsGlobalWindowInner* nsContentUtils::CallerInnerWindow() {
   // the |source| of the received message to be the window set as the
   // sandboxPrototype. This used to work incidentally for unrelated reasons, but
   // now we need to do some special handling to support it.
-  JS::Rooted<JSObject*> scope(RootingCx(), global->GetGlobalJSObject());
+  JS::Rooted<JSObject*> scope(RootingCx(), aGlobal->GetGlobalJSObject());
   NS_ENSURE_TRUE(scope, nullptr);
 
   if (xpc::IsSandbox(scope)) {
@@ -10690,7 +10708,17 @@ nsGlobalWindowInner* nsContentUtils::CallerInnerWindow() {
 
   // The calling window must be holding a reference, so we can return a weak
   // pointer.
-  return nsGlobalWindowInner::Cast(global->AsInnerWindow());
+  return nsGlobalWindowInner::Cast(aGlobal->AsInnerWindow());
+}
+
+/* static */
+nsGlobalWindowInner* nsContentUtils::IncumbentInnerWindow() {
+  return GetInnerWindowForGlobal(GetIncumbentGlobal());
+}
+
+/* static */
+nsGlobalWindowInner* nsContentUtils::EntryInnerWindow() {
+  return GetInnerWindowForGlobal(GetEntryGlobal());
 }
 
 /* static */
@@ -10965,6 +10993,13 @@ uint32_t nsContentUtils::ResolveObjectType(uint32_t aType) {
   }
 
   return nsIObjectLoadingContent::TYPE_DOCUMENT;
+}
+
+void nsContentUtils::RequestGeckoTaskBurst() {
+  nsCOMPtr<nsIAppShell> appShell = do_GetService(NS_APPSHELL_CID);
+  if (appShell) {
+    appShell->GeckoTaskBurst();
+  }
 }
 
 namespace mozilla {

@@ -31,7 +31,6 @@
 #include "js/Conversions.h"
 #include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/PropertySpec.h"
 #include "util/Poison.h"
 #include "util/StringBuffer.h"
@@ -1069,26 +1068,17 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
 
   if (detector.foundCycle()) {
     if (!sb.append("[]")) {
-      sb.failure();
       return nullptr;
     }
-    auto* result = sb.finishString();
-    if (!result) {
-      sb.failure();
-      return nullptr;
-    }
-    sb.ok();
-    return result;
+    return sb.finishString();
   }
 
   if (!sb.append('[')) {
-    sb.failure();
     return nullptr;
   }
 
   uint64_t length;
   if (!GetLengthPropertyInlined(cx, obj, &length)) {
-    sb.failure();
     return nullptr;
   }
 
@@ -1097,7 +1087,6 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
     bool hole;
     if (!CheckForInterrupt(cx) ||
         !HasAndGetElement(cx, obj, index, &hole, &elt)) {
-      sb.failure();
       return nullptr;
     }
 
@@ -1108,24 +1097,20 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
     } else {
       str = ValueToSource(cx, elt);
       if (!str) {
-        sb.failure();
         return nullptr;
       }
     }
 
     /* Append element to buffer. */
     if (!sb.append(str)) {
-      sb.failure();
       return nullptr;
     }
     if (index + 1 != length) {
       if (!sb.append(", ")) {
-        sb.failure();
         return nullptr;
       }
     } else if (hole) {
       if (!sb.append(',')) {
-        sb.failure();
         return nullptr;
       }
     }
@@ -1133,25 +1118,13 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
 
   /* Finalize the buffer. */
   if (!sb.append(']')) {
-    sb.failure();
     return nullptr;
   }
 
-  auto* result = sb.finishString();
-  if (!result) {
-    sb.failure();
-    return nullptr;
-  }
-  sb.ok();
-  return result;
+  return sb.finishString();
 }
 
 static bool array_toSource(JSContext* cx, unsigned argc, Value* vp) {
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "toSource");
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1280,11 +1253,6 @@ static bool ArrayJoinKernel(JSContext* cx, SeparatorOp sepOp, HandleObject obj,
 // ES2017 draft rev 1b0184bc17fc09a8ddcf4aeec9b6d9fcac4eafce
 // 22.1.3.13 Array.prototype.join ( separator )
 bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "join");
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1348,7 +1316,6 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   // Step 5.
   JSStringBuilder sb(cx);
   if (sepstr->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
-    sb.failure();
     return false;
   }
 
@@ -1358,19 +1325,16 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   if (seplen > 0) {
     if (length > UINT32_MAX) {
       ReportAllocationOverflow(cx);
-      sb.failure();
       return false;
     }
     CheckedInt<uint32_t> res =
         CheckedInt<uint32_t>(seplen) * (uint32_t(length) - 1);
     if (!res.isValid()) {
       ReportAllocationOverflow(cx);
-      sb.failure();
       return false;
     }
 
     if (!sb.reserve(res.value())) {
-      sb.failure();
       return false;
     }
   }
@@ -1379,7 +1343,6 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   if (seplen == 0) {
     auto sepOp = [](StringBuffer&) { return true; };
     if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
-      sb.failure();
       return false;
     }
   } else if (seplen == 1) {
@@ -1388,13 +1351,11 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
       Latin1Char l1char = Latin1Char(c);
       auto sepOp = [l1char](StringBuffer& sb) { return sb.append(l1char); };
       if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
-        sb.failure();
         return false;
       }
     } else {
       auto sepOp = [c](StringBuffer& sb) { return sb.append(c); };
       if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
-        sb.failure();
         return false;
       }
     }
@@ -1402,7 +1363,6 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
     Handle<JSLinearString*> sepHandle = sepstr;
     auto sepOp = [sepHandle](StringBuffer& sb) { return sb.append(sepHandle); };
     if (!ArrayJoinKernel(cx, sepOp, obj, length, sb)) {
-      sb.failure();
       return false;
     }
   }
@@ -1410,14 +1370,12 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   // Step 8.
   JSString* str = sb.finishString();
   if (!str) {
-    sb.failure();
     return false;
   }
 
   // TaintFox: add taint operation.
   str->taint().extend(TaintOperationFromContext(cx, "Array.join", true, sepstr));
 
-  sb.ok();
   args.rval().setString(str);
   return true;
 }
@@ -1427,11 +1385,6 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
 // ES2017 Intl draft rev 78bbe7d1095f5ff3760ac4017ed366026e4cb276
 // 13.4.1 Array.prototype.toLocaleString ([ locales [ , options ]])
 static bool array_toLocaleString(JSContext* cx, unsigned argc, Value* vp) {
-  AutoCheckRecursionLimit recursion(cx);
-  if (!recursion.check(cx)) {
-    return false;
-  }
-
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype",
                                         "toLocaleString");
 
@@ -1965,8 +1918,7 @@ static bool SortLexicographically(JSContext* cx,
                                   size_t len) {
   MOZ_ASSERT(vec.length() >= len);
 
-  AutoReportFrontendContext ec(cx);
-  StringBuffer sb(cx, &ec);
+  StringBuffer sb(cx);
   Vector<StringifiedElement, 0, TempAllocPolicy> strElements(cx);
 
   /* MergeSort uses the upper half as scratch space. */
@@ -2119,10 +2071,6 @@ bool js::intrinsic_ArrayNativeSort(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setBoolean(true);
   return true;
-}
-
-bool js::ArrayNativeSort(JSContext* cx, Handle<JSObject*> obj) {
-  return ArrayNativeSortImpl(cx, obj, UndefinedHandleValue, Match_None);
 }
 
 static bool ArrayNativeSortImpl(JSContext* cx, Handle<JSObject*> obj,

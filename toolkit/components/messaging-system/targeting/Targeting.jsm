@@ -13,6 +13,7 @@ const { AppConstants } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -24,7 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   ClientEnvironmentBase:
     "resource://gre/modules/components-utils/ClientEnvironment.jsm",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
 });
 
 var EXPORTED_SYMBOLS = ["TargetingContext"];
@@ -134,7 +134,7 @@ class TargetingContext {
     const logUndesiredEvent = (event, key, prop) => {
       const value = key ? `${key}.${prop}` : prop;
       this._sendUndesiredEvent({ event, value });
-      Cu.reportError(`${event}: ${value}`);
+      console.error(`${event}: ${value}`);
     };
 
     return new Proxy(context, {
@@ -157,7 +157,7 @@ class TargetingContext {
           } catch (error) {
             logUndesiredEvent(ERROR_TYPES.ATTRIBUTE_ERROR, key, prop);
             reject(error);
-            Cu.reportError(error);
+            console.error(error);
           } finally {
             lazy.clearTimeout(timeout);
           }

@@ -669,18 +669,14 @@ JSObject* mozJSModuleLoader::GetSharedGlobal(JSContext* aCx) {
 nsresult mozJSModuleLoader::LoadSingleModuleScript(
     ComponentModuleLoader* aModuleLoader, JSContext* aCx,
     JS::loader::ModuleLoadRequest* aRequest, MutableHandleScript aScriptOut) {
-  nsAutoCString spec;
-  nsresult rv = aRequest->mURI->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   AUTO_PROFILER_MARKER_TEXT(
       "ChromeUtils.importESModule static import", JS,
       MarkerOptions(MarkerStack::Capture(),
                     MarkerInnerWindowIdFromJSContext(aCx)),
-      spec);
+      nsContentUtils::TruncatedURLForDisplay(aRequest->mURI));
 
   ModuleLoaderInfo info(aRequest);
-  rv = info.EnsureResolvedURI();
+  nsresult rv = info.EnsureResolvedURI();
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIFile> sourceFile;
@@ -794,8 +790,7 @@ static mozilla::Result<nsCString, nsresult> ReadScript(
   MOZ_TRY(aInfo.EnsureScriptChannel());
 
   nsCOMPtr<nsIInputStream> scriptStream;
-  MOZ_TRY(NS_MaybeOpenChannelUsingOpen(aInfo.ScriptChannel(),
-                                       getter_AddRefs(scriptStream)));
+  MOZ_TRY(aInfo.ScriptChannel()->Open(getter_AddRefs(scriptStream)));
 
   uint64_t len64;
   uint32_t bytesRead;
@@ -1502,7 +1497,7 @@ nsresult mozJSModuleLoader::Import(JSContext* aCx, const nsACString& aLocation,
       "ChromeUtils.import", JS,
       MarkerOptions(MarkerStack::Capture(),
                     MarkerInnerWindowIdFromJSContext(aCx)),
-      aLocation);
+      Substring(aLocation, 0, std::min(size_t(128), aLocation.Length())));
 
   // The JSM may already be ESM-ified, and in that case the load is expected
   // to fail.  Suppress the error message, the crash, and also the telemetry
@@ -1790,7 +1785,7 @@ nsresult mozJSModuleLoader::ImportESModule(
       "ChromeUtils.importESModule", JS,
       MarkerOptions(MarkerStack::Capture(),
                     MarkerInnerWindowIdFromJSContext(aCx)),
-      aLocation);
+      Substring(aLocation, 0, std::min(size_t(128), aLocation.Length())));
 
   RootedObject globalObj(aCx, GetSharedGlobal(aCx));
   NS_ENSURE_TRUE(globalObj, NS_ERROR_FAILURE);

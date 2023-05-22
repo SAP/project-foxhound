@@ -134,10 +134,10 @@ pub mod shorthands {
         width.to_css(dest)?;
         // FIXME(emilio): Should we really serialize the border style if it's
         // `solid`?
-        dest.write_str(" ")?;
+        dest.write_char(' ')?;
         style.to_css(dest)?;
         if *color != Color::CurrentColor {
-            dest.write_str(" ")?;
+            dest.write_char(' ')?;
             color.to_css(dest)?;
         }
         Ok(())
@@ -926,9 +926,10 @@ CASCADE_GROUPS = {
         "-moz-min-font-size-ratio",
         # font-size depends on math-depth's computed value.
         "math-depth",
-        # Needed to compute the first available font, in order to
-        # compute font-relative units correctly.
+        # Needed to compute the first available font and its used size,
+        # in order to compute font-relative units correctly.
         "font-size",
+        "font-size-adjust",
         "font-weight",
         "font-stretch",
         "font-style",

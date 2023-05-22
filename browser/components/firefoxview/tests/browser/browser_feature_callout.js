@@ -166,7 +166,7 @@ add_task(async function feature_callout_closes_on_dismiss() {
         event: "CLICK_BUTTON",
         event_context: {
           source: "dismiss_button",
-          page: document.location.href,
+          page: "about:firefoxview",
         },
         message_id: sinon.match("FEATURE_CALLOUT_2"),
       });
@@ -174,7 +174,7 @@ add_task(async function feature_callout_closes_on_dismiss() {
         event: "DISMISS",
         event_context: {
           source: "dismiss_button",
-          page: document.location.href,
+          page: "about:firefoxview",
         },
         message_id: sinon.match("FEATURE_CALLOUT_2"),
       });
@@ -378,8 +378,21 @@ add_task(async function feature_callout_dismiss_on_page_click() {
   await SpecialPowers.pushPrefEnv({
     set: [[featureTourPref, `{"message":"","screen":"","complete":true}`]],
   });
-  const screenId = "FIREFOX_VIEW_COLORWAYS_REMINDER";
-  const testMessage = getCalloutMessageById(screenId);
+  const screenId = "FIREFOX_VIEW_TAB_PICKUP_REMINDER";
+  const testClickSelector = "#recently-closed-tabs-container";
+  let testMessage = getCalloutMessageById(screenId);
+  // Configure message with a dismiss action on tab container click
+  testMessage.message.content.screens[0].content.page_event_listeners = [
+    {
+      params: {
+        type: "click",
+        selectors: testClickSelector,
+      },
+      action: {
+        dismiss: true,
+      },
+    },
+  ];
   const sandbox = createSandboxWithCalloutTriggerStub(testMessage);
   const spy = new TelemetrySpy(sandbox);
 
@@ -394,8 +407,8 @@ add_task(async function feature_callout_dismiss_on_page_click() {
       info("Waiting for callout to render");
       await waitForCalloutScreen(document, screenId);
 
-      info("Clicking page button");
-      document.querySelector("#colorways-button").click();
+      info("Clicking page element");
+      document.querySelector(testClickSelector).click();
       await waitForCalloutRemoved(document);
 
       // Test that appropriate telemetry is sent
@@ -404,8 +417,8 @@ add_task(async function feature_callout_dismiss_on_page_click() {
         event_context: {
           action: "DISMISS",
           reason: "CLICK",
-          source: sinon.match("#colorways-button"),
-          page: document.location.href,
+          source: sinon.match(testClickSelector),
+          page: "about:firefoxview",
         },
         message_id: screenId,
       });
@@ -414,8 +427,8 @@ add_task(async function feature_callout_dismiss_on_page_click() {
         event_context: {
           source: sinon
             .match("PAGE_EVENT:")
-            .and(sinon.match("#colorways-button")),
-          page: document.location.href,
+            .and(sinon.match(testClickSelector)),
+          page: "about:firefoxview",
         },
         message_id: screenId,
       });
@@ -426,7 +439,6 @@ add_task(async function feature_callout_dismiss_on_page_click() {
     }
   );
   Services.prefs.clearUserPref("browser.firefox-view.view-count");
-  Services.prefs.clearUserPref("identity.fxaccounts.enabled");
   sandbox.restore();
   ASRouter.resetMessageState();
 });
@@ -504,6 +516,47 @@ add_task(async function feature_callout_advance_tour_on_page_click() {
   await ASRouter.loadMessagesFromAllProviders(
     ASRouter.state.providers.filter(p => p.id === "onboarding")
   );
+});
+
+add_task(async function feature_callout_dismiss_on_escape() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[featureTourPref, `{"message":"","screen":"","complete":true}`]],
+  });
+  const screenId = "FIREFOX_VIEW_TAB_PICKUP_REMINDER";
+  let testMessage = getCalloutMessageById(screenId);
+  const sandbox = createSandboxWithCalloutTriggerStub(testMessage);
+  const spy = new TelemetrySpy(sandbox);
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      info("Waiting for callout to render");
+      await waitForCalloutScreen(document, screenId);
+
+      info("Pressing escape");
+      // Press Escape to close
+      EventUtils.synthesizeKey("KEY_Escape", {}, browser.contentWindow);
+      await waitForCalloutRemoved(document);
+
+      // Test that appropriate telemetry is sent
+      spy.assertCalledWith({
+        event: "DISMISS",
+        event_context: {
+          source: "KEY_Escape",
+          page: "about:firefoxview",
+        },
+        message_id: screenId,
+      });
+    }
+  );
+  Services.prefs.clearUserPref("browser.firefox-view.view-count");
+  sandbox.restore();
+  ASRouter.resetMessageState();
 });
 
 add_task(async function test_firefox_view_spotlight_promo() {

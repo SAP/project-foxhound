@@ -25,16 +25,15 @@ fn print_usage(program: &str, opts: Options) {
     println!("requests 'discoverable credentials' for them.");
     println!("After that, we try to log in to that origin and list all credentials found.");
     println!("------------------------------------------------------------------------");
-    let brief = format!("Usage: {} [options]", program);
+    let brief = format!("Usage: {program} [options]");
     print!("{}", opts.usage(&brief));
 }
 
 fn register_user(manager: &mut AuthenticatorService, username: &str, timeout_ms: u64) {
-    println!("");
+    println!();
     println!("*********************************************************************");
     println!(
-        "Asking a security key to register now with user: {}",
-        username
+        "Asking a security key to register now with user: {username}"
     );
     println!("*********************************************************************");
 
@@ -57,19 +56,19 @@ fn register_user(manager: &mut AuthenticatorService, username: &str, timeout_ms:
     thread::spawn(move || loop {
         match status_rx.recv() {
             Ok(StatusUpdate::DeviceAvailable { dev_info }) => {
-                println!("STATUS: device available: {}", dev_info)
+                println!("STATUS: device available: {dev_info}")
             }
             Ok(StatusUpdate::DeviceUnavailable { dev_info }) => {
-                println!("STATUS: device unavailable: {}", dev_info)
+                println!("STATUS: device unavailable: {dev_info}")
             }
             Ok(StatusUpdate::Success { dev_info }) => {
-                println!("STATUS: success using device: {}", dev_info);
+                println!("STATUS: success using device: {dev_info}");
             }
             Ok(StatusUpdate::SelectDeviceNotice) => {
                 println!("STATUS: Please select a device by touching one of them.");
             }
             Ok(StatusUpdate::DeviceSelected(dev_info)) => {
-                println!("STATUS: Continuing with device: {}", dev_info);
+                println!("STATUS: Continuing with device: {dev_info}");
             }
             Ok(StatusUpdate::PinError(error, sender)) => match error {
                 PinError::PinRequired => {
@@ -81,9 +80,8 @@ fn register_user(manager: &mut AuthenticatorService, username: &str, timeout_ms:
                 PinError::InvalidPin(attempts) => {
                     println!(
                         "Wrong PIN! {}",
-                        attempts.map_or(format!("Try again."), |a| format!(
-                            "You have {} attempts left.",
-                            a
+                        attempts.map_or("Try again.".to_string(), |a| format!(
+                            "You have {a} attempts left."
                         ))
                     );
                     let raw_pin = rpassword::prompt_password_stderr("Enter PIN: ")
@@ -116,14 +114,14 @@ fn register_user(manager: &mut AuthenticatorService, username: &str, timeout_ms:
     };
     let origin = "https://example.com".to_string();
     let ctap_args = RegisterArgsCtap2 {
-        challenge: chall_bytes.clone(),
+        challenge: chall_bytes,
         relying_party: RelyingParty {
             id: "example.com".to_string(),
             name: None,
             icon: None,
         },
-        origin: origin.clone(),
-        user: user.clone(),
+        origin,
+        user,
         pub_cred_params: vec![
             PublicKeyCredentialParameters {
                 alg: COSEAlgorithm::ES256,
@@ -154,8 +152,8 @@ fn register_user(manager: &mut AuthenticatorService, username: &str, timeout_ms:
 
         if let Err(e) = manager.register(
             timeout_ms,
-            ctap_args.clone().into(),
-            status_tx.clone(),
+            ctap_args.into(),
+            status_tx,
             callback,
         ) {
             panic!("Couldn't register: {:?}", e);
@@ -218,17 +216,17 @@ fn main() {
             timeout_s * 1_000
         }
         Err(e) => {
-            println!("{}", e);
+            println!("{e}");
             print_usage(&program, opts);
             return;
         }
     };
 
-    for username in vec!["A. User", "A. Nother", "Dr. Who"] {
+    for username in &["A. User", "A. Nother", "Dr. Who"] {
         register_user(&mut manager, username, timeout_ms)
     }
 
-    println!("");
+    println!();
     println!("*********************************************************************");
     println!("Asking a security key to sign now, with the data from the register...");
     println!("*********************************************************************");
@@ -246,19 +244,19 @@ fn main() {
     thread::spawn(move || loop {
         match status_rx.recv() {
             Ok(StatusUpdate::DeviceAvailable { dev_info }) => {
-                println!("STATUS: device available: {}", dev_info)
+                println!("STATUS: device available: {dev_info}")
             }
             Ok(StatusUpdate::DeviceUnavailable { dev_info }) => {
-                println!("STATUS: device unavailable: {}", dev_info)
+                println!("STATUS: device unavailable: {dev_info}")
             }
             Ok(StatusUpdate::Success { dev_info }) => {
-                println!("STATUS: success using device: {}", dev_info);
+                println!("STATUS: success using device: {dev_info}");
             }
             Ok(StatusUpdate::SelectDeviceNotice) => {
                 println!("STATUS: Please select a device by touching one of them.");
             }
             Ok(StatusUpdate::DeviceSelected(dev_info)) => {
-                println!("STATUS: Continuing with device: {}", dev_info);
+                println!("STATUS: Continuing with device: {dev_info}");
             }
             Ok(StatusUpdate::PinError(error, sender)) => match error {
                 PinError::PinRequired => {
@@ -270,9 +268,8 @@ fn main() {
                 PinError::InvalidPin(attempts) => {
                     println!(
                         "Wrong PIN! {}",
-                        attempts.map_or(format!("Try again."), |a| format!(
-                            "You have {} attempts left.",
-                            a
+                        attempts.map_or("Try again.".to_string(), |a| format!(
+                            "You have {a} attempts left."
                         ))
                     );
                     let raw_pin = rpassword::prompt_password_stderr("Enter PIN: ")
@@ -308,6 +305,7 @@ fn main() {
         options: GetAssertionOptions::default(),
         extensions: Default::default(),
         pin: None,
+        alternate_rp_id: None,
     };
 
     loop {
@@ -319,8 +317,8 @@ fn main() {
 
         if let Err(e) = manager.sign(
             timeout_ms,
-            ctap_args.clone().into(),
-            status_tx.clone(),
+            ctap_args.into(),
+            status_tx,
             callback,
         ) {
             panic!("Couldn't sign: {:?}", e);
@@ -333,7 +331,7 @@ fn main() {
         match sign_result {
             Ok(SignResult::CTAP1(..)) => panic!("Requested CTAP2, but got CTAP1 sign results!"),
             Ok(SignResult::CTAP2(assertion_object, _client_data)) => {
-                println!("Assertion Object: {:?}", assertion_object);
+                println!("Assertion Object: {assertion_object:?}");
                 println!("-----------------------------------------------------------------");
                 println!("Found credentials:");
                 println!(

@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
 #include "call/call.h"
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
@@ -34,7 +35,7 @@ enum : int {  // The first valid value is 1.
 
 TEST(TransportFeedbackMultiStreamTest, AssignsTransportSequenceNumbers) {
   static constexpr int kSendRtxPayloadType = 98;
-  static constexpr int kDefaultTimeoutMs = 30 * 1000;
+  static constexpr TimeDelta kDefaultTimeout = TimeDelta::Seconds(30);
   static constexpr int kNackRtpHistoryMs = 1000;
   static constexpr uint32_t kSendRtxSsrcs[MultiStreamTester::kNumStreams] = {
       0xBADCAFD, 0xBADCAFE, 0xBADCAFF};
@@ -145,7 +146,7 @@ TEST(TransportFeedbackMultiStreamTest, AssignsTransportSequenceNumbers) {
         MutexLock lock(&lock_);
         started_ = true;
       }
-      return done_.Wait(kDefaultTimeoutMs);
+      return done_.Wait(kDefaultTimeout);
     }
 
    private:
@@ -246,8 +247,7 @@ class TransportFeedbackTester : public test::EndToEndTest {
   TransportFeedbackTester(bool feedback_enabled,
                           size_t num_video_streams,
                           size_t num_audio_streams)
-      : EndToEndTest(
-            ::webrtc::TransportFeedbackEndToEndTest::kDefaultTimeoutMs),
+      : EndToEndTest(::webrtc::TransportFeedbackEndToEndTest::kDefaultTimeout),
         feedback_enabled_(feedback_enabled),
         num_video_streams_(num_video_streams),
         num_audio_streams_(num_audio_streams),
@@ -276,11 +276,11 @@ class TransportFeedbackTester : public test::EndToEndTest {
   }
 
   void PerformTest() override {
-    const int64_t kDisabledFeedbackTimeoutMs = 5000;
+    constexpr TimeDelta kDisabledFeedbackTimeout = TimeDelta::Seconds(5);
     EXPECT_EQ(feedback_enabled_,
               observation_complete_.Wait(feedback_enabled_
-                                             ? test::CallTest::kDefaultTimeoutMs
-                                             : kDisabledFeedbackTimeoutMs));
+                                             ? test::CallTest::kDefaultTimeout
+                                             : kDisabledFeedbackTimeout));
   }
 
   void OnCallsCreated(Call* sender_call, Call* receiver_call) override {
@@ -350,7 +350,7 @@ TEST_F(TransportFeedbackEndToEndTest,
    public:
     TransportFeedbackTester(size_t num_video_streams, size_t num_audio_streams)
         : EndToEndTest(
-              ::webrtc::TransportFeedbackEndToEndTest::kDefaultTimeoutMs),
+              ::webrtc::TransportFeedbackEndToEndTest::kDefaultTimeout),
           num_video_streams_(num_video_streams),
           num_audio_streams_(num_audio_streams),
           media_sent_(0),
@@ -414,8 +414,8 @@ TEST_F(TransportFeedbackEndToEndTest,
     }
 
     void PerformTest() override {
-      const int64_t kFailureTimeoutMs = 10000;
-      EXPECT_TRUE(observation_complete_.Wait(kFailureTimeoutMs))
+      constexpr TimeDelta kFailureTimeout = TimeDelta::Seconds(10);
+      EXPECT_TRUE(observation_complete_.Wait(kFailureTimeout))
           << "Stream not continued after congestion window full.";
     }
 
@@ -438,7 +438,7 @@ TEST_F(TransportFeedbackEndToEndTest, TransportSeqNumOnAudioAndVideo) {
   class TransportSequenceNumberTest : public test::EndToEndTest {
    public:
     TransportSequenceNumberTest()
-        : EndToEndTest(kDefaultTimeoutMs),
+        : EndToEndTest(kDefaultTimeout),
           video_observed_(false),
           audio_observed_(false) {
       extensions_.Register<TransportSequenceNumber>(

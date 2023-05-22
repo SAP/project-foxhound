@@ -2825,13 +2825,13 @@ nsresult SVGTextFrame::AttributeChanged(int32_t aNameSpaceID,
     if (!(mState & NS_FRAME_FIRST_REFLOW) && mCanvasTM &&
         mCanvasTM->IsSingular()) {
       // We won't have calculated the glyph positions correctly.
-      NotifyGlyphMetricsChange();
+      NotifyGlyphMetricsChange(false);
     }
     mCanvasTM = nullptr;
   } else if (IsGlyphPositioningAttribute(aAttribute) ||
              aAttribute == nsGkAtoms::textLength ||
              aAttribute == nsGkAtoms::lengthAdjust) {
-    NotifyGlyphMetricsChange();
+    NotifyGlyphMetricsChange(false);
   }
 
   return NS_OK;
@@ -2899,21 +2899,21 @@ NS_IMPL_ISUPPORTS(SVGTextFrame::MutationObserver, nsIMutationObserver)
 
 void SVGTextFrame::MutationObserver::ContentAppended(
     nsIContent* aFirstNewContent) {
-  mFrame->NotifyGlyphMetricsChange();
+  mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild) {
-  mFrame->NotifyGlyphMetricsChange();
+  mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::ContentRemoved(
     nsIContent* aChild, nsIContent* aPreviousSibling) {
-  mFrame->NotifyGlyphMetricsChange();
+  mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::CharacterDataChanged(
     nsIContent* aContent, const CharacterDataChangeInfo&) {
-  mFrame->NotifyGlyphMetricsChange();
+  mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::AttributeChanged(
@@ -2939,7 +2939,7 @@ void SVGTextFrame::HandleAttributeChangeInDescendant(Element* aElement,
     if (aNameSpaceID == kNameSpaceID_None &&
         (aAttribute == nsGkAtoms::startOffset ||
          aAttribute == nsGkAtoms::path || aAttribute == nsGkAtoms::side_)) {
-      NotifyGlyphMetricsChange();
+      NotifyGlyphMetricsChange(false);
     } else if ((aNameSpaceID == kNameSpaceID_XLink ||
                 aNameSpaceID == kNameSpaceID_None) &&
                aAttribute == nsGkAtoms::href) {
@@ -2947,13 +2947,13 @@ void SVGTextFrame::HandleAttributeChangeInDescendant(Element* aElement,
       nsIFrame* childElementFrame = aElement->GetPrimaryFrame();
       if (childElementFrame) {
         SVGObserverUtils::RemoveTextPathObserver(childElementFrame);
-        NotifyGlyphMetricsChange();
+        NotifyGlyphMetricsChange(false);
       }
     }
   } else {
     if (aNameSpaceID == kNameSpaceID_None &&
         IsGlyphPositioningAttribute(aAttribute)) {
-      NotifyGlyphMetricsChange();
+      NotifyGlyphMetricsChange(false);
     }
   }
 }
@@ -2980,9 +2980,6 @@ void SVGTextFrame::FindCloserFrameForSelection(
 
     if (!userRect.IsEmpty()) {
       gfxMatrix m;
-      if (!NS_SVGDisplayListHitTestingEnabled()) {
-        m = GetCanvasTM();
-      }
       nsRect rect =
           SVGUtils::ToCanvasBounds(userRect.ToThebesRect(), m, presContext);
 
@@ -3059,7 +3056,7 @@ void SVGTextFrame::NotifySVGChanged(uint32_t aFlags) {
     // we have been reflowed once, otherwise the glyph positioning will be
     // wrong.  (We need to wait until bidi reordering has been done.)
     if (!(mState & NS_FRAME_FIRST_REFLOW)) {
-      NotifyGlyphMetricsChange();
+      NotifyGlyphMetricsChange(false);
     }
   }
 }
@@ -3143,8 +3140,7 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
 
   // Check if we need to draw anything.
   if (aDirtyRect) {
-    NS_ASSERTION(!NS_SVGDisplayListPaintingEnabled() ||
-                     (mState & NS_FRAME_IS_NONDISPLAY),
+    NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
                  "Display lists handle dirty rect intersection test");
     nsRect dirtyRect(aDirtyRect->x, aDirtyRect->y, aDirtyRect->width,
                      aDirtyRect->height);
@@ -3196,7 +3192,8 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       ctxSR.EnsureSaved(&aContext);
       // This may change the gfxContext's transform (for non-scaling stroke),
       // in which case this needs to happen before we call SetMatrix() below.
-      SVGUtils::SetupStrokeGeometry(frame, &aContext, outerContextPaint);
+      SVGUtils::SetupStrokeGeometry(frame->GetParent(), &aContext,
+                                    outerContextPaint);
     }
 
     nscoord startEdge, endEdge;
@@ -4604,12 +4601,18 @@ gfxFloat SVGTextFrame::GetStartOffset(nsIFrame* aTextPathFrame) {
       &tp->mLengthAttributes[SVGTextPathElement::STARTOFFSET];
 
   if (length->IsPercentage()) {
+    if (!IsFinite(GetOffsetScale(aTextPathFrame))) {
+      // Either pathLength="0" for this path or the path has 0 length.
+      return 0.0;
+    }
     RefPtr<Path> data = GetTextPath(aTextPathFrame);
     return data ? length->GetAnimValInSpecifiedUnits() * data->ComputeLength() /
                       100.0
                 : 0.0;
   }
-  return length->GetAnimValue(tp) * GetOffsetScale(aTextPathFrame);
+  float lengthValue = length->GetAnimValue(tp);
+  // If offsetScale is infinity we want to return 0 not NaN
+  return lengthValue == 0 ? 0.0 : lengthValue * GetOffsetScale(aTextPathFrame);
 }
 
 void SVGTextFrame::DoTextPathLayout() {
@@ -4707,15 +4710,14 @@ void SVGTextFrame::DoTextPathLayout() {
         }
         partialAdvances.AppendElement(partialAdvance);
       }
-      if (skippedEndOfTextPath) {
-        break;
-      }
 
-      // Any final undisplayed characters the CharIterator skipped over.
-      MOZ_ASSERT(j <= it.TextElementCharIndex());
-      while (j < it.TextElementCharIndex()) {
-        partialAdvances.AppendElement(partialAdvance);
-        ++j;
+      if (!skippedEndOfTextPath) {
+        // Any final undisplayed characters the CharIterator skipped over.
+        MOZ_ASSERT(j <= it.TextElementCharIndex());
+        while (j < it.TextElementCharIndex()) {
+          partialAdvances.AppendElement(partialAdvance);
+          ++j;
+        }
       }
 
       gfxFloat halfAdvance =
@@ -4828,7 +4830,7 @@ void SVGTextFrame::DoGlyphPositioning() {
   TextNodeCorrespondenceRecorder::RecordCorrespondence(this);
 
   // Determine the positions of each character in app units.
-  nsTArray<nsPoint> charPositions;
+  AutoTArray<nsPoint, 64> charPositions;
   DetermineCharPositions(charPositions);
 
   if (charPositions.IsEmpty()) {
@@ -4855,7 +4857,7 @@ void SVGTextFrame::DoGlyphPositioning() {
   }
 
   // Get the x, y, dx, dy, rotate values for the subtree.
-  nsTArray<gfxPoint> deltas;
+  AutoTArray<gfxPoint, 16> deltas;
   if (!ResolvePositions(deltas, adjustingTextLength)) {
     // If ResolvePositions returned false, it means either there were some
     // characters in the DOM but none of them are displayed, or there was
@@ -5017,12 +5019,11 @@ void SVGTextFrame::ScheduleReflowSVG() {
   }
 }
 
-void SVGTextFrame::NotifyGlyphMetricsChange() {
-  // TODO: perf - adding NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY is overly
-  // aggressive here.  Ideally we would only set that bit when our descendant
-  // frame tree changes (i.e. after frame construction).
-  AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
-               NS_STATE_SVG_POSITIONING_DIRTY);
+void SVGTextFrame::NotifyGlyphMetricsChange(bool aUpdateTextCorrespondence) {
+  if (aUpdateTextCorrespondence) {
+    AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY);
+  }
+  AddStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
   nsLayoutUtils::PostRestyleEvent(mContent->AsElement(), RestyleHint{0},
                                   nsChangeHint_InvalidateRenderingObservers);
   ScheduleReflowSVG();

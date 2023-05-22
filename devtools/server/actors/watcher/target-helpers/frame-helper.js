@@ -275,8 +275,8 @@ module.exports = {
  *        and what BrowsingContext should be considered.
  */
 function getWatchingBrowsingContexts(watcher) {
-  // If we are watching for additional frame targets, it means that fission mode is enabled,
-  // either for a content toolbox or a BrowserToolbox via devtools.browsertoolbox.fission pref.
+  // If we are watching for additional frame targets, it means that the multiprocess or fission mode is enabled,
+  // either for a content toolbox or a BrowserToolbox via scope set to everything.
   const watchingAdditionalTargets = WatcherRegistry.isWatchingTargets(
     watcher,
     Targets.TYPES.FRAME
@@ -292,7 +292,7 @@ function getWatchingBrowsingContexts(watcher) {
   // => we should no longer reach any browsing context.
   //
   // For "all" (=browser toolbox), there is only the special ParentProcessTargetActor we might want to return here.
-  // But this is actually handled by the WatcherActor which uses `WatcherActor._getTargetActorInParentProcess` to convey session data.
+  // But this is actually handled by the WatcherActor which uses `WatcherActor.getTargetActorInParentProcess` to convey session data.
   // => we should no longer reach any browsing context.
   //
   // For "webextension" debugging, there is the special WebExtensionTargetActor, which doesn't run in the parent process,

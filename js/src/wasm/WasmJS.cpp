@@ -28,7 +28,8 @@
 #include "jsapi.h"
 #include "jsexn.h"
 
-#include "ds/IdValuePair.h"  // js::IdValuePair
+#include "ds/IdValuePair.h"            // js::IdValuePair
+#include "frontend/FrontendContext.h"  // AutoReportFrontendContext
 #include "gc/GCContext.h"
 #include "jit/AtomicOperations.h"
 #include "jit/FlushICache.h"
@@ -434,11 +435,14 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
 
     switch (import.kind) {
       case DefinitionKind::Function: {
-        if (!IsFunctionObject(v)) {
+        // For now reject cross-compartment wrappers. These have more
+        // complicated realm semantics (we use nonCCWRealm in a few places) and
+        // may require unwrapping to test for specific function types.
+        if (!IsCallable(v) || IsCrossCompartmentWrapper(&v.toObject())) {
           return ThrowBadImportType(cx, import.field, "Function");
         }
 
-        if (!imports->funcs.append(&v.toObject().as<JSFunction>())) {
+        if (!imports->funcs.append(&v.toObject())) {
           return false;
         }
 
@@ -575,8 +579,9 @@ static bool DescribeScriptedCaller(JSContext* cx, ScriptedCaller* caller,
   JS::AutoFilename af;
   if (JS::DescribeScriptedCaller(cx, &af, &caller->line)) {
     caller->filename =
-        FormatIntroducedFilename(cx, af.get(), caller->line, introducer);
+        FormatIntroducedFilename(af.get(), caller->line, introducer);
     if (!caller->filename) {
+      ReportOutOfMemory(cx);
       return false;
     }
   }
@@ -1866,7 +1871,7 @@ WasmInstanceObject* WasmInstanceObject::create(
     const DataSegmentVector& dataSegments,
     const ElemSegmentVector& elemSegments, uint32_t globalDataLength,
     Handle<WasmMemoryObject*> memory, SharedTableVector&& tables,
-    const JSFunctionVector& funcImports, const GlobalDescVector& globals,
+    const JSObjectVector& funcImports, const GlobalDescVector& globals,
     const ValVector& globalImportValues,
     const WasmGlobalObjectVector& globalObjs,
     const WasmTagObjectVector& tagObjs, HandleObject proto,
@@ -4187,7 +4192,7 @@ JSFunction* WasmFunctionCreate(JSContext* cx, HandleFunction func,
   moduleEnv.numFuncImports = 1;
 
   // Add an (export (func 0))
-  moduleEnv.declareFuncExported(0, false, false);
+  moduleEnv.declareFuncExported(0, /* eager */ true, /* canRefFunc */ true);
 
   // We will be looking up and using the function in the future by index so the
   // name doesn't matter.
@@ -5334,6 +5339,9 @@ static const JSFunctionSpec WebAssembly_static_methods[] = {
           JSPROP_ENUMERATE),
     JS_FS_END};
 
+static const JSPropertySpec WebAssembly_static_properties[] = {
+    JS_STRING_SYM_PS(toStringTag, "WebAssembly", JSPROP_READONLY), JS_PS_END};
+
 static JSObject* CreateWebAssemblyObject(JSContext* cx, JSProtoKey key) {
   MOZ_RELEASE_ASSERT(HasSupport(cx));
 
@@ -5414,13 +5422,10 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
   return true;
 }
 
-static const ClassSpec WebAssemblyClassSpec = {CreateWebAssemblyObject,
-                                               nullptr,
-                                               WebAssembly_static_methods,
-                                               nullptr,
-                                               nullptr,
-                                               nullptr,
-                                               WebAssemblyClassFinish};
+static const ClassSpec WebAssemblyClassSpec = {
+    CreateWebAssemblyObject,       nullptr, WebAssembly_static_methods,
+    WebAssembly_static_properties, nullptr, nullptr,
+    WebAssemblyClassFinish};
 
 const JSClass js::WasmNamespaceObject::class_ = {
     js_WebAssembly_str, JSCLASS_HAS_CACHED_PROTO(JSProto_WebAssembly),

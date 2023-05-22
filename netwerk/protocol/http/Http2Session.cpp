@@ -552,9 +552,10 @@ void Http2Session::CreateStream(nsAHttpTransaction* aHttpTransaction,
 
 already_AddRefed<nsHttpConnection> Http2Session::CreateTunnelStream(
     nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
-    PRIntervalTime aRtt) {
+    PRIntervalTime aRtt, bool aIsWebSocket) {
   RefPtr<Http2StreamTunnel> refStream = CreateTunnelStreamFromConnInfo(
-      this, mCurrentTopBrowsingContextId, aHttpTransaction->ConnectionInfo());
+      this, mCurrentTopBrowsingContextId, aHttpTransaction->ConnectionInfo(),
+      aIsWebSocket);
 
   RefPtr<nsHttpConnection> newConn =
       refStream->CreateHttpConnection(aHttpTransaction, aCallbacks, aRtt);
@@ -1165,18 +1166,22 @@ bool Http2Session::VerifyStream(Http2StreamBase* aStream,
 
 // static
 Http2StreamTunnel* Http2Session::CreateTunnelStreamFromConnInfo(
-    Http2Session* session, uint64_t bcId, nsHttpConnectionInfo* info) {
+    Http2Session* session, uint64_t bcId, nsHttpConnectionInfo* info,
+    bool isWebSocket) {
   MOZ_ASSERT(info);
   MOZ_ASSERT(session);
-  if (info->UsingHttpProxy() && info->UsingConnect()) {
-    LOG(("Http2Session creating Http2StreamTunnel"));
-    return new Http2StreamTunnel(session, nsISupportsPriority::PRIORITY_NORMAL,
-                                 bcId, info);
+
+  if (isWebSocket) {
+    LOG(("Http2Session creating Http2StreamWebSocket"));
+    MOZ_ASSERT(session->GetWebSocketSupport() == WebSocketSupport::SUPPORTED);
+    return new Http2StreamWebSocket(
+        session, nsISupportsPriority::PRIORITY_NORMAL, bcId, info);
   }
-  MOZ_ASSERT(session->GetWebSocketSupport() == WebSocketSupport::SUPPORTED);
-  LOG(("Http2Session creating Http2StreamWebSocket"));
-  return new Http2StreamWebSocket(session, nsISupportsPriority::PRIORITY_NORMAL,
-                                  bcId, info);
+
+  MOZ_ASSERT(info->UsingHttpProxy() && info->UsingConnect());
+  LOG(("Http2Session creating Http2StreamTunnel"));
+  return new Http2StreamTunnel(session, nsISupportsPriority::PRIORITY_NORMAL,
+                               bcId, info);
 }
 
 void Http2Session::CleanupStream(Http2StreamBase* aStream, nsresult aResult,
@@ -1713,11 +1718,7 @@ nsresult Http2Session::RecvSettings(Http2Session* self) {
           LOG3(("Peer tried to re-disable extended CONNECT"));
           return self->SessionError(PROTOCOL_ERROR);
         }
-        // trigger a queued websockets transaction -- enabled or not
-        LOG3(("Http2Sesssion::RecvSettings triggering queued websocket"));
-        RefPtr<nsHttpConnectionInfo> ci;
-        self->GetConnectionInfo(getter_AddRefs(ci));
-        gHttpHandler->ConnMgr()->ProcessPendingQ(ci);
+        self->mHasTransactionWaitingForWebsockets = true;
       } break;
 
       default:
@@ -1736,6 +1737,15 @@ nsresult Http2Session::RecvSettings(Http2Session* self) {
 
   if (!self->mProcessedWaitingWebsockets) {
     self->mProcessedWaitingWebsockets = true;
+  }
+
+  if (self->mHasTransactionWaitingForWebsockets) {
+    // trigger a queued websockets transaction -- enabled or not
+    LOG3(("Http2Sesssion::RecvSettings triggering queued websocket"));
+    RefPtr<nsHttpConnectionInfo> ci;
+    self->GetConnectionInfo(getter_AddRefs(ci));
+    gHttpHandler->ConnMgr()->ProcessPendingQ(ci);
+    self->mHasTransactionWaitingForWebsockets = false;
   }
 
   return NS_OK;
@@ -4452,6 +4462,7 @@ WebSocketSupport Http2Session::GetWebSocketSupport() {
   }
 
   if (!mProcessedWaitingWebsockets) {
+    mHasTransactionWaitingForWebsockets = true;
     return WebSocketSupport::UNSURE;
   }
 

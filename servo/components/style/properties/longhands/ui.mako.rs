@@ -324,7 +324,7 @@ ${helpers.predefined_type(
     vector=True,
     need_index=True,
     animation_value_type="none",
-    gecko_pref="layout.css.scroll-linked-animations.enabled",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
     spec="https://drafts.csswg.org/css-animations-2/#propdef-animation-timeline",
     rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
 )}
@@ -333,10 +333,12 @@ ${helpers.predefined_type(
     "scroll-timeline-name",
     "ScrollTimelineName",
     "computed::ScrollTimelineName::none()",
+    vector=True,
+    need_index=True,
     engines="gecko",
     animation_value_type="none",
-    gecko_pref="layout.css.scroll-linked-animations.enabled",
-    spec="https://github.com/w3c/csswg-drafts/issues/6674",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
+    spec="https://drafts.csswg.org/scroll-animations-1/#scroll-timeline-name",
     rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
 )}
 
@@ -344,9 +346,50 @@ ${helpers.predefined_type(
     "scroll-timeline-axis",
     "ScrollAxis",
     "computed::ScrollAxis::default()",
+    vector=True,
+    need_index=True,
     engines="gecko",
     animation_value_type="none",
-    gecko_pref="layout.css.scroll-linked-animations.enabled",
-    spec="https://github.com/w3c/csswg-drafts/issues/6674",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
+    spec="https://drafts.csswg.org/scroll-animations-1/#scroll-timeline-axis",
+    rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
+)}
+
+${helpers.predefined_type(
+    "view-timeline-name",
+    "ScrollTimelineName",
+    "computed::ScrollTimelineName::none()",
+    vector=True,
+    need_index=True,
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
+    spec="https://drafts.csswg.org/scroll-animations-1/#view-timeline-name",
+    rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
+)}
+
+${helpers.predefined_type(
+    "view-timeline-axis",
+    "ScrollAxis",
+    "computed::ScrollAxis::default()",
+    vector=True,
+    need_index=True,
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
+    spec="https://drafts.csswg.org/scroll-animations-1/#view-timeline-axis",
+    rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
+)}
+
+${helpers.predefined_type(
+    "view-timeline-inset",
+    "ViewTimelineInset",
+    "computed::ViewTimelineInset::zero()",
+    vector=True,
+    need_index=True,
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.scroll-driven-animations.enabled",
+    spec="https://drafts.csswg.org/scroll-animations-1/#view-timeline-axis",
     rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
 )}

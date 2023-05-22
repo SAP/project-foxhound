@@ -1078,7 +1078,14 @@ inline bool StyleFontStyle::IsOblique() const {
   return !IsItalic() && !IsNormal();
 }
 
-inline float StyleFontStyle::ObliqueAngle() const { return ToFloat(); }
+inline float StyleFontStyle::ObliqueAngle() const {
+  MOZ_ASSERT(IsOblique());
+  return ToFloat();
+}
+
+inline float StyleFontStyle::SlantAngle() const {
+  return IsNormal() ? 0 : IsItalic() ? DEFAULT_OBLIQUE_DEGREES : ObliqueAngle();
+}
 
 using FontStretch = StyleFontStretch;
 using FontSlantStyle = StyleFontStyle;
@@ -1104,6 +1111,17 @@ inline double StyleComputedTimingFunction::GetPortion(
     bool aBeforeFlag) {
   return aFn ? aFn->At(aPortion, aBeforeFlag) : aPortion;
 }
+
+/* static */
+template <>
+inline LengthPercentageOrAuto LengthPercentageOrAuto::Zero() {
+  return LengthPercentage(LengthPercentage::Zero());
+}
+
+template <>
+inline StyleViewTimelineInset::StyleGenericViewTimelineInset()
+    : start(LengthPercentageOrAuto::Zero()),
+      end(LengthPercentageOrAuto::Zero()) {}
 
 }  // namespace mozilla
 

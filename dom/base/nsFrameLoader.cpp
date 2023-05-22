@@ -2818,6 +2818,12 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
 }
 
 bool nsFrameLoader::TryRemoteBrowser() {
+  // Creating remote browsers may result in creating new processes, but during
+  // parent shutdown that would add just noise, so better bail out.
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return false;
+  }
+
   // Try to create the internal remote browser.
   if (TryRemoteBrowserInternal()) {
     return true;
@@ -3478,7 +3484,7 @@ already_AddRefed<nsIRemoteTab> nsFrameLoader::GetRemoteTab() {
   return nullptr;
 }
 
-already_AddRefed<nsILoadContext> nsFrameLoader::LoadContext() {
+already_AddRefed<nsILoadContext> nsFrameLoader::GetLoadContext() {
   return do_AddRef(GetBrowsingContext());
 }
 
@@ -3624,27 +3630,21 @@ nsresult nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
 
   MOZ_ASSERT(mPendingBrowsingContext->EverAttached());
 
-  UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
   uint64_t chromeOuterWindowID = 0;
 
-  Document* doc = mOwnerContent->OwnerDoc();
-  if (doc) {
-    nsCOMPtr<nsPIWindowRoot> root = nsContentUtils::GetWindowRoot(doc);
-    if (root) {
-      showFocusRings = root->ShowFocusRings() ? UIStateChangeType_Set
-                                              : UIStateChangeType_Clear;
-
-      nsPIDOMWindowOuter* outerWin = root->GetWindow();
-      if (outerWin) {
-        chromeOuterWindowID = outerWin->WindowID();
-      }
+  nsCOMPtr<nsPIWindowRoot> root =
+      nsContentUtils::GetWindowRoot(mOwnerContent->OwnerDoc());
+  if (root) {
+    nsPIDOMWindowOuter* outerWin = root->GetWindow();
+    if (outerWin) {
+      chromeOuterWindowID = outerWin->WindowID();
     }
   }
 
   uint32_t maxTouchPoints = BrowserParent::GetMaxTouchPoints(mOwnerContent);
 
-  bool tabContextUpdated = aTabContext->SetTabContext(
-      chromeOuterWindowID, showFocusRings, maxTouchPoints);
+  bool tabContextUpdated =
+      aTabContext->SetTabContext(chromeOuterWindowID, maxTouchPoints);
   NS_ENSURE_STATE(tabContextUpdated);
 
   return NS_OK;

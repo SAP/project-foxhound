@@ -758,6 +758,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
  public:
   const auto& Limits() const { return mNotLost->info.limits; }
+  const auto& Vendor() const { return mNotLost->info.vendor; }
   // https://www.khronos.org/registry/webgl/specs/latest/1.0/#actual-context-parameters
   const WebGLContextOptions& ActualContextParameters() const {
     MOZ_ASSERT(mNotLost != nullptr);
@@ -2158,6 +2159,9 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
                     dom::CallerType callerType, ErrorResult& rv);
 
  protected:
+  bool IsExtensionForbiddenForCaller(const WebGLExtensionID ext,
+                                     const dom::CallerType callerType) const;
+
   RefPtr<ClientWebGLExtensionBase> GetExtension(WebGLExtensionID ext,
                                                 dom::CallerType callerType);
   void RequestExtension(WebGLExtensionID) const;

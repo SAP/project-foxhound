@@ -169,7 +169,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
     }
 
     if (start < current && !buffer.append(start.get(), current.get())) {
-      buffer.failure();
       return token(OOM);
     }
 
@@ -183,21 +182,16 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
                                 ? buffer.finishAtom()
                                 : buffer.finishString();
       if (!str) {
-        buffer.failure();
         return token(OOM);
       }
 
       // TaintFox: Add taint operation.
       str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
-
-      buffer.ok();
-      return stringToken(str);
     }
 
     if (c != '\\') {
       --current;
       error("bad character in string literal");
-      buffer.failure();
       return token(Error);
     }
 
@@ -250,7 +244,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
           }
 
           error("bad Unicode escape");
-          buffer.failure();
           return token(Error);
         }
         c = (AsciiAlphanumericToNumber(current[0]) << 12) |
@@ -263,7 +256,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
       default:
         current--;
         error("bad escaped character");
-        buffer.failure();
         return token(Error);
     }
 
@@ -274,7 +266,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
     }
 
     if (!buffer.append(c)) {
-      buffer.failure();
       return token(OOM);
     }
 
@@ -287,7 +278,6 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
   } while (current < end);
 
   error("unterminated string");
-  buffer.failure();
   return token(Error);
 }
 
@@ -338,8 +328,9 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
     }
 
     double d;
-    if (!GetFullInteger(cx, digitStart.get(), current.get(), 10,
+    if (!GetFullInteger(digitStart.get(), current.get(), 10,
                         IntegerSeparatorHandling::None, &d)) {
+      ReportOutOfMemory(cx);
       return token(OOM);
     }
     return numberToken(negative ? -d : d);

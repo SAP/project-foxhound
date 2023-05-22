@@ -235,7 +235,6 @@ function CaptivePortalDetector() {
   // Load preference
   this._canonicalSiteURL = null;
   this._canonicalSiteExpectedContent = null;
-  this._telemetryService = Services.telemetry;
 
   try {
     this._canonicalSiteURL = Services.prefs.getCharPref(
@@ -274,11 +273,6 @@ function CaptivePortalDetector() {
   this._runningRequest = null;
   this._requestQueue = []; // Maintain a progress table, store callbacks and the ongoing XHR
   this._interfaceNames = {}; // Maintain names of the requested network interfaces
-
-  this._telemetryService.setEventRecordingEnabled(
-    "networking.captive_portal",
-    true
-  );
 
   debug(
     "CaptiveProtalDetector initiated, waiting for network connection established"
@@ -389,6 +383,9 @@ CaptivePortalDetector.prototype = {
       if (status >= 300 && status <= 399) {
         // The canonical website has been redirected to an unknown location
         self._startLogin();
+      } else if (status === 511) {
+        // Got a RFC 6585 "Network Authentication Required" error page
+        self._startLogin();
       } else {
         mayRetry();
       }
@@ -436,12 +433,6 @@ CaptivePortalDetector.prototype = {
       // Only when the request has a event id and |success| is true
       // do we need to notify the login-success event.
       if (this._runningRequest.hasOwnProperty("eventId") && success) {
-        this._telemetryService.recordEvent(
-          "networking.captive_portal",
-          "login_successful",
-          "detector"
-        );
-
         let details = {
           type: kCaptivePortalLoginSuccessEvent,
           id: this._runningRequest.eventId,

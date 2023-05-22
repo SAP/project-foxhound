@@ -15,12 +15,8 @@
  */
 
 :root {
-  --toolbar-non-lwt-bgcolor: -moz-dialog;
+  --toolbar-non-lwt-bgcolor: color-mix(in srgb, -moz-dialog 85%, white);
   --toolbar-non-lwt-textcolor: -moz-dialogtext;
-  --toolbar-non-lwt-bgimage: linear-gradient(rgba(255,255,255,.075), rgba(255,255,255,.075));
-  --tab-selected-non-lwt-bgimage: linear-gradient(rgba(255,255,255,.15), rgba(255,255,255,.15));
-
-  --panel-separator-color: ThreeDShadow;
 
   --chrome-content-separator-color: ThreeDShadow;
 }
@@ -32,12 +28,6 @@
 
 :root:-moz-lwtheme {
   --chrome-content-separator-color: rgba(0,0,0,.3);
-
-  --panel-separator-color: hsla(210,4%,10%,.14);
-}
-
-:root[lwt-popup-brighttext] {
-  --panel-separator-color: rgba(249,249,250,.1);
 }
 
 #menubar-items {
@@ -56,7 +46,6 @@
 
 .browser-toolbar:not(.titlebar-color) {
   background-color: var(--toolbar-bgcolor);
-  background-image: var(--toolbar-bgimage);
   color: var(--toolbar-color);
   appearance: none;
   border-style: none;
@@ -428,23 +417,4 @@ menuitem.bookmark-item {
       -moz-box-ordinal-group: 0;
     }
   }
-}
-
-#historySwipeAnimationPreviousArrow {
-  background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 192px 192px no-repeat transparent;
-  will-change: transform;
-  -moz-context-properties: fill;
-}
-#historySwipeAnimationPreviousArrow:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-#historySwipeAnimationNextArrow {
-  background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 192px 192px no-repeat transparent;
-  will-change: transform;
-  -moz-context-properties: fill;
-}
-#historySwipeAnimationNextArrow:-moz-locale-dir(ltr) {
-  transform: scaleX(-1);
 }

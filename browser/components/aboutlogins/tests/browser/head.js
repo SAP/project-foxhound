@@ -1,14 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let { LoginBreaches } = ChromeUtils.import(
-  "resource:///modules/LoginBreaches.jsm"
+let { LoginBreaches } = ChromeUtils.importESModule(
+  "resource:///modules/LoginBreaches.sys.mjs"
 );
 let { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
-let { _AboutLogins } = ChromeUtils.import(
-  "resource:///actors/AboutLoginsParent.jsm"
+let { _AboutLogins } = ChromeUtils.importESModule(
+  "resource:///actors/AboutLoginsParent.sys.mjs"
 );
 let { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
@@ -158,7 +158,7 @@ add_setup(async function setup_head() {
       // Ignore MarionetteEvents error (Bug 1730837, Bug 1710079).
       return;
     }
-    ok(false, msg.message || msg.errorMessage);
+    Assert.ok(false, msg.message || msg.errorMessage);
   });
 
   registerCleanupFunction(async () => {
@@ -183,7 +183,11 @@ function waitForMPDialog(action, aWindow = window) {
   return dialogShown.then(function([subject]) {
     let dialog = subject.Dialog;
     let expected = "Password Required - " + BRAND_FULL_NAME;
-    is(dialog.args.title, expected, "Dialog is the Primary Password dialog");
+    Assert.equal(
+      dialog.args.title,
+      expected,
+      "Dialog is the Primary Password dialog"
+    );
     if (action == "authenticate") {
       SpecialPowers.wrap(dialog.ui.password1Textbox).setUserInput(
         LoginTestUtils.primaryPassword.primaryPassword
@@ -206,7 +210,7 @@ function waitForMPDialog(action, aWindow = window) {
  * @returns {Promise} Resolves after the MP dialog has been presented and actioned upon
  */
 function forceAuthTimeoutAndWaitForMPDialog(action, aWindow = window) {
-  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.jsm)
+  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.sys.mjs)
   _AboutLogins._authExpirationTime -= AUTH_TIMEOUT_MS + 1;
   return waitForMPDialog(action, aWindow);
 }
@@ -220,7 +224,7 @@ function forceAuthTimeoutAndWaitForMPDialog(action, aWindow = window) {
  * @returns {Promise} Resolves after the OS auth dialog has been presented
  */
 function forceAuthTimeoutAndWaitForOSKeyStoreLogin({ loginResult }) {
-  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.jsm)
+  const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.sys.mjs)
   _AboutLogins._authExpirationTime -= AUTH_TIMEOUT_MS + 1;
   return OSKeyStoreTestUtils.waitForOSKeyStoreLogin(loginResult);
 }

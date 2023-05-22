@@ -8,6 +8,10 @@ const { DevToolsShim } = ChromeUtils.importESModule(
   "chrome://devtools-startup/content/DevToolsShim.sys.mjs"
 );
 
+const { DEFAULT_SANDBOX_NAME } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
+);
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserToolboxLauncher:
@@ -74,6 +78,23 @@ const DEVTOOLS_ALWAYS_ON_TOP = "devtools.toolbox.alwaysOnTop";
  * set of tools and keeps track of open toolboxes in the browser.
  */
 function DevTools() {
+  // We should be careful to always load a unique instance of this module:
+  // - only in the parent process
+  // - only in the "shared JSM global" spawn by mozJSModuleLoader
+  //   The server codebase typically use another global named "DevTools global",
+  //   which will load duplicated instances of all the modules -or- another
+  //   DevTools module loader named "DevTools (Server Module loader)".
+  //   Also the realm location is appended the loading callsite, so only check
+  //   the beginning of the string.
+  if (
+    Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_DEFAULT ||
+    !Cu.getRealmLocation(globalThis).startsWith(DEFAULT_SANDBOX_NAME)
+  ) {
+    throw new Error(
+      "This module should be loaded in the parent process only, in the shared global."
+    );
+  }
+
   this._tools = new Map(); // Map<toolId, tool>
   this._themes = new Map(); // Map<themeId, theme>
   this._toolboxesPerCommands = new Map(); // Map<commands, toolbox>
@@ -449,7 +470,7 @@ DevTools.prototype = {
   },
 
   /**
-   * Called from SessionStore.jsm in mozilla-central when saving the current state.
+   * Called from SessionStore.sys.mjs in mozilla-central when saving the current state.
    *
    * @param {Object} state
    *                 A SessionStore state object that gets modified by reference
@@ -637,8 +658,11 @@ DevTools.prototype = {
    *
    * @param {String} extensionId
    *        ID of the extension to debug.
+   * @param {Object} (optional)
+   *        - {String} toolId
+   *          The id of the tool to show
    */
-  async showToolboxForWebExtension(extensionId) {
+  async showToolboxForWebExtension(extensionId, { toolId } = {}) {
     // Ensure spawning only one commands instance per extension at a time by caching its commands.
     // showToolbox will later reopen the previously opened toolbox if called with the same
     // commands.
@@ -659,6 +683,7 @@ DevTools.prototype = {
         // the DevTools visible while interacting with the Firefox window.
         alwaysOnTop: Services.prefs.getBoolPref(DEVTOOLS_ALWAYS_ON_TOP, false),
       },
+      toolId,
     });
   },
 
@@ -726,8 +751,6 @@ DevTools.prototype = {
     const toolbox = await manager.create(toolId);
 
     this._toolboxesPerCommands.set(commands, toolbox);
-
-    this.emit("toolbox-created", toolbox);
 
     toolbox.once("destroy", () => {
       this.emit("toolbox-destroy", toolbox);

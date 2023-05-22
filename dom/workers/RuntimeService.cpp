@@ -71,7 +71,6 @@
 #  include "nsMacUtilsImpl.h"
 #endif
 
-#include "Principal.h"
 #include "WorkerDebuggerManager.h"
 #include "WorkerError.h"
 #include "WorkerLoadInfo.h"
@@ -876,7 +875,8 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallbacks(cx, PreserveWrapper, HasReleasedWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, WorkerPrincipal::Destroy);
+    JS_InitDestroyPrincipalsCallback(cx, nsJSPrincipals::Destroy);
+    JS_InitReadPrincipalsCallback(cx, nsJSPrincipals::ReadPrincipals);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     if (mWorkerPrivate->IsDedicatedWorker()) {
       JS_SetFutexCanWait(cx);
@@ -2047,6 +2047,8 @@ WorkerThreadPrimaryRunnable::Run() {
           MOZ_ASSERT(!JS_IsExceptionPending(cx));
         }
 
+        mWorkerPrivate->RunShutdownTasks();
+
         BackgroundChild::CloseForCurrentThread();
 
         PROFILER_CLEAR_JS_CONTEXT();
@@ -2131,7 +2133,7 @@ WorkerThreadPrimaryRunnable::Run() {
   mWorkerPrivate = nullptr;
 
   // Now recycle this thread.
-  nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadSerialEventTarget();
   MOZ_ASSERT(mainTarget);
 
   RefPtr<FinishedRunnable> finishedRunnable =

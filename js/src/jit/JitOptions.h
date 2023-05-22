@@ -53,6 +53,7 @@ struct DefaultJitOptions {
   bool disableLicm;
   bool disablePruning;
   bool disableInstructionReordering;
+  bool disableIteratorIndices;
   bool disableRangeAnalysis;
   bool disableRecoverIns;
   bool disableScalarReplacement;
@@ -72,10 +73,6 @@ struct DefaultJitOptions {
   bool osr;
   bool wasmFoldOffsets;
   bool wasmDelayTier2;
-  bool traceRegExpParser;
-  bool traceRegExpAssembler;
-  bool traceRegExpInterpreter;
-  bool traceRegExpPeephole;
   bool lessDebugCode;
   bool enableWatchtowerMegamorphic;
   bool enableWasmJitExit;
@@ -123,6 +120,18 @@ struct DefaultJitOptions {
   bool supportsUnalignedAccesses;
   BaseRegForAddress baseRegForLocals;
 
+  // Irregexp shim flags
+  bool correctness_fuzzer_suppressions;
+  bool enable_regexp_unaligned_accesses;
+  bool regexp_possessive_quantifier;
+  bool regexp_optimization;
+  bool regexp_peephole_optimization;
+  bool regexp_tier_up;
+  bool trace_regexp_assembler;
+  bool trace_regexp_bytecodes;
+  bool trace_regexp_parser;
+  bool trace_regexp_peephole_optimization;
+
   DefaultJitOptions();
   bool isSmallFunction(JSScript* script) const;
   void setEagerBaselineCompilation();
@@ -147,6 +156,10 @@ inline bool HasJitBackend() {
 
 inline bool IsBaselineInterpreterEnabled() {
   return HasJitBackend() && JitOptions.baselineInterpreter;
+}
+
+inline bool TooManyActualArguments(size_t nargs) {
+  return nargs > JitOptions.maxStackArgs;
 }
 
 }  // namespace jit

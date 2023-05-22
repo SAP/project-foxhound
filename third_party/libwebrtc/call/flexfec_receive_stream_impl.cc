@@ -24,7 +24,6 @@
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/clock.h"
@@ -135,6 +134,7 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
     : extension_map_(std::move(config.rtp.extensions)),
       remote_ssrc_(config.rtp.remote_ssrc),
       transport_cc_(config.rtp.transport_cc),
+      payload_type_(config.payload_type),
       receiver_(
           MaybeCreateFlexfecReceiver(clock, config, recovered_packet_receiver)),
       rtp_receive_statistics_(ReceiveStatistics::Create(clock)),
@@ -143,6 +143,7 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
                                     config,
                                     rtt_stats)) {
   RTC_LOG(LS_INFO) << "FlexfecReceiveStreamImpl: " << config.ToString();
+  RTC_DCHECK_GE(payload_type_, -1);
 
   packet_sequence_checker_.Detach();
 
@@ -186,6 +187,17 @@ void FlexfecReceiveStreamImpl::OnRtpPacket(const RtpPacketReceived& packet) {
   if (packet.Ssrc() == remote_ssrc()) {
     rtp_receive_statistics_->OnRtpPacket(packet);
   }
+}
+
+void FlexfecReceiveStreamImpl::SetPayloadType(int payload_type) {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  RTC_DCHECK_GE(payload_type, -1);
+  payload_type_ = payload_type;
+}
+
+int FlexfecReceiveStreamImpl::payload_type() const {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  return payload_type_;
 }
 
 void FlexfecReceiveStreamImpl::SetRtpExtensions(

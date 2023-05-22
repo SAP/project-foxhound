@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* import-globals-from ../../../../components/downloads/test/browser/head.js */
 
 "use strict";
 
@@ -66,14 +65,5 @@ add_task(
       "closed",
       "Check that panel state is 'closed'"
     );
-
-    // Move the cursor to the center of the browser window where hopefully it
-    // will cause less intermittent failures in the next tests than keeping it
-    // in the toolbar area.
-    EventUtils.synthesizeNativeMouseEvent({
-      type: "mousemove",
-      target: document.documentElement,
-      atCenter: true,
-    });
   }
 );

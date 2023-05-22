@@ -98,6 +98,8 @@ const Types = (exports.__TypesForTests = [
     spec: "devtools/shared/specs/environment",
     front: null,
   },
+  // @backward-compat { version 111 } The eventSource entry be deleted when 111
+  // is on the release channel.
   {
     types: ["eventSource"],
     spec: "devtools/shared/specs/eventsource",
@@ -133,11 +135,6 @@ const Types = (exports.__TypesForTests = [
     types: ["manifest"],
     spec: "devtools/shared/specs/manifest",
     front: "devtools/client/fronts/manifest",
-  },
-  {
-    types: ["mediarule"],
-    spec: "devtools/shared/specs/media-rule",
-    front: "devtools/client/fronts/media-rule",
   },
   {
     types: ["memory"],
@@ -232,11 +229,14 @@ const Types = (exports.__TypesForTests = [
   },
   {
     types: [
+      "Cache",
       "cookies",
       "localStorage",
-      "sessionStorage",
-      "Cache",
+      "extensionStorage",
       "indexedDB",
+      "sessionStorage",
+      // @backward-compat { version 111 } This type can be removed once 111 is released.
+      // This codepath was only used when connecting to older servers.
       "storage",
     ],
     spec: "devtools/shared/specs/storage",
@@ -257,11 +257,6 @@ const Types = (exports.__TypesForTests = [
     types: ["domstylerule"],
     spec: "devtools/shared/specs/style-rule",
     front: "devtools/client/fronts/style-rule",
-  },
-  {
-    types: ["stylesheet"],
-    spec: "devtools/shared/specs/style-sheet",
-    front: "devtools/client/fronts/style-sheet",
   },
   {
     types: ["stylesheets"],
@@ -333,6 +328,8 @@ const Types = (exports.__TypesForTests = [
     spec: "devtools/shared/specs/webconsole",
     front: "devtools/client/fronts/webconsole",
   },
+  // @backward-compat { version 111 } The webSocket entry be deleted when 111 is
+  // on the release channel.
   {
     types: ["webSocket"],
     spec: "devtools/shared/specs/websocket",

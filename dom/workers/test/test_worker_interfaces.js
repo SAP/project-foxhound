@@ -194,6 +194,16 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FileReaderSync", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemDirectoryHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemFileHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemSyncAccessHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemWritableFileStream" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FontFace", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FontFaceSet", insecureContext: true },

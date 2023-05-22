@@ -158,6 +158,8 @@ AudioContext::AudioContext(nsPIDOMWindowInner* aWindow, bool aIsOffline,
       mAudioContextState(AudioContextState::Suspended),
       mNumberOfChannels(aNumberOfChannels),
       mRTPCallerType(aWindow->AsGlobal()->GetRTPCallerType()),
+      mShouldResistFingerprinting(
+          aWindow->AsGlobal()->ShouldResistFingerprinting()),
       mIsOffline(aIsOffline),
       mIsStarted(!aIsOffline),
       mIsShutDown(false),
@@ -176,7 +178,7 @@ AudioContext::AudioContext(nsPIDOMWindowInner* aWindow, bool aIsOffline,
 
   // Note: AudioDestinationNode needs an AudioContext that must already be
   // bound to the window.
-  const bool allowedToStart = AutoplayPolicy::IsAllowedToPlay(*this);
+  const bool allowedToStart = media::AutoplayPolicy::IsAllowedToPlay(*this);
   mDestination =
       new AudioDestinationNode(this, aIsOffline, aNumberOfChannels, aLength);
   mDestination->Init();
@@ -209,7 +211,7 @@ void AudioContext::StartBlockedAudioContextIfAllowed() {
     return;
   }
 
-  const bool isAllowedToPlay = AutoplayPolicy::IsAllowedToPlay(*this);
+  const bool isAllowedToPlay = media::AutoplayPolicy::IsAllowedToPlay(*this);
   AUTOPLAY_LOG("Trying to start AudioContext %p, IsAllowedToPlay=%d", this,
                isAllowedToPlay);
 
@@ -556,7 +558,7 @@ double AudioContext::OutputLatency() {
   // When reduceFingerprinting is enabled, return a latency figure that is
   // fixed, but plausible for the platform.
   double latency_s = 0.0;
-  if (StaticPrefs::privacy_resistFingerprinting()) {
+  if (mShouldResistFingerprinting) {
 #ifdef XP_MACOSX
     latency_s = 512. / mSampleRate;
 #elif MOZ_WIDGET_ANDROID
@@ -708,7 +710,7 @@ void AudioContext::UnregisterActiveNode(AudioNode* aNode) {
 }
 
 uint32_t AudioContext::MaxChannelCount() const {
-  if (StaticPrefs::privacy_resistFingerprinting()) {
+  if (mShouldResistFingerprinting) {
     return 2;
   }
   return std::min<uint32_t>(
@@ -1072,7 +1074,7 @@ already_AddRefed<Promise> AudioContext::Resume(ErrorResult& aRv) {
   mSuspendedByContent = false;
   mPendingResumePromises.AppendElement(promise);
 
-  const bool isAllowedToPlay = AutoplayPolicy::IsAllowedToPlay(*this);
+  const bool isAllowedToPlay = media::AutoplayPolicy::IsAllowedToPlay(*this);
   AUTOPLAY_LOG("Trying to resume AudioContext %p, IsAllowedToPlay=%d", this,
                isAllowedToPlay);
   if (isAllowedToPlay) {
@@ -1121,8 +1123,8 @@ void AudioContext::ResumeInternal() {
 }
 
 void AudioContext::UpdateAutoplayAssumptionStatus() {
-  if (AutoplayPolicyTelemetryUtils::WouldBeAllowedToPlayIfAutoplayDisabled(
-          *this)) {
+  if (media::AutoplayPolicyTelemetryUtils::
+          WouldBeAllowedToPlayIfAutoplayDisabled(*this)) {
     mWasEverAllowedToStart |= true;
     mWouldBeAllowedToStart = true;
   } else {
@@ -1137,8 +1139,8 @@ void AudioContext::MaybeUpdateAutoplayTelemetry() {
     return;
   }
 
-  if (AutoplayPolicyTelemetryUtils::WouldBeAllowedToPlayIfAutoplayDisabled(
-          *this) &&
+  if (media::AutoplayPolicyTelemetryUtils::
+          WouldBeAllowedToPlayIfAutoplayDisabled(*this) &&
       !mWouldBeAllowedToStart) {
     AccumulateCategorical(
         mozilla::Telemetry::LABELS_WEB_AUDIO_AUTOPLAY::AllowedAfterBlocked);

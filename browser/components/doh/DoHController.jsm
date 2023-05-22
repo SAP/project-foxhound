@@ -18,14 +18,14 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  ClientID: "resource://gre/modules/ClientID.jsm",
   DoHConfigController: "resource:///modules/DoHConfig.jsm",
   Heuristics: "resource:///modules/DoHHeuristics.jsm",
 });
@@ -81,13 +81,6 @@ XPCOMUtils.defineLazyServiceGetter(
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
-  "gDNSService",
-  "@mozilla.org/network/dns-service;1",
-  "nsIDNSService"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
   "nsINetworkLinkService"
@@ -119,6 +112,10 @@ const ROLLOUT_URI_PREF = "doh-rollout.uri";
 
 const TRR_SELECT_DRY_RUN_RESULT_PREF =
   "doh-rollout.trr-selection.dry-run-result";
+
+const NATIVE_FALLBACK_WARNING_PREF = "network.trr.display_fallback_warning";
+const NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF =
+  "network.trr.fallback_warning_heuristic_list";
 
 const HEURISTICS_TELEMETRY_CATEGORY = "doh";
 const TRRSELECT_TELEMETRY_CATEGORY = "security.doh.trrPerformance";
@@ -167,6 +164,8 @@ const DoHController = {
     Services.obs.addObserver(this, lazy.DoHConfigController.kConfigUpdateTopic);
     lazy.Preferences.observe(NETWORK_TRR_MODE_PREF, this);
     lazy.Preferences.observe(NETWORK_TRR_URI_PREF, this);
+    lazy.Preferences.observe(NATIVE_FALLBACK_WARNING_PREF, this);
+    lazy.Preferences.observe(NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF, this);
 
     if (lazy.DoHConfigController.currentConfig.enabled) {
       await this.maybeEnableHeuristics();
@@ -321,6 +320,7 @@ const DoHController = {
     // suppressed if it hasn't fired yet.
     this.runHeuristics(evaluateReason);
   },
+
   async runHeuristics(evaluateReason) {
     let start = Date.now();
 
@@ -369,12 +369,43 @@ const DoHController = {
     };
 
     if (results.steeredProvider) {
-      lazy.gDNSService.setDetectedTrrURI(results.steeredProvider.uri);
+      Services.dns.setDetectedTrrURI(results.steeredProvider.uri);
       resultsForTelemetry.steeredProvider = results.steeredProvider.id;
     }
 
+    try {
+      Services.dns.setHeuristicDetectionResult(Ci.nsITRRSkipReason.TRR_OK);
+    } catch (e) {}
     if (decision === lazy.Heuristics.DISABLE_DOH) {
-      await this.setState("disabled");
+      let fallbackHeuristicTripped = undefined;
+      if (lazy.Preferences.get(NATIVE_FALLBACK_WARNING_PREF, false)) {
+        let heuristics = lazy.Preferences.get(
+          NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF,
+          ""
+        ).split(",");
+        for (let [heuristicName, result] of Object.entries(results)) {
+          if (result !== lazy.Heuristics.DISABLE_DOH) {
+            continue;
+          }
+          if (heuristics.includes(heuristicName)) {
+            fallbackHeuristicTripped = heuristicName;
+            break;
+          }
+        }
+      }
+
+      // With the native fallback warning preference set we won't disable
+      // DoH on select tripped heuristics so that we stay in trr mode 2
+      if (fallbackHeuristicTripped != undefined) {
+        await this.setState("enabled");
+        try {
+          Services.dns.setHeuristicDetectionResult(
+            lazy.Heuristics.heuristicNameToSkipReason(fallbackHeuristicTripped)
+          );
+        } catch (e) {}
+      } else {
+        await this.setState("disabled");
+      }
     } else {
       await this.setState("enabled");
     }
@@ -582,6 +613,13 @@ const DoHController = {
       case NETWORK_TRR_MODE_PREF:
         lazy.Preferences.set(DISABLED_PREF, true);
         await this.disableHeuristics("manuallyDisabled");
+        try {
+          Services.dns.setHeuristicDetectionResult(Ci.nsITRRSkipReason.TRR_OK);
+        } catch (e) {}
+        break;
+      case NATIVE_FALLBACK_WARNING_PREF:
+      case NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF:
+        this.runHeuristics("native-fallback-warning-changed");
         break;
     }
   },

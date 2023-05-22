@@ -13,6 +13,7 @@ import android.app.AlertDialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
@@ -774,7 +775,7 @@ public class GeckoViewActivity extends AppCompatActivity
     createNotificationChannel();
     setContentView(R.layout.geckoview_activity);
     mGeckoView = findViewById(R.id.gecko_view);
-
+    mGeckoView.setActivityContextDelegate(new ExampleActivityDelegate());
     mTabSessionManager = new TabSessionManager();
 
     setSupportActionBar(findViewById(R.id.toolbar));
@@ -1268,6 +1269,9 @@ public class GeckoViewActivity extends AppCompatActivity
       case R.id.save_pdf:
         savePdf(session);
         break;
+      case R.id.print_page:
+        printPage(session);
+        break;
       default:
         return super.onOptionsItemSelected(item);
     }
@@ -1370,6 +1374,10 @@ public class GeckoViewActivity extends AppCompatActivity
                 Log.d(LOGTAG, e.getMessage());
               }
             });
+  }
+
+  private void printPage(GeckoSession session) {
+    session.printPageContent();
   }
 
   @Override
@@ -1848,7 +1856,18 @@ public class GeckoViewActivity extends AppCompatActivity
       final View toolbar = findViewById(R.id.toolbar);
       if (toolbar != null) {
         toolbar.setTranslationY(0f);
+        mGeckoView.setVerticalClipping(0);
       }
+    }
+
+    @Override
+    public void onCookieBannerDetected(final GeckoSession session) {
+      Log.d("BELL", "A cookie banner was detected on this website");
+    }
+
+    @Override
+    public void onCookieBannerHandled(final GeckoSession session) {
+      Log.d("BELL", "A cookie banner was handled on this website");
     }
   }
 
@@ -2468,6 +2487,12 @@ public class GeckoViewActivity extends AppCompatActivity
     @Override
     public void onStringScalar(final @NonNull RuntimeTelemetry.Metric<String> scalar) {
       Log.d(LOGTAG, "onStringScalar " + scalar);
+    }
+  }
+
+  private class ExampleActivityDelegate implements GeckoView.ActivityContextDelegate {
+    public Context getActivityContext() {
+      return GeckoViewActivity.this;
     }
   }
 }

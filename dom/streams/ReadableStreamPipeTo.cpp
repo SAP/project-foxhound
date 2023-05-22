@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ReadableStreamPipeTo.h"
+
 #include "mozilla/dom/AbortFollower.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
-#include "mozilla/dom/ReadableStreamPipeTo.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "mozilla/dom/Promise.h"
@@ -21,6 +22,8 @@
 #include "js/Exception.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 struct PipeToReadRequest;
 class WriteFinishedPromiseHandler;
@@ -537,9 +540,7 @@ void PipeToPump::Finalize(JSContext* aCx,
                           JS::Handle<mozilla::Maybe<JS::Value>> aError) {
   IgnoredErrorResult rv;
   // Step 1. Perform ! WritableStreamDefaultWriterRelease(writer).
-  WritableStreamDefaultWriterRelease(aCx, mWriter, rv);
-  NS_WARNING_ASSERTION(!rv.Failed(),
-                       "WritableStreamDefaultWriterRelease should not fail.");
+  WritableStreamDefaultWriterRelease(aCx, mWriter);
 
   // Step 2. If reader implements ReadableStreamBYOBReader,
   // perform ! ReadableStreamBYOBReaderRelease(reader).
@@ -885,6 +886,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PipeToPump)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLastWritePromise)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#readable-stream-pipe-to
 already_AddRefed<Promise> ReadableStreamPipeTo(
     ReadableStream* aSource, WritableStream* aDest, bool aPreventClose,
@@ -940,10 +942,8 @@ already_AddRefed<Promise> ReadableStreamPipeTo(
   // Note: PipeToPump ensures this by construction.
 
   // Step 13. Let promise be a new promise.
-  RefPtr<Promise> promise = Promise::Create(aSource->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise =
+      Promise::CreateInfallible(aSource->GetParentObject());
 
   // Steps 14-15.
   RefPtr<PipeToPump> pump = new PipeToPump(
@@ -953,5 +953,6 @@ already_AddRefed<Promise> ReadableStreamPipeTo(
   // Step 16. Return promise.
   return promise.forget();
 }
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom

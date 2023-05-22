@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import os
 import sys
 
@@ -23,9 +21,11 @@ EXTRA_PATHS = (
     "testing/mozbase/manifestparser",
     "testing/mozbase/mozfile",
     "testing/mozbase/mozprocess",
+    "testing/mozbase/moznetwork/moznetwork",
     "third_party/python/jsmin",
     "third_party/python/which",
     "docs/_addons",
+    "taskcluster/gecko_taskgraph/test",
 )
 
 sys.path[:0] = [os.path.join(topsrcdir, p) for p in EXTRA_PATHS]
@@ -79,8 +79,15 @@ templates_path = ["_templates"]
 source_suffix = [".rst", ".md"]
 master_doc = "index"
 project = "Firefox Source Docs"
+
 # Override the search box to use Google instead of
-# sphinx search
+# sphinx search on firefox-source-docs.mozilla.org
+if (
+    os.environ.get("MOZ_SOURCE_DOCS_USE_GOOGLE") == "1"
+    and os.environ.get("MOZ_SCM_LEVEL") == "3"
+):
+    templates_path.append("_search_template")
+
 html_sidebars = {
     "**": [
         "searchbox.html",

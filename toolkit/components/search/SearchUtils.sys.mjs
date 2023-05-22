@@ -283,7 +283,7 @@ export var SearchUtils = {
    *   The current settings version.
    */
   get SETTINGS_VERSION() {
-    return 7;
+    return 8;
   },
 
   /**
@@ -327,7 +327,7 @@ export var SearchUtils = {
       name +
       disclaimer.replace(/\$appName/g, Services.appinfo.name);
 
-    let data = new TextEncoder("utf-8").encode(salt);
+    let data = new TextEncoder().encode(salt);
     let hasher = Cc["@mozilla.org/security/hash;1"].createInstance(
       Ci.nsICryptoHash
     );

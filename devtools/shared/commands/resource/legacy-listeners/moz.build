@@ -4,17 +4,14 @@
 
 DevToolsModules(
     "cache-storage.js",
-    "cloned-content-process-messages.js",
     "console-messages.js",
     "cookie.js",
     "css-changes.js",
-    "css-messages.js",
     "error-messages.js",
     "extension-storage.js",
     "indexed-db.js",
+    "last-private-context-exit.js",
     "local-storage.js",
-    "network-event-stacktraces.js",
-    "network-events.js",
     "platform-messages.js",
     "reflow.js",
     "root-node.js",
@@ -22,7 +19,6 @@ DevToolsModules(
     "session-storage.js",
     "source.js",
     "storage-utils.js",
-    "stylesheet.js",
     "thread-states.js",
     "websocket.js",
 )

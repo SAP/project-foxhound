@@ -246,6 +246,9 @@ nsresult nsHttpTransaction::Init(
   mCallbacks = callbacks;
   mConsumerTarget = target;
   mCaps = caps;
+  // eventsink is a nsHttpChannel when we expect "103 Early Hints" responses.
+  // We expect it in document requests and not e.g. in TRR requests.
+  mEarlyHintObserver = do_QueryInterface(eventsink);
 
   if (requestHead->IsHead()) {
     mNoContent = true;
@@ -383,6 +386,15 @@ nsresult nsHttpTransaction::Init(
       }
     }
   }
+
+  RefPtr<nsHttpChannel> httpChannel = do_QueryObject(eventsink);
+  RefPtr<WebTransportSessionEventListener> listener =
+      httpChannel ? httpChannel->GetWebTransportSessionEventListener()
+                  : nullptr;
+  if (listener) {
+    mWebTransportSessionEventListener = std::move(listener);
+  }
+
   return NS_OK;
 }
 
@@ -431,15 +443,6 @@ nsresult nsHttpTransaction::AsyncRead(nsIStreamListener* listener,
   NS_ENSURE_SUCCESS(rv, rv);
 
   transactionPump.forget(pump);
-  MutexAutoLock lock(mLock);
-  mEarlyHintObserver = do_QueryInterface(listener);
-
-  RefPtr<nsHttpChannel> httpChannel = do_QueryObject(listener);
-  if (httpChannel) {
-    mWebTransportSessionEventListener =
-        httpChannel->GetWebTransportSessionEventListener();
-  }
-
   return NS_OK;
 }
 
@@ -1974,6 +1977,10 @@ nsresult nsHttpTransaction::ParseLineSegment(char* segment, uint32_t len) {
                                          referrerPolicy);
 
       if (NS_SUCCEEDED(rv) && !linkHeader.IsEmpty()) {
+        nsCString cspHeader;
+        Unused << mResponseHead->GetHeader(nsHttp::Content_Security_Policy,
+                                           cspHeader);
+
         nsCOMPtr<nsIEarlyHintObserver> earlyHint;
         {
           MutexAutoLock lock(mLock);
@@ -1984,8 +1991,9 @@ nsresult nsHttpTransaction::ParseLineSegment(char* segment, uint32_t len) {
               NS_NewRunnableFunction(
                   "nsIEarlyHintObserver->EarlyHint",
                   [obs{std::move(earlyHint)}, header{std::move(linkHeader)},
-                   referrerPolicy{std::move(referrerPolicy)}]() {
-                    obs->EarlyHint(header, referrerPolicy);
+                   referrerPolicy{std::move(referrerPolicy)},
+                   cspHeader{std::move(cspHeader)}]() {
+                    obs->EarlyHint(header, referrerPolicy, cspHeader);
                   }),
               NS_DISPATCH_NORMAL);
           MOZ_ASSERT(NS_SUCCEEDED(rv));

@@ -1289,18 +1289,18 @@ void Connection::set_ice_event_log(webrtc::IceEventLog* ice_event_log) {
   ice_event_log_ = ice_event_log;
 }
 
-// RTC_RUN_ON(network_thread_)
 void Connection::LogCandidatePairConfig(
     webrtc::IceCandidatePairConfigType type) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (ice_event_log_ == nullptr) {
     return;
   }
   ice_event_log_->LogCandidatePairConfig(type, id(), ToLogDescription());
 }
 
-// RTC_RUN_ON(network_thread_)
 void Connection::LogCandidatePairEvent(webrtc::IceCandidatePairEventType type,
                                        uint32_t transaction_id) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (ice_event_log_ == nullptr) {
     return;
   }
@@ -1403,8 +1403,8 @@ void Connection::OnConnectionRequestTimeout(ConnectionRequest* request) {
                  << request->Elapsed() << " ms";
 }
 
-// RTC_RUN_ON(network_thread_).
 void Connection::OnConnectionRequestSent(ConnectionRequest* request) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   // Log at LS_INFO if we send a ping on an unwritable connection.
   rtc::LoggingSeverity sev = !writable() ? rtc::LS_INFO : rtc::LS_VERBOSE;
   RTC_LOG_V(sev) << ToString() << ": Sent "
@@ -1563,7 +1563,7 @@ void Connection::MaybeUpdateLocalCandidate(StunRequest* request,
   // Set the related address and foundation attributes before changing the
   // address.
   local_candidate_.set_related_address(local_candidate_.address());
-  local_candidate_.set_foundation(Port::ComputeFoundation(
+  local_candidate_.set_foundation(port()->ComputeFoundation(
       PRFLX_PORT_TYPE, local_candidate_.protocol(),
       local_candidate_.relay_protocol(), local_candidate_.address()));
   local_candidate_.set_priority(priority);
@@ -1620,8 +1620,8 @@ void Connection::SetLocalCandidateNetworkCost(uint16_t cost) {
   SignalStateChange(this);
 }
 
-// RTC_RUN_ON(network_thread_).
 bool Connection::ShouldSendGoogPing(const StunMessage* message) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (remote_support_goog_ping_ == true && cached_stun_binding_ &&
       cached_stun_binding_->EqualAttributes(message, [](int type) {
         // Ignore these attributes.

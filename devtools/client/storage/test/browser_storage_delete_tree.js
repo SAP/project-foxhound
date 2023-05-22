@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting all storage items from the tree.
@@ -79,7 +77,7 @@ add_task(async function() {
     ok(target, `tree item found in ${storeName}`);
     await waitForContextMenu(contextMenu, target, () => {
       info(`Opened tree context menu in ${storeName}`);
-      menuDeleteAllItem.click();
+      contextMenu.activateItem(menuDeleteAllItem);
     });
 
     await eventWait;

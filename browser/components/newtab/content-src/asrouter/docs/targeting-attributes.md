@@ -30,6 +30,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [totalBookmarksCount](#totalbookmarkscount)
 * [usesFirefoxSync](#usesfirefoxsync)
 * [isFxAEnabled](#isFxAEnabled)
+* [isFxASignedIn](#isFxASignedIn)
 * [xpinstallEnabled](#xpinstallEnabled)
 * [hasPinnedTabs](#haspinnedtabs)
 * [hasAccessedFxAPanel](#hasaccessedfxapanel)
@@ -46,7 +47,6 @@ Please note that some targeting attributes require stricter controls on the tele
 * [profileRestartCount](#profilerestartcount)
 * [homePageSettings](#homepagesettings)
 * [newtabSettings](#newtabsettings)
-* [isFissionExperimentEnabled](#isfissionexperimentenabled)
 * [activeNotifications](#activenotifications)
 * [isMajorUpgrade](#ismajorupgrade)
 * [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
@@ -476,6 +476,16 @@ Does the user have Firefox sync enabled? The service could potentially be turned
 declare const isFxAEnabled: boolean;
 ```
 
+### `isFxASignedIn`
+
+Is the user signed in to a Firefox Account?
+
+#### Definition
+
+```ts
+declare const isFxASignedIn: Promise<boolean>
+```
+
 ### `xpinstallEnabled`
 
 Pref used by system administrators to disallow add-ons from installed altogether.
@@ -810,10 +820,6 @@ Object {
   host: "",
 }
 ```
-
-### `isFissionExperimentEnabled`
-
-A boolean. `true` if we're running Fission experiment, `false` otherwise.
 
 ### `activeNotifications`
 

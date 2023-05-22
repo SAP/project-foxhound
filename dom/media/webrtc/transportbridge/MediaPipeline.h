@@ -49,6 +49,14 @@ class MediaStreamTrack;
 struct RTCRTPContributingSourceStats;
 }  // namespace dom
 
+struct MediaPipelineReceiveControlInterface {
+  virtual AbstractCanonical<bool>* CanonicalReceiving() = 0;
+};
+
+struct MediaPipelineTransmitControlInterface {
+  virtual AbstractCanonical<bool>* CanonicalTransmitting() = 0;
+};
+
 // A class that represents the pipeline of audio and video
 // The dataflow looks like:
 //
@@ -88,9 +96,6 @@ class MediaPipeline : public sigslot::has_slots<> {
                 DirectionType aDirection, RefPtr<AbstractThread> aCallThread,
                 RefPtr<nsISerialEventTarget> aStsThread,
                 RefPtr<MediaSessionConduit> aConduit);
-
-  void Start();
-  void Stop();
 
   void SetLevel(size_t aLevel) { mLevel = aLevel; }
 
@@ -186,10 +191,6 @@ class MediaPipeline : public sigslot::has_slots<> {
 
   void SetDescription_s(const std::string& description);
 
-  // Called when ALPN is negotiated and is requesting privacy, so receive
-  // pipelines do not enter data into the graph under a content principal.
-  virtual void MakePrincipalPrivate_s() {}
-
  public:
   const RefPtr<MediaSessionConduit> mConduit;
   const DirectionType mDirection;
@@ -202,7 +203,7 @@ class MediaPipeline : public sigslot::has_slots<> {
  protected:
   // True if we should be actively transmitting or receiving data. Main thread
   // only.
-  Watchable<bool> mActive;
+  Mirror<bool> mActive;
   Atomic<size_t> mLevel;
   std::string mTransportId;
   const RefPtr<MediaTransportHandler> mTransportHandler;
@@ -262,6 +263,8 @@ class MediaPipelineTransmit
                         RefPtr<nsISerialEventTarget> aStsThread, bool aIsVideo,
                         RefPtr<MediaSessionConduit> aConduit);
 
+  void InitControl(MediaPipelineTransmitControlInterface* aControl);
+
   void Shutdown() override;
 
   bool Transmitting() const;
@@ -284,14 +287,14 @@ class MediaPipelineTransmit
   void TransportReady_s() override;
 
   // Replace a track with a different one.
-  nsresult SetTrack(RefPtr<dom::MediaStreamTrack> aDomTrack);
+  nsresult SetTrack(const RefPtr<dom::MediaStreamTrack>& aDomTrack);
 
   // Used to correlate stats
   RefPtr<dom::MediaStreamTrack> GetTrack() const;
 
   // For test use only. This allows a send track to be set without a
   // corresponding dom track.
-  void SetSendTrackOverride(RefPtr<ProcessedMediaTrack> aSendTrack);
+  void SetSendTrackOverride(const RefPtr<ProcessedMediaTrack>& aSendTrack);
 
   // Separate classes to allow ref counting
   class PipelineListener;
@@ -353,8 +356,32 @@ class MediaPipelineReceive : public MediaPipeline {
                        RefPtr<nsISerialEventTarget> aStsThread,
                        RefPtr<MediaSessionConduit> aConduit);
 
+  void InitControl(MediaPipelineReceiveControlInterface* aControl);
+
+  // Called when ALPN is negotiated and is requesting privacy, so receive
+  // pipelines do not enter data into the graph under a content principal.
+  virtual void OnPrivacyRequested_s() = 0;
+
+  // Called after privacy has been requested, with the updated private
+  // principal.
+  virtual void SetPrivatePrincipal(PrincipalHandle aHandle) = 0;
+
+  void Shutdown() override;
+  void OnRtpPacketReceived() override;
+
+  MediaEventSource<void>& UnmuteEvent() { return mUnmuteEvent; }
+
  protected:
   ~MediaPipelineReceive();
+
+  virtual void UpdateListener() = 0;
+
+ private:
+  void UpdateMaybeTrackNeedsUnmute();
+
+  WatchManager<MediaPipelineReceive> mWatchManager;
+  MediaEventProducer<void> mUnmuteEvent;
+  Atomic<bool> mMaybeTrackNeedsUnmute;
 };
 
 // A specialization of pipeline for reading from the network and
@@ -366,25 +393,25 @@ class MediaPipelineReceiveAudio : public MediaPipelineReceive {
                             RefPtr<AbstractThread> aCallThread,
                             RefPtr<nsISerialEventTarget> aStsThread,
                             RefPtr<AudioSessionConduit> aConduit,
-                            const RefPtr<dom::MediaStreamTrack>& aTrack,
-                            const PrincipalHandle& aPrincipalHandle);
+                            RefPtr<SourceMediaTrack> aSource,
+                            TrackingId aTrackingId,
+                            PrincipalHandle aPrincipalHandle,
+                            PrincipalPrivacy aPrivacy);
 
   void Shutdown() override;
 
   bool IsVideo() const override { return false; }
 
-  void MakePrincipalPrivate_s() override;
-
-  void OnRtpPacketReceived() override;
+  void OnPrivacyRequested_s() override;
+  void SetPrivatePrincipal(PrincipalHandle aHandle) override;
 
  private:
-  void UpdateListener();
+  void UpdateListener() override;
 
   // Separate class to allow ref counting
   class PipelineListener;
 
   const RefPtr<PipelineListener> mListener;
-  WatchManager<MediaPipelineReceiveAudio> mWatchManager;
 };
 
 // A specialization of pipeline for reading from the network and
@@ -396,19 +423,20 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
                             RefPtr<AbstractThread> aCallThread,
                             RefPtr<nsISerialEventTarget> aStsThread,
                             RefPtr<VideoSessionConduit> aConduit,
-                            const RefPtr<dom::MediaStreamTrack>& aTrack,
-                            const PrincipalHandle& aPrincipalHandle);
+                            RefPtr<SourceMediaTrack> aSource,
+                            TrackingId aTrackingId,
+                            PrincipalHandle aPrincipalHandle,
+                            PrincipalPrivacy aPrivacy);
 
   void Shutdown() override;
 
   bool IsVideo() const override { return true; }
 
-  void MakePrincipalPrivate_s() override;
-
-  void OnRtpPacketReceived() override;
+  void OnPrivacyRequested_s() override;
+  void SetPrivatePrincipal(PrincipalHandle aHandle) override;
 
  private:
-  void UpdateListener();
+  void UpdateListener() override;
 
   class PipelineRenderer;
   friend class PipelineRenderer;
@@ -418,7 +446,6 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
 
   const RefPtr<PipelineRenderer> mRenderer;
   const RefPtr<PipelineListener> mListener;
-  WatchManager<MediaPipelineReceiveVideo> mWatchManager;
 };
 
 }  // namespace mozilla

@@ -149,18 +149,11 @@ label:where([value]) {
   display: -moz-inline-box;
 }
 
-label[value],
-description[value] {
+:is(label, description)[value] {
   white-space: nowrap;
 }
 
-label[value][crop],
-description[value][crop] {
-  min-width: 0;
-}
-
-label[value]::before,
-description[value]::before {
+:is(label, description)[value]::before {
   /* This displays the value attribute, along with the underlined
    * accesskey if needed */
   content: -moz-label-content;
@@ -168,26 +161,32 @@ description[value]::before {
 }
 
 label[value=""]::before {
-  content: "\200B"; /* zwsp */
+  content: "\200b" !important; /* zwsp */
 }
 
-label[value][crop]::before,
-description[value][crop]::before {
+:is(label, description)[value][crop] {
+  min-width: 0;
+}
+
+:is(label, description)[value][crop]::before {
   min-width: 0;
   max-width: 100%;
-  /* This implements crop=end/right */
+  /* This implements crop=end */
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 /* Invert the direction to clip at the start rather than end */
-label[value]:is([crop="left"], [crop="start"])::before,
-description[value]:is([crop="left"], [crop="start"])::before {
+:is(label, description)[value][crop="start"]::before {
   direction: rtl;
+  /* Mark text as ltr to preserve punctuation/numeric order */
+  content: "\200e" -moz-label-content;
 }
-label[value]:is([crop="left"], [crop="start"]):-moz-locale-dir(rtl)::before,
-description[value]:is([crop="left"], [crop="start"]):-moz-locale-dir(rtl)::before {
+
+:is(label, description)[value][crop="start"]:-moz-locale-dir(rtl)::before {
   direction: ltr;
+  /* Mark text as rtl to preserve punctuation/numeric order */
+  content: "\200f" -moz-label-content;
 }
 
 .checkbox-label-box,
@@ -225,6 +224,16 @@ html|label.toolbarbutton-badge:empty {
 .toolbarbutton-text,
 .toolbarbutton-badge-stack,
 .toolbarbutton-menu-dropmarker,
+.treecol-text,
+.treecol-sortdirection,
+.menubar-left,
+.menubar-text,
+.menu-text,
+.menu-iconic-text,
+.menu-iconic-highlightable-text,
+.menu-iconic-left,
+.menu-right,
+.menu-accel-container,
 .button-box {
   /* Preserves legacy behavior */
   pointer-events: none;
@@ -350,13 +359,6 @@ tooltip {
   contain: paint;
   z-index: 2147483647;
   text-shadow: none;
-}
-
-:is(toolbarbutton[type="menu"], button[type="menu"], menulist, menu) > :is(menupopup, panel) {
-  /* TODO: These could be regular abspos frames (just not in the top layer),
-   * once nsMenuFrame is ported to modern flex layout. */
-  position: static;
-  -moz-top-layer: none;
 }
 
 tooltip {
@@ -580,6 +582,11 @@ stack > *|*:not(:-moz-native-anonymous) {
 
 tabbox {
   -moz-box-orient: vertical;
+  min-height: 0;
+}
+
+tabpanels {
+  min-height: 0;
 }
 
 tabs {
@@ -683,8 +690,10 @@ scrollbox {
   overflow: hidden;
 }
 
-scrollbox[smoothscroll=true] {
-  scroll-behavior: smooth;
+@media (prefers-reduced-motion: no-preference) {
+  scrollbox[smoothscroll=true] {
+    scroll-behavior: smooth;
+  }
 }
 
 /********** stringbundle **********/
@@ -706,8 +715,16 @@ dialog {
 wizard {
   -moz-box-flex: 1;
   -moz-box-orient: vertical;
-  width: 40em;
-  height: 30em;
+  contain: inline-size;
+  min-width: 40em;
+  min-height: 30em;
+}
+
+.wizard-window {
+  /* TODO: This can be removed once
+   * layout.css.moz-box-flexbox-emulation.enabled
+   * is true unconditionally */
+  -moz-box-layout: flex;
 }
 
 wizard > wizardpage {

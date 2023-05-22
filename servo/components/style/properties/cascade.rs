@@ -56,6 +56,7 @@ pub fn cascade<E>(
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
+    originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
     parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
@@ -74,6 +75,7 @@ where
         pseudo,
         rule_node,
         guards,
+        originating_element_style,
         parent_style,
         parent_style_ignoring_first_line,
         layout_parent_style,
@@ -174,6 +176,7 @@ fn cascade_rules<E>(
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
+    originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
     parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
@@ -197,6 +200,7 @@ where
         rule_node,
         guards,
         DeclarationIterator::new(rule_node, guards, pseudo),
+        originating_element_style,
         parent_style,
         parent_style_ignoring_first_line,
         layout_parent_style,
@@ -233,6 +237,7 @@ pub fn apply_declarations<'a, E, I>(
     rules: &StrongRuleNode,
     guards: &StylesheetGuards,
     iter: I,
+    originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
     parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
@@ -247,6 +252,10 @@ where
     E: TElement,
     I: Iterator<Item = (&'a PropertyDeclaration, CascadePriority)>,
 {
+    debug_assert_eq!(
+        originating_element_style.is_some(),
+        element.is_some() && pseudo.is_some()
+    );
     debug_assert!(layout_parent_style.is_none() || parent_style.is_some());
     debug_assert_eq!(
         parent_style.is_some(),
@@ -282,7 +291,8 @@ where
     };
 
     let is_root_element = pseudo.is_none() && element.map_or(false, |e| e.is_root());
-    let container_size_query = ContainerSizeQuery::for_option_element(element);
+    let container_size_query =
+        ContainerSizeQuery::for_option_element(element, originating_element_style);
 
     let mut context = computed::Context::new(
         // We'd really like to own the rules here to avoid refcount traffic, but
@@ -339,6 +349,7 @@ where
             if let Some(visited_rules) = visited_rules {
                 cascade.compute_visited_style_if_needed(
                     element,
+                    originating_element_style,
                     parent_style,
                     parent_style_ignoring_first_line,
                     layout_parent_style,
@@ -423,9 +434,11 @@ fn tweak_when_ignoring_colors(
         return;
     }
 
-    fn alpha_channel(color: &Color, context: &computed::Context) -> u8 {
+    fn alpha_channel(color: &Color, context: &computed::Context) -> f32 {
         // We assume here currentColor is opaque.
-        let color = color.to_computed_value(context).into_rgba(RGBA::new(0, 0, 0, 255));
+        let color = color
+            .to_computed_value(context)
+            .into_rgba(RGBA::new(0, 0, 0, 1.0));
         color.alpha
     }
 
@@ -448,7 +461,7 @@ fn tweak_when_ignoring_colors(
             // otherwise, this is needed to preserve semi-transparent
             // backgrounds.
             let alpha = alpha_channel(color, context);
-            if alpha == 0 {
+            if alpha == 0.0 {
                 return;
             }
             let mut color = context.builder.device.default_background_color();
@@ -464,7 +477,7 @@ fn tweak_when_ignoring_colors(
             // If the inherited color would be transparent, but we would
             // override this with a non-transparent color, then override it with
             // the default color. Otherwise just let it inherit through.
-            if context.builder.get_parent_inherited_text().clone_color().alpha == 0 {
+            if context.builder.get_parent_inherited_text().clone_color().alpha == 0.0 {
                 let color = context.builder.device.default_color();
                 declarations_to_apply_unless_overriden.push(PropertyDeclaration::Color(
                     specified::ColorPropertyValue(color.into()),
@@ -725,6 +738,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn compute_visited_style_if_needed<E>(
         &mut self,
         element: Option<E>,
+        originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
         parent_style_ignoring_first_line: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
@@ -755,6 +769,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             self.context.builder.pseudo,
             visited_rules,
             guards,
+            visited_parent!(originating_element_style),
             visited_parent!(parent_style),
             visited_parent!(parent_style_ignoring_first_line),
             visited_parent!(layout_parent_style),
@@ -795,32 +810,24 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND);
         }
 
-        if self
-            .author_specified
-            .contains(LonghandId::FontFamily)
-        {
+        if self.author_specified.contains(LonghandId::FontFamily) {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY);
         }
 
-        if self
-            .author_specified
-            .contains(LonghandId::LetterSpacing)
-        {
+        if self.author_specified.contains(LonghandId::LetterSpacing) {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_LETTER_SPACING);
         }
 
-        if self
-            .author_specified
-            .contains(LonghandId::WordSpacing)
-        {
+        if self.author_specified.contains(LonghandId::WordSpacing) {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_WORD_SPACING);
         }
 
-        if self
-            .author_specified
-            .contains(LonghandId::FontSynthesis)
-        {
-            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS);
+        if self.author_specified.contains(LonghandId::FontSynthesisWeight) {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_WEIGHT);
+        }
+
+        if self.author_specified.contains(LonghandId::FontSynthesisStyle) {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_STYLE);
         }
 
         #[cfg(feature = "servo")]
@@ -970,7 +977,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 },
             };
 
-            if font.gecko().mScriptUnconstrainedSize == new_size.size {
+            if font.gecko().mScriptUnconstrainedSize == new_size.computed_size {
                 return;
             }
 

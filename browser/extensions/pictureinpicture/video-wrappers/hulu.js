@@ -17,9 +17,12 @@ class PictureInPictureVideoWrapper {
   isMuted(video) {
     return video.volume === 0;
   }
-  setMuted() {
+  setMuted(video, shouldMute) {
     let muteButton = document.querySelector(".VolumeControl > div");
-    muteButton.click();
+
+    if (this.isMuted(video) !== shouldMute) {
+      muteButton.click();
+    }
   }
   setCaptionContainerObserver(video, updateCaptionsFunction) {
     let container = document.querySelector(".ClosedCaption");
@@ -42,6 +45,9 @@ class PictureInPictureVideoWrapper {
         subtree: true,
       });
     }
+  }
+  getDuration(video) {
+    return this.player.duration;
   }
 }
 

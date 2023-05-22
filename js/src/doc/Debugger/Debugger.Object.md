@@ -476,6 +476,15 @@ compartment wrapper.
 If <i>value</i> is a native function in the debugger's compartment, return
 whether the referent is a native function for the same C++ native.
 
+### `isSameNativeWithJitInfo(value)`
+If <i>value</i> is a native function in the debugger's compartment, return
+whether the referent is a native function for the same C++ native with the
+same JSJitInfo pointer value.
+
+This can be used to distinguish functions with shared native function
+implementation with different JSJitInfo pointer to define the underlying
+functionality.
+
 ### `decompile([pretty])`
 If the referent is a function that is debuggee code, return the
 JavaScript source code for a function definition equivalent to the
@@ -495,6 +504,10 @@ handler methods, breakpoints, and so on remain active
 during the call. If the referent is not callable, throw a `TypeError`.
 This function follows the [invocation function conventions][inv fr].
 
+Note: If this method is called on an object whose owner
+[Debugger object][debugger-object] has an onNativeCall handler, only hooks
+on objects associated with that debugger will be called during the evaluation.
+
 ### `apply(this, arguments)`
 If the referent is callable, call it with the given <i>this</i> value
 and the argument values in <i>arguments</i>, and return a
@@ -507,6 +520,10 @@ which are treated as an empty array. All extant handler methods,
 breakpoints, and so on remain active during the call. If
 the referent is not callable, throw a `TypeError`. This function
 follows the [invocation function conventions][inv fr].
+
+Note: If this method is called on an object whose owner
+[Debugger object][debugger-object] has an onNativeCall handler, only hooks
+on objects associated with that debugger will be called during the evaluation.
 
 ### `executeInGlobal(code, [options])`
 If the referent is a global object, evaluate <i>code</i> in that global

@@ -432,12 +432,9 @@ TEST_F(OveruseFrameDetectorTest, UpdatesExistingSamples) {
 TEST_F(OveruseFrameDetectorTest, RunOnTqNormalUsage) {
   TaskQueueForTest queue("OveruseFrameDetectorTestQueue");
 
-  queue.SendTask(
-      [&] {
-        overuse_detector_->StartCheckForOveruse(queue.Get(), options_,
-                                                observer_);
-      },
-      RTC_FROM_HERE);
+  queue.SendTask([&] {
+    overuse_detector_->StartCheckForOveruse(queue.Get(), options_, observer_);
+  });
 
   rtc::Event event;
   // Expect NormalUsage(). When called, stop the `overuse_detector_` and then
@@ -457,7 +454,7 @@ TEST_F(OveruseFrameDetectorTest, RunOnTqNormalUsage) {
                                     kDelayUs2);
   });
 
-  EXPECT_TRUE(event.Wait(10000));
+  EXPECT_TRUE(event.Wait(TimeDelta::Seconds(10)));
 }
 
 // TODO(crbug.com/webrtc/12846): investigate why the test fails on MAC bots.
@@ -917,12 +914,9 @@ TEST_F(OveruseFrameDetectorTest2, UpdatesExistingSamples) {
 TEST_F(OveruseFrameDetectorTest2, RunOnTqNormalUsage) {
   TaskQueueForTest queue("OveruseFrameDetectorTestQueue");
 
-  queue.SendTask(
-      [&] {
-        overuse_detector_->StartCheckForOveruse(queue.Get(), options_,
-                                                observer_);
-      },
-      RTC_FROM_HERE);
+  queue.SendTask([&] {
+    overuse_detector_->StartCheckForOveruse(queue.Get(), options_, observer_);
+  });
 
   rtc::Event event;
   // Expect NormalUsage(). When called, stop the `overuse_detector_` and then
@@ -942,7 +936,7 @@ TEST_F(OveruseFrameDetectorTest2, RunOnTqNormalUsage) {
                                     kDelayUs2);
   });
 
-  EXPECT_TRUE(event.Wait(10000));
+  EXPECT_TRUE(event.Wait(TimeDelta::Seconds(10)));
 }
 
 // Models screencast, with irregular arrival of frames which are heavy

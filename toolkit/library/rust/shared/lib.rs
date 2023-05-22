@@ -49,8 +49,6 @@ extern crate static_prefs;
 extern crate storage;
 extern crate webrender_bindings;
 extern crate xpcom;
-#[cfg(feature = "new_xulstore")]
-extern crate xulstore;
 
 extern crate audio_thread_priority;
 
@@ -70,9 +68,9 @@ extern crate mdns_service;
 extern crate neqo_glue;
 extern crate wgpu_bindings;
 
+extern crate aa_stroke;
 extern crate qcms;
 extern crate wpf_gpu_raster;
-extern crate aa_stroke;
 
 extern crate unic_langid;
 extern crate unic_langid_ffi;
@@ -109,6 +107,7 @@ extern crate dap_ffi;
 
 extern crate data_encoding_ffi;
 
+extern crate binary_http;
 extern crate oblivious_http;
 
 #[cfg(feature = "uniffi_fixtures")]
@@ -120,6 +119,7 @@ mod uniffi_fixtures {
     extern crate uniffi_todolist;
 
     arithmetical::uniffi_reexport_scaffolding!();
+    uniffi_fixture_callbacks::uniffi_reexport_scaffolding!();
     uniffi_custom_types::uniffi_reexport_scaffolding!();
     uniffi_fixture_external_types::uniffi_reexport_scaffolding!();
     uniffi_geometry::uniffi_reexport_scaffolding!();

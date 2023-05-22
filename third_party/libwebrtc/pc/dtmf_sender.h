@@ -21,9 +21,7 @@
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "pc/proxy.h"
-#include "rtc_base/location.h"
 #include "rtc_base/ref_count.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 
 // DtmfSender is the native implementation of the RTCDTMFSender defined by
@@ -43,18 +41,17 @@ class DtmfProviderInterface {
   // The `duration` indicates the length of the DTMF tone in ms.
   // Returns true on success and false on failure.
   virtual bool InsertDtmf(int code, int duration) = 0;
-  // Returns a `sigslot::signal0<>` signal. The signal should fire before
-  // the provider is destroyed.
-  virtual sigslot::signal0<>* GetOnDestroyedSignal() = 0;
 
  protected:
   virtual ~DtmfProviderInterface() {}
 };
 
-class DtmfSender : public DtmfSenderInterface, public sigslot::has_slots<> {
+class DtmfSender : public DtmfSenderInterface {
  public:
   static rtc::scoped_refptr<DtmfSender> Create(TaskQueueBase* signaling_thread,
                                                DtmfProviderInterface* provider);
+
+  void OnDtmfProviderDestroyed();
 
   // Implements DtmfSenderInterface.
   void RegisterObserver(DtmfSenderObserverInterface* observer) override;
@@ -79,13 +76,10 @@ class DtmfSender : public DtmfSenderInterface, public sigslot::has_slots<> {
  private:
   DtmfSender();
 
-  void QueueInsertDtmf(const rtc::Location& posted_from, uint32_t delay_ms)
-      RTC_RUN_ON(signaling_thread_);
+  void QueueInsertDtmf(uint32_t delay_ms) RTC_RUN_ON(signaling_thread_);
 
   // The DTMF sending task.
   void DoInsertDtmf() RTC_RUN_ON(signaling_thread_);
-
-  void OnProviderDestroyed();
 
   void StopSending() RTC_RUN_ON(signaling_thread_);
 

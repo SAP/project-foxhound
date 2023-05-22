@@ -59,6 +59,7 @@ namespace dom {
 
 using workerinternals::ChannelFromScriptURLMainThread;
 
+// TODO: Remove this ad hoc class when bug 1805830 is fixed.
 class SelfHolder {
  public:
   MOZ_IMPLICIT SelfHolder(RemoteWorkerChild* aSelf) : mSelf(aSelf) {
@@ -373,6 +374,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   info.mShouldResistFingerprinting = aData.shouldResistFingerprinting();
   net::CookieJarSettings::Deserialize(aData.cookieJarSettings(),
                                       getter_AddRefs(info.mCookieJarSettings));
+  info.mCookieJarSettingsArgs = aData.cookieJarSettings();
 
   // Default CSP permissions for now.  These will be overrided if necessary
   // based on the script CSP headers during load in ScriptLoader.

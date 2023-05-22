@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarProviderWeather: "resource:///modules/UrlbarProviderWeather.sys.mjs",
   UrlbarSearchOneOffs: "resource:///modules/UrlbarSearchOneOffs.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
@@ -29,7 +30,17 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 // Query selector for selectable elements in tip and dynamic results.
-const SELECTABLE_ELEMENT_SELECTOR = "[role=button], [selectable=true]";
+const SELECTABLE_ELEMENT_SELECTOR = "[role=button], [selectable]";
+
+const ZERO_PREFIX_HISTOGRAM_DWELL_TIME = "FX_URLBAR_ZERO_PREFIX_DWELL_TIME_MS";
+const ZERO_PREFIX_SCALAR_ABANDONMENT = "urlbar.zeroprefix.abandonment";
+const ZERO_PREFIX_SCALAR_ENGAGEMENT = "urlbar.zeroprefix.engagement";
+const ZERO_PREFIX_SCALAR_EXPOSURE = "urlbar.zeroprefix.exposure";
+
+const RESULT_MENU_COMMANDS = {
+  BLOCK: "block",
+  LEARN_MORE: "learn-more",
+};
 
 const getBoundsWithoutFlushing = element =>
   element.ownerGlobal.windowUtils.getBoundsWithoutFlushing(element);
@@ -61,7 +72,8 @@ export class UrlbarView {
 
     this.#mainContainer = this.panel.querySelector(".urlbarView-body-inner");
     this.#rows = this.panel.querySelector(".urlbarView-results");
-    this.#resultMenu = this.panel.querySelector(".urlbarView-result-menu");
+    this.resultMenu = this.panel.querySelector(".urlbarView-result-menu");
+    this.#resultMenuCommands = new WeakMap();
 
     this.#rows.addEventListener("mousedown", this);
 
@@ -70,7 +82,8 @@ export class UrlbarView {
     this.#rows.addEventListener("overflow", this);
     this.#rows.addEventListener("underflow", this);
 
-    this.#resultMenu.addEventListener("command", this);
+    this.resultMenu.addEventListener("command", this);
+    this.resultMenu.addEventListener("popupshowing", this);
 
     // `noresults` is used to style the one-offs without their usual top border
     // when no results are present.
@@ -150,12 +163,12 @@ export class UrlbarView {
       throw new Error(`UrlbarView: Index ${val} is out of bounds.`);
     }
 
-    // If the row itself isn't selectable, select the first element inside it
-    // that is. If it doesn't contain a selectable element, clear the selection.
-    let element = items[val];
-    if (!this.#isSelectableElement(element)) {
-      let next = this.#getNextSelectableElement(element);
-      element = this.#getRowFromElement(next) == element ? next : null;
+    // Select the first selectable element inside the row. If it doesn't
+    // contain a selectable element, clear the selection.
+    let row = items[val];
+    let element = this.#getNextSelectableElement(row);
+    if (this.#getRowFromElement(element) != row) {
+      element = null;
     }
 
     this.#selectElement(element);
@@ -167,30 +180,6 @@ export class UrlbarView {
     }
 
     return this.#selectedElement.elementIndex;
-  }
-
-  set selectedElementIndex(val) {
-    if (!this.isOpen) {
-      throw new Error(
-        "UrlbarView: Cannot select an item if the view isn't open."
-      );
-    }
-
-    if (val < 0) {
-      this.#selectElement(null);
-      return;
-    }
-
-    let selectableElement = this.#getFirstSelectableElement();
-    while (selectableElement && selectableElement.elementIndex != val) {
-      selectableElement = this.#getNextSelectableElement(selectableElement);
-    }
-
-    if (!selectableElement) {
-      throw new Error(`UrlbarView: Index ${val} is out of bounds.`);
-    }
-
-    this.#selectElement(selectableElement);
   }
 
   /**
@@ -218,6 +207,25 @@ export class UrlbarView {
   }
 
   /**
+   * @returns {boolean}
+   *   Whether the SPACE key should activate the selected element (if any)
+   *   instead of adding to the input value.
+   */
+  shouldSpaceActivateSelectedElement() {
+    // We want SPACE to activate buttons only.
+    if (this.selectedElement?.getAttribute("role") != "button") {
+      return false;
+    }
+    // Make sure the input field is empty, otherwise the user might want to add
+    // a space to the current search string. As it stands, selecting a button
+    // should always clear the input field, so this is just an extra safeguard.
+    if (this.input.value) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Clears selection, regardless of view status.
    */
   clearSelection() {
@@ -234,22 +242,6 @@ export class UrlbarView {
     let sum = 0;
     for (let row of this.#rows.children) {
       sum += Number(this.#isElementVisible(row));
-    }
-    return sum;
-  }
-
-  /**
-   * @returns {number}
-   *   The number of selectable elements in the view.
-   */
-  get visibleElementCount() {
-    let sum = 0;
-    let element = this.#getFirstSelectableElement();
-    while (element) {
-      if (this.#isElementVisible(element)) {
-        sum++;
-      }
-      element = this.#getNextSelectableElement(element);
     }
     return sum;
   }
@@ -317,6 +309,37 @@ export class UrlbarView {
       );
     }
 
+    // Freeze results as the user is interacting with them, unless we are
+    // deferring events while waiting for critical results.
+    if (!this.input.eventBufferer.isDeferringEvents) {
+      this.controller.cancelQuery();
+    }
+
+    if (!userPressedTab) {
+      let { selectedRowIndex } = this;
+      let end = this.visibleRowCount - 1;
+      if (selectedRowIndex == -1) {
+        this.selectedRowIndex = reverse ? end : 0;
+        return;
+      }
+      let endReached = selectedRowIndex == (reverse ? 0 : end);
+      if (endReached) {
+        if (this.allowEmptySelection) {
+          this.#selectElement(null);
+        } else {
+          this.selectedRowIndex = reverse ? end : 0;
+        }
+        return;
+      }
+      this.selectedRowIndex = Math.max(
+        0,
+        Math.min(end, selectedRowIndex + amount * (reverse ? -1 : 1))
+      );
+      return;
+    }
+
+    // Tab key handling below.
+
     // Do not set aria-activedescendant if the user is moving to a
     // tab-to-search result with the Tab key. If
     // accessibility.tabToSearch.announceResults is set, the tab-to-search
@@ -324,10 +347,10 @@ export class UrlbarView {
     // aria-activedescendant so the user doesn't think they have to press
     // Enter to enter search mode. See bug 1647929.
     const isSkippableTabToSearchAnnounce = selectedElt => {
+      let result = this.getResultFromElement(selectedElt);
       let skipAnnouncement =
-        selectedElt?.result?.providerName == "TabToSearch" &&
+        result?.providerName == "TabToSearch" &&
         !this.#announceTabToSearchOnSelection &&
-        userPressedTab &&
         lazy.UrlbarPrefs.get("accessibility.tabToSearch.announceResults");
       if (skipAnnouncement) {
         // Once we skip setting aria-activedescendant once, we should not skip
@@ -336,12 +359,6 @@ export class UrlbarView {
       }
       return skipAnnouncement;
     };
-
-    // Freeze results as the user is interacting with them, unless we are
-    // deferring events while waiting for critical results.
-    if (!this.input.eventBufferer.isDeferringEvents) {
-      this.controller.cancelQuery();
-    }
 
     let selectedElement = this.#selectedElement;
 
@@ -385,9 +402,6 @@ export class UrlbarView {
       if (!next) {
         break;
       }
-      if (!this.#isElementVisible(next)) {
-        continue;
-      }
       selectedElement = next;
     }
     this.#selectElement(selectedElement, {
@@ -403,6 +417,7 @@ export class UrlbarView {
     this.#rows.textContent = "";
     this.panel.setAttribute("noresults", "true");
     this.clearSelection();
+    this.visibleResults = [];
   }
 
   /**
@@ -454,6 +469,15 @@ export class UrlbarView {
     this.window.removeEventListener("blur", this);
 
     this.controller.notify(this.controller.NOTIFICATIONS.VIEW_CLOSE);
+
+    if (this.#isShowingZeroPrefix) {
+      if (elementPicked) {
+        Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_ENGAGEMENT, 1);
+      } else {
+        Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_ABANDONMENT, 1);
+      }
+      this.#setIsShowingZeroPrefix(false);
+    }
   }
 
   /**
@@ -532,10 +556,12 @@ export class UrlbarView {
     queryOptions.autofillIgnoresSelection = true;
     queryOptions.event.interactionType = "returned";
 
+    // A search tip can be cached in results if it was shown but ignored
+    // by the user. Don't open the panel if a search tip is present or it
+    // will cause a flicker since it'll be quickly overwritten (Bug 1812261).
     if (
-      this.#queryContext &&
-      this.#queryContext.results &&
-      this.#queryContext.results.length
+      this.#queryContext?.results?.length &&
+      this.#queryContext.results[0].type != lazy.UrlbarUtils.RESULT_TYPE.TIP
     ) {
       this.#openPanel();
     }
@@ -578,14 +604,22 @@ export class UrlbarView {
       return;
     }
 
-    // If the query finished and it returned some results, remove stale rows.
+    // At this point the query finished successfully. If it returned some
+    // results, remove stale rows. Otherwise remove all rows.
     if (this.#queryUpdatedResults) {
       this.#removeStaleRows();
-      return;
+    } else {
+      this.clear();
     }
 
-    // The query didn't return any results.  Clear the view.
-    this.clear();
+    // Now that the view has finished updating for this query, call
+    // `#setIsShowingZeroPrefix()`.
+    this.#setIsShowingZeroPrefix(!queryContext.searchString);
+
+    // If the query returned results, we're done.
+    if (this.#queryUpdatedResults) {
+      return;
+    }
 
     // If search mode isn't active, close the view.
     if (!this.input.searchMode) {
@@ -744,13 +778,12 @@ export class UrlbarView {
 
   openResultMenu(result, anchor) {
     this.#resultMenuResult = result;
-    this.#resultMenu.openPopup(anchor, "bottomright topright");
+    this.resultMenu.openPopup(anchor, "bottomright topright");
     anchor.toggleAttribute("open", true);
-    this.#resultMenu.addEventListener(
+    this.resultMenu.addEventListener(
       "popuphidden",
       () => {
         anchor.toggleAttribute("open", false);
-        this.#resultMenuResult = null;
       },
       { once: true }
     );
@@ -830,6 +863,9 @@ export class UrlbarView {
    *   {array} [classList]
    *     An optional list of classes.  Each class will be added to the element
    *     created for the object by calling element.classList.add().
+   *   {boolean} [overflowable]
+   *     If true, the element's overflow status will be tracked in order to
+   *     fade it out when needed.
    *   {string} [stylesheet]
    *     An optional stylesheet URL.  This property is valid only on the root
    *     object in the structure.  The stylesheet will be loaded in all browser
@@ -868,6 +904,7 @@ export class UrlbarView {
   #announceTabToSearchOnSelection;
   #l10nCache;
   #mainContainer;
+  #mousedownSelectedElement;
   #openPanelInstance;
   #oneOffSearchButtons;
   #previousTabToSearchEngine;
@@ -875,10 +912,11 @@ export class UrlbarView {
   #queryUpdatedResults;
   #queryWasCancelled;
   #removeStaleRowsTimer;
-  #resultMenu;
   #resultMenuResult;
+  #resultMenuCommands;
   #rows;
   #selectedElement;
+  #zeroPrefixStopwatchInstance = null;
 
   #createElement(name) {
     return this.document.createElementNS("http://www.w3.org/1999/xhtml", name);
@@ -1091,9 +1129,23 @@ export class UrlbarView {
   #createRow() {
     let item = this.#createElement("div");
     item.className = "urlbarView-row";
-    item.setAttribute("role", "option");
     item._elements = new Map();
     item._buttons = new Map();
+
+    // A note about row selection. Any element in a row that can be selected
+    // will have the `selectable` attribute set on it. For typical rows, the
+    // selectable element is not the `.urlbarView-row` itself but rather the
+    // `.urlbarView-row-inner` inside it. That's because the `.urlbarView-row`
+    // also contains the row's buttons, which should not be selected when the
+    // main part of the row -- `.urlbarView-row-inner` -- is selected.
+    //
+    // Since it's the row itself and not the row-inner that is a child of the
+    // `role=listbox` element (the rows container, `this.#rows`), screen readers
+    // will not automatically recognize the row-inner as a listbox option. To
+    // compensate, we set `role=option` on the row-inner and `role=presentation`
+    // on the row itself so that screen readers ignore it.
+    item.setAttribute("role", "presentation");
+
     return item;
   }
 
@@ -1132,12 +1184,12 @@ export class UrlbarView {
     item._elements.set("tailPrefixChar", tailPrefixChar);
 
     let title = this.#createElement("span");
-    title.className = "urlbarView-title";
+    title.classList.add("urlbarView-title", "urlbarView-overflowable");
     noWrap.appendChild(title);
     item._elements.set("title", title);
 
     let tagsContainer = this.#createElement("span");
-    tagsContainer.className = "urlbarView-tags";
+    tagsContainer.classList.add("urlbarView-tags", "urlbarView-overflowable");
     noWrap.appendChild(tagsContainer);
     item._elements.set("tagsContainer", tagsContainer);
 
@@ -1164,7 +1216,7 @@ export class UrlbarView {
       provider.getViewTemplate?.(result) ||
       UrlbarView.dynamicViewTemplatesByName.get(dynamicType);
     if (!viewTemplate) {
-      Cu.reportError(`No viewTemplate found for ${result.providerName}`);
+      console.error(`No viewTemplate found for ${result.providerName}`);
     }
     this.#buildViewForDynamicType(
       dynamicType,
@@ -1172,19 +1224,23 @@ export class UrlbarView {
       item._elements,
       viewTemplate
     );
+    this.#setRowSelectable(item, item._content.hasAttribute("selectable"));
   }
 
   #buildViewForDynamicType(type, parentNode, elementsByName, template) {
     // Add classes to parentNode's classList.
-    for (let className of template.classList || []) {
-      parentNode.classList.add(className);
+    if (template.classList) {
+      parentNode.classList.add(...template.classList);
+    }
+    if (template.overflowable) {
+      parentNode.classList.add("urlbarView-overflowable");
     }
     // Set attributes on parentNode.
     for (let [name, value] of Object.entries(template.attributes || {})) {
       if (name == "id") {
         // We do not allow dynamic results to set IDs for their Nodes. IDs are
         // managed by the view to ensure they are unique.
-        Cu.reportError(
+        console.error(
           "Dynamic results are prohibited from setting their own IDs."
         );
         continue;
@@ -1205,6 +1261,8 @@ export class UrlbarView {
   }
 
   #createRowContentForBestMatch(item, result) {
+    item._content.toggleAttribute("selectable", true);
+
     let favicon = this.#createElement("img");
     favicon.className = "urlbarView-favicon";
     item._content.appendChild(favicon);
@@ -1228,7 +1286,7 @@ export class UrlbarView {
     item._elements.set("noWrap", noWrap);
 
     let title = this.#createElement("span");
-    title.className = "urlbarView-title";
+    title.classList.add("urlbarView-title", "urlbarView-overflowable");
     noWrap.appendChild(title);
     item._elements.set("title", title);
 
@@ -1266,20 +1324,21 @@ export class UrlbarView {
       item._buttons.get("tip").textContent = result.payload.buttonText;
     }
 
-    if (result.payload.isBlockable) {
-      this.#addRowButton(item, {
-        name: "block",
-        l10n: result.payload.blockL10n,
-      });
-    }
-    if (result.payload.helpUrl) {
-      this.#addRowButton(item, {
-        name: "help",
-        url: result.payload.helpUrl,
-        l10n: result.payload.helpL10n,
-      });
-    }
-    if (lazy.UrlbarPrefs.get("resultMenu")) {
+    if (!lazy.UrlbarPrefs.get("resultMenu")) {
+      if (result.payload.isBlockable) {
+        this.#addRowButton(item, {
+          name: "block",
+          l10n: result.payload.blockL10n,
+        });
+      }
+      if (result.payload.helpUrl) {
+        this.#addRowButton(item, {
+          name: "help",
+          url: result.payload.helpUrl,
+          l10n: result.payload.helpL10n,
+        });
+      }
+    } else if (this.#getResultMenuCommands(result)) {
       this.#addRowButton(item, {
         name: "menu",
         l10n: { id: "urlbar-result-menu-button" },
@@ -1288,27 +1347,6 @@ export class UrlbarView {
   }
 
   #addRowButton(item, { name, l10n, url }) {
-    if (!item._buttons.size) {
-      // If the content is marked as selectable, the screen reader will not be
-      // able to read the text directly child of the "urlbarView-row". As the
-      // group label is shown as pseudo element of urlbarView-row now, it isn't
-      // readable. To avoid it, we add an element for aria-label explictly,
-      // and set group label that should be read into it in #updateIndices().
-      const groupAriaLabel = this.#createElement("span");
-      groupAriaLabel.className = "urlbarView-group-aria-label";
-      item._content.insertBefore(groupAriaLabel, item._content.firstChild);
-      item._elements.set("groupAriaLabel", groupAriaLabel);
-
-      // When the row has buttons we set role=option on row-inner since the
-      // latter is the selectable logical row element when buttons are present.
-      // Since row-inner is not a child of the role=listbox element (the row
-      // container, this.#rows), screen readers will not automatically recognize
-      // it as a listbox option. To compensate, set role=presentation on the row
-      // so that screen readers ignore it.
-      item.setAttribute("role", "presentation");
-      item._content.setAttribute("role", "option");
-    }
-
     let button = this.#createElement("span");
     button.id = `${item.id}-button-${name}`;
     button.classList.add("urlbarView-button", "urlbarView-button-" + name);
@@ -1344,8 +1382,10 @@ export class UrlbarView {
       // always need updating.
       provider.getViewTemplate ||
       oldResult.isBestMatch != result.isBestMatch ||
-      !!result.payload.helpUrl != item._buttons.has("help") ||
-      !!result.payload.isBlockable != item._buttons.has("block") ||
+      (!lazy.UrlbarPrefs.get("resultMenu") &&
+        (!!result.payload.helpUrl != item._buttons.has("help") ||
+          !!result.payload.isBlockable != item._buttons.has("block"))) ||
+      !!this.#getResultMenuCommands(result) != item._buttons.has("menu") ||
       !lazy.ObjectUtils.deepEqual(
         oldResult.payload.buttons,
         result.payload.buttons
@@ -1439,10 +1479,7 @@ export class UrlbarView {
       title.removeAttribute("aria-label");
     }
 
-    title._tooltip = result.title;
-    if (title.hasAttribute("overflow")) {
-      title.setAttribute("title", title._tooltip);
-    }
+    this.#updateOverflowTooltip(title, result.title);
 
     let tagsContainer = item._elements.get("tagsContainer");
     tagsContainer.textContent = "";
@@ -1529,7 +1566,7 @@ export class UrlbarView {
         isRowSelectable = false;
         break;
       default:
-        if (result.heuristic && !result.autofill?.hasTitle) {
+        if (result.heuristic && !result.payload.title) {
           isVisitAction = true;
         } else if (result.providerName != "UrlbarProviderQuickSuggest") {
           setURL = true;
@@ -1537,13 +1574,7 @@ export class UrlbarView {
         break;
     }
 
-    if (isRowSelectable) {
-      let selectableElement = item._buttons.size ? item._content : item;
-      selectableElement.setAttribute("selectable", "true");
-    } else {
-      item.removeAttribute("selectable");
-      item._content.removeAttribute("selectable");
-    }
+    this.#setRowSelectable(item, isRowSelectable);
 
     if (result.providerName == "TabToSearch") {
       action.toggleAttribute("slide-in", true);
@@ -1588,14 +1619,11 @@ export class UrlbarView {
         result.payload.displayUrl,
         result.payloadHighlights.displayUrl || []
       );
-      url._tooltip = result.payload.displayUrl;
+      this.#updateOverflowTooltip(url, result.payload.displayUrl);
     } else {
       item.removeAttribute("has-url");
       url.textContent = "";
-      url._tooltip = "";
-    }
-    if (url.hasAttribute("overflow")) {
-      url.setAttribute("title", url._tooltip);
+      this.#updateOverflowTooltip(url, "");
     }
 
     if (isVisitAction) {
@@ -1626,6 +1654,16 @@ export class UrlbarView {
       title.setAttribute("dir", "auto");
     } else {
       title.removeAttribute("dir");
+    }
+  }
+
+  #setRowSelectable(item, isRowSelectable) {
+    item.toggleAttribute("row-selectable", isRowSelectable);
+    item._content.toggleAttribute("selectable", isRowSelectable);
+    if (isRowSelectable) {
+      item._content.setAttribute("role", "option");
+    } else {
+      item._content.removeAttribute("role");
     }
   }
 
@@ -1683,7 +1721,7 @@ export class UrlbarView {
         if (attrName == "id") {
           // We do not allow dynamic results to set IDs for their Nodes. IDs are
           // managed by the view to ensure they are unique.
-          Cu.reportError(
+          console.error(
             "Dynamic results are prohibited from setting their own IDs."
           );
           continue;
@@ -1701,10 +1739,7 @@ export class UrlbarView {
         if (update.l10n.cacheable) {
           await this.#l10nCache.ensureAll([update.l10n]);
         }
-        this.#setElementL10n(node, {
-          id: update.l10n.id,
-          args: update.l10n.args || undefined,
-        });
+        this.#setElementL10n(node, update.l10n);
       } else if (update.textContent) {
         node.textContent = update.textContent;
       }
@@ -1712,20 +1747,14 @@ export class UrlbarView {
   }
 
   #updateRowForBestMatch(item, result) {
-    let selectableElement = item._buttons.size ? item._content : item;
-    selectableElement.setAttribute("selectable", "true");
+    this.#setRowSelectable(item, true);
 
     let favicon = item._elements.get("favicon");
     favicon.src = this.#iconForResult(result);
 
     let title = item._elements.get("title");
     this.#setResultTitle(result, title);
-    title._tooltip = result.title;
-    if (title.hasAttribute("overflow")) {
-      title.setAttribute("title", title._tooltip);
-    } else {
-      title.removeAttribute("title");
-    }
+    this.#updateOverflowTooltip(title, result.title);
 
     let url = item._elements.get("url");
     this.#addTextContentWithHighlights(
@@ -1733,12 +1762,7 @@ export class UrlbarView {
       result.payload.displayUrl,
       result.payloadHighlights.displayUrl || []
     );
-    url._tooltip = result.payload.displayUrl;
-    if (url.hasAttribute("overflow")) {
-      url.setAttribute("title", url._tooltip);
-    } else {
-      url.removeAttribute("title");
-    }
+    this.#updateOverflowTooltip(url, result.payload.displayUrl);
 
     let bottom = item._elements.get("bottom");
     if (result.payload.isSponsored) {
@@ -1765,39 +1789,18 @@ export class UrlbarView {
     // label in between.) Each row's label is determined by `#rowLabel()`.
     let currentLabel;
 
-    let visibleRowsExist = false;
     for (let i = 0; i < this.#rows.children.length; i++) {
       let item = this.#rows.children[i];
       item.result.rowIndex = i;
 
       let visible = this.#isElementVisible(item);
-      visibleRowsExist = visibleRowsExist || visible;
-
-      let label;
       if (visible) {
         this.visibleResults.push(item.result);
-        label = this.#rowLabel(item, currentLabel);
-        if (label) {
-          if (lazy.ObjectUtils.deepEqual(label, currentLabel)) {
-            label = null;
-          } else {
-            currentLabel = label;
-          }
-        }
       }
 
-      const groupAriaLabel = item._elements.get("groupAriaLabel");
-
-      if (label) {
-        this.#setElementL10n(item, {
-          attribute: "label",
-          id: label.id,
-          args: label.args,
-        });
-        groupAriaLabel?.setAttribute("aria-label", item.getAttribute("label"));
-      } else {
-        this.#removeElementL10n(item, { attribute: "label" });
-        groupAriaLabel?.removeAttribute("aria-label");
+      let newLabel = this.#updateRowLabel(item, visible, currentLabel);
+      if (newLabel) {
+        currentLabel = newLabel;
       }
     }
 
@@ -1807,11 +1810,77 @@ export class UrlbarView {
       selectableElement.elementIndex = uiIndex++;
       selectableElement = this.#getNextSelectableElement(selectableElement);
     }
-    if (visibleRowsExist) {
+
+    if (this.visibleResults.length) {
       this.panel.removeAttribute("noresults");
     } else {
       this.panel.setAttribute("noresults", "true");
     }
+  }
+
+  /**
+   * Sets or removes the group label from a row. Designed to be called
+   * iteratively over each row.
+   *
+   * @param {Element} item
+   *   A row in the view.
+   * @param {boolean} isVisible
+   *   Whether the row is visible. This can be computed by the method itself,
+   *   but it's a parameter as an optimization since the caller is expected to
+   *   know it.
+   * @param {object} currentLabel
+   *   The current group label during row iteration.
+   * @returns {object}
+   *   If the given row should not have a label, returns null. Otherwise returns
+   *   an l10n object for the label's l10n string: `{ id, args }`
+   */
+  #updateRowLabel(item, isVisible, currentLabel) {
+    let label;
+    if (isVisible) {
+      label = this.#rowLabel(item, currentLabel);
+      if (label && lazy.ObjectUtils.deepEqual(label, currentLabel)) {
+        label = null;
+      }
+    }
+
+    // When the row-inner is selected, screen readers won't naturally read the
+    // label because it's a pseudo-element of the row, not the row-inner. To
+    // compensate, for rows that have labels we add an element to the row-inner
+    // with `aria-label` and no text content. Rows that don't have labels won't
+    // have this element.
+    let groupAriaLabel = item._elements.get("groupAriaLabel");
+
+    if (!label) {
+      this.#removeElementL10n(item, { attribute: "label" });
+      if (groupAriaLabel) {
+        groupAriaLabel.remove();
+        item._elements.delete("groupAriaLabel");
+      }
+      return null;
+    }
+
+    this.#setElementL10n(item, {
+      attribute: "label",
+      id: label.id,
+      args: label.args,
+    });
+
+    if (!groupAriaLabel) {
+      groupAriaLabel = this.#createElement("span");
+      groupAriaLabel.className = "urlbarView-group-aria-label";
+      item._content.insertBefore(groupAriaLabel, item._content.firstChild);
+      item._elements.set("groupAriaLabel", groupAriaLabel);
+    }
+
+    // `aria-label` must be a string, not an l10n ID, so first fetch the
+    // localized value and then set it as the attribute. There's no relevant
+    // aria attribute that uses l10n IDs.
+    this.#l10nCache.ensure(label).then(() => {
+      let message = this.#l10nCache.get(label);
+      groupAriaLabel.setAttribute("aria-label", message?.attributes.label);
+    });
+
+    return label;
   }
 
   /**
@@ -1827,39 +1896,45 @@ export class UrlbarView {
    *   returns an l10n object for the label's l10n string: `{ id, args }`
    */
   #rowLabel(row, currentLabel) {
-    // Labels aren't shown for top sites, i.e., when the search string is empty.
-    if (
-      lazy.UrlbarPrefs.get("groupLabels.enabled") &&
-      this.#queryContext?.searchString &&
-      !row.result.heuristic
-    ) {
-      if (row.result.isBestMatch) {
-        return { id: "urlbar-group-best-match" };
-      }
-      switch (row.result.type) {
-        case lazy.UrlbarUtils.RESULT_TYPE.KEYWORD:
-        case lazy.UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
-        case lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
-        case lazy.UrlbarUtils.RESULT_TYPE.URL:
-          return { id: "urlbar-group-firefox-suggest" };
-        case lazy.UrlbarUtils.RESULT_TYPE.SEARCH:
-          // Show "{ $engine } suggestions" if it's not the first label.
-          if (currentLabel && row.result.payload.suggestion) {
-            let engineName =
-              row.result.payload.engine || Services.search.defaultEngine.name;
-            return {
-              id: "urlbar-group-search-suggestions",
-              args: { engine: engineName },
-            };
-          }
-          break;
-        case lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC:
-          if (row.result.providerName == "quickactions") {
-            return { id: "urlbar-group-quickactions" };
-          }
-          break;
-      }
+    if (!lazy.UrlbarPrefs.get("groupLabels.enabled")) {
+      return null;
     }
+
+    if (
+      row.result.isBestMatch ||
+      row.result.providerName == lazy.UrlbarProviderWeather.name
+    ) {
+      return { id: "urlbar-group-best-match" };
+    }
+
+    if (!this.#queryContext?.searchString || row.result.heuristic) {
+      return null;
+    }
+
+    switch (row.result.type) {
+      case lazy.UrlbarUtils.RESULT_TYPE.KEYWORD:
+      case lazy.UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+      case lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+      case lazy.UrlbarUtils.RESULT_TYPE.URL:
+        return { id: "urlbar-group-firefox-suggest" };
+      case lazy.UrlbarUtils.RESULT_TYPE.SEARCH:
+        // Show "{ $engine } suggestions" if it's not the first label.
+        if (currentLabel && row.result.payload.suggestion) {
+          let engineName =
+            row.result.payload.engine || Services.search.defaultEngine.name;
+          return {
+            id: "urlbar-group-search-suggestions",
+            args: { engine: engineName },
+          };
+        }
+        break;
+      case lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC:
+        if (row.result.providerName == "quickactions") {
+          return { id: "urlbar-group-quickactions" };
+        }
+        break;
+    }
+
     return null;
   }
 
@@ -1894,7 +1969,7 @@ export class UrlbarView {
     if (!element || element.style.display == "none") {
       return false;
     }
-    let row = element.closest(".urlbarView-row");
+    let row = this.#getRowFromElement(element);
     return row && row.style.display != "none";
   }
 
@@ -1937,15 +2012,20 @@ export class UrlbarView {
     if (this.#selectedElement) {
       this.#selectedElement.toggleAttribute("selected", false);
       this.#selectedElement.removeAttribute("aria-selected");
+      this.#getSelectedRow()?.toggleAttribute("selected", false);
     }
+    let row = this.#getRowFromElement(element);
     if (element) {
       element.toggleAttribute("selected", true);
       element.setAttribute("aria-selected", "true");
+      if (row?.hasAttribute("row-selectable")) {
+        row?.toggleAttribute("selected", true);
+      }
     }
     this.#setAccessibleFocus(setAccessibleFocus && element);
     this.#selectedElement = element;
 
-    let result = element?.closest(".urlbarView-row")?.result;
+    let result = row?.result;
     if (updateInput) {
       let urlOverride = null;
       if (element?.classList?.contains("urlbarView-button-help")) {
@@ -1980,7 +2060,18 @@ export class UrlbarView {
    */
   #getClosestSelectableElement(element) {
     let closest = element.closest(SELECTABLE_ELEMENT_SELECTOR);
-    return closest && this.#isElementVisible(closest) ? closest : null;
+    if (closest && this.#isElementVisible(closest)) {
+      return closest;
+    }
+    // When clicking on a gap within a row or on its border or padding, treat
+    // this as if the main part was clicked.
+    if (
+      element.classList.contains("urlbarView-row") &&
+      element.hasAttribute("row-selectable")
+    ) {
+      return element._content;
+    }
+    return null;
   }
 
   /**
@@ -2034,7 +2125,7 @@ export class UrlbarView {
    *   last selectable element.
    */
   #getNextSelectableElement(element) {
-    let row = element.closest(".urlbarView-row");
+    let row = this.#getRowFromElement(element);
     if (!row) {
       return null;
     }
@@ -2066,7 +2157,7 @@ export class UrlbarView {
    *   the first selectable element.
    */
   #getPreviousSelectableElement(element) {
-    let row = element.closest(".urlbarView-row");
+    let row = this.#getRowFromElement(element);
     if (!row) {
       return null;
     }
@@ -2124,7 +2215,7 @@ export class UrlbarView {
    *
    * @param {UrlbarResult} result
    *   The result for which the title is being set.
-   * @param {Node} titleNode
+   * @param {Element} titleNode
    *   The DOM node for the result's tile.
    */
   #setResultTitle(result, titleNode) {
@@ -2164,7 +2255,7 @@ export class UrlbarView {
    * Adds text content to a node, placing substrings that should be highlighted
    * inside <em> nodes.
    *
-   * @param {Node} parentNode
+   * @param {Element} parentNode
    *   The text content will be added to this node.
    * @param {string} textContent
    *   The text content to give the node.
@@ -2201,7 +2292,7 @@ export class UrlbarView {
   /**
    * Adds markup for a tail suggestion prefix to a row.
    *
-   * @param {Node} item
+   * @param {Element} item
    *   The node for the result row.
    * @param {UrlbarResult} result
    *   A UrlbarResult representing a tail suggestion.
@@ -2226,9 +2317,50 @@ export class UrlbarView {
     }
   }
 
+  /**
+   * @param {Element} element
+   *   The element
+   * @returns {boolean}
+   *   Whether we track this element's overflow status in order to fade it out
+   *   and add a tooltip when needed.
+   */
+  #canElementOverflow(element) {
+    let { classList } = element;
+    return (
+      classList.contains("urlbarView-overflowable") ||
+      classList.contains("urlbarView-url")
+    );
+  }
+
+  /**
+   * Marks an element as overflowing or not overflowing.
+   *
+   * @param {Element} element
+   *   The element
+   * @param {boolean} overflowing
+   *   Whether the element is overflowing
+   */
   #setElementOverflowing(element, overflowing) {
     element.toggleAttribute("overflow", overflowing);
-    if (overflowing) {
+    this.#updateOverflowTooltip(element);
+  }
+
+  /**
+   * Sets an overflowing element's tooltip, or removes the tooltip if the
+   * element isn't overflowing. Also optionally updates the string that should
+   * be used as the tooltip in case of overflow.
+   *
+   * @param {Element} element
+   *   The element
+   * @param {string} [tooltip]
+   *   The string that should be used in the tooltip. This will be stored and
+   *   re-used next time the element overflows.
+   */
+  #updateOverflowTooltip(element, tooltip) {
+    if (typeof tooltip == "string") {
+      element._tooltip = tooltip;
+    }
+    if (element.hasAttribute("overflow") && element._tooltip) {
       element.setAttribute("title", element._tooltip);
     } else {
       element.removeAttribute("title");
@@ -2257,7 +2389,8 @@ export class UrlbarView {
     if (result.type != lazy.UrlbarUtils.RESULT_TYPE.TIP) {
       return false;
     }
-    let tipButton = this.#rows.firstElementChild._buttons.get("0");
+    let buttons = this.#rows.firstElementChild._buttons;
+    let tipButton = buttons.get("tip") || buttons.get("0");
     if (!tipButton) {
       throw new Error("Expected a tip button");
     }
@@ -2290,8 +2423,10 @@ export class UrlbarView {
     if (lazy.UrlbarPrefs.get("groupLabels.enabled")) {
       idArgs.push({ id: "urlbar-group-firefox-suggest" });
       if (
-        lazy.UrlbarPrefs.get("bestMatchEnabled") &&
-        lazy.UrlbarPrefs.get("suggest.bestmatch")
+        (lazy.UrlbarPrefs.get("bestMatchEnabled") &&
+          lazy.UrlbarPrefs.get("suggest.bestmatch")) ||
+        (lazy.UrlbarPrefs.get("weatherFeatureGate") &&
+          lazy.UrlbarPrefs.get("suggest.weather"))
       ) {
         idArgs.push({ id: "urlbar-group-best-match" });
       }
@@ -2375,16 +2510,26 @@ export class UrlbarView {
    *   Options object.
    * @param {string} options.id
    *   The l10n string ID.
-   * @param {object} [options.args]
+   * @param {object} options.args
    *   The l10n string arguments.
-   * @param {string} [options.attribute]
+   * @param {string} options.attribute
    *   If you're setting an attribute string, then pass the name of the
    *   attribute. In that case, the string in the Fluent file should define a
    *   value for the attribute, like ".foo = My value for the foo attribute".
    *   If you're setting the element's textContent, then leave this undefined.
+   * @param {boolean} options.excludeArgsFromCacheKey
+   *   Pass true if the string was cached using a key that excluded arguments.
    */
-  #setElementL10n(element, { id, args = undefined, attribute = undefined }) {
-    let message = this.#l10nCache.get(id, args);
+  #setElementL10n(
+    element,
+    {
+      id,
+      args = undefined,
+      attribute = undefined,
+      excludeArgsFromCacheKey = false,
+    }
+  ) {
+    let message = this.#l10nCache.get({ id, args, excludeArgsFromCacheKey });
     if (message) {
       element.removeAttribute("data-l10n-id");
       if (attribute) {
@@ -2418,6 +2563,103 @@ export class UrlbarView {
       element.textContent = "";
     }
     element.removeAttribute("data-l10n-id");
+  }
+
+  get #isShowingZeroPrefix() {
+    return !!this.#zeroPrefixStopwatchInstance;
+  }
+
+  #setIsShowingZeroPrefix(isShowing) {
+    if (!!isShowing == !!this.#zeroPrefixStopwatchInstance) {
+      return;
+    }
+
+    if (!isShowing) {
+      TelemetryStopwatch.finish(
+        ZERO_PREFIX_HISTOGRAM_DWELL_TIME,
+        this.#zeroPrefixStopwatchInstance
+      );
+      this.#zeroPrefixStopwatchInstance = null;
+      return;
+    }
+
+    this.#zeroPrefixStopwatchInstance = {};
+    TelemetryStopwatch.start(
+      ZERO_PREFIX_HISTOGRAM_DWELL_TIME,
+      this.#zeroPrefixStopwatchInstance
+    );
+
+    Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_EXPOSURE, 1);
+
+    // Weather suggestion telemetry needs to be recorded when the zero-prefix
+    // view is shown. Ideally this logic would be general to all providers.
+    // Relying on `visibleResults` here means we assume `onQueryFinished()` has
+    // been called by this point and `visibleResults` accurately reflects the
+    // visible rows at the end of the zero-prefix query.
+    let weatherResults = this.visibleResults.filter(
+      r => r.providerName == lazy.UrlbarProviderWeather.name
+    );
+    if (weatherResults.length) {
+      lazy.UrlbarProviderWeather.onResultsShown(
+        this.#queryContext,
+        weatherResults
+      );
+    }
+  }
+
+  /**
+   * @param {UrlbarResult} result
+   *   The result to get menu commands for.
+   * @returns {Map}
+   *   Map of menu commands available for the result, null if there are none.
+   */
+  #getResultMenuCommands(result) {
+    if (!lazy.UrlbarPrefs.get("resultMenu")) {
+      return null;
+    }
+    if (this.#resultMenuCommands.has(result)) {
+      return this.#resultMenuCommands.get(result);
+    }
+    let commands = new Map();
+    if (
+      result.source == lazy.UrlbarUtils.RESULT_SOURCE.HISTORY &&
+      !result.autofill
+    ) {
+      commands.set(RESULT_MENU_COMMANDS.BLOCK, {
+        l10n: { id: "urlbar-result-menu-remove-from-history" },
+      });
+      commands.set(RESULT_MENU_COMMANDS.LEARN_MORE, {
+        l10n: { id: "urlbar-result-menu-learn-more" },
+      });
+    }
+    if (result.payload.isBlockable) {
+      commands.set(RESULT_MENU_COMMANDS.BLOCK, {
+        l10n: result.payload.blockL10n,
+      });
+    }
+    if (result.payload.helpUrl) {
+      commands.set(RESULT_MENU_COMMANDS.LEARN_MORE, {
+        l10n: result.payload.helpL10n,
+      });
+    }
+    let rv = commands.size ? commands : null;
+    this.#resultMenuCommands.set(result, rv);
+    return rv;
+  }
+
+  #populateResultMenu() {
+    this.resultMenu.textContent = "";
+    for (const [command, data] of this.#getResultMenuCommands(
+      this.#resultMenuResult
+    )) {
+      let menuitem = this.document.createElementNS(
+        "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+        "menuitem"
+      );
+      menuitem.dataset.command = command;
+      this.#setElementL10n(menuitem, data.l10n);
+      this.resultMenu.appendChild(menuitem);
+    }
   }
 
   // Event handlers below.
@@ -2546,7 +2788,7 @@ export class UrlbarView {
             favicon.src = result.payload.icon || lazy.UrlbarUtils.ICON.DEFAULT;
           }
         } else {
-          Cu.reportError("An item is missing the action setter");
+          console.error("An item is missing the action setter");
         }
         item.removeAttribute("source");
       }
@@ -2593,13 +2835,38 @@ export class UrlbarView {
     }
 
     this.window.top.addEventListener("mouseup", this);
-    this.#selectElement(element, { updateInput: false });
 
-    this.controller.speculativeConnect(
-      this.selectedResult,
-      this.#queryContext,
-      "mousedown"
-    );
+    // Select the element and open a speculative connection unless it's a
+    // button. Buttons are special in the two ways listed below. Some buttons
+    // may be exceptions to these two criteria, but to provide a consistent UX
+    // and avoid complexity, we apply this logic to all of them.
+    //
+    // (1) Some buttons do not close the view when clicked, like the block and
+    // menu buttons. Clicking these buttons should not have any side effects in
+    // the view or input beyond their primary purpose. For example, the block
+    // button should remove the row but it should not change the input value or
+    // page proxy state, and ideally it shouldn't change the input's selection
+    // or caret either. It probably also shouldn't change the view's selection
+    // (if the removed row isn't selected), but that may be more debatable.
+    //
+    // It may be possible to select buttons on mousedown and then clear the
+    // selection on mouseup as usual while meeting these requirements. However,
+    // it's not simple because clearing the selection has surprising side
+    // effects in the input like the ones mentioned above.
+    //
+    // (2) Most buttons don't have URLs, so there's nothing to speculatively
+    // connect to. If a button does have a URL, it's typically different from
+    // the primary URL of its related result, so it's not critical to open a
+    // speculative connection anyway.
+    if (!element.classList.contains("urlbarView-button")) {
+      this.#mousedownSelectedElement = element;
+      this.#selectElement(element, { updateInput: false });
+      this.controller.speculativeConnect(
+        this.selectedResult,
+        this.#queryContext,
+        "mousedown"
+      );
+    }
   }
 
   on_mouseup(event) {
@@ -2620,17 +2887,27 @@ export class UrlbarView {
       this.input.pickElement(element, event);
     }
 
-    // Unselect the selected element here because pickElement() may use the
-    // selected element.
-    this.#selectElement(null);
+    // If the element that was selected on mousedown is still in the view, clear
+    // the selection. Do it after calling `pickElement()` above since code that
+    // reacts to picks may assume the selected element is the picked element.
+    //
+    // If the element is no longer in the view, then it must be because its row
+    // was removed in response to the pick. If the element was not a button, we
+    // selected it on mousedown and then `onQueryResultRemoved()` selected the
+    // next row; we shouldn't unselect it here. If the element was a button,
+    // then we didn't select anything on mousedown; clearing the selection seems
+    // like it would be harmless, but it has side effects in the input we want
+    // to avoid (see `on_mousedown()`).
+    if (this.#mousedownSelectedElement?.isConnected) {
+      this.#selectElement(null);
+    }
+    this.#mousedownSelectedElement = null;
   }
 
   on_overflow(event) {
     if (
-      event.detail == 1 &&
-      (event.target.classList.contains("urlbarView-url") ||
-        event.target.classList.contains("urlbarView-title") ||
-        event.target.classList.contains("urlbarView-tags"))
+      event.detail == 1 /* horizontal overflow */ &&
+      this.#canElementOverflow(event.target)
     ) {
       this.#setElementOverflowing(event.target, true);
     }
@@ -2638,10 +2915,8 @@ export class UrlbarView {
 
   on_underflow(event) {
     if (
-      event.detail == 1 &&
-      (event.target.classList.contains("urlbarView-url") ||
-        event.target.classList.contains("urlbarView-title") ||
-        event.target.classList.contains("urlbarView-tags"))
+      event.detail == 1 /* horizontal underflow */ &&
+      this.#canElementOverflow(event.target)
     ) {
       this.#setElementOverflowing(event.target, false);
     }
@@ -2652,14 +2927,29 @@ export class UrlbarView {
   }
 
   on_command(event) {
-    if (event.currentTarget == this.#resultMenu) {
+    if (event.currentTarget == this.resultMenu) {
       let result = this.#resultMenuResult;
+      this.#resultMenuResult = null;
       let menuitem = event.target;
       switch (menuitem.dataset.command) {
-        case "test":
-          console.log(result);
+        case RESULT_MENU_COMMANDS.BLOCK:
+          this.controller.handleDeleteEntry(null, result);
+          break;
+        case RESULT_MENU_COMMANDS.LEARN_MORE:
+          this.window.openTrustedLinkIn(
+            result.payload.helpUrl ||
+              Services.urlFormatter.formatURLPref("app.support.baseURL") +
+                "awesome-bar-result-menu",
+            "tab"
+          );
           break;
       }
+    }
+  }
+
+  on_popupshowing(event) {
+    if (event.currentTarget == this.resultMenu) {
+      this.#populateResultMenu();
     }
   }
 }
@@ -2771,7 +3061,7 @@ async function addDynamicStylesheet(window, stylesheetURL) {
     );
     window.windowUtils.addSheet(sheet, Ci.nsIDOMWindowUtils.AGENT_SHEET);
   } catch (ex) {
-    Cu.reportError(`Error adding dynamic stylesheet: ${ex}`);
+    console.error(`Error adding dynamic stylesheet: ${ex}`);
   }
 }
 
@@ -2791,6 +3081,6 @@ function removeDynamicStylesheet(window, stylesheetURL) {
       Ci.nsIDOMWindowUtils.AGENT_SHEET
     );
   } catch (ex) {
-    Cu.reportError(`Error removing dynamic stylesheet: ${ex}`);
+    console.error(`Error removing dynamic stylesheet: ${ex}`);
   }
 }

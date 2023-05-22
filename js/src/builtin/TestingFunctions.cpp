@@ -59,6 +59,7 @@
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
 #include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
 #include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
+#include "frontend/FrontendContext.h"     // AutoReportFrontendContext
 #include "gc/Allocator.h"
 #include "gc/GC.h"
 #include "gc/GCLock.h"
@@ -109,7 +110,6 @@
 #include "util/Text.h"
 #include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
-#include "vm/ErrorContext.h"  // AutoReportFrontendContext
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/HelperThreads.h"
@@ -454,6 +454,24 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   value = BooleanValue(false);
 #endif
   if (!JS_SetProperty(cx, info, "loong64-simulator", value)) {
+    return false;
+  }
+
+#ifdef JS_CODEGEN_RISCV64
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "riscv64", value)) {
+    return false;
+  }
+
+#ifdef JS_SIMULATOR_RISCV64
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "riscv64-simulator", value)) {
     return false;
   }
 
@@ -949,27 +967,21 @@ static bool WasmCompileMode(JSContext* cx, unsigned argc, Value* vp) {
 
   JSStringBuilder result(cx);
   if (none && !result.append("none")) {
-    result.failure();
     return false;
   }
   if (baseline && !result.append("baseline")) {
-    result.failure();
     return false;
   }
   if (tiered && !result.append("+")) {
-    result.failure();
     return false;
   }
   if (ion && !result.append("ion")) {
-    result.failure();
     return false;
   }
   if (JSString* str = result.finishString()) {
-    result.ok();
     args.rval().setString(str);
     return true;
   }
-  result.failure();
   return false;
 }
 
@@ -979,21 +991,17 @@ static bool WasmBaselineDisabledByFeatures(JSContext* cx, unsigned argc,
   bool isDisabled = false;
   JSStringBuilder reason(cx);
   if (!wasm::BaselineDisabledByFeatures(cx, &isDisabled, &reason)) {
-    reason.failure();
     return false;
   }
   if (isDisabled) {
     JSString* result = reason.finishString();
     if (!result) {
-      reason.failure();
       return false;
     }
     args.rval().setString(result);
   } else {
-    reason.failure();
     args.rval().setBoolean(false);
   }
-  reason.ok();
   return true;
 }
 
@@ -1002,21 +1010,17 @@ static bool WasmIonDisabledByFeatures(JSContext* cx, unsigned argc, Value* vp) {
   bool isDisabled = false;
   JSStringBuilder reason(cx);
   if (!wasm::IonDisabledByFeatures(cx, &isDisabled, &reason)) {
-    reason.failure();
     return false;
   }
   if (isDisabled) {
     JSString* result = reason.finishString();
     if (!result) {
-      reason.failure();
       return false;
     }
     args.rval().setString(result);
   } else {
-    reason.failure();
     args.rval().setBoolean(false);
   }
-  reason.ok();
   return true;
 }
 
@@ -1733,17 +1737,14 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
   jit::Disassemble(jit_begin, jit_end - jit_begin, &captureDisasmText);
 
   if (buf.oom) {
-    buf.builder.failure();
     ReportOutOfMemory(cx);
     return false;
   }
   JSString* sresult = buf.builder.finishString();
   if (!sresult) {
-    buf.builder.failure();
     ReportOutOfMemory(cx);
     return false;
   }
-  buf.builder.ok();
   sprinter.putString(sresult);
 
   if (args.length() > 1 && args[1].isString()) {
@@ -1809,17 +1810,14 @@ static bool DisassembleIt(JSContext* cx, bool asString, MutableHandleValue rval,
     auto onFinish = mozilla::MakeScopeExit([&] { disasmBuf.set(nullptr); });
     disassembleIt(captureDisasmText);
     if (buf.oom) {
-      buf.builder.failure();
       ReportOutOfMemory(cx);
       return false;
     }
     JSString* sresult = buf.builder.finishString();
     if (!sresult) {
-      buf.builder.failure();
       ReportOutOfMemory(cx);
       return false;
     }
-    buf.builder.ok();
     rval.setString(sresult);
     return true;
   }
@@ -2014,9 +2012,9 @@ static bool WasmIntrinsicI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool LargeArrayBufferEnabled(JSContext* cx, unsigned argc, Value* vp) {
+static bool LargeArrayBufferSupported(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(ArrayBufferObject::maxBufferByteLength() >
+  args.rval().setBoolean(ArrayBufferObject::MaxByteLength >
                          ArrayBufferObject::MaxByteLengthForSmallBuffer);
   return true;
 }
@@ -4588,7 +4586,7 @@ class CloneBufferObject : public NativeObject {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    buffer->steal(data.get());
+    buffer->giveTo(data.get());
     obj->setData(data.release(), false);
     return obj;
   }
@@ -4878,30 +4876,6 @@ bool js::testingFunc_serialize(JSContext* cx, unsigned argc, Value* vp) {
       }
       clonebuf.emplace(*scope, nullptr, nullptr);
     }
-
-    if (!JS_GetProperty(cx, opts, "ErrorStackFrames", &v)) {
-      return false;
-    }
-
-    if (!v.isUndefined()) {
-      JSString* str = JS::ToString(cx, v);
-      if (!str) {
-        return false;
-      }
-      JSLinearString* poli = str->ensureLinear(cx);
-      if (!poli) {
-        return false;
-      }
-
-      if (StringEqualsLiteral(poli, "allow")) {
-        policy.allowErrorStackFrames();
-      } else if (StringEqualsLiteral(poli, "deny")) {
-        // default
-      } else {
-        JS_ReportErrorASCII(cx, "Invalid policy value for 'ErrorStackFrames'");
-        return false;
-      }
-    }
   }
 
   if (!clonebuf) {
@@ -4998,30 +4972,6 @@ static bool Deserialize(JSContext* cx, unsigned argc, Value* vp) {
       }
 
       scope = *maybeScope;
-    }
-
-    if (!JS_GetProperty(cx, opts, "ErrorStackFrames", &v)) {
-      return false;
-    }
-
-    if (!v.isUndefined()) {
-      JSString* str = JS::ToString(cx, v);
-      if (!str) {
-        return false;
-      }
-      JSLinearString* poli = str->ensureLinear(cx);
-      if (!poli) {
-        return false;
-      }
-
-      if (StringEqualsLiteral(poli, "allow")) {
-        policy.allowErrorStackFrames();
-      } else if (StringEqualsLiteral(poli, "deny")) {
-        // default
-      } else {
-        JS_ReportErrorASCII(cx, "Invalid policy value for 'ErrorStackFrames'");
-        return false;
-      }
     }
   }
 
@@ -5449,12 +5399,6 @@ static bool SharedMemoryEnabled(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(
       cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled());
-  return true;
-}
-
-static bool SharedArrayRawBufferCount(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setInt32(LiveMappedBufferCount());
   return true;
 }
 
@@ -6399,8 +6343,8 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
 
-  AutoReportFrontendContext ec(cx);
-  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
+  AutoReportFrontendContext fc(cx);
+  if (!SetSourceOptions(cx, &fc, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6535,25 +6479,25 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Compile the script text to stencil. */
-  AutoReportFrontendContext ec(cx);
+  AutoReportFrontendContext fc(cx);
   frontend::NoScopeBindingCache scopeCache;
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (isModule) {
     stencil = frontend::ParseModuleToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
         srcBuf);
   } else {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
         srcBuf, ScopeKind::Global);
   }
   if (!stencil) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
+  if (!SetSourceOptions(cx, &fc, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6561,7 +6505,14 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   JS::TranscodeBuffer xdrBytes;
   {
     frontend::BorrowingCompilationStencil borrowingStencil(*stencil);
-    if (!borrowingStencil.serializeStencils(cx, input.get(), xdrBytes)) {
+    bool succeeded = false;
+    if (!borrowingStencil.serializeStencils(cx, input.get(), xdrBytes,
+                                            &succeeded)) {
+      return false;
+    }
+    if (!succeeded) {
+      fc.clearAutoReport();
+      JS_ReportErrorASCII(cx, "Encoding failure");
       return false;
     }
   }
@@ -6616,10 +6567,10 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the CompilationStencil for decoding. */
-  AutoReportFrontendContext ec(cx);
+  AutoReportFrontendContext fc(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx, &ec)) {
+  if (!input.get().initForGlobal(&fc)) {
     return false;
   }
   frontend::CompilationStencil stencil(nullptr);
@@ -6627,18 +6578,18 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   /* Deserialize the stencil from XDR. */
   JS::TranscodeRange xdrRange(xdrObj->buffer(), xdrObj->bufferLength());
   bool succeeded = false;
-  if (!stencil.deserializeStencils(cx, &ec, input.get(), xdrRange,
+  if (!stencil.deserializeStencils(cx, &fc, input.get(), xdrRange,
                                    &succeeded)) {
     return false;
   }
   if (!succeeded) {
-    ec.clearAutoReport();
+    fc.clearAutoReport();
     JS_ReportErrorASCII(cx, "Decoding failure");
     return false;
   }
 
   if (stencil.isModule()) {
-    ec.clearAutoReport();
+    fc.clearAutoReport();
     JS_ReportErrorASCII(cx,
                         "evalStencilXDR: Module stencil cannot be evaluated. "
                         "Use instantiateModuleStencilXDR instead");
@@ -8703,8 +8654,8 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 "wasmIntrinsicI8VecMul()",
 "  Returns a module that implements an i8 vector pairwise multiplication intrinsic."),
 
-    JS_FN_HELP("largeArrayBufferEnabled", LargeArrayBufferEnabled, 0, 0,
-"largeArrayBufferEnabled()",
+    JS_FN_HELP("largeArrayBufferSupported", LargeArrayBufferSupported, 0, 0,
+"largeArrayBufferSupported()",
 "  Returns true if array buffers larger than 2GB can be allocated."),
 
     JS_FN_HELP("isLazyFunction", IsLazyFunction, 1, 0,
@@ -8861,10 +8812,6 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
     JS_FN_HELP("sharedMemoryEnabled", SharedMemoryEnabled, 0, 0,
 "sharedMemoryEnabled()",
 "  Return true if SharedArrayBuffer and Atomics are enabled"),
-
-    JS_FN_HELP("sharedArrayRawBufferCount", SharedArrayRawBufferCount, 0, 0,
-"sharedArrayRawBufferCount()",
-"  Return the number of live SharedArrayRawBuffer objects"),
 
     JS_FN_HELP("sharedArrayRawBufferRefcount", SharedArrayRawBufferRefcount, 0, 0,
 "sharedArrayRawBufferRefcount(sab)",

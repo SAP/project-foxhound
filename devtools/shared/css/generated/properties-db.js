@@ -3045,7 +3045,9 @@ exports.CSS_PROPERTIES = {
       "font-weight",
       "font-size",
       "font-size-adjust",
-      "font-synthesis",
+      "font-synthesis-weight",
+      "font-synthesis-style",
+      "font-synthesis-small-caps",
       "font-stretch",
       "font-kerning",
       "font-variant-alternates",
@@ -3259,6 +3261,9 @@ exports.CSS_PROPERTIES = {
       "animation-timeline",
       "scroll-timeline-name",
       "scroll-timeline-axis",
+      "view-timeline-name",
+      "view-timeline-axis",
+      "view-timeline-inset",
       "-moz-box-align",
       "-moz-box-direction",
       "-moz-box-flex",
@@ -5621,15 +5626,11 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "bottom",
-      "bottom-outside",
       "inherit",
       "initial",
-      "left",
       "revert",
       "revert-layer",
-      "right",
       "top",
-      "top-outside",
       "unset"
     ]
   },
@@ -6978,7 +6979,9 @@ exports.CSS_PROPERTIES = {
   "font-synthesis": {
     "isInherited": true,
     "subproperties": [
-      "font-synthesis"
+      "font-synthesis-weight",
+      "font-synthesis-style",
+      "font-synthesis-small-caps"
     ],
     "supports": [],
     "values": [
@@ -6991,6 +6994,54 @@ exports.CSS_PROPERTIES = {
       "style",
       "unset",
       "weight"
+    ]
+  },
+  "font-synthesis-small-caps": {
+    "isInherited": true,
+    "subproperties": [
+      "font-synthesis-small-caps"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
+  "font-synthesis-style": {
+    "isInherited": true,
+    "subproperties": [
+      "font-synthesis-style"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
+  "font-synthesis-weight": {
+    "isInherited": true,
+    "subproperties": [
+      "font-synthesis-weight"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset"
     ]
   },
   "font-variant": {
@@ -9666,6 +9717,21 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "page": {
+    "isInherited": false,
+    "subproperties": [
+      "page"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
   "page-break-after": {
     "isInherited": false,
     "subproperties": [
@@ -9722,6 +9788,23 @@ exports.CSS_PROPERTIES = {
       "revert",
       "revert-layer",
       "unset"
+    ]
+  },
+  "page-orientation": {
+    "isInherited": false,
+    "subproperties": [
+      "page-orientation"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "revert-layer",
+      "rotate-left",
+      "rotate-right",
+      "unset",
+      "upright"
     ]
   },
   "paint-order": {
@@ -11954,6 +12037,10 @@ exports.PREFERENCES = [
     "layout.css.scroll-anchoring.enabled"
   ],
   [
+    "page-orientation",
+    "layout.css.page-orientation.enabled"
+  ],
+  [
     "scrollbar-gutter",
     "layout.css.scrollbar-gutter.enabled"
   ],
@@ -12003,7 +12090,7 @@ exports.PREFERENCES = [
   ],
   [
     "animation-timeline",
-    "layout.css.scroll-linked-animations.enabled"
+    "layout.css.scroll-driven-animations.enabled"
   ],
   [
     "backdrop-filter",
@@ -12063,11 +12150,11 @@ exports.PREFERENCES = [
   ],
   [
     "scroll-timeline-axis",
-    "layout.css.scroll-linked-animations.enabled"
+    "layout.css.scroll-driven-animations.enabled"
   ],
   [
     "scroll-timeline-name",
-    "layout.css.scroll-linked-animations.enabled"
+    "layout.css.scroll-driven-animations.enabled"
   ],
   [
     "size",
@@ -12076,6 +12163,18 @@ exports.PREFERENCES = [
   [
     "translate",
     "layout.css.individual-transform.enabled"
+  ],
+  [
+    "view-timeline-axis",
+    "layout.css.scroll-driven-animations.enabled"
+  ],
+  [
+    "view-timeline-inset",
+    "layout.css.scroll-driven-animations.enabled"
+  ],
+  [
+    "view-timeline-name",
+    "layout.css.scroll-driven-animations.enabled"
   ],
   [
     "contain-intrinsic-block-size",
@@ -12123,7 +12222,11 @@ exports.PREFERENCES = [
   ],
   [
     "scroll-timeline",
-    "layout.css.scroll-linked-animations.enabled"
+    "layout.css.scroll-driven-animations.enabled"
+  ],
+  [
+    "view-timeline",
+    "layout.css.scroll-driven-animations.enabled"
   ],
   [
     "-moz-transform",

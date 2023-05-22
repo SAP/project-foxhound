@@ -24,6 +24,7 @@ class nsIFrame;
 
 namespace mozilla {
 
+using Modifiers = uint16_t;
 struct StyleColorSchemeFlags;
 
 namespace dom {
@@ -307,11 +308,9 @@ class LookAndFeel {
      * 'Coarse | Fine | Hover'.
      */
     AllPointerCapabilities,
-    /** The vertical scrollbar width, in CSS pixels. */
-    SystemVerticalScrollbarWidth,
 
-    /** The horizontal scrollbar height, in CSS pixels. */
-    SystemHorizontalScrollbarHeight,
+    /** The scrollbar size, in CSS pixels. */
+    SystemScrollbarSize,
 
     /** A boolean value to determine whether a touch device is present */
     TouchDeviceSupportPresent,
@@ -344,6 +343,12 @@ class LookAndFeel {
   static bool UseOverlayScrollbars() {
     return GetInt(IntID::UseOverlayScrollbars);
   }
+
+  // Returns keyCode value of a modifier key which is used for accesskey.
+  // Returns 0 if the platform doesn't support access key.
+  static uint32_t GetMenuAccessKey();
+  // Modifier mask for the menu accesskey.
+  static Modifiers GetMenuAccessKeyModifiers();
 
   enum {
     eScrollArrow_None = 0,

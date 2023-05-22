@@ -249,6 +249,7 @@ UNIFIED_SOURCES += [
 if CONFIG["FUZZING"]:
     SOURCES += [
         "FuzzyLayer.cpp",
+        "FuzzySecurityInfo.cpp",
         "FuzzySocketControl.cpp",
     ]
 
@@ -315,6 +316,7 @@ LOCAL_INCLUDES += [
     "!/xpcom/components",
     "/docshell/base",
     "/dom/base",
+    "/js/xpconnect/src",
     "/netwerk/dns",
     "/netwerk/protocol/http",
     "/netwerk/protocol/webtransport",

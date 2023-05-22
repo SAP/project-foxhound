@@ -30,6 +30,9 @@ const CONSOLE_API_LEVEL_MAP = {
   warn: "warning",
 };
 
+// Bug 1786299: Puppeteer needs specific error messages.
+const ERROR_CONTEXT_NOT_FOUND = "Cannot find context with specified id";
+
 class SetMap extends Map {
   constructor() {
     super();
@@ -135,9 +138,7 @@ export class Runtime extends ContentProcessDomain {
       }
     }
     if (!context) {
-      throw new Error(
-        `Unable to get execution context by object ID: ${objectId}`
-      );
+      throw new Error(ERROR_CONTEXT_NOT_FOUND);
     }
     context.releaseObject(objectId);
   }
@@ -211,16 +212,12 @@ export class Runtime extends ContentProcessDomain {
           break;
         }
       }
-      if (!context) {
-        throw new Error(
-          `Unable to get the context for object with id: ${options.objectId}`
-        );
-      }
     } else {
       context = this.contexts.get(options.executionContextId);
-      if (!context) {
-        throw new Error("Cannot find context with specified id");
-      }
+    }
+
+    if (!context) {
+      throw new Error(ERROR_CONTEXT_NOT_FOUND);
     }
 
     return context.callFunctionOn(
@@ -276,7 +273,7 @@ export class Runtime extends ContentProcessDomain {
     if (typeof contextId != "undefined") {
       context = this.contexts.get(contextId);
       if (!context) {
-        throw new Error("Cannot find context with specified id");
+        throw new Error(ERROR_CONTEXT_NOT_FOUND);
       }
     } else {
       context = this._getDefaultContextForWindow();
@@ -320,10 +317,10 @@ export class Runtime extends ContentProcessDomain {
     ) {
       callFrames.push({
         functionName: stack.functionDisplayName,
-        scriptId: stack.sourceId,
+        scriptId: stack.sourceId.toString(),
         url: stack.source,
-        lineNumber: stack.line,
-        columnNumber: stack.column,
+        lineNumber: stack.line - 1,
+        columnNumber: stack.column - 1,
       });
       stack = stack.parent || stack.asyncParent;
     }
@@ -619,8 +616,8 @@ function fromScriptError(error) {
   // From dom/bindings/nsIScriptError.idl
   return {
     innerWindowId: error.innerWindowID,
-    columnNumber: error.columnNumber,
-    lineNumber: error.lineNumber,
+    columnNumber: error.columnNumber - 1,
+    lineNumber: error.lineNumber - 1,
     stack: error.stack,
     text: error.errorMessage,
     timestamp: error.timeStamp,

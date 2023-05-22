@@ -156,9 +156,6 @@ void EventListenerManager::RemoveAllListenersSilently() {
   mClearingListeners = false;
 }
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(EventListenerManager, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(EventListenerManager, Release)
-
 inline void ImplCycleCollectionTraverse(
     nsCycleCollectionTraversalCallback& aCallback,
     EventListenerManager::Listener& aField, const char* aName,
@@ -352,7 +349,7 @@ void EventListenerManager::AddEventListenerInternal(
         }
         break;
       case eDeviceOrientation:
-      case eAbsoluteDeviceOrientation:
+      case eDeviceOrientationAbsolute:
       case eUserProximity:
       case eDeviceLight:
       case eDeviceMotion:
@@ -496,7 +493,7 @@ void EventListenerManager::AddEventListenerInternal(
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
-        NS_ASSERTION(aTypeAtom != nsGkAtoms::onabsolutedeviceorientation,
+        NS_ASSERTION(aTypeAtom != nsGkAtoms::ondeviceorientationabsolute,
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
@@ -672,7 +669,7 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd() {
 bool EventListenerManager::IsDeviceType(EventMessage aEventMessage) {
   switch (aEventMessage) {
     case eDeviceOrientation:
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
     case eDeviceMotion:
     case eDeviceLight:
     case eUserProximity:
@@ -703,7 +700,7 @@ void EventListenerManager::EnableDevice(EventMessage aEventMessage) {
       window->EnableDeviceSensor(SENSOR_ORIENTATION);
 #endif
       break;
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
 #ifdef MOZ_WIDGET_ANDROID
       // Falls back to SENSOR_ORIENTATION if unavailable on device.
       window->EnableDeviceSensor(SENSOR_ROTATION_VECTOR);
@@ -748,7 +745,7 @@ void EventListenerManager::DisableDevice(EventMessage aEventMessage) {
 #endif
       window->DisableDeviceSensor(SENSOR_ORIENTATION);
       break;
-    case eAbsoluteDeviceOrientation:
+    case eDeviceOrientationAbsolute:
 #ifdef MOZ_WIDGET_ANDROID
       window->DisableDeviceSensor(SENSOR_ROTATION_VECTOR);
 #endif

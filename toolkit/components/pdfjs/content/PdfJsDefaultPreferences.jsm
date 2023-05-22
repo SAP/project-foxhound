@@ -1,4 +1,4 @@
-/* Copyright 2022 Mozilla Foundation
+/* Copyright 2023 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ var PdfJsDefaultPreferences = Object.freeze({
  "annotationEditorMode": 0,
  "annotationMode": 2,
  "cursorToolOnLoad": 0,
+ "defaultZoomDelay": 400,
  "defaultZoomValue": "",
  "disablePageLabels": false,
  "enablePermissions": false,

@@ -22,6 +22,7 @@ const { AppConstants } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ClientID: "resource://gre/modules/ClientID.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   clearInterval: "resource://gre/modules/Timer.sys.mjs",
@@ -31,7 +32,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ClientID: "resource://gre/modules/ClientID.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   WindowsInstallsInfo:
@@ -110,9 +110,14 @@ const BROWSER_UI_CONTAINER_IDS = {
   "page-action-buttons": "pageaction-urlbar",
   pageActionPanel: "pageaction-panel",
   "unified-extensions-area": "unified-extensions-area",
+  "allTabsMenu-allTabsView": "alltabs-menu",
 
   // This should appear last as some of the above are inside the nav bar.
   "nav-bar": "nav-bar",
+};
+
+const ENTRYPOINT_TRACKED_CONTEXT_MENU_IDS = {
+  [BROWSER_UI_CONTAINER_IDS.tabContextMenu]: "tabs-context-entrypoint",
 };
 
 // A list of the expected panes in about:preferences
@@ -855,6 +860,21 @@ let BrowserUsageTelemetry = {
         Services.prefs.setBoolPref(`browser.engagement.${item}.has-used`, true);
       }
     }
+
+    if (ENTRYPOINT_TRACKED_CONTEXT_MENU_IDS[source]) {
+      let contextMenu = ENTRYPOINT_TRACKED_CONTEXT_MENU_IDS[source];
+      let triggerContainer = this._getWidgetContainer(
+        node.closest("menupopup")?.triggerNode
+      );
+      if (triggerContainer) {
+        let scalar = `browser.ui.interaction.${contextMenu.replace(/-/g, "_")}`;
+        Services.telemetry.keyedScalarAdd(
+          scalar,
+          telemetryId(triggerContainer),
+          1
+        );
+      }
+    }
   },
 
   /**
@@ -1158,7 +1178,7 @@ let BrowserUsageTelemetry = {
       // time.
       fileData = { version: "1", profileTelemetryIds: [] };
       if (!(ex.name == "NotFoundError")) {
-        Cu.reportError(ex);
+        console.error(ex);
         // Don't just return here on a read error. We need to send the error
         // value to telemetry and we want to attempt to fix the file.
         // However, we will still report an error for this ping, even if we
@@ -1184,7 +1204,7 @@ let BrowserUsageTelemetry = {
           JSON.stringify(fileData)
         );
       } catch (ex) {
-        Cu.reportError(ex);
+        console.error(ex);
         writeError = true;
       }
     }

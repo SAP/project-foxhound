@@ -484,7 +484,7 @@ impl AuthenticatorTransport for Manager {
                         if key_handle.credential.len() >= 256 {
                             return Err(AuthenticatorError::InvalidRelyingPartyInput);
                         }
-                        let rp = RelyingPartyWrapper::Hash(RpIdHash::from(&app_id)?);
+                        let rp = RelyingPartyWrapper::Hash(RpIdHash::from(app_id)?);
 
                         let allow_list = vec![key_handle.into()];
 
@@ -494,6 +494,7 @@ impl AuthenticatorTransport for Manager {
                             allow_list,
                             options,
                             Default::default(),
+                            None,
                             None,
                         )?;
 
@@ -518,7 +519,7 @@ impl AuthenticatorTransport for Manager {
                 };
 
                 let get_assertion = GetAssertion::new(
-                    client_data.clone(),
+                    client_data,
                     RelyingPartyWrapper::Data(RelyingParty {
                         id: args.relying_party_id,
                         name: None,
@@ -528,6 +529,7 @@ impl AuthenticatorTransport for Manager {
                     args.options,
                     args.extensions,
                     args.pin,
+                    args.alternate_rp_id,
                 )?;
 
                 let action = QueueAction::SignCtap2 {

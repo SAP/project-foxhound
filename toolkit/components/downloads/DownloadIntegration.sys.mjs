@@ -15,12 +15,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
-);
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   DownloadSpamProtection: "resource:///modules/DownloadSpamProtection.sys.mjs",
   DownloadStore: "resource://gre/modules/DownloadStore.sys.mjs",
@@ -1021,7 +1017,7 @@ var DownloadObserver = {
     };
 
     // We register the view asynchronously.
-    aList.addView(downloadsView).catch(Cu.reportError);
+    aList.addView(downloadsView).catch(console.error);
   },
 
   /**
@@ -1109,8 +1105,8 @@ var DownloadObserver = {
 
           // We can remove the downloads and finalize them in parallel.
           for (let download of downloads) {
-            list.remove(download).catch(Cu.reportError);
-            download.finalize(true).catch(Cu.reportError);
+            list.remove(download).catch(console.error);
+            download.finalize(true).catch(console.error);
           }
         })();
         // Handle test mode

@@ -18,10 +18,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  TelemetryController: "resource://gre/modules/TelemetryController.jsm",
+  TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
 });
 
 var EXPORTED_SYMBOLS = [
@@ -86,7 +83,7 @@ function parseAndRemoveField(obj, field) {
     try {
       value = JSON.parse(obj[field]);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
 
     delete obj[field];
@@ -347,10 +344,10 @@ CrashManager.prototype = Object.freeze({
                 break;
 
               default:
-                Cu.reportError(
+                console.error(
                   "Unhandled crash event file return code. Please " +
-                    "file a bug: " +
-                    result
+                    "file a bug: ",
+                  result
                 );
             }
           } catch (ex) {
@@ -363,7 +360,7 @@ CrashManager.prototype = Object.freeze({
               //
               // If we get here, report the error and delete the source file
               // so we don't see it again.
-              Cu.reportError(
+              console.error(
                 "Exception when processing crash event file: " +
                   lazy.Log.exceptionStr(ex)
               );
@@ -453,10 +450,10 @@ CrashManager.prototype = Object.freeze({
   addCrash(processType, crashType, id, date, metadata) {
     let promise = (async () => {
       if (!this.isValidProcessType(processType)) {
-        Cu.reportError(
-          "Unhandled process type. Please file a bug: '" +
-            processType +
-            "'. Ignore in the context of " +
+        console.error(
+          "Unhandled process type. Please file a bug: '",
+          processType,
+          "'. Ignore in the context of " +
             "test_crash_manager.js:test_addCrashWrong()."
         );
         return;
@@ -475,7 +472,7 @@ CrashManager.prototype = Object.freeze({
       }
 
       if (this.isPingAllowed(processType)) {
-        this._sendCrashPing(id, processType, date, metadata);
+        this._sendCrashPing("crash", id, processType, date, metadata);
       }
     })();
 
@@ -648,7 +645,7 @@ CrashManager.prototype = Object.freeze({
 
         return entries;
       } catch (e) {
-        Cu.reportError(e);
+        console.error(e);
         return [];
       }
     })();
@@ -710,7 +707,27 @@ CrashManager.prototype = Object.freeze({
     return filteredAnnotations;
   },
 
-  _sendCrashPing(crashId, type, date, metadata = {}) {
+  /**
+   * Submit a Glean crash ping with the given parameters.
+   *
+   * @param {string} reason - The reason for the crash ping, one of: "crash", "event_found"
+   * @param {string} type - the process type (from {@link processTypes})
+   * @param {DateTime} date - the time of the crash (or the closest time after it)
+   * @param {object} metadata - the object of Telemetry crash metadata
+   */
+  _submitGleanCrashPing(reason, type, date, metadata) {
+    if ("UptimeTS" in metadata) {
+      Glean.crash.uptime.setRaw(parseFloat(metadata.UptimeTS) * 1e3);
+    }
+    Glean.crash.processType.set(type);
+    Glean.crash.time.set(date.getTime() * 1000);
+    Glean.crash.startup.set(
+      "StartupCrash" in metadata && parseInt(metadata.StartupCrash) === 1
+    );
+    GleanPings.crash.submit(reason);
+  },
+
+  _sendCrashPing(reason, crashId, type, date, metadata = {}) {
     // If we have a saved environment, use it. Otherwise report
     // the current environment.
     let reportMeta = Cu.cloneInto(metadata, {});
@@ -727,6 +744,8 @@ CrashManager.prototype = Object.freeze({
 
     // Filter the remaining annotations to remove privacy-sensitive ones
     reportMeta = this._filterAnnotations(reportMeta);
+
+    this._submitGleanCrashPing(reason, type, date, reportMeta);
 
     this._pingPromise = lazy.TelemetryController.submitExternalPing(
       "crash",
@@ -778,6 +797,7 @@ CrashManager.prototype = Object.freeze({
           // by the crashreporter for this crash so we need to send one from
           // here.
           this._sendCrashPing(
+            "event_found",
             crashID,
             this.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
             date,

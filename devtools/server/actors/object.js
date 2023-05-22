@@ -36,17 +36,27 @@ loader.lazyRequireGetter(
 
 loader.lazyRequireGetter(
   this,
-  "makeSideeffectFreeDebugger",
-  "resource://devtools/server/actors/webconsole/eval-with-debugger.js",
+  ["customFormatterHeader", "customFormatterBody"],
+  "resource://devtools/server/actors/utils/custom-formatters.js",
   true
 );
 
 // ContentDOMReference requires ChromeUtils, which isn't available in worker context.
 const lazy = {};
 if (!isWorker) {
-  ChromeUtils.defineESModuleGetters(lazy, {
-    ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
-  });
+  loader.lazyGetter(
+    lazy,
+    "ContentDOMReference",
+    () =>
+      ChromeUtils.importESModule(
+        "resource://gre/modules/ContentDOMReference.sys.mjs",
+        {
+          // ContentDOMReference needs to be retrieved from the shared global
+          // since it is a shared singleton.
+          loadInDevToolsLoader: false,
+        }
+      ).ContentDOMReference
+  );
 }
 
 const {
@@ -88,6 +98,8 @@ const proto = {
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
+      customFormatterObjectTagDepth,
+      customFormatterConfigDbgObj,
     },
     conn
   ) {
@@ -106,6 +118,8 @@ const proto = {
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
+      customFormatterObjectTagDepth,
+      customFormatterConfigDbgObj,
     };
   },
 
@@ -152,9 +166,13 @@ const proto = {
       return g;
     }
 
+    // Only process custom formatters if the feature is enabled.
     if (this.thread?._parent?.customFormatters) {
-      const header = this.customFormatterHeader();
-      if (header) {
+      const result = customFormatterHeader(this);
+      if (result) {
+        const { formatter, ...header } = result;
+        this._customFormatterItem = formatter;
+
         return {
           ...g,
           ...header,
@@ -200,6 +218,10 @@ const proto = {
     }
 
     return g;
+  },
+
+  customFormatterBody() {
+    return customFormatterBody(this, this._customFormatterItem);
   },
 
   _getOwnPropertyLength() {
@@ -289,28 +311,28 @@ const proto = {
    * @param options object
    */
   enumProperties(options) {
-    return PropertyIteratorActor(this, options, this.conn);
+    return new PropertyIteratorActor(this, options, this.conn);
   },
 
   /**
    * Creates an actor to iterate over entries of a Map/Set-like object.
    */
   enumEntries() {
-    return PropertyIteratorActor(this, { enumEntries: true }, this.conn);
+    return new PropertyIteratorActor(this, { enumEntries: true }, this.conn);
   },
 
   /**
    * Creates an actor to iterate over an object symbols properties.
    */
   enumSymbols() {
-    return SymbolIteratorActor(this, this.conn);
+    return new SymbolIteratorActor(this, this.conn);
   },
 
   /**
    * Creates an actor to iterate over an object private properties.
    */
   enumPrivateProperties() {
-    return PrivatePropertiesIteratorActor(this, this.conn);
+    return new PrivatePropertiesIteratorActor(this, this.conn);
   },
 
   /**
@@ -767,115 +789,16 @@ const proto = {
     };
   },
 
-  customFormatterHeader() {
-    const rawValue = this.rawValue();
-    const globalWrapper = Cu.getGlobalForObject(rawValue);
-    const global = globalWrapper?.wrappedJSObject;
-    if (global && Array.isArray(global.devtoolsFormatters)) {
-      // We're using the same setup as the eager evaluation to ensure evaluating
-      // the custom formatter's functions doesn't have any side effects.
-      const dbg = makeSideeffectFreeDebugger();
-      const dbgGlobal = dbg.makeGlobalObjectReference(global);
-
-      for (const [index, formatter] of global.devtoolsFormatters.entries()) {
-        if (typeof formatter?.header !== "function") {
-          continue;
-        }
-
-        // TODO: Any issues regarding the implementation will be covered in https://bugzil.la/1776611.
-        try {
-          const formatterHeaderDbgValue = dbgGlobal.makeDebuggeeValue(
-            formatter.header
-          );
-          const debuggeeValue = dbgGlobal.makeDebuggeeValue(rawValue);
-          const header = formatterHeaderDbgValue.call(dbgGlobal, debuggeeValue);
-          if (header?.return?.class === "Array") {
-            let hasBody = false;
-            if (typeof formatter?.hasBody === "function") {
-              const formatterHasBodyDbgValue = dbgGlobal.makeDebuggeeValue(
-                formatter.hasBody
-              );
-              hasBody = formatterHasBodyDbgValue.call(dbgGlobal, debuggeeValue);
-            }
-
-            return {
-              useCustomFormatter: true,
-              customFormatterIndex: index,
-              // As the value represents an array coming from the page,
-              // we're cloning it to avoid any interferences with the original
-              // variable.
-              header: global.structuredClone(header.return.unsafeDereference()),
-              hasBody: !!hasBody.return,
-            };
-          }
-        } catch (e) {
-          // TODO: For now, just dump the exception. Proper error handling will be done
-          // in bug 1764439.
-          dump(`💥 ${e}\n`);
-        } finally {
-          // We need to be absolutely sure that the sideeffect-free debugger's
-          // debuggees are removed because otherwise we risk them terminating
-          // execution of later code in the case of unexpected exceptions.
-          dbg.removeAllDebuggees();
-        }
-      }
-    }
-
-    return null;
-  },
-
-  /**
-   * Handle a protocol request to get the custom formatter body for an object
-   *
-   * @param number customFormatterIndex
-   *        Index of the custom formatter used for the object
-   */
-  customFormatterBody(customFormatterIndex) {
-    const rawValue = this.rawValue();
-    const globalWrapper = Cu.getGlobalForObject(rawValue);
-    const global = globalWrapper?.wrappedJSObject;
-
-    // Use makeSideeffectFreeDebugger (from eval-with-debugger.js) and the debugger
-    // object for each formatter and use `call` (https://searchfox.org/mozilla-central/rev/5e15e00fa247cba5b765727496619bf9010ed162/js/src/doc/Debugger/Debugger.Object.md#484)
-    const dbg = makeSideeffectFreeDebugger();
-    try {
-      const dbgGlobal = dbg.makeGlobalObjectReference(global);
-      const formatter = global.devtoolsFormatters[customFormatterIndex];
-      const formatterBodyDbgValue =
-        formatter && dbgGlobal.makeDebuggeeValue(formatter.body);
-      const body = formatterBodyDbgValue.call(
-        dbgGlobal,
-        dbgGlobal.makeDebuggeeValue(rawValue)
-      );
-      if (body?.return?.class === "Array") {
-        return {
-          // As the value is represents an array coming from the page,
-          // we're cloning it to avoid any interferences with the original
-          // variable.
-          customFormatterBody: global.structuredClone(
-            body.return.unsafeDereference()
-          ),
-        };
-      }
-    } catch (e) {
-      // TODO: For now, just dump the exception. Proper error handling will be done
-      // in bug 1764439.
-      dump(`💥 ${e}\n`);
-    } finally {
-      // We need to be absolutely sure that the sideeffect-free debugger's
-      // debuggees are removed because otherwise we risk them terminating
-      // execution of later code in the case of unexpected exceptions.
-      dbg.removeAllDebuggees();
-    }
-
-    return {};
-  },
-
   /**
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release() {},
+  release() {
+    if (this.hooks) {
+      this.hooks.customFormatterConfigDbgObj = null;
+    }
+    this._customFormatterItem = null;
+  },
 };
 
 exports.ObjectActor = protocol.ActorClassWithSpec(objectSpec, proto);

@@ -19,6 +19,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/function_view.h"
 #include "modules/audio_processing/aec3/echo_canceller3.h"
@@ -70,7 +72,7 @@ class AudioProcessingImpl : public AudioProcessing {
   int Initialize() override;
   int Initialize(const ProcessingConfig& processing_config) override;
   void ApplyConfig(const AudioProcessing::Config& config) override;
-  bool CreateAndAttachAecDump(const std::string& file_name,
+  bool CreateAndAttachAecDump(absl::string_view file_name,
                               int64_t max_log_size_bytes,
                               rtc::TaskQueue* worker_queue) override;
   bool CreateAndAttachAecDump(FILE* handle,
@@ -159,7 +161,9 @@ class AudioProcessingImpl : public AudioProcessing {
   FRIEND_TEST_ALL_PREFIXES(ApmWithSubmodulesExcludedTest,
                            BitexactWithDisabledModules);
 
-  int recommended_stream_analog_level_locked() const
+  void set_stream_analog_level_locked(int level)
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_capture_);
+  void UpdateRecommendedInputVolumeLocked()
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_capture_);
 
   void OverrideSubmoduleCreationForTesting(
@@ -463,12 +467,18 @@ class AudioProcessingImpl : public AudioProcessing {
     StreamConfig capture_processing_format;
     int split_rate;
     bool echo_path_gain_change;
-    int prev_analog_mic_level;
     float prev_pre_adjustment_gain;
     int playout_volume;
     int prev_playout_volume;
     AudioProcessingStats stats;
-    int cached_stream_analog_level_ = 0;
+    // Input volume applied on the audio input device when the audio is
+    // acquired. Unspecified when unknown.
+    absl::optional<int> applied_input_volume;
+    bool applied_input_volume_changed;
+    // Recommended input volume to apply on the audio input device the next time
+    // that audio is acquired. Unspecified when no input volume can be
+    // recommended.
+    absl::optional<int> recommended_input_volume;
   } capture_ RTC_GUARDED_BY(mutex_capture_);
 
   struct ApmCaptureNonLockedState {
@@ -529,7 +539,7 @@ class AudioProcessingImpl : public AudioProcessing {
   RmsLevel capture_output_rms_ RTC_GUARDED_BY(mutex_capture_);
   int capture_rms_interval_counter_ RTC_GUARDED_BY(mutex_capture_) = 0;
 
-  AnalogGainStatsReporter analog_gain_stats_reporter_
+  AnalogGainStatsReporter input_volume_stats_reporter_
       RTC_GUARDED_BY(mutex_capture_);
 
   // Lock protection not needed.

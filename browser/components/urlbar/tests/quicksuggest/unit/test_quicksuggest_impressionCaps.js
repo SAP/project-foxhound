@@ -7,14 +7,11 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-});
-
-const SUGGESTIONS = [
+const REMOTE_SETTINGS_RESULTS = [
   {
     id: 1,
     url: "http://example.com/sponsored",
@@ -37,7 +34,7 @@ const SUGGESTIONS = [
   },
 ];
 
-const EXPECTED_SPONSORED_RESULT = {
+const EXPECTED_SPONSORED_URLBAR_RESULT = {
   type: UrlbarUtils.RESULT_TYPE.URL,
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
@@ -55,14 +52,22 @@ const EXPECTED_SPONSORED_RESULT = {
     sponsoredAdvertiser: "TestAdvertiser",
     sponsoredIabCategory: "22 - Shopping",
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    helpL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+        : "firefox-suggest-urlbar-learn-more",
+    },
     isBlockable: false,
-    blockL10n: { id: "firefox-suggest-urlbar-block" },
+    blockL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-dismiss-firefox-suggest"
+        : "firefox-suggest-urlbar-block",
+    },
     source: "remote-settings",
   },
 };
 
-const EXPECTED_NONSPONSORED_RESULT = {
+const EXPECTED_NONSPONSORED_URLBAR_RESULT = {
   type: UrlbarUtils.RESULT_TYPE.URL,
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
@@ -80,9 +85,17 @@ const EXPECTED_NONSPONSORED_RESULT = {
     sponsoredAdvertiser: "TestAdvertiser",
     sponsoredIabCategory: "5 - Education",
     helpUrl: QuickSuggest.HELP_URL,
-    helpL10n: { id: "firefox-suggest-urlbar-learn-more" },
+    helpL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
+        : "firefox-suggest-urlbar-learn-more",
+    },
     isBlockable: false,
-    blockL10n: { id: "firefox-suggest-urlbar-block" },
+    blockL10n: {
+      id: UrlbarPrefs.get("resultMenu")
+        ? "urlbar-result-menu-dismiss-firefox-suggest"
+        : "firefox-suggest-urlbar-block",
+    },
     source: "remote-settings",
   },
 };
@@ -102,7 +115,9 @@ add_task(async function init() {
   // Disable search suggestions so we don't hit the network.
   Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
 
-  await QuickSuggestTestUtils.ensureQuickSuggestInit(SUGGESTIONS);
+  await QuickSuggestTestUtils.ensureQuickSuggestInit({
+    remoteSettingsResults: REMOTE_SETTINGS_RESULTS,
+  });
 
   // Set up a sinon stub for the `Date.now()` implementation inside of
   // UrlbarProviderQuickSuggest. This lets us test searches performed at
@@ -135,7 +150,7 @@ add_task(async function oneInterval() {
     callback: async () => {
       await doTimedSearches("sponsored", {
         0: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               {
@@ -161,7 +176,7 @@ add_task(async function oneInterval() {
           results: [[]],
         },
         3: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               {
@@ -222,7 +237,7 @@ add_task(async function multipleIntervals() {
       await doTimedSearches("sponsored", {
         // 0s: 1 new impression; 1 impression total
         0: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // hit: interval_s: 1, max_count: 1
@@ -244,7 +259,7 @@ add_task(async function multipleIntervals() {
         },
         // 1s: 1 new impression; 2 impressions total
         1: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -280,7 +295,7 @@ add_task(async function multipleIntervals() {
         },
         // 2s: 1 new impression; 3 impressions total
         2: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -374,7 +389,7 @@ add_task(async function multipleIntervals() {
         },
         // 5s: 1 new impression; 4 impressions total
         5: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -424,7 +439,7 @@ add_task(async function multipleIntervals() {
         },
         // 6s: 1 new impression; 5 impressions total
         6: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -540,7 +555,7 @@ add_task(async function multipleIntervals() {
         },
         // 10s: 1 new impression; 6 impressions total
         10: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -604,7 +619,7 @@ add_task(async function multipleIntervals() {
         },
         // 11s: 1 new impression; 7 impressions total
         11: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -640,7 +655,7 @@ add_task(async function multipleIntervals() {
         },
         // 12s: 1 new impression; 8 impressions total
         12: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -734,7 +749,7 @@ add_task(async function multipleIntervals() {
         },
         // 15s: 1 new impression; 9 impressions total
         15: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -784,7 +799,7 @@ add_task(async function multipleIntervals() {
         },
         // 16s: 1 new impression; 10 impressions total
         16: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -900,7 +915,7 @@ add_task(async function multipleIntervals() {
         },
         // 20s: 1 new impression; 11 impressions total
         20: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -981,9 +996,9 @@ add_task(async function lifetime() {
       await doTimedSearches("sponsored", {
         0: {
           results: [
-            [EXPECTED_SPONSORED_RESULT],
-            [EXPECTED_SPONSORED_RESULT],
-            [EXPECTED_SPONSORED_RESULT],
+            [EXPECTED_SPONSORED_URLBAR_RESULT],
+            [EXPECTED_SPONSORED_URLBAR_RESULT],
+            [EXPECTED_SPONSORED_URLBAR_RESULT],
             [],
           ],
           telemetry: {
@@ -1027,7 +1042,7 @@ add_task(async function intervalAndLifetime() {
       await doTimedSearches("sponsored", {
         // 0s: 1 new impression; 1 impression total
         0: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // hit: interval_s: 1, max_count: 1
@@ -1049,7 +1064,7 @@ add_task(async function intervalAndLifetime() {
         },
         // 1s: 1 new impression; 2 impressions total
         1: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1085,7 +1100,7 @@ add_task(async function intervalAndLifetime() {
         },
         // 2s: 1 new impression; 3 impressions total
         2: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1177,7 +1192,7 @@ add_task(async function multipleIntervalsAndLifetime() {
       await doTimedSearches("sponsored", {
         // 0s: 1 new impression; 1 impression total
         0: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // hit: interval_s: 1, max_count: 1
@@ -1199,7 +1214,7 @@ add_task(async function multipleIntervalsAndLifetime() {
         },
         // 1s: 1 new impression; 2 impressions total
         1: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1235,7 +1250,7 @@ add_task(async function multipleIntervalsAndLifetime() {
         },
         // 2s: 1 new impression; 3 impressions total
         2: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1329,7 +1344,7 @@ add_task(async function multipleIntervalsAndLifetime() {
         },
         // 5s: 1 new impression; 4 impressions total
         5: {
-          results: [[EXPECTED_SPONSORED_RESULT], []],
+          results: [[EXPECTED_SPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1460,7 +1475,7 @@ add_task(async function nonsponsored() {
       await doTimedSearches("nonsponsored", {
         // 0s: 1 new impression; 1 impression total
         0: {
-          results: [[EXPECTED_NONSPONSORED_RESULT], []],
+          results: [[EXPECTED_NONSPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // hit: interval_s: 1, max_count: 1
@@ -1482,7 +1497,7 @@ add_task(async function nonsponsored() {
         },
         // 1s: 1 new impression; 2 impressions total
         1: {
-          results: [[EXPECTED_NONSPONSORED_RESULT], []],
+          results: [[EXPECTED_NONSPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1518,7 +1533,7 @@ add_task(async function nonsponsored() {
         },
         // 2s: 1 new impression; 3 impressions total
         2: {
-          results: [[EXPECTED_NONSPONSORED_RESULT], []],
+          results: [[EXPECTED_NONSPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1612,7 +1627,7 @@ add_task(async function nonsponsored() {
         },
         // 5s: 1 new impression; 4 impressions total
         5: {
-          results: [[EXPECTED_NONSPONSORED_RESULT], []],
+          results: [[EXPECTED_NONSPONSORED_URLBAR_RESULT], []],
           telemetry: {
             events: [
               // reset: interval_s: 1, max_count: 1
@@ -1743,12 +1758,12 @@ add_task(async function sponsoredAndNonsponsored() {
       await checkSearch({
         name: "sponsored 1",
         searchString: "sponsored",
-        expectedResults: [EXPECTED_SPONSORED_RESULT],
+        expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
       });
       await checkSearch({
         name: "nonsponsored 1",
         searchString: "nonsponsored",
-        expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+        expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
       });
       await checkTelemetryEvents([]);
 
@@ -1756,12 +1771,12 @@ add_task(async function sponsoredAndNonsponsored() {
       await checkSearch({
         name: "sponsored 2",
         searchString: "sponsored",
-        expectedResults: [EXPECTED_SPONSORED_RESULT],
+        expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
       });
       await checkSearch({
         name: "nonsponsored 2",
         searchString: "nonsponsored",
-        expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+        expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
       });
       await checkTelemetryEvents([
         {
@@ -1788,7 +1803,7 @@ add_task(async function sponsoredAndNonsponsored() {
       await checkSearch({
         name: "nonsponsored 3",
         searchString: "nonsponsored",
-        expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+        expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
       });
       await checkTelemetryEvents([
         {
@@ -1831,12 +1846,12 @@ add_task(async function emptyConfig() {
         await checkSearch({
           name: "sponsored " + i,
           searchString: "sponsored",
-          expectedResults: [EXPECTED_SPONSORED_RESULT],
+          expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
         });
         await checkSearch({
           name: "nonsponsored " + i,
           searchString: "nonsponsored",
-          expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+          expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
         });
       }
       await checkTelemetryEvents([]);
@@ -1863,12 +1878,12 @@ add_task(async function sponsoredCapsDisabled() {
         await checkSearch({
           name: "sponsored " + i,
           searchString: "sponsored",
-          expectedResults: [EXPECTED_SPONSORED_RESULT],
+          expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
         });
         await checkSearch({
           name: "nonsponsored " + i,
           searchString: "nonsponsored",
-          expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+          expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
         });
       }
       await checkTelemetryEvents([
@@ -1890,7 +1905,7 @@ add_task(async function sponsoredCapsDisabled() {
       await checkSearch({
         name: "sponsored additional",
         searchString: "sponsored",
-        expectedResults: [EXPECTED_SPONSORED_RESULT],
+        expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
       });
       await checkSearch({
         name: "nonsponsored additional",
@@ -1922,12 +1937,12 @@ add_task(async function nonsponsoredCapsDisabled() {
         await checkSearch({
           name: "sponsored " + i,
           searchString: "sponsored",
-          expectedResults: [EXPECTED_SPONSORED_RESULT],
+          expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
         });
         await checkSearch({
           name: "nonsponsored " + i,
           searchString: "nonsponsored",
-          expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+          expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
         });
       }
       await checkTelemetryEvents([
@@ -1954,7 +1969,7 @@ add_task(async function nonsponsoredCapsDisabled() {
       await checkSearch({
         name: "nonsponsored additional",
         searchString: "nonsponsored",
-        expectedResults: [EXPECTED_NONSPONSORED_RESULT],
+        expectedResults: [EXPECTED_NONSPONSORED_URLBAR_RESULT],
       });
       await checkTelemetryEvents([]);
     },
@@ -1980,7 +1995,7 @@ add_task(async function configChange_sameIntervalLowerCap_1() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2023,7 +2038,7 @@ add_task(async function configChange_sameIntervalLowerCap_1() {
           await checkSearch({
             name: "3s 0",
             searchString: "sponsored",
-            expectedResults: [EXPECTED_SPONSORED_RESULT],
+            expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
           });
           await checkSearch({
             name: "3s additional",
@@ -2082,7 +2097,7 @@ add_task(async function configChange_sameIntervalLowerCap_2() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([]);
@@ -2105,7 +2120,7 @@ add_task(async function configChange_sameIntervalLowerCap_2() {
           await checkSearch({
             name: "3s 0",
             searchString: "sponsored",
-            expectedResults: [EXPECTED_SPONSORED_RESULT],
+            expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
           });
           await checkSearch({
             name: "3s additional",
@@ -2163,7 +2178,7 @@ add_task(async function configChange_sameIntervalHigherCap() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2199,7 +2214,7 @@ add_task(async function configChange_sameIntervalHigherCap() {
             await checkSearch({
               name: "1s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2228,7 +2243,7 @@ add_task(async function configChange_sameIntervalHigherCap() {
             await checkSearch({
               name: "3s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2289,7 +2304,7 @@ add_task(async function configChange_1IntervalTo2NewIntervalsHigher() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([
@@ -2339,7 +2354,7 @@ add_task(async function configChange_1IntervalTo2NewIntervalsHigher() {
             await checkSearch({
               name: "5s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2403,7 +2418,7 @@ add_task(async function configChange_2IntervalsTo1NewIntervalHigher() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([
@@ -2427,7 +2442,7 @@ add_task(async function configChange_2IntervalsTo1NewIntervalHigher() {
             await checkSearch({
               name: "2s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([
@@ -2483,7 +2498,7 @@ add_task(async function configChange_2IntervalsTo1NewIntervalHigher() {
           await checkSearch({
             name: "4s 0",
             searchString: "sponsored",
-            expectedResults: [EXPECTED_SPONSORED_RESULT],
+            expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
           });
           await checkSearch({
             name: "4s 1",
@@ -2519,7 +2534,7 @@ add_task(async function configChange_2IntervalsTo1NewIntervalHigher() {
             await checkSearch({
               name: "6s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2580,7 +2595,7 @@ add_task(async function configChange_1IntervalTo1NewIntervalLower() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([
@@ -2611,7 +2626,7 @@ add_task(async function configChange_1IntervalTo1NewIntervalLower() {
             await checkSearch({
               name: "3s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2659,7 +2674,7 @@ add_task(async function configChange_1IntervalToLifetime() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkTelemetryEvents([
@@ -2715,7 +2730,7 @@ add_task(async function configChange_lifetimeCapHigher() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2751,7 +2766,7 @@ add_task(async function configChange_lifetimeCapHigher() {
             await checkSearch({
               name: "1s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2797,7 +2812,7 @@ add_task(async function configChange_lifetimeCapLower() {
             await checkSearch({
               name: "0s " + i,
               searchString: "sponsored",
-              expectedResults: [EXPECTED_SPONSORED_RESULT],
+              expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
             });
           }
           await checkSearch({
@@ -2860,7 +2875,7 @@ add_task(async function prefSync() {
         await checkSearch({
           name: i,
           searchString: "sponsored",
-          expectedResults: [EXPECTED_SPONSORED_RESULT],
+          expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
         });
       }
 
@@ -3095,7 +3110,7 @@ add_task(async function intervalsElapsedButCapNotHit() {
           await checkSearch({
             name: "1s",
             searchString: "sponsored",
-            expectedResults: [EXPECTED_SPONSORED_RESULT],
+            expectedResults: [EXPECTED_SPONSORED_URLBAR_RESULT],
           });
         },
         // 10s

@@ -10,12 +10,13 @@ MARIONETTE_UNIT_MANIFESTS += ["tests/marionette/manifest.ini"]
 
 MOCHITEST_CHROME_MANIFESTS += ["tests/chrome/chrome.ini"]
 
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+
 SPHINX_TREES["docs"] = "docs"
 
 JAR_MANIFESTS += ["jar.mn"]
 
 XPIDL_SOURCES += [
-    "nsIBrowserProfileMigrator.idl",
     "nsIEdgeMigrationUtils.idl",
 ]
 
@@ -25,6 +26,7 @@ EXTRA_JS_MODULES += [
     "ChromeMigrationUtils.sys.mjs",
     "ChromeProfileMigrator.sys.mjs",
     "FirefoxProfileMigrator.sys.mjs",
+    "InternalTestingProfileMigrator.sys.mjs",
     "MigrationUtils.sys.mjs",
     "MigratorBase.sys.mjs",
     "ProfileMigrator.sys.mjs",

@@ -1,13 +1,10 @@
 "use strict";
 
-const { ContentTaskUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/ContentTaskUtils.sys.mjs"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
-);
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
 
 const CONTENT_CREATED = "ipc:content-created";
@@ -17,7 +14,7 @@ async function waitForProcessesScalars(
   aKeyed,
   aAdditionalCondition = data => true
 ) {
-  await ContentTaskUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     const scalars = aKeyed
       ? Services.telemetry.getSnapshotForKeyedScalars("main", false)
       : Services.telemetry.getSnapshotForScalars("main", false);

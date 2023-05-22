@@ -224,12 +224,12 @@ impl<'a> ConstantSolver<'a> {
                                         ScalarValue::Sint(a),
                                         ScalarValue::Sint(b),
                                         ScalarValue::Sint(c),
-                                    ) => ScalarValue::Sint(a.max(b).min(c)),
+                                    ) => ScalarValue::Sint(a.clamp(b, c)),
                                     (
                                         ScalarValue::Uint(a),
                                         ScalarValue::Uint(b),
                                         ScalarValue::Uint(c),
-                                    ) => ScalarValue::Uint(a.max(b).min(c)),
+                                    ) => ScalarValue::Uint(a.clamp(b, c)),
                                     (
                                         ScalarValue::Float(a),
                                         ScalarValue::Float(b),
@@ -241,8 +241,7 @@ impl<'a> ConstantSolver<'a> {
                             ),
                             _ => {
                                 return Err(ConstantSolvingError::NotImplemented(format!(
-                                    "{:?} applied to vector values",
-                                    fun
+                                    "{fun:?} applied to vector values"
                                 )))
                             }
                         };
@@ -250,7 +249,7 @@ impl<'a> ConstantSolver<'a> {
                         let inner = ConstantInner::Scalar { width, value };
                         Ok(self.register_constant(inner, span))
                     }
-                    _ => Err(ConstantSolvingError::NotImplemented(format!("{:?}", fun))),
+                    _ => Err(ConstantSolvingError::NotImplemented(format!("{fun:?}"))),
                 }
             }
             Expression::As {
@@ -739,8 +738,11 @@ mod tests {
 
         let res3_inner = &constants[res3].inner;
 
-        match res3_inner {
-            ConstantInner::Composite { ty, components } => {
+        match *res3_inner {
+            ConstantInner::Composite {
+                ref ty,
+                ref components,
+            } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(
@@ -933,8 +935,11 @@ mod tests {
 
         let res1_inner = &constants[res1].inner;
 
-        match res1_inner {
-            ConstantInner::Composite { ty, components } => {
+        match *res1_inner {
+            ConstantInner::Composite {
+                ref ty,
+                ref components,
+            } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(

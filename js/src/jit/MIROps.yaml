@@ -1259,6 +1259,16 @@
   result_type: None
   guard: true
 
+- name: DebugEnterGCUnsafeRegion
+  result_type: None
+  guard: true
+  alias_set: none
+
+- name: DebugLeaveGCUnsafeRegion
+  result_type: None
+  guard: true
+  alias_set: none
+
 - name: Not
   gen_boilerplate: false
 
@@ -1878,17 +1888,26 @@
   gen_boilerplate: false
 
 - name: ObjectToIterator
-  operands:
-    object: Object
-  arguments:
-    enumeratorsAddr: NativeIteratorListHead*
-  result_type:
-    Object
+  gen_boilerplate: false
 
 - name: ValueToIterator
   operands:
     value: Value
   result_type: Object
+
+- name: IteratorHasIndices
+  operands:
+    object: Object
+    iterator: Object
+  result_type: Boolean
+  alias_set: custom
+
+- name: LoadSlotByIteratorIndex
+  operands:
+    object: Object
+    iterator: Object # TODO: add MIRType::NativeIterator?
+  result_type: Value
+  alias_set: custom
 
 # Load the private value expando from a DOM proxy. The target is stored in the
 # proxy object's private slot.
@@ -2958,6 +2977,9 @@
   gen_boilerplate: false
 
 - name: WasmStoreFieldRefKA
+  gen_boilerplate: false
+
+- name: WasmGcObjectIsSubtypeOf
   gen_boilerplate: false
 
 #ifdef FUZZING_JS_FUZZILLI

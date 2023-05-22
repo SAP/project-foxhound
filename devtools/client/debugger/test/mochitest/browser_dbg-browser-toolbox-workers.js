@@ -9,14 +9,12 @@
 
 requestLongerTimeout(4);
 
-/* import-globals-from ../../../framework/browser-toolbox/test/helpers-browser-toolbox.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
   this
 );
 
 add_task(async function() {
-  await pushPref("devtools.browsertoolbox.fission", true);
   await pushPref("devtools.browsertoolbox.scope", "everything");
   await pushPref("dom.serviceWorkers.enabled", true);
   await pushPref("dom.serviceWorkers.testing.enabled", true);

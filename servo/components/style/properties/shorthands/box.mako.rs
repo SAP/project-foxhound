@@ -37,7 +37,8 @@ ${helpers.two_properties_shorthand(
     engines="gecko"
     name="container"
     sub_properties="container-name container-type"
-    gecko_pref="layout.css.container-queries.enabled",
+    gecko_pref="layout.css.container-queries.enabled"
+    enabled_in="ua"
     spec="https://drafts.csswg.org/css-contain-3/#container-shorthand"
 >
     use crate::values::specified::box_::{ContainerName, ContainerType};
@@ -202,12 +203,12 @@ ${helpers.two_properties_shorthand(
             self.offset_path.to_css(dest)?;
 
             if !self.offset_distance.is_zero() {
-                dest.write_str(" ")?;
+                dest.write_char(' ')?;
                 self.offset_distance.to_css(dest)?;
             }
 
             if !self.offset_rotate.is_auto() {
-                dest.write_str(" ")?;
+                dest.write_char(' ')?;
                 self.offset_rotate.to_css(dest)?;
             }
 

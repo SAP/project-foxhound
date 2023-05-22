@@ -9,10 +9,10 @@ import classnames from "classnames";
 import actions from "../actions";
 
 import { getEditor } from "../utils/editor";
-import { highlightMatches } from "../utils/project-search";
 
 import { statusType } from "../reducers/project-text-search";
 import { getRelativePath } from "../utils/sources-tree/utils";
+import { getFormattedSourceId } from "../utils/source";
 import {
   getActiveSearch,
   getTextSearchResults,
@@ -131,6 +131,25 @@ export class ProjectSearch extends Component {
     );
   };
 
+  highlightMatches = lineMatch => {
+    const { value, matchIndex, match } = lineMatch;
+    const len = match.length;
+
+    return (
+      <span className="line-value">
+        <span className="line-match" key={0}>
+          {value.slice(0, matchIndex)}
+        </span>
+        <span className="query-match" key={1}>
+          {value.substr(matchIndex, len)}
+        </span>
+        <span className="line-match" key={2}>
+          {value.slice(matchIndex + len, value.length)}
+        </span>
+      </span>
+    );
+  };
+
   getResultCount = () =>
     this.props.results.reduce((count, file) => count + file.matches.length, 0);
 
@@ -186,7 +205,6 @@ export class ProjectSearch extends Component {
   renderFile = (file, focused, expanded) => {
     const matchesLength = file.matches.length;
     const matches = ` (${matchesLength} match${matchesLength > 1 ? "es" : ""})`;
-
     return (
       <div
         className={classnames("file-result", { focused })}
@@ -194,7 +212,11 @@ export class ProjectSearch extends Component {
       >
         <AccessibleImage className={classnames("arrow", { expanded })} />
         <AccessibleImage className="file" />
-        <span className="file-path">{getRelativePath(file.filepath)}</span>
+        <span className="file-path">
+          {file.filepath
+            ? getRelativePath(file.filepath)
+            : getFormattedSourceId(file.sourceId)}
+        </span>
         <span className="matches-summary">{matches}</span>
       </div>
     );
@@ -209,7 +231,7 @@ export class ProjectSearch extends Component {
         <span className="line-number" key={match.line}>
           {match.line}
         </span>
-        {highlightMatches(match)}
+        {this.highlightMatches(match)}
       </div>
     );
   };

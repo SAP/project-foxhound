@@ -372,7 +372,7 @@ function matchRequest(channel, filters) {
     }
     if (type == "webextension") {
       return (
-        channel?.loadInfo.loadingPrincipal.addonId ===
+        channel.loadInfo?.loadingPrincipal?.addonId ===
         filters.sessionContext.addonId
       );
     }
@@ -410,8 +410,7 @@ function legacyMatchRequest(channel, filters) {
   // Ignore requests from chrome or add-on code when we are monitoring
   // content.
   if (
-    channel.loadInfo &&
-    channel.loadInfo.loadingDocument === null &&
+    channel.loadInfo?.loadingDocument === null &&
     (channel.loadInfo.loadingPrincipal ===
       Services.scriptSecurityManager.getSystemPrincipal() ||
       channel.loadInfo.isInDevToolsContext)
@@ -450,23 +449,61 @@ function legacyMatchRequest(channel, filters) {
 
     // If we couldn't get the top frame BrowsingContext from the loadContext,
     // look for it on channel.loadInfo instead.
-    if (
-      channel.loadInfo &&
-      channel.loadInfo.browsingContext &&
-      channel.loadInfo.browsingContext.browserId == filters.browserId
-    ) {
+    if (channel.loadInfo?.browsingContext?.browserId == filters.browserId) {
       return true;
     }
   }
 
   if (
     filters.addonId &&
-    channel?.loadInfo.loadingPrincipal.addonId === filters.addonId
+    channel.loadInfo?.loadingPrincipal?.addonId === filters.addonId
   ) {
     return true;
   }
 
   return false;
+}
+
+function getBlockedReason(channel) {
+  let blockingExtension, blockedReason;
+  const { status } = channel;
+
+  try {
+    const request = channel.QueryInterface(Ci.nsIHttpChannel);
+    const properties = request.QueryInterface(Ci.nsIPropertyBag);
+
+    blockedReason = request.loadInfo.requestBlockingReason;
+    blockingExtension = properties.getProperty("cancelledByExtension");
+
+    // WebExtensionPolicy is not available for workers
+    if (typeof WebExtensionPolicy !== "undefined") {
+      blockingExtension = WebExtensionPolicy.getByID(blockingExtension).name;
+    }
+  } catch (err) {
+    // "cancelledByExtension" doesn't have to be available.
+  }
+
+  const ignoreList = [
+    // This is emmited when the request is already in the cache.
+    "NS_ERROR_PARSED_DATA_CACHED",
+    // This is emmited when there is some issues around imgages e.g When the img.src
+    // links to a non existent url. This is typically shown as a 404 request.
+    "NS_IMAGELIB_ERROR_FAILURE",
+    // This is emmited when there is a redirect. They are shown as 301 requests.
+    "NS_BINDING_REDIRECTED",
+  ];
+
+  // If the request has not failed or is not blocked by a web extension, check for
+  // any errors not on the ignore list. e.g When a host is not found (NS_ERROR_UNKNOWN_HOST).
+  if (
+    blockedReason == 0 &&
+    !Components.isSuccessCode(status) &&
+    !ignoreList.includes(ChromeUtils.getXPCOMErrorName(status))
+  ) {
+    blockedReason = ChromeUtils.getXPCOMErrorName(status);
+  }
+
+  return { blockingExtension, blockedReason };
 }
 
 export const NetworkUtils = {
@@ -478,4 +515,5 @@ export const NetworkUtils = {
   isPreloadRequest,
   matchRequest,
   stringToCauseType,
+  getBlockedReason,
 };

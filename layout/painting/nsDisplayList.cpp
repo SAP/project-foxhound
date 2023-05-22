@@ -1364,7 +1364,8 @@ void nsDisplayListBuilder::MarkFramesForDisplayList(
     const ActiveScrolledRoot* asr = mCurrentActiveScrolledRoot;
 
     OutOfFlowDisplayData* data = new OutOfFlowDisplayData(
-        clipChain, combinedClipChain, asr, visibleRect, dirtyRect);
+        clipChain, combinedClipChain, asr, this->mCurrentScrollParentId,
+        visibleRect, dirtyRect);
     aDirtyFrame->SetProperty(
         nsDisplayListBuilder::OutOfFlowDisplayDataProperty(), data);
     mFramesWithOOFData.AppendElement(aDirtyFrame);
@@ -1386,7 +1387,8 @@ void nsDisplayListBuilder::MarkFramesForDisplayList(
         mClipState.GetCurrentCombinedClipChain(this);
     const ActiveScrolledRoot* asr = mCurrentActiveScrolledRoot;
     CurrentPresShellState()->mFixedBackgroundDisplayData.emplace(
-        clipChain, combinedClipChain, asr, GetVisibleRect(), GetDirtyRect());
+        clipChain, combinedClipChain, asr, this->mCurrentScrollParentId,
+        GetVisibleRect(), GetDirtyRect());
   }
 }
 
@@ -2655,7 +2657,7 @@ Maybe<nsRect> nsDisplayItem::GetClipWithRespectToASR(
     return Some(clip->GetClipRect());
   }
 #ifdef DEBUG
-  MOZ_ASSERT(false, "item should have finite clip with respect to aASR");
+  NS_ASSERTION(false, "item should have finite clip with respect to aASR");
 #endif
   return Nothing();
 }
@@ -2953,28 +2955,6 @@ nsDisplayBackgroundImage::~nsDisplayBackgroundImage() {
   }
 }
 
-static nsIFrame* GetBackgroundComputedStyleFrame(nsIFrame* aFrame) {
-  nsIFrame* f = nsCSSRendering::FindBackgroundFrame(aFrame);
-  if (!f) {
-    // We don't want to bail out if moz-appearance is set on a root
-    // node. If it has a parent content node, bail because it's not
-    // a root, other wise keep going in order to let the theme stuff
-    // draw the background. The canvas really should be drawing the
-    // bg, but there's no way to hook that up via css.
-    if (!aFrame->StyleDisplay()->HasAppearance()) {
-      return nullptr;
-    }
-
-    nsIContent* content = aFrame->GetContent();
-    if (!content || content->GetParent()) {
-      return nullptr;
-    }
-
-    f = aFrame;
-  }
-  return f;
-}
-
 static void SetBackgroundClipRegion(
     DisplayListClipState::AutoSaveRestore& aClipState, nsIFrame* aFrame,
     const nsStyleImageLayers::Layer& aLayer, const nsRect& aBackgroundRect,
@@ -3070,7 +3050,7 @@ static nsDisplayBackgroundImage* CreateBackgroundImage(
 
 static nsDisplayThemedBackground* CreateThemedBackground(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame, nsIFrame* aSecondaryFrame,
-    nsRect& aBgRect) {
+    const nsRect& aBgRect) {
   if (aSecondaryFrame) {
     const uint16_t index = static_cast<uint16_t>(GetTableTypeFromFrame(aFrame));
     return MakeDisplayItemWithIndex<nsDisplayTableThemedBackground>(
@@ -3129,36 +3109,39 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
     nsIFrame* aSecondaryReferenceFrame,
     Maybe<nsDisplayListBuilder::AutoBuildingDisplayList>*
         aAutoBuildingDisplayList) {
-  const ComputedStyle* bgSC = nullptr;
-  const nsStyleBackground* bg = nullptr;
-  nsRect bgRect = aBackgroundRect;
-  nsRect bgOriginRect = bgRect;
-  if (!aBackgroundOriginRect.IsEmpty()) {
-    bgOriginRect = aBackgroundOriginRect;
+  MOZ_ASSERT(!aFrame->IsCanvasFrame(),
+             "We don't expect propagated canvas backgrounds here");
+#ifdef DEBUG
+  {
+    nsIFrame* bgFrame = nsCSSRendering::FindBackgroundFrame(aFrame);
+    MOZ_ASSERT(
+        !bgFrame || bgFrame == aFrame,
+        "Should only suppress backgrounds, never propagate to another frame");
   }
-  const bool isThemed = aFrame->IsThemed();
+#endif
+
   DealWithWindowsAppearanceHacks(aFrame, aBuilder);
 
-  nsIFrame* dependentFrame = nullptr;
-  if (!isThemed) {
-    if (!bgSC) {
-      dependentFrame = GetBackgroundComputedStyleFrame(aFrame);
-      if (dependentFrame) {
-        bgSC = dependentFrame->Style();
-        if (dependentFrame == aFrame) {
-          dependentFrame = nullptr;
-        }
-      }
-    }
-    if (bgSC) {
-      bg = bgSC->StyleBackground();
-    }
+  const bool isThemed = aFrame->IsThemed();
+
+  const ComputedStyle* bgSC = aFrame->Style();
+  const nsStyleBackground* bg = bgSC->StyleBackground();
+  const bool needsBackgroundColor =
+      aBuilder->IsForEventDelivery() ||
+      (EffectCompositor::HasAnimationsForCompositor(
+           aFrame, DisplayItemType::TYPE_BACKGROUND_COLOR) &&
+       !isThemed);
+  if (!needsBackgroundColor && !isThemed && bg->IsTransparent(bgSC)) {
+    return AppendedBackgroundType::None;
   }
 
   bool drawBackgroundColor = false;
   bool drawBackgroundImage = false;
   nscolor color = NS_RGBA(0, 0, 0, 0);
-  if (bg && !(aFrame->IsCanvasFrame() || aFrame->IsViewportFrame())) {
+  // Don't get background color / images if we propagated our background to the
+  // canvas (that is, if FindBackgroundFrame is null). But don't early return
+  // yet, since we might still need a background-color item for hit-testing.
+  if (!isThemed && nsCSSRendering::FindBackgroundFrame(aFrame)) {
     color = nsCSSRendering::DetermineBackgroundColor(
         aFrame->PresContext(), bgSC, aFrame, drawBackgroundImage,
         drawBackgroundColor);
@@ -3169,11 +3152,21 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
     return AppendedBackgroundType::None;
   }
 
-  const nsStyleBorder* borderStyle = aFrame->StyleBorder();
-  const nsStyleEffects* effectsStyle = aFrame->StyleEffects();
-  bool hasInsetShadow = effectsStyle->HasBoxShadowWithInset(true);
-  bool willPaintBorder = aAllowWillPaintBorderOptimization && !isThemed &&
-                         !hasInsetShadow && borderStyle->HasBorder();
+  const nsStyleBorder& border = *aFrame->StyleBorder();
+  const bool willPaintBorder =
+      aAllowWillPaintBorderOptimization && !isThemed &&
+      !aFrame->StyleEffects()->HasBoxShadowWithInset(true) &&
+      border.HasBorder();
+
+  auto EnsureBuildingDisplayList = [&] {
+    if (!aAutoBuildingDisplayList || *aAutoBuildingDisplayList) {
+      return;
+    }
+    nsPoint offset = aBuilder->GetCurrentFrame()->GetOffsetTo(aFrame);
+    aAutoBuildingDisplayList->emplace(aBuilder, aFrame,
+                                      aBuilder->GetVisibleRect() + offset,
+                                      aBuilder->GetDirtyRect() + offset);
+  };
 
   // An auxiliary list is necessary in case we have background blending; if that
   // is the case, background items need to be wrapped by a blend container to
@@ -3183,18 +3176,11 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
   // need to create an item for hit testing and we still need to create an item
   // for background-color animations.
   if ((drawBackgroundColor && color != NS_RGBA(0, 0, 0, 0)) ||
-      aBuilder->IsForEventDelivery() ||
-      EffectCompositor::HasAnimationsForCompositor(
-          aFrame, DisplayItemType::TYPE_BACKGROUND_COLOR)) {
-    if (aAutoBuildingDisplayList && !*aAutoBuildingDisplayList) {
-      nsPoint offset = aBuilder->GetCurrentFrame()->GetOffsetTo(aFrame);
-      aAutoBuildingDisplayList->emplace(aBuilder, aFrame,
-                                        aBuilder->GetVisibleRect() + offset,
-                                        aBuilder->GetDirtyRect() + offset);
-    }
+      needsBackgroundColor) {
+    EnsureBuildingDisplayList();
     Maybe<DisplayListClipState::AutoSaveRestore> clipState;
-    nsRect bgColorRect = bgRect;
-    if (bg && !aBuilder->IsForEventDelivery()) {
+    nsRect bgColorRect = aBackgroundRect;
+    if (!isThemed && !aBuilder->IsForEventDelivery()) {
       // Disable the will-paint-border optimization for background
       // colors with no border-radius. Enabling it for background colors
       // doesn't help much (there are no tiling issues) and clipping the
@@ -3202,13 +3188,13 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
       // opaque. For nonzero border-radius we still need it because we
       // want to inset the background if possible to avoid antialiasing
       // artifacts along the rounded corners.
-      bool useWillPaintBorderOptimization =
+      const bool useWillPaintBorderOptimization =
           willPaintBorder &&
-          nsLayoutUtils::HasNonZeroCorner(borderStyle->mBorderRadius);
+          nsLayoutUtils::HasNonZeroCorner(border.mBorderRadius);
 
       nsCSSRendering::ImageLayerClipState clip;
       nsCSSRendering::GetImageLayerClip(
-          bg->BottomLayer(), aFrame, *aFrame->StyleBorder(), bgRect, bgRect,
+          bg->BottomLayer(), aFrame, border, aBackgroundRect, aBackgroundRect,
           useWillPaintBorderOptimization,
           aFrame->PresContext()->AppUnitsPerDevPixel(), &clip);
 
@@ -3227,14 +3213,13 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
         drawBackgroundColor ? color : NS_RGBA(0, 0, 0, 0));
 
     if (bgItem) {
-      bgItem->SetDependentFrame(aBuilder, dependentFrame);
       bgItemList.AppendToTop(bgItem);
     }
   }
 
   if (isThemed) {
     nsDisplayThemedBackground* bgItem = CreateThemedBackground(
-        aBuilder, aFrame, aSecondaryReferenceFrame, bgRect);
+        aBuilder, aFrame, aSecondaryReferenceFrame, aBackgroundRect);
 
     if (bgItem) {
       bgItem->Init(aBuilder);
@@ -3249,7 +3234,7 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
     return AppendedBackgroundType::None;
   }
 
-  if (!bg || !drawBackgroundImage) {
+  if (!drawBackgroundImage) {
     if (!bgItemList.IsEmpty()) {
       aList->AppendToTop(&bgItemList);
       return AppendedBackgroundType::Background;
@@ -3261,6 +3246,8 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
   const ActiveScrolledRoot* asr = aBuilder->CurrentActiveScrolledRoot();
 
   bool needBlendContainer = false;
+  const nsRect& bgOriginRect =
+      aBackgroundOriginRect.IsEmpty() ? aBackgroundRect : aBackgroundOriginRect;
 
   // Passing bg == nullptr in this macro will result in one iteration with
   // i = 0.
@@ -3269,12 +3256,7 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
       continue;
     }
 
-    if (aAutoBuildingDisplayList && !*aAutoBuildingDisplayList) {
-      nsPoint offset = aBuilder->GetCurrentFrame()->GetOffsetTo(aFrame);
-      aAutoBuildingDisplayList->emplace(aBuilder, aFrame,
-                                        aBuilder->GetVisibleRect() + offset,
-                                        aBuilder->GetDirtyRect() + offset);
-    }
+    EnsureBuildingDisplayList();
 
     if (bg->mImage.mLayers[i].mBlendMode != StyleBlend::Normal) {
       needBlendContainer = true;
@@ -3283,7 +3265,7 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
     DisplayListClipState::AutoSaveRestore clipState(aBuilder);
     if (!aBuilder->IsForEventDelivery()) {
       const nsStyleImageLayers::Layer& layer = bg->mImage.mLayers[i];
-      SetBackgroundClipRegion(clipState, aFrame, layer, bgRect,
+      SetBackgroundClipRegion(clipState, aFrame, layer, aBackgroundRect,
                               willPaintBorder);
     }
 
@@ -3303,6 +3285,7 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
       if (displayData) {
         asrSetter.SetCurrentActiveScrolledRoot(
             displayData->mContainingBlockActiveScrolledRoot);
+        asrSetter.SetCurrentScrollParentId(displayData->mScrollParentId);
         if (nsLayoutUtils::UsesAsyncScrolling(aFrame)) {
           // Override the dirty rect on the builder to be the dirty rect of
           // the viewport.
@@ -3331,8 +3314,6 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
                                        aSecondaryReferenceFrame, bgData);
       }
       if (bgItem) {
-        bgItem->SetDependentFrame(aBuilder, dependentFrame);
-
         thisItemList.AppendToTop(
             nsDisplayFixedPosition::CreateForFixedBackground(
                 aBuilder, aFrame, aSecondaryReferenceFrame, bgItem, i, asr));
@@ -3341,7 +3322,6 @@ AppendedBackgroundType nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
       nsDisplayBackgroundImage* bgItem = CreateBackgroundImage(
           aBuilder, aFrame, aSecondaryReferenceFrame, bgData);
       if (bgItem) {
-        bgItem->SetDependentFrame(aBuilder, dependentFrame);
         thisItemList.AppendToTop(bgItem);
       }
     }
@@ -7775,17 +7755,17 @@ void nsDisplayEffectsBase::ComputeInvalidationRegion(
 }
 
 bool nsDisplayEffectsBase::ValidateSVGFrame() {
-  const nsIContent* content = mFrame->GetContent();
-  bool hasSVGLayout = mFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
-  if (hasSVGLayout) {
+  if (mFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     ISVGDisplayableFrame* svgFrame = do_QueryFrame(mFrame);
-    if (!svgFrame || !mFrame->GetContent()->IsSVGElement()) {
-      NS_ASSERTION(false, "why?");
+    if (!svgFrame) {
       return false;
     }
-    if (!static_cast<const SVGElement*>(content)->HasValidDimensions()) {
-      return false;  // The SVG spec says not to draw filters for this
+    if (auto* svgElement = SVGElement::FromNode(mFrame->GetContent())) {
+      // The SVG spec says only to draw filters if the element
+      // has valid dimensions.
+      return svgElement->HasValidDimensions();
     }
+    return false;
   }
 
   return true;
@@ -7843,8 +7823,8 @@ static void ComputeMaskGeometry(PaintFramesParams& aParams) {
       nsCSSRendering::ImageLayerClipState clipState;
       nsCSSRendering::GetImageLayerClip(
           svgReset->mMask.mLayers[i], frame, *frame->StyleBorder(),
-          userSpaceBorderArea, userSpaceDirtyRect, false, /* aWillPaintBorder */
-          appUnitsPerDevPixel, &clipState);
+          userSpaceBorderArea, userSpaceDirtyRect,
+          /* aWillPaintBorder = */ false, appUnitsPerDevPixel, &clipState);
       currentMaskSurfaceRect = LayoutDeviceRect::FromUnknownRect(
           ToRect(clipState.mDirtyRectInDevPx));
     }
@@ -8223,7 +8203,7 @@ Maybe<nsRect> nsDisplayMasksAndClipPaths::GetClipWithRespectToASR(
     return Some(childList->GetClippedBoundsWithRespectToASR(aBuilder, aASR));
   }
 #ifdef DEBUG
-  MOZ_ASSERT(false, "item should have finite clip with respect to aASR");
+  NS_ASSERTION(false, "item should have finite clip with respect to aASR");
 #endif
   return Nothing();
 }

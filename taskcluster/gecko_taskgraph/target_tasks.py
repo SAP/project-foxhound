@@ -3,10 +3,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import copy
+import itertools
 import os
 import re
 from datetime import datetime, timedelta
+
+from redo import retry
+from taskgraph.parameters import Parameters
+from taskgraph.target_tasks import _target_task, get_method
+from taskgraph.util.taskcluster import find_task_id
 
 from gecko_taskgraph import GECKO, try_option_syntax
 from gecko_taskgraph.util.attributes import (
@@ -15,10 +20,6 @@ from gecko_taskgraph.util.attributes import (
 )
 from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 from gecko_taskgraph.util.platforms import platform_family
-from redo import retry
-from taskgraph.parameters import Parameters
-from taskgraph.target_tasks import _target_task, get_method
-from taskgraph.util.taskcluster import find_task_id
 
 # Some tasks show up in the target task set, but are possibly special cases,
 # uncommon tasks, or tasks running against limited hardware set that they
@@ -43,7 +44,7 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"-profiling-",  # talos/raptor profiling jobs are run too often
     # Hide shippable versions of tests we have opt versions of because the non-shippable
     # versions are faster to run. This is mostly perf tests.
-    r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|msix|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
+    r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
 ]
 
 
@@ -110,10 +111,9 @@ def filter_by_uncommon_try_tasks(task, optional_filters=None):
     """
     filters = UNCOMMON_TRY_TASK_LABELS
     if optional_filters:
-        filters = copy.deepcopy(filters)
-        filters.extend(optional_filters)
+        filters = itertools.chain(filters, optional_filters)
 
-    return not any(re.search(pattern, task) for pattern in UNCOMMON_TRY_TASK_LABELS)
+    return not any(re.search(pattern, task) for pattern in filters)
 
 
 def filter_by_regex(task_label, regexes, mode="include"):
@@ -184,10 +184,10 @@ def filter_release_tasks(task, parameters):
         if "linux" not in build_platform:
             # filter out windows/mac/android
             return False
-        elif task.kind not in ["spidermonkey"] and "-qr" in test_platform:
+        if task.kind not in ["spidermonkey"] and "-qr" in test_platform:
             # filter out linux-qr tests, leave spidermonkey
             return False
-        elif "64" not in build_platform:
+        if "64" not in build_platform:
             # filter out linux32 builds
             return False
 
@@ -242,6 +242,8 @@ def accept_raptor_android_build(platform):
     if "shippable" not in platform:
         return False
     if "p2" in platform and "aarch64" in platform:
+        return False
+    if "p5" in platform and "aarch64" in platform:
         return False
     if "g5" in platform:
         return False
@@ -336,12 +338,11 @@ def target_tasks_try(full_task_graph, parameters, graph_config):
     try_mode = parameters["try_mode"]
     if try_mode == "try_task_config":
         return _try_task_config(full_task_graph, parameters, graph_config)
-    elif try_mode == "try_option_syntax":
+    if try_mode == "try_option_syntax":
         return _try_option_syntax(full_task_graph, parameters, graph_config)
-    else:
-        # With no try mode, we schedule nothing, allowing the user to add tasks
-        # later via treeherder.
-        return []
+    # With no try mode, we schedule nothing, allowing the user to add tasks
+    # later via treeherder.
+    return []
 
 
 @_target_task("try_select_tasks")
@@ -562,7 +563,7 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
 
     def filter(task):
         # Bug 1758507 - geckoview ships in the promote phase
-        if "mozilla-esr" not in parameters["project"] and is_geckoview(
+        if not parameters["release_type"].startswith("esr") and is_geckoview(
             task, parameters
         ):
             return True
@@ -654,8 +655,7 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
 
         if "secondary" in task.kind:
             return is_rc
-        else:
-            return not is_rc
+        return not is_rc
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
@@ -763,6 +763,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     if "speedometer" in try_name:
                         return True
                 if "safari" and "benchmark" in try_name:
+                    # Speedometer 3 is broken on Safari, see bug 1802922
+                    if "speedometer3" in try_name:
+                        return False
                     return True
             else:
                 # Don't run tp6 raptor tests
@@ -770,8 +773,10 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     return False
         # Android selection
         elif accept_raptor_android_build(platform):
-            # Bug 1780817 - a51 and p2 are failing to install chrome
-            if "chrome-m" in try_name and ("-a51" in platform or "-p2" in platform):
+            # Bug 1780817 - a51 and p2/p5 are failing to install chrome
+            if "chrome-m" in try_name and (
+                "-a51" in platform or "-p2" in platform or "-p5" in platform
+            ):
                 return False
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
@@ -1397,3 +1402,13 @@ def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
             continue
         if "eslint-build" in name:
             yield name
+
+
+@_target_task("holly_tasks")
+def target_tasks_holly(full_task_graph, parameters, graph_config):
+    """Bug 1814661: only run updatebot tasks on holly"""
+
+    def filter(task):
+        return task.kind == "updatebot"
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]

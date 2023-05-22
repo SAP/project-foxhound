@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/TransformStream.h"
 
+#include "StreamUtils.h"
 #include "TransformerCallbackHelpers.h"
 #include "UnderlyingSourceCallbackHelpers.h"
 #include "js/TypeDecls.h"
@@ -17,7 +18,6 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/TransformStreamBinding.h"
 #include "mozilla/dom/TransformerBinding.h"
-#include "mozilla/dom/StreamUtils.h"
 #include "nsWrapperCache.h"
 
 // XXX: GCC somehow does not allow attributes before lambda return types, while
@@ -29,6 +29,8 @@
 #endif
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TransformStream, mGlobal,
                                       mBackpressureChangePromise, mController,
@@ -115,6 +117,8 @@ JSObject* TransformStream::WrapObject(JSContext* aCx,
   return TransformStream_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+namespace streams_abstract {
+
 // https://streams.spec.whatwg.org/#transform-stream-error-writable-and-unblock-write
 void TransformStreamErrorWritableAndUnblockWrite(JSContext* aCx,
                                                  TransformStream* aStream,
@@ -137,7 +141,7 @@ void TransformStreamErrorWritableAndUnblockWrite(JSContext* aCx,
   // Step 3: If stream.[[backpressure]] is true, perform !
   // TransformStreamSetBackpressure(stream, false).
   if (aStream->Backpressure()) {
-    aStream->SetBackpressure(false, aRv);
+    aStream->SetBackpressure(false);
   }
 }
 
@@ -156,6 +160,8 @@ void TransformStreamError(JSContext* aCx, TransformStream* aStream,
   // Step 2: Perform ! TransformStreamErrorWritableAndUnblockWrite(stream, e).
   TransformStreamErrorWritableAndUnblockWrite(aCx, aStream, aError, aRv);
 }
+
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#transform-stream-default-controller-perform-transform
 MOZ_CAN_RUN_SCRIPT static already_AddRefed<Promise>
@@ -460,7 +466,7 @@ class TransformStreamUnderlyingSourceAlgorithms final
     MOZ_ASSERT(mStream->BackpressureChangePromise());
 
     // Step 3: Perform ! TransformStreamSetBackpressure(stream, false).
-    mStream->SetBackpressure(false, aRv);
+    mStream->SetBackpressure(false);
 
     // Step 4: Return stream.[[backpressureChangePromise]].
     return do_AddRef(mStream->BackpressureChangePromise());
@@ -506,7 +512,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(
 NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsBase)
 
 // https://streams.spec.whatwg.org/#transform-stream-set-backpressure
-void TransformStream::SetBackpressure(bool aBackpressure, ErrorResult& aRv) {
+void TransformStream::SetBackpressure(bool aBackpressure) {
   // Step 1. Assert: stream.[[backpressure]] is not backpressure.
   MOZ_ASSERT(Backpressure() != aBackpressure);
 
@@ -517,10 +523,7 @@ void TransformStream::SetBackpressure(bool aBackpressure, ErrorResult& aRv) {
   }
 
   // Step 3. Set stream.[[backpressureChangePromise]] to a new promise.
-  RefPtr<Promise> promise = Promise::Create(GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+  RefPtr<Promise> promise = Promise::CreateInfallible(GetParentObject());
   mBackpressureChangePromise = promise;
 
   // Step 4. Set stream.[[backpressure]] to backpressure.
@@ -572,7 +575,7 @@ void TransformStream::Initialize(JSContext* aCx, Promise* aStartPromise,
   mBackpressureChangePromise = nullptr;
 
   // Step 10. Perform ! TransformStreamSetBackpressure(stream, true).
-  SetBackpressure(true, aRv);
+  SetBackpressure(true);
   if (aRv.Failed()) {
     return;
   }
@@ -657,10 +660,7 @@ already_AddRefed<TransformStream> TransformStream::Constructor(
 
   // Step 9. Let startPromise be a new promise.
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<Promise> startPromise = Promise::Create(global, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> startPromise = Promise::CreateInfallible(global);
 
   // Step 10. Perform ! InitializeTransformStream(this, startPromise,
   // writableHighWaterMark, writableSizeAlgorithm, readableHighWaterMark,

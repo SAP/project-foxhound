@@ -24,6 +24,7 @@ export class JSONHandler {
       "/json/version": this.getVersion.bind(this),
       "/json/protocol": this.getProtocol.bind(this),
       "/json/list": this.getTargetList.bind(this),
+      "/json": this.getTargetList.bind(this),
     };
   }
 
@@ -36,7 +37,7 @@ export class JSONHandler {
 
     return {
       Browser: `${Services.appinfo.name}/${Services.appinfo.version}`,
-      "Protocol-Version": "1.0",
+      "Protocol-Version": "1.3",
       "User-Agent": userAgent,
       "V8-Version": "1.0",
       "WebKit-Version": "1.0",
@@ -49,7 +50,7 @@ export class JSONHandler {
   }
 
   getTargetList() {
-    return [...this.cdp.targetList];
+    return [...this.cdp.targetList].filter(x => x.type !== "browser");
   }
 
   // nsIHttpRequestHandler
@@ -59,12 +60,15 @@ export class JSONHandler {
       throw lazy.HTTP_404;
     }
 
-    if (!(request.path in this.routes)) {
+    // Trim trailing slashes to conform with expected routes
+    const path = request.path.replace(/\/+$/, "");
+
+    if (!(path in this.routes)) {
       throw lazy.HTTP_404;
     }
 
     try {
-      const body = this.routes[request.path]();
+      const body = this.routes[path]();
       const payload = JSON.stringify(
         body,
         null,

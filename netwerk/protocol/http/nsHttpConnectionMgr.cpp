@@ -20,6 +20,7 @@
 #include "NullHttpTransaction.h"
 #include "SpeculativeTransaction.h"
 #include "mozilla/Components.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
@@ -48,6 +49,32 @@
 #include "nsQueryObject.h"
 #include "nsSocketTransportService2.h"
 #include "nsStreamUtils.h"
+
+using namespace mozilla;
+
+namespace geckoprofiler::markers {
+
+struct UrlMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("Url");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aURL) {
+    if (aURL.Length() != 0) {
+      aWriter.StringProperty("url", aURL);
+    }
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
+    schema.SetTableLabel("{marker.name} - {marker.data.url}");
+    schema.AddKeyFormat("url", MS::Format::Url);
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
 
 namespace mozilla::net {
 
@@ -475,6 +502,10 @@ nsresult nsHttpConnectionMgr::SpeculativeConnect(
          ci->Origin()));
     return NS_OK;
   }
+
+  nsCString url = ci->EndToEndSSL() ? "https://"_ns : "http://"_ns;
+  url += ci->GetOrigin();
+  PROFILER_MARKER("SpeculativeConnect", NETWORK, {}, UrlMarker, url);
 
   RefPtr<SpeculativeConnectArgs> args = new SpeculativeConnectArgs();
 
@@ -1169,6 +1200,10 @@ bool nsHttpConnectionMgr::AtActiveConnectionLimit(ConnectionEntry* ent,
   uint32_t totalCount = ent->TotalActiveConnections();
 
   if (ci->IsHttp3()) {
+    if (ci->GetWebTransport()) {
+      // TODO: implement this properly in bug 1815735.
+      return false;
+    }
     return totalCount > 0;
   }
 
@@ -1359,6 +1394,7 @@ nsresult nsHttpConnectionMgr::TryDispatchTransaction(
         // transaction.
         trans->DisableSpdy();
         caps &= NS_HTTP_DISALLOW_SPDY;
+        trans->MakeSticky();
       } else if (wsSupp == WebSocketSupport::SUPPORTED) {
         RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
         LOG(("TryingDispatchTransaction: websockets over Http2"));
@@ -1366,6 +1402,7 @@ nsresult nsHttpConnectionMgr::TryDispatchTransaction(
         // No limit for number of websockets, dispatch transaction to the tunnel
         RefPtr<nsHttpConnection> connToTunnel;
         connTCP->CreateTunnelStream(trans, getter_AddRefs(connToTunnel), true);
+        ent->InsertIntoH2WebsocketConns(connToTunnel);
         trans->SetConnection(nullptr);
         connToTunnel->SetInSpdyTunnel();  // tells conn it is already in tunnel
         trans->SetIsHttp2Websocket(true);
@@ -2011,6 +2048,9 @@ void nsHttpConnectionMgr::AbortAndCloseAllConnections(int32_t, ARefBase*) {
     // Close all idle connections.
     ent->CloseIdleConnections();
 
+    // Close websocket "fake" connections
+    ent->CloseH2WebsocketConnections();
+
     // Close all pending transactions.
     ent->CancelAllTransactions(NS_ERROR_ABORT);
 
@@ -2467,6 +2507,9 @@ void nsHttpConnectionMgr::OnMsgReclaimConnection(HttpConnectionBase* conn) {
 
     ent->InsertIntoIdleConnections(connTCP);
   } else {
+    if (ent->IsInH2WebsocketConns(conn)) {
+      ent->RemoveH2WebsocketConns(conn);
+    }
     LOG(("  connection cannot be reused; closing connection\n"));
     conn->Close(NS_ERROR_ABORT);
   }

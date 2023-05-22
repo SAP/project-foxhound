@@ -6,11 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewContent"];
 
-const { GeckoViewModule } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewModule.jsm"
-);
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
+const { GeckoViewModule } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewModule.sys.mjs"
 );
 
 class GeckoViewContent extends GeckoViewModule {
@@ -29,6 +26,7 @@ class GeckoViewContent extends GeckoViewModule {
       "GeckoView:SetPriorityHint",
       "GeckoView:UpdateInitData",
       "GeckoView:ZoomToInput",
+      "GeckoView:IsPdfJs",
     ]);
   }
 
@@ -56,6 +54,9 @@ class GeckoViewContent extends GeckoViewModule {
     this.window.addEventListener("pagetitlechanged", this);
     this.window.addEventListener("pageinfo", this);
 
+    this.window.addEventListener("cookiebannerdetected", this);
+    this.window.addEventListener("cookiebannerhandled", this);
+
     Services.obs.addObserver(this, "oop-frameloader-crashed");
     Services.obs.addObserver(this, "ipc:content-shutdown");
   }
@@ -81,12 +82,21 @@ class GeckoViewContent extends GeckoViewModule {
     this.window.removeEventListener("pagetitlechanged", this);
     this.window.removeEventListener("pageinfo", this);
 
+    this.window.removeEventListener("cookiebannerdetected", this);
+    this.window.removeEventListener("cookiebannerhandled", this);
+
     Services.obs.removeObserver(this, "oop-frameloader-crashed");
     Services.obs.removeObserver(this, "ipc:content-shutdown");
   }
 
   get actor() {
     return this.getActor("GeckoViewContent");
+  }
+
+  get isPdfJs() {
+    return (
+      this.browser.contentPrincipal.spec === "resource://pdf.js/web/viewer.html"
+    );
   }
 
   // Goes up the browsingContext chain and sends the message every time
@@ -123,15 +133,21 @@ class GeckoViewContent extends GeckoViewModule {
         this.browser.ownerDocument.exitFullscreen();
         break;
       case "GeckoView:ClearMatches": {
-        this._clearMatches();
+        if (!this.isPdfJs) {
+          this._clearMatches();
+        }
         break;
       }
       case "GeckoView:DisplayMatches": {
-        this._displayMatches(aData);
+        if (!this.isPdfJs) {
+          this._displayMatches(aData);
+        }
         break;
       }
       case "GeckoView:FindInPage": {
-        this._findInPage(aData, aCallback);
+        if (!this.isPdfJs) {
+          this._findInPage(aData, aCallback);
+        }
         break;
       }
       case "GeckoView:ZoomToInput":
@@ -173,6 +189,9 @@ class GeckoViewContent extends GeckoViewModule {
         break;
       case "GeckoView:ContainsFormData":
         this._containsFormData(aCallback);
+        break;
+      case "GeckoView:IsPdfJs":
+        aCallback.onSuccess(this.isPdfJs);
         break;
     }
   }
@@ -226,6 +245,16 @@ class GeckoViewContent extends GeckoViewModule {
             previewImageUrl: aEvent.detail.previewImageURL,
           });
         }
+        break;
+      case "cookiebannerdetected":
+        this.eventDispatcher.sendRequest({
+          type: "GeckoView:CookieBannerEvent:Detected",
+        });
+        break;
+      case "cookiebannerhandled":
+        this.eventDispatcher.sendRequest({
+          type: "GeckoView:CookieBannerEvent:Handled",
+        });
         break;
     }
   }

@@ -121,6 +121,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val BODY_FULLY_COVERED_BY_GREEN_ELEMENT = "/assets/www/red-background-body-fully-covered-by-green-element.html"
         const val COLOR_GRID_HTML_PATH = "/assets/www/color_grid.html"
         const val COLOR_ORANGE_BACKGROUND_HTML_PATH = "/assets/www/color_orange_background.html"
+        const val TRACEMONKEY_PDF_PATH = "/assets/www/tracemonkey.pdf"
+        const val HELLO_PDF_WORLD_PDF_PATH = "/assets/www/helloPDFWorld.pdf"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
         const val TEST_HOST = GeckoSessionTestRule.TEST_HOST
@@ -141,8 +143,11 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
 
     fun <T> assertThat(reason: String, v: T, m: Matcher<in T>) = sessionRule.checkThat(reason, v, m)
     fun <T> assertInAutomationThat(reason: String, v: T, m: Matcher<in T>) =
-        if (sessionRule.env.isAutomation) assertThat(reason, v, m)
-        else assumeThat(reason, v, m)
+        if (sessionRule.env.isAutomation) {
+            assertThat(reason, v, m)
+        } else {
+            assumeThat(reason, v, m)
+        }
 
     init {
         if (!noErrorCollector) {

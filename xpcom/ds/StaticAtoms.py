@@ -258,6 +258,7 @@ STATIC_ATOMS = [
     Atom("collapse", "collapse"),
     Atom("collapsed", "collapsed"),
     Atom("color", "color"),
+    Atom("color_gamut", "color-gamut"),
     Atom("color_index", "color-index"),
     Atom("color_scheme", "color-scheme"),
     Atom("cols", "cols"),
@@ -1918,7 +1919,7 @@ STATIC_ATOMS = [
     # orientation support
     Atom("ondevicemotion", "ondevicemotion"),
     Atom("ondeviceorientation", "ondeviceorientation"),
-    Atom("onabsolutedeviceorientation", "onabsolutedeviceorientation"),
+    Atom("ondeviceorientationabsolute", "ondeviceorientationabsolute"),
     Atom("onmozorientationchange", "onmozorientationchange"),
     Atom("onuserproximity", "onuserproximity"),
     # light sensor support
@@ -2483,6 +2484,7 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_cue", ":cue"),
     PseudoElementAtom("PseudoElement_firstLetter", ":first-letter"),
     PseudoElementAtom("PseudoElement_firstLine", ":first-line"),
+    PseudoElementAtom("PseudoElement_highlight", ":highlight"),
     PseudoElementAtom("PseudoElement_selection", ":selection"),
     PseudoElementAtom("PseudoElement_mozFocusInner", ":-moz-focus-inner"),
     PseudoElementAtom("PseudoElement_mozNumberSpinBox", ":-moz-number-spin-box"),

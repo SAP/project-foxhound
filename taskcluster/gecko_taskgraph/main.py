@@ -689,19 +689,19 @@ def action_callback(options):
 @argument("--input", default=None, help="Action input (.yml or .json)")
 @argument("callback", default=None, help="Action callback name (Python function name)")
 def test_action_callback(options):
-    import gecko_taskgraph.actions
     import taskgraph.parameters
     from taskgraph.config import load_graph_config
     from taskgraph.util import yaml
+
+    import gecko_taskgraph.actions
 
     def load_data(filename):
         with open(filename) as f:
             if filename.endswith(".yml"):
                 return yaml.load_stream(f)
-            elif filename.endswith(".json"):
+            if filename.endswith(".json"):
                 return json.load(f)
-            else:
-                raise Exception(f"unknown filename {filename}")
+            raise Exception(f"unknown filename {filename}")
 
     try:
         task_id = options["task_id"]

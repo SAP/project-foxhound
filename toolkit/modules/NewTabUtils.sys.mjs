@@ -58,14 +58,6 @@ XPCOMUtils.defineLazyGetter(lazy, "gCryptoHash", function() {
   return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "gUnicodeConverter", function() {
-  let converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-  converter.charset = "utf8";
-  return converter;
-});
-
 // Boolean preferences that control newtab content
 const PREF_NEWTAB_ENABLED = "browser.newtabpage.enabled";
 
@@ -103,7 +95,7 @@ const PREF_POCKET_LATEST_SINCE = "extensions.pocket.settings.latestSince";
  * @return The base64 representation of the MD5 hash.
  */
 function toHash(aValue) {
-  let value = lazy.gUnicodeConverter.convertToByteArray(aValue);
+  let value = new TextEncoder().encode(aValue);
   lazy.gCryptoHash.init(lazy.gCryptoHash.MD5);
   lazy.gCryptoHash.update(value, value.length);
   return lazy.gCryptoHash.finish(true);
@@ -137,10 +129,10 @@ function LinksStorage() {
   } catch (ex) {
     // Something went wrong in the update process, we can't recover from here,
     // so just clear the storage and start from scratch (dataloss!).
-    Cu.reportError(
+    console.error(
       "Unable to migrate the newTab storage to the current version. " +
-        "Restarting from scratch.\n" +
-        ex
+        "Restarting from scratch.\n",
+      ex
     );
     this.clear();
   }
@@ -560,7 +552,7 @@ var BlockedLinks = {
         try {
           obs[methodName](...args);
         } catch (err) {
-          Cu.reportError(err);
+          console.error(err);
         }
       }
     }
@@ -719,7 +711,7 @@ var PlacesProvider = {
         try {
           obs[aMethodName](this, aArg);
         } catch (err) {
-          Cu.reportError(err);
+          console.error(err);
         }
       }
     }
@@ -1018,7 +1010,7 @@ var ActivityStreamProvider = {
         return [];
       }
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       return [];
     }
     /* Extract relevant parts needed to show this card as a highlight:
@@ -2143,7 +2135,7 @@ var Links = {
         try {
           obs[methodName](this, ...args);
         } catch (err) {
-          Cu.reportError(err);
+          console.error(err);
         }
       }
     }

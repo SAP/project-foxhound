@@ -9,17 +9,14 @@ import {
 
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-const {
+import {
   getString,
   text,
   showFilePicker,
   optionsPopupMenu,
-} = ChromeUtils.import(
-  "resource://devtools/client/styleeditor/StyleEditorUtil.jsm"
-);
-const { StyleSheetEditor } = ChromeUtils.import(
-  "resource://devtools/client/styleeditor/StyleSheetEditor.jsm"
-);
+} from "resource://devtools/client/styleeditor/StyleEditorUtil.sys.mjs";
+import { StyleSheetEditor } from "resource://devtools/client/styleeditor/StyleSheetEditor.sys.mjs";
+
 const { PluralForm } = require("resource://devtools/shared/plural-form.js");
 const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
 
@@ -555,10 +552,10 @@ export class StyleEditorUI extends EventEmitter {
       const promise = (async () => {
         let editor = await this.#addStyleSheetEditor(resource);
 
-        const sourceMapService = this.#toolbox.sourceMapService;
+        const sourceMapLoader = this.#toolbox.sourceMapLoader;
 
         if (
-          !sourceMapService ||
+          !sourceMapLoader ||
           !Services.prefs.getBoolPref(PREF_ORIG_SOURCES)
         ) {
           return editor;
@@ -571,7 +568,7 @@ export class StyleEditorUI extends EventEmitter {
           sourceMapURL,
           sourceMapBaseURL,
         } = resource;
-        const sources = await sourceMapService.getOriginalURLs({
+        const sources = await sourceMapLoader.getOriginalURLs({
           id,
           url: href || nodeHref,
           sourceMapBaseURL,
@@ -588,7 +585,7 @@ export class StyleEditorUI extends EventEmitter {
             const original = new lazy.OriginalSource(
               originalURL,
               originalId,
-              sourceMapService
+              sourceMapLoader
             );
 
             // set so the first sheet will be selected, even if it's a source
@@ -669,13 +666,7 @@ export class StyleEditorUI extends EventEmitter {
 
     // onAtRulesChanged fires at-rules-changed, so call the function after
     // registering the listener in order to ensure to get at-rules-changed event.
-    let { atRules, mediaRules } = resource;
-    // @backward-compat { version 108 } "mediaRules" is only passed on older servers,
-    //                  the whole if block can be removed when 108 hits release.
-    if (mediaRules) {
-      atRules = mediaRules.map(rule => ({ ...rule, type: "media" }));
-    }
-    editor.onAtRulesChanged(atRules);
+    editor.onAtRulesChanged(resource.atRules);
 
     this.editors.push(editor);
 
@@ -1170,19 +1161,19 @@ export class StyleEditorUI extends EventEmitter {
   }
 
   /**
-   * Given an URL, find a stylesheet front with that URL, if one has been
+   * Given an URL, find a stylesheet resource with that URL, if one has been
    * loaded into the editor.js
    *
-   * Do not use this unless you have no other way to get a StyleSheetFront
+   * Do not use this unless you have no other way to get a StyleSheet resource
    * multiple sheets could share the same URL, so this will give you _one_
    * of possibly many sheets with that URL.
    *
    * @param {string} url
    *        An arbitrary URL to search for.
    *
-   * @return {StyleSheetFront|null}
+   * @return {StyleSheetResource|null}
    */
-  getStylesheetFrontForGeneratedURL(url) {
+  getStylesheetResourceForGeneratedURL(url) {
     for (const styleSheet of this.#seenSheets.keys()) {
       const sheetURL = styleSheet.href || styleSheet.nodeHref;
       if (!styleSheet.isOriginalSource && sheetURL === url) {
@@ -1195,11 +1186,11 @@ export class StyleEditorUI extends EventEmitter {
   /**
    * selects a stylesheet and optionally moves the cursor to a selected line
    *
-   * @param {StyleSheetFront} [stylesheet]
+   * @param {StyleSheetResource} stylesheet
    *        Stylesheet to select or href of stylesheet to select
-   * @param {Number} [line]
+   * @param {Number} line
    *        Line to which the caret should be moved (zero-indexed).
-   * @param {Number} [col]
+   * @param {Number} col
    *        Column to which the caret should be moved (zero-indexed).
    * @return {Promise}
    *         Promise that will resolve when the editor is selected and ready
@@ -1455,8 +1446,8 @@ export class StyleEditorUI extends EventEmitter {
    *         Object with width or/and height properties.
    */
   async #launchResponsiveMode(options = {}) {
-    const tab = this.currentTarget.localTab;
-    const win = this.currentTarget.localTab.ownerDocument.defaultView;
+    const tab = this.#commands.descriptorFront.localTab;
+    const win = tab.ownerDocument.defaultView;
 
     await lazy.ResponsiveUIManager.openIfNeeded(win, tab, {
       trigger: "style_editor",
@@ -1586,18 +1577,9 @@ export class StyleEditorUI extends EventEmitter {
             }
             break;
           }
-          // @backward-compat { version 108 } "media-rules-changed" is only passed on older
-          //                  servers and can be removed when 108 hits release.
           case "at-rules-changed":
-          case "matches-change":
-          case "media-rules-changed": {
-            let { atRules, mediaRules } = resource;
-            // @backward-compat { version 108 } "mediaRules" is only passed on older servers,
-            //                  the whole if block can be removed when 108 hits release.
-            if (mediaRules) {
-              atRules = mediaRules.map(rule => ({ ...rule, type: "media" }));
-            }
-            editor.onAtRulesChanged(atRules);
+          case "matches-change": {
+            editor.onAtRulesChanged(resource.atRules);
             break;
           }
         }

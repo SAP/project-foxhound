@@ -209,7 +209,6 @@ rtc_library("libjingle_peerconnection_api") {
     "peer_connection_interface.h",
     "rtp_receiver_interface.cc",
     "rtp_receiver_interface.h",
-    "rtp_sender_interface.cc",
     "rtp_sender_interface.h",
     "rtp_transceiver_interface.cc",
     "rtp_transceiver_interface.h",
@@ -347,6 +346,7 @@ rtc_source_set("async_dns_resolver") {
   visibility = [ "*" ]
   sources = [ "async_dns_resolver.h" ]
   deps = [
+    "../rtc_base:checks",
     "../rtc_base:socket_address",
     "../rtc_base/system:rtc_export",
   ]
@@ -535,6 +535,7 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
     "../rtc_base:rtc_base",
     "../rtc_base:stringutils",
     "../rtc_base:threading",
+    "../test:fileutils",
     "audio:audio_mixer_api",
     "rtc_event_log",
     "task_queue",
@@ -548,6 +549,7 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
+}
 }
 
 rtc_source_set("frame_generator_api") {
@@ -565,6 +567,7 @@ rtc_source_set("frame_generator_api") {
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
+if (!build_with_mozilla) {
 rtc_library("test_dependency_factory") {
   visibility = [ "*" ]
   testonly = true
@@ -631,7 +634,6 @@ if (rtc_include_tests) {
   }
 }
 
-if (!build_with_mozilla) {
 rtc_library("create_frame_generator") {
   visibility = [ "*" ]
   testonly = true
@@ -648,6 +650,7 @@ rtc_library("create_frame_generator") {
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
+if (!build_with_mozilla) {
 rtc_library("create_peer_connection_quality_test_frame_generator") {
   visibility = [ "*" ]
   testonly = true

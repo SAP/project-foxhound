@@ -2,13 +2,15 @@
 License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::{FunctionIds, ObjectIds};
+use crate::{CallbackIds, Config, FunctionIds, ObjectIds};
 use askama::Template;
 use extend::ext;
-use heck::ToUpperCamelCase;
+use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashSet;
 use std::iter;
-use uniffi_bindgen::interface::{ComponentInterface, FFIArgument, FFIFunction, FFIType, Object};
+use uniffi_bindgen::interface::{
+    CallbackInterface, ComponentInterface, FfiArgument, FfiFunction, FfiType, Object,
+};
 
 #[derive(Template)]
 #[template(path = "UniFFIScaffolding.cpp", escape = "none")]
@@ -20,16 +22,17 @@ pub struct CPPScaffoldingTemplate<'a> {
     //   - Have a hand-written stub function that always calls the first function and only calls
     //     the second function in if MOZ_UNIFFI_FIXTURES is defined.
     pub prefix: &'a str,
-    pub ci_list: &'a Vec<ComponentInterface>,
+    pub components: &'a Vec<(ComponentInterface, Config)>,
     pub function_ids: &'a FunctionIds<'a>,
     pub object_ids: &'a ObjectIds<'a>,
+    pub callback_ids: &'a CallbackIds<'a>,
 }
 
 impl<'a> CPPScaffoldingTemplate<'a> {
     fn has_any_objects(&self) -> bool {
-        self.ci_list
+        self.components
             .iter()
-            .any(|ci| ci.object_definitions().len() > 0)
+            .any(|(ci, _)| ci.object_definitions().len() > 0)
     }
 }
 
@@ -56,13 +59,18 @@ pub impl ComponentInterface {
     // This is basically all the user functions, except we don't expose the free methods for
     // objects.  Freeing is handled by the UniFFIPointer class.
     //
-    // Note: this function should return `impl Iterator<&FFIFunction>`, but that's not currently
+    // Note: this function should return `impl Iterator<&FfiFunction>`, but that's not currently
     // allowed for traits.
-    fn exposed_functions(&self) -> Vec<&FFIFunction> {
+    fn exposed_functions(&self) -> Vec<&FfiFunction> {
         let excluded: HashSet<_> = self
             .object_definitions()
             .iter()
             .map(|o| o.ffi_object_free().name())
+            .chain(
+                self.callback_interface_definitions()
+                    .iter()
+                    .map(|cbi| cbi.ffi_init_callback().name()),
+            )
             .collect();
         self.iter_user_ffi_function_definitions()
             .filter(move |f| !excluded.contains(f.name()))
@@ -72,9 +80,9 @@ pub impl ComponentInterface {
     // ScaffoldingConverter class
     //
     // This is used to convert types between the JS code and Rust
-    fn scaffolding_converter(&self, ffi_type: &FFIType) -> String {
+    fn scaffolding_converter(&self, ffi_type: &FfiType) -> String {
         match ffi_type {
-            FFIType::RustArcPtr(name) => {
+            FfiType::RustArcPtr(name) => {
                 format!("ScaffoldingObjectConverter<&{}>", self._pointer_type(name),)
             }
             _ => format!("ScaffoldingConverter<{}>", ffi_type.rust_type()),
@@ -82,7 +90,7 @@ pub impl ComponentInterface {
     }
 
     // ScaffoldingCallHandler class
-    fn scaffolding_call_handler(&self, func: &FFIFunction) -> String {
+    fn scaffolding_call_handler(&self, func: &FfiFunction) -> String {
         let return_param = match func.return_type() {
             Some(return_type) => self.scaffolding_converter(return_type),
             None => "ScaffoldingConverter<void>".to_string(),
@@ -100,7 +108,7 @@ pub impl ComponentInterface {
 }
 
 #[ext(name=FFIFunctionCppExt)]
-pub impl FFIFunction {
+pub impl FfiFunction {
     fn nm(&self) -> String {
         self.name().to_upper_camel_case()
     }
@@ -124,31 +132,31 @@ pub impl FFIFunction {
 }
 
 #[ext(name=FFITypeCppExt)]
-pub impl FFIType {
+pub impl FfiType {
     // Type for the Rust scaffolding code
     fn rust_type(&self) -> String {
         match self {
-            FFIType::UInt8 => "uint8_t",
-            FFIType::Int8 => "int8_t",
-            FFIType::UInt16 => "uint16_t",
-            FFIType::Int16 => "int16_t",
-            FFIType::UInt32 => "uint32_t",
-            FFIType::Int32 => "int32_t",
-            FFIType::UInt64 => "uint64_t",
-            FFIType::Int64 => "int64_t",
-            FFIType::Float32 => "float",
-            FFIType::Float64 => "double",
-            FFIType::RustBuffer => "RustBuffer",
-            FFIType::RustArcPtr(_) => "void *",
-            FFIType::ForeignBytes => unimplemented!("ForeignBytes not supported"),
-            FFIType::ForeignCallback => unimplemented!("ForeignCallback not supported"),
+            FfiType::UInt8 => "uint8_t",
+            FfiType::Int8 => "int8_t",
+            FfiType::UInt16 => "uint16_t",
+            FfiType::Int16 => "int16_t",
+            FfiType::UInt32 => "uint32_t",
+            FfiType::Int32 => "int32_t",
+            FfiType::UInt64 => "uint64_t",
+            FfiType::Int64 => "int64_t",
+            FfiType::Float32 => "float",
+            FfiType::Float64 => "double",
+            FfiType::RustBuffer(_) => "RustBuffer",
+            FfiType::RustArcPtr(_) => "void *",
+            FfiType::ForeignCallback => "ForeignCallback",
+            FfiType::ForeignBytes => unimplemented!("ForeignBytes not supported"),
         }
         .to_owned()
     }
 }
 
 #[ext(name=FFIArgumentCppExt)]
-pub impl FFIArgument {
+pub impl FfiArgument {
     fn rust_type(&self) -> String {
         self.type_().rust_type()
     }
@@ -158,5 +166,25 @@ pub impl FFIArgument {
 pub impl Object {
     fn nm(&self) -> String {
         self.name().to_upper_camel_case()
+    }
+}
+
+#[ext(name=CallbackInterfaceCppExt)]
+pub impl CallbackInterface {
+    fn nm(&self) -> String {
+        self.name().to_upper_camel_case()
+    }
+
+    /// Name of the static pointer to the JS callback handler
+    fn js_handler(&self) -> String {
+        format!("JS_CALLBACK_HANDLER_{}", self.name().to_shouty_snake_case())
+    }
+
+    /// Name of the C function handler
+    fn c_handler(&self, prefix: &str) -> String {
+        format!(
+            "{prefix}CallbackHandler{}",
+            self.name().to_upper_camel_case()
+        )
     }
 }

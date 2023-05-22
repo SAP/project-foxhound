@@ -10,7 +10,6 @@
 #include "builtin/ModuleObject.h"
 #include "debugger/DebugAPI.h"
 #include "gc/GC.h"
-#include "jit/arm/Simulator-arm.h"
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineIC.h"
@@ -22,11 +21,9 @@
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
-#include "jit/loong64/Simulator-loong64.h"
-#include "jit/mips32/Simulator-mips32.h"
-#include "jit/mips64/Simulator-mips64.h"
 #include "jit/RematerializedFrame.h"
 #include "jit/SharedICRegisters.h"
+#include "jit/Simulator.h"
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit, js::ReportOverRecursed
 #include "js/Utility.h"
 #include "util/Memory.h"
@@ -1697,7 +1694,11 @@ static bool CopyFromRematerializedFrame(JSContext* cx, JitActivation* act,
     *frame->valueSlot(i) = rematFrame->locals()[i];
   }
 
-  frame->setReturnValue(rematFrame->returnValue());
+  if (frame->script()->noScriptRval()) {
+    frame->setReturnValue(UndefinedValue());
+  } else {
+    frame->setReturnValue(rematFrame->returnValue());
+  }
 
   // Don't copy over the hasCachedSavedFrame bit. The new BaselineFrame we're
   // building has a different AbstractFramePtr, so it won't be found in the
@@ -1735,6 +1736,11 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
   MOZ_DIAGNOSTIC_ASSERT(*bailoutInfo->bailoutKind != BailoutKind::Unreachable);
 
   JSContext* cx = TlsContext.get();
+
+  // jit::Bailout(), jit::InvalidationBailout(), and jit::HandleException()
+  // should have reset the counter to zero.
+  MOZ_ASSERT(!cx->isInUnsafeRegion());
+
   BaselineFrame* topFrame = GetTopBaselineFrame(cx);
 
   // We have to get rid of the rematerialized frame, whether it is

@@ -10,6 +10,7 @@
 /* base class #1 for rendering objects that have child lists */
 
 #include "nsContainerFrame.h"
+#include "mozilla/widget/InitData.h"
 #include "nsContainerFrameInlines.h"
 
 #include "mozilla/ComputedStyle.h"
@@ -721,126 +722,6 @@ void nsContainerFrame::ReparentFrames(nsFrameList& aFrameList,
   }
 }
 
-static nsIWidget* GetPresContextContainerWidget(nsPresContext* aPresContext) {
-  nsCOMPtr<nsISupports> container = aPresContext->Document()->GetContainer();
-  nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container);
-  if (!baseWindow) return nullptr;
-
-  nsCOMPtr<nsIWidget> mainWidget;
-  baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
-  return mainWidget;
-}
-
-static bool IsTopLevelWidget(nsIWidget* aWidget) {
-  nsWindowType windowType = aWidget->WindowType();
-  return windowType == eWindowType_toplevel ||
-         windowType == eWindowType_dialog || windowType == eWindowType_popup ||
-         windowType == eWindowType_sheet;
-}
-
-void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
-                                            nsIFrame* aFrame, nsView* aView,
-                                            gfxContext* aRC, uint32_t aFlags) {
-  if (!aView || !aView->HasWidget()) {
-    return;
-  }
-
-  {
-    const bool isValid = aFrame->IsCanvasFrame() || aFrame->IsViewportFrame();
-    if (!isValid) {
-      return;
-    }
-  }
-
-  nsCOMPtr<nsIWidget> windowWidget =
-      GetPresContextContainerWidget(aPresContext);
-  if (!windowWidget || !IsTopLevelWidget(windowWidget)) {
-    return;
-  }
-
-  nsViewManager* vm = aView->GetViewManager();
-  nsView* rootView = vm->GetRootView();
-
-  if (aView != rootView) {
-    return;
-  }
-
-  Element* rootElement = aPresContext->Document()->GetRootElement();
-  if (!rootElement) {
-    return;
-  }
-
-  nsIFrame* rootFrame =
-      aPresContext->PresShell()->FrameConstructor()->GetRootElementStyleFrame();
-  if (!rootFrame) {
-    return;
-  }
-
-  if (aFlags & SET_ASYNC) {
-    aView->SetNeedsWindowPropertiesSync();
-    return;
-  }
-
-  RefPtr<nsPresContext> kungFuDeathGrip(aPresContext);
-  AutoWeakFrame weak(rootFrame);
-
-  if (!aPresContext->PresShell()->GetRootScrollFrame()) {
-    // Scrollframes use native widgets which don't work well with
-    // translucent windows, at least in Windows XP. So if the document
-    // has a root scrollrame it's useless to try to make it transparent,
-    // we'll just get something broken.
-    // We can change this to allow translucent toplevel HTML documents
-    // (e.g. to do something like Dashboard widgets), once we
-    // have broad support for translucent scrolled documents, but be
-    // careful because apparently some Firefox extensions expect
-    // openDialog("something.html") to produce an opaque window
-    // even if the HTML doesn't have a background-color set.
-    auto* canvas = aPresContext->PresShell()->GetCanvasFrame();
-    nsTransparencyMode mode = nsLayoutUtils::GetFrameTransparency(
-        canvas ? canvas : aFrame, rootFrame);
-    StyleWindowShadow shadow = rootFrame->StyleUIReset()->mWindowShadow;
-    nsCOMPtr<nsIWidget> viewWidget = aView->GetWidget();
-    viewWidget->SetTransparencyMode(mode);
-    windowWidget->SetWindowShadowStyle(shadow);
-
-    // For macOS, apply color scheme overrides to the top level window widget.
-    if (auto scheme = aPresContext->GetOverriddenOrEmbedderColorScheme()) {
-      windowWidget->SetColorScheme(scheme);
-    }
-  }
-
-  if (!aRC) {
-    return;
-  }
-
-  if (!weak.IsAlive()) {
-    return;
-  }
-
-  nsSize minSize(0, 0);
-  nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
-  if (rootFrame->IsXULBoxFrame()) {
-    nsBoxLayoutState aState(aPresContext, aRC);
-    minSize = rootFrame->GetXULMinSize(aState);
-    maxSize = rootFrame->GetXULMaxSize(aState);
-  } else {
-    auto* pos = rootFrame->StylePosition();
-    if (pos->mMinWidth.ConvertsToLength()) {
-      minSize.width = pos->mMinWidth.ToLength();
-    }
-    if (pos->mMinHeight.ConvertsToLength()) {
-      minSize.height = pos->mMinHeight.ToLength();
-    }
-    if (pos->mMaxWidth.ConvertsToLength()) {
-      maxSize.width = pos->mMaxWidth.ToLength();
-    }
-    if (pos->mMaxHeight.ConvertsToLength()) {
-      maxSize.height = pos->mMaxHeight.ToLength();
-    }
-  }
-  SetSizeConstraints(aPresContext, windowWidget, minSize, maxSize);
-}
-
 void nsContainerFrame::SetSizeConstraints(nsPresContext* aPresContext,
                                           nsIWidget* aWidget,
                                           const nsSize& aMinSize,
@@ -872,16 +753,19 @@ void nsContainerFrame::SetSizeConstraints(nsPresContext* aPresContext,
   // The sizes are in inner window sizes, so convert them into outer window
   // sizes. Use a size of (200, 200) as only the difference between the inner
   // and outer size is needed.
-  LayoutDeviceIntSize windowSize =
-      aWidget->ClientToWindowSize(LayoutDeviceIntSize(200, 200));
-  if (constraints.mMinSize.width)
-    constraints.mMinSize.width += windowSize.width - 200;
-  if (constraints.mMinSize.height)
-    constraints.mMinSize.height += windowSize.height - 200;
-  if (constraints.mMaxSize.width != NS_MAXSIZE)
-    constraints.mMaxSize.width += windowSize.width - 200;
-  if (constraints.mMaxSize.height != NS_MAXSIZE)
-    constraints.mMaxSize.height += windowSize.height - 200;
+  const LayoutDeviceIntSize sizeDiff = aWidget->ClientToWindowSizeDifference();
+  if (constraints.mMinSize.width) {
+    constraints.mMinSize.width += sizeDiff.width;
+  }
+  if (constraints.mMinSize.height) {
+    constraints.mMinSize.height += sizeDiff.height;
+  }
+  if (constraints.mMaxSize.width != NS_MAXSIZE) {
+    constraints.mMaxSize.width += sizeDiff.width;
+  }
+  if (constraints.mMaxSize.height != NS_MAXSIZE) {
+    constraints.mMaxSize.height += sizeDiff.height;
+  }
 
   aWidget->SetSizeConstraints(constraints);
 }
@@ -957,45 +841,22 @@ LogicalSize nsContainerFrame::ComputeAutoSize(
     AutoMaybeDisableFontInflation an(this);
 
     WritingMode tableWM = GetParent()->GetWritingMode();
-    StyleCaptionSide captionSide = StyleTableBorder()->mCaptionSide;
-
     if (aWM.IsOrthogonalTo(tableWM)) {
-      if (captionSide == StyleCaptionSide::Top ||
-          captionSide == StyleCaptionSide::TopOutside ||
-          captionSide == StyleCaptionSide::Bottom ||
-          captionSide == StyleCaptionSide::BottomOutside) {
-        // For an orthogonal caption on a block-dir side of the table,
-        // shrink-wrap to min-isize.
-        result.ISize(aWM) = GetMinISize(aRenderingContext);
-      } else {
-        // An orthogonal caption on an inline-dir side of the table
-        // is constrained to the containing block.
-        nscoord pref = GetPrefISize(aRenderingContext);
-        if (pref > aCBSize.ISize(aWM)) {
-          pref = aCBSize.ISize(aWM);
-        }
-        if (pref < result.ISize(aWM)) {
-          result.ISize(aWM) = pref;
-        }
-      }
+      // For an orthogonal caption on a block-dir side of the table, shrink-wrap
+      // to min-isize.
+      result.ISize(aWM) = GetMinISize(aRenderingContext);
     } else {
-      if (captionSide == StyleCaptionSide::Left ||
-          captionSide == StyleCaptionSide::Right) {
-        result.ISize(aWM) = GetMinISize(aRenderingContext);
-      } else if (captionSide == StyleCaptionSide::Top ||
-                 captionSide == StyleCaptionSide::Bottom) {
-        // The outer frame constrains our available isize to the isize of
-        // the table.  Grow if our min-isize is bigger than that, but not
-        // larger than the containing block isize.  (It would really be nice
-        // to transmit that information another way, so we could grow up to
-        // the table's available isize, but that's harder.)
-        nscoord min = GetMinISize(aRenderingContext);
-        if (min > aCBSize.ISize(aWM)) {
-          min = aCBSize.ISize(aWM);
-        }
-        if (min > result.ISize(aWM)) {
-          result.ISize(aWM) = min;
-        }
+      // The outer frame constrains our available isize to the isize of
+      // the table.  Grow if our min-isize is bigger than that, but not
+      // larger than the containing block isize.  (It would really be nice
+      // to transmit that information another way, so we could grow up to
+      // the table's available isize, but that's harder.)
+      nscoord min = GetMinISize(aRenderingContext);
+      if (min > aCBSize.ISize(aWM)) {
+        min = aCBSize.ISize(aWM);
+      }
+      if (min > result.ISize(aWM)) {
+        result.ISize(aWM) = min;
       }
     }
   }

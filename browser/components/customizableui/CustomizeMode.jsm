@@ -302,7 +302,7 @@ CustomizeMode.prototype = {
 
     if (!gTab) {
       this.setTab(
-        this.browser.loadOneTab("about:blank", {
+        this.browser.addTab("about:blank", {
           inBackground: false,
           forceNotRemote: true,
           skipAnimation: true,
@@ -1078,7 +1078,7 @@ CustomizeMode.prototype = {
         try {
           item = this.unwrapToolbarItem(aWrapper);
         } catch (ex) {
-          Cu.reportError(ex);
+          console.error(ex);
         }
         resolve(item);
       });

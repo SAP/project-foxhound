@@ -1,7 +1,7 @@
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 /**
@@ -110,6 +110,7 @@ function getPropertyBagValue(bag, key) {
  */
 async function setupLocalCrashReportServer() {
   const SERVER_URL =
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/browser/toolkit/crashreporter/test/browser/crashreport.sjs";
 
   // The test harness sets MOZ_CRASHREPORTER_NO_REPORT, which disables crash

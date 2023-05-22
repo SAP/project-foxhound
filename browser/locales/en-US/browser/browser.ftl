@@ -114,6 +114,15 @@ urlbar-tip-icon-description =
 
 urlbar-result-menu-button =
     .title = Open menu
+urlbar-result-menu-learn-more =
+    .label = Learn more
+    .accesskey = L
+urlbar-result-menu-remove-from-history =
+    .label = Remove from history
+    .accesskey = R
+urlbar-result-menu-tip-get-help =
+    .label = Get help
+    .accesskey = h
 
 ## Prompts users to use the Urlbar when they open a new tab or visit the
 ## homepage of their default search engine.
@@ -690,6 +699,11 @@ bookmarks-other-bookmarks-menu =
   .label = Other bookmarks
 bookmarks-mobile-bookmarks-menu =
   .label = Mobile bookmarks
+
+## Variables:
+##   $isVisible (boolean): if the specific element (e.g. bookmarks sidebar,
+##                         bookmarks toolbar, etc.) is visible or not.
+
 bookmarks-tools-sidebar-visibility =
   .label = { $isVisible ->
      [true] Hide bookmarks sidebar
@@ -710,6 +724,9 @@ bookmarks-tools-menu-button-visibility =
      [true] Remove bookmarks menu from toolbar
     *[other] Add bookmarks menu to toolbar
   }
+
+##
+
 bookmarks-search =
   .label = Search bookmarks
 bookmarks-tools =
@@ -755,12 +772,6 @@ repair-text-encoding-button =
   .tooltiptext = Guess correct text encoding from page content
 
 ## Customize Toolbar Buttons
-
-# Variables:
-#  $shortcut (String): keyboard shortcut to open the add-ons manager
-toolbar-addons-themes-button =
-  .label = Add-ons and themes
-  .tooltiptext = Manage your add-ons and themes ({ $shortcut })
 
 # Variables:
 #  $shortcut (String): keyboard shortcut to open settings (only on macOS)
@@ -950,3 +961,13 @@ refresh-blocked-redirect-label = { -brand-short-name } prevented this page from 
 refresh-blocked-allow =
     .label = Allow
     .accesskey = A
+
+## Firefox Relay integration
+
+firefox-relay-offer-why-relay = { -relay-brand-name } masks your true email address to help protect you from data breaches and spam.
+firefox-relay-offer-how-we-integrate = By continuing, you’ll be able to generate new { -relay-brand-short-name } email masks directly from your { -brand-shorter-name } password manager.
+
+# Variables:
+#  $sitename (String): name of the site where user enters their Relay mask
+#  $useremail (String): user email that will receive messages
+firefox-relay-offer-what-relay-does = We’ll forward all emails from <strong>{ $sitename }</strong> to <strong>{ $useremail }</strong>.

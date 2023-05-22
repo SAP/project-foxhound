@@ -368,6 +368,13 @@ ModuleRtpRtcpImpl2::FetchFecPackets() {
   return rtp_sender_->packet_sender.FetchFecPackets();
 }
 
+void ModuleRtpRtcpImpl2::OnAbortedRetransmissions(
+    rtc::ArrayView<const uint16_t> sequence_numbers) {
+  RTC_DCHECK(rtp_sender_);
+  RTC_DCHECK_RUN_ON(&rtp_sender_->sequencing_checker);
+  rtp_sender_->packet_sender.OnAbortedRetransmissions(sequence_numbers);
+}
+
 void ModuleRtpRtcpImpl2::OnPacketsAcknowledged(
     rtc::ArrayView<const uint16_t> sequence_numbers) {
   RTC_DCHECK(rtp_sender_);
@@ -764,17 +771,17 @@ void ModuleRtpRtcpImpl2::PeriodicUpdate() {
   }
 }
 
-// RTC_RUN_ON(worker_queue_);
 void ModuleRtpRtcpImpl2::MaybeSendRtcp() {
+  RTC_DCHECK_RUN_ON(worker_queue_);
   if (rtcp_sender_.TimeToSendRTCPReport())
     rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpReport);
 }
 
 // TODO(bugs.webrtc.org/12889): Consider removing this function when the issue
 // is resolved.
-// RTC_RUN_ON(worker_queue_);
 void ModuleRtpRtcpImpl2::MaybeSendRtcpAtOrAfterTimestamp(
     Timestamp execution_time) {
+  RTC_DCHECK_RUN_ON(worker_queue_);
   Timestamp now = clock_->CurrentTime();
   if (now >= execution_time) {
     MaybeSendRtcp();

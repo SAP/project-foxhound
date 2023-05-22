@@ -60,11 +60,8 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
 });
 
 /**
@@ -293,7 +290,7 @@ TrackingDBService.prototype = {
         }
       });
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
 
     // If milestone CFR messaging is not enabled we don't need to update the milestone pref or send the event.

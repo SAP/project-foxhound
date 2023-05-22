@@ -2,8 +2,8 @@
 
 const profileDir = do_get_profile();
 
-const { ContextualIdentityService } = ChromeUtils.import(
-  "resource://gre/modules/ContextualIdentityService.jsm"
+const { ContextualIdentityService } = ChromeUtils.importESModule(
+  "resource://gre/modules/ContextualIdentityService.sys.mjs"
 );
 
 const TEST_STORE_FILE_PATH = PathUtils.join(
@@ -99,6 +99,12 @@ add_task(async function migratedFile() {
     "We should have the expected number of public identities"
   );
   ok(!!customUserCreatedIdentity, "Got the custom user-created identity");
+
+  Assert.deepEqual(
+    cis.getPublicUserContextIds(),
+    cis.getPublicIdentities().map(identity => identity.userContextId),
+    "getPublicUserContextIds has matching user context IDs"
+  );
 
   // Check that the reserved userContextIdInternal.webextStorageLocal identity exists.
 

@@ -341,7 +341,7 @@ StructuredCloneHolder::StructuredCloneHolder(
       mGlobal(nullptr)
 #ifdef DEBUG
       ,
-      mCreationEventTarget(GetCurrentEventTarget())
+      mCreationEventTarget(GetCurrentSerialEventTarget())
 #endif
 {
 }
@@ -378,10 +378,6 @@ void StructuredCloneHolder::Read(nsIGlobalObject* aGlobal, JSContext* aCx,
                                  const JS::CloneDataPolicy& aCloneDataPolicy,
                                  ErrorResult& aRv) {
   MOZ_ASSERT(aGlobal);
-  // Error stacks require the reading (deserialization) of principals, which is
-  // only possible on the main thread.
-  MOZ_ASSERT_IF(aCloneDataPolicy.areErrorStackFramesAllowed(),
-                NS_IsMainThread());
 
   mozilla::AutoRestore<nsIGlobalObject*> guard(mGlobal);
   auto errorMessageGuard = MakeScopeExit([&] { mErrorMessage.Truncate(); });
@@ -399,7 +395,7 @@ void StructuredCloneHolder::Read(nsIGlobalObject* aGlobal, JSContext* aCx,
     mWasmModuleArray.Clear();
     mClonedSurfaces.Clear();
     mInputStreamArray.Clear();
-    mVideoFrameImages.Clear();
+    mVideoFrames.Clear();
     Clear();
   }
 }
@@ -1029,7 +1025,7 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
       aTag == SCTAG_DOM_VIDEOFRAME &&
       CloneScope() == StructuredCloneScope::SameProcess) {
     return VideoFrame::ReadStructuredClone(aCx, mGlobal, aReader,
-                                           VideoFrameImages()[aIndex]);
+                                           VideoFrames()[aIndex]);
   }
 
   return ReadFullySerializableObjects(aCx, aReader, aTag);
@@ -1279,6 +1275,30 @@ StructuredCloneHolder::CustomReadTransferHandler(
                                             aReturnObject);
   }
 
+  if (StaticPrefs::dom_media_webcodecs_enabled() &&
+      aTag == SCTAG_DOM_VIDEOFRAME &&
+      CloneScope() == StructuredCloneScope::SameProcess) {
+    MOZ_ASSERT(aContent);
+    VideoFrame::TransferredData* data =
+        static_cast<VideoFrame::TransferredData*>(aContent);
+    nsCOMPtr<nsIGlobalObject> global = mGlobal;
+    RefPtr<VideoFrame> frame = VideoFrame::FromTransferred(global.get(), data);
+    // aContent will be released in CustomFreeTransferHandler if frame is null.
+    if (!frame) {
+      return false;
+    }
+    delete data;
+    aContent = nullptr;
+
+    JS::Rooted<JS::Value> value(aCx);
+    if (!GetOrCreateDOMReflector(aCx, frame, &value)) {
+      JS_ClearPendingException(aCx);
+      return false;
+    }
+    aReturnObject.set(&value.toObject());
+    return true;
+  }
+
   return false;
 }
 
@@ -1357,69 +1377,88 @@ StructuredCloneHolder::CustomWriteTransferHandler(
 
         return true;
       }
+
+      if (StaticPrefs::dom_media_webcodecs_enabled()) {
+        VideoFrame* videoFrame = nullptr;
+        rv = UNWRAP_OBJECT(VideoFrame, &obj, videoFrame);
+        if (NS_SUCCEEDED(rv)) {
+          MOZ_ASSERT(videoFrame);
+
+          *aExtraData = 0;
+          *aTag = SCTAG_DOM_VIDEOFRAME;
+          *aOwnership = JS::SCTAG_TMO_CUSTOM;
+          *aContent = nullptr;
+
+          UniquePtr<VideoFrame::TransferredData> data = videoFrame->Transfer();
+          if (!data) {
+            return false;
+          }
+          *aContent = data.release();
+          MOZ_ASSERT(*aContent);
+          return true;
+        }
+      }
     }
 
-    if (StaticPrefs::dom_streams_transferable_enabled()) {
-      {
-        RefPtr<ReadableStream> stream;
-        rv = UNWRAP_OBJECT(ReadableStream, &obj, stream);
-        if (NS_SUCCEEDED(rv)) {
-          MOZ_ASSERT(stream);
+    {
+      RefPtr<ReadableStream> stream;
+      rv = UNWRAP_OBJECT(ReadableStream, &obj, stream);
+      if (NS_SUCCEEDED(rv)) {
+        MOZ_ASSERT(stream);
 
-          *aTag = SCTAG_DOM_READABLESTREAM;
-          *aOwnership = JS::SCTAG_TMO_CUSTOM;
-          *aContent = nullptr;
+        *aTag = SCTAG_DOM_READABLESTREAM;
+        *aOwnership = JS::SCTAG_TMO_CUSTOM;
+        *aContent = nullptr;
 
-          UniqueMessagePortId id;
-          if (!stream->Transfer(aCx, id)) {
-            return false;
-          }
-          *aExtraData = mPortIdentifiers.Length();
-          mPortIdentifiers.AppendElement(id.release());
-          return true;
+        UniqueMessagePortId id;
+        if (!stream->Transfer(aCx, id)) {
+          return false;
         }
+        *aExtraData = mPortIdentifiers.Length();
+        mPortIdentifiers.AppendElement(id.release());
+        return true;
       }
+    }
 
-      {
-        RefPtr<WritableStream> stream;
-        rv = UNWRAP_OBJECT(WritableStream, &obj, stream);
-        if (NS_SUCCEEDED(rv)) {
-          MOZ_ASSERT(stream);
+    {
+      RefPtr<WritableStream> stream;
+      rv = UNWRAP_OBJECT(WritableStream, &obj, stream);
+      if (NS_SUCCEEDED(rv)) {
+        MOZ_ASSERT(stream);
 
-          *aTag = SCTAG_DOM_WRITABLESTREAM;
-          *aOwnership = JS::SCTAG_TMO_CUSTOM;
-          *aContent = nullptr;
+        *aTag = SCTAG_DOM_WRITABLESTREAM;
+        *aOwnership = JS::SCTAG_TMO_CUSTOM;
+        *aContent = nullptr;
 
-          UniqueMessagePortId id;
-          if (!stream->Transfer(aCx, id)) {
-            return false;
-          }
-          *aExtraData = mPortIdentifiers.Length();
-          mPortIdentifiers.AppendElement(id.release());
-          return true;
+        UniqueMessagePortId id;
+        if (!stream->Transfer(aCx, id)) {
+          return false;
         }
+        *aExtraData = mPortIdentifiers.Length();
+        mPortIdentifiers.AppendElement(id.release());
+        return true;
       }
+    }
 
-      {
-        RefPtr<TransformStream> stream;
-        rv = UNWRAP_OBJECT(TransformStream, &obj, stream);
-        if (NS_SUCCEEDED(rv)) {
-          MOZ_ASSERT(stream);
+    {
+      RefPtr<TransformStream> stream;
+      rv = UNWRAP_OBJECT(TransformStream, &obj, stream);
+      if (NS_SUCCEEDED(rv)) {
+        MOZ_ASSERT(stream);
 
-          *aTag = SCTAG_DOM_TRANSFORMSTREAM;
-          *aOwnership = JS::SCTAG_TMO_CUSTOM;
-          *aContent = nullptr;
+        *aTag = SCTAG_DOM_TRANSFORMSTREAM;
+        *aOwnership = JS::SCTAG_TMO_CUSTOM;
+        *aContent = nullptr;
 
-          UniqueMessagePortId id1;
-          UniqueMessagePortId id2;
-          if (!stream->Transfer(aCx, id1, id2)) {
-            return false;
-          }
-          *aExtraData = mPortIdentifiers.Length();
-          mPortIdentifiers.AppendElement(id1.release());
-          mPortIdentifiers.AppendElement(id2.release());
-          return true;
+        UniqueMessagePortId id1;
+        UniqueMessagePortId id2;
+        if (!stream->Transfer(aCx, id1, id2)) {
+          return false;
         }
+        *aExtraData = mPortIdentifiers.Length();
+        mPortIdentifiers.AppendElement(id1.release());
+        mPortIdentifiers.AppendElement(id2.release());
+        return true;
       }
     }
   }
@@ -1485,6 +1524,17 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
     MessagePort::ForceClose(mPortIdentifiers[aExtraData + 1]);
     return;
   }
+
+  if (StaticPrefs::dom_media_webcodecs_enabled() &&
+      aTag == SCTAG_DOM_VIDEOFRAME &&
+      CloneScope() == StructuredCloneScope::SameProcess) {
+    if (aContent) {
+      VideoFrame::TransferredData* data =
+          static_cast<VideoFrame::TransferredData*>(aContent);
+      delete data;
+    }
+    return;
+  }
 }
 
 bool StructuredCloneHolder::CustomCanTransferHandler(
@@ -1533,7 +1583,7 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
       // https://streams.spec.whatwg.org/#ref-for-transfer-steps
       // Step 1: If ! IsReadableStreamLocked(value) is true, throw a
       // "DataCloneError" DOMException.
-      return !IsReadableStreamLocked(stream);
+      return !stream->Locked();
     }
   }
 
@@ -1544,7 +1594,7 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
       // https://streams.spec.whatwg.org/#ref-for-transfer-steps①
       // Step 1: If ! IsWritableStreamLocked(value) is true, throw a
       // "DataCloneError" DOMException.
-      return !IsWritableStreamLocked(stream);
+      return !stream->Locked();
     }
   }
 
@@ -1555,8 +1605,16 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
       // https://streams.spec.whatwg.org/#ref-for-transfer-steps②
       // Step 3 + 4: If ! Is{Readable,Writable}StreamLocked(value) is true,
       // throw a "DataCloneError" DOMException.
-      return !IsReadableStreamLocked(stream->Readable()) &&
-             !IsWritableStreamLocked(stream->Writable());
+      return !stream->Readable()->Locked() && !stream->Writable()->Locked();
+    }
+  }
+
+  if (StaticPrefs::dom_media_webcodecs_enabled()) {
+    VideoFrame* videoframe = nullptr;
+    nsresult rv = UNWRAP_OBJECT(VideoFrame, &obj, videoframe);
+    if (NS_SUCCEEDED(rv)) {
+      SameProcessScopeRequired(aSameProcessScopeRequired);
+      return CloneScope() == StructuredCloneScope::SameProcess;
     }
   }
 

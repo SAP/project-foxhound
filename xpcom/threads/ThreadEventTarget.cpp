@@ -31,13 +31,12 @@ static mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
 #endif
 
 ThreadEventTarget::ThreadEventTarget(ThreadTargetSink* aSink,
-                                     bool aIsMainThread)
-    : mSink(aSink)
+                                     bool aIsMainThread, bool aBlockDispatch)
+    : mSink(aSink),
 #ifdef DEBUG
-      ,
-      mIsMainThread(aIsMainThread)
+      mIsMainThread(aIsMainThread),
 #endif
-{
+      mBlockDispatch(aBlockDispatch) {
   mThread = PR_GetCurrentThread();
 }
 
@@ -77,10 +76,22 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
                    PR_GetCurrentThread() == mThread,
                "Dispatch to non-main thread after xpcom-shutdown-threads");
 
+  if (mBlockDispatch && !(aFlags & NS_DISPATCH_IGNORE_BLOCK_DISPATCH)) {
+    MOZ_DIAGNOSTIC_ASSERT(
+        false,
+        "Attempt to dispatch to thread which does not usually process "
+        "dispatched runnables until shutdown");
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   LogRunnable::LogDispatch(event.get());
 
   if (aFlags & DISPATCH_SYNC) {
-    nsCOMPtr<nsIEventTarget> current = GetCurrentEventTarget();
+    // NOTE: Get the current thread specifically, as `SpinEventLoopUntil` can
+    // only spin that event target's loop. The reply will specify
+    // NS_DISPATCH_IGNORE_BLOCK_DISPATCH to ensure the reply is received even if
+    // the caller is a threadpool thread.
+    nsCOMPtr<nsIThread> current = NS_GetCurrentThread();
     if (NS_WARN_IF(!current)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -109,7 +120,8 @@ ThreadEventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
     return NS_OK;
   }
 
-  NS_ASSERTION(aFlags == NS_DISPATCH_NORMAL || aFlags == NS_DISPATCH_AT_END,
+  NS_ASSERTION((aFlags & (NS_DISPATCH_AT_END |
+                          NS_DISPATCH_IGNORE_BLOCK_DISPATCH)) == aFlags,
                "unexpected dispatch flags");
   if (!mSink->PutEvent(event.take(), EventQueuePriority::Normal)) {
     return NS_ERROR_UNEXPECTED;

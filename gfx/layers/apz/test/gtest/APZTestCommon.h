@@ -73,9 +73,9 @@ inline PinchGestureInput CreatePinchGestureInput(
     PinchGestureInput::PinchGestureType aType, const ScreenPoint& aFocus,
     float aCurrentSpan, float aPreviousSpan, TimeStamp timestamp) {
   ParentLayerPoint localFocus(aFocus.x, aFocus.y);
-  PinchGestureInput result(
-      aType, PinchGestureInput::UNKNOWN, MillisecondsSinceStartup(timestamp),
-      timestamp, ExternalPoint(0, 0), aFocus, aCurrentSpan, aPreviousSpan, 0);
+  PinchGestureInput result(aType, PinchGestureInput::UNKNOWN, timestamp,
+                           ExternalPoint(0, 0), aFocus, aCurrentSpan,
+                           aPreviousSpan, 0);
   return result;
 }
 
@@ -98,7 +98,7 @@ class ScopedGfxSetting {
 
 static inline constexpr auto kDefaultTouchBehavior =
     AllowedTouchBehavior::VERTICAL_PAN | AllowedTouchBehavior::HORIZONTAL_PAN |
-    AllowedTouchBehavior::PINCH_ZOOM | AllowedTouchBehavior::DOUBLE_TAP_ZOOM;
+    AllowedTouchBehavior::PINCH_ZOOM | AllowedTouchBehavior::ANIMATING_ZOOM;
 
 #define FRESH_PREF_VAR_PASTE(id, line) id##line
 #define FRESH_PREF_VAR_EXPAND(id, line) FRESH_PREF_VAR_PASTE(id, line)

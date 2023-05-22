@@ -17,6 +17,7 @@ module.exports = {
       url:
         "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/avoid-removeChild.html",
     },
+    schema: [],
     type: "suggestion",
   },
 
@@ -40,11 +41,12 @@ module.exports = {
           helpers.getASTSource(callee.object.object, context) ==
             helpers.getASTSource(node.arguments[0])
         ) {
-          context.report(
+          context.report({
             node,
-            "use element.remove() instead of " +
-              "element.parentNode.removeChild(element)"
-          );
+            message:
+              "use element.remove() instead of " +
+              "element.parentNode.removeChild(element)",
+          });
         }
 
         if (
@@ -54,11 +56,12 @@ module.exports = {
           helpers.getASTSource(callee.object, context) ==
             helpers.getASTSource(node.arguments[0].object)
         ) {
-          context.report(
+          context.report({
             node,
-            "use element.firstChild.remove() instead of " +
-              "element.removeChild(element.firstChild)"
-          );
+            message:
+              "use element.firstChild.remove() instead of " +
+              "element.removeChild(element.firstChild)",
+          });
         }
       },
     };

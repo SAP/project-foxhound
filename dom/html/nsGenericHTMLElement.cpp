@@ -927,7 +927,8 @@ bool nsGenericHTMLElement::ParseAttribute(int32_t aNamespaceID,
       return true;
     }
 
-    if (aAttribute == nsGkAtoms::contenteditable) {
+    if (aAttribute == nsGkAtoms::contenteditable ||
+        aAttribute == nsGkAtoms::translate) {
       aResult.ParseAtom(aValue);
       return true;
     }
@@ -2489,11 +2490,6 @@ nsresult nsGenericHTMLFormControlElement::BindToTree(BindContext& aContext,
   nsresult rv = nsGenericHTMLFormElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (IsAutofocusable() && HasAttr(nsGkAtoms::autofocus) &&
-      aContext.AllowsAutoFocus()) {
-    aContext.OwnerDoc().SetAutoFocusElement(this);
-  }
-
   return NS_OK;
 }
 
@@ -2727,12 +2723,6 @@ bool nsGenericHTMLFormControlElement::IsAutocapitalizeInheriting() const {
   return IsInputElement(type) || IsButtonElement(type) ||
          type == FormControlType::Fieldset || type == FormControlType::Output ||
          type == FormControlType::Select || type == FormControlType::Textarea;
-}
-
-bool nsGenericHTMLFormControlElement::IsAutofocusable() const {
-  auto type = ControlType();
-  return IsInputElement(type) || IsButtonElement(type) ||
-         type == FormControlType::Textarea || type == FormControlType::Select;
 }
 
 //----------------------------------------------------------------------
@@ -3110,4 +3100,16 @@ bool nsGenericHTMLElement::IsFormAssociatedCustomElements() const {
 void nsGenericHTMLElement::GetAutocapitalize(nsAString& aValue) const {
   GetEnumAttr(nsGkAtoms::autocapitalize, nullptr, kDefaultAutocapitalize->tag,
               aValue);
+}
+
+bool nsGenericHTMLElement::Translate() const {
+  if (const nsAttrValue* attr = mAttrs.GetAttr(nsGkAtoms::translate)) {
+    if (attr->IsEmptyString() || attr->Equals(nsGkAtoms::yes, eIgnoreCase)) {
+      return true;
+    }
+    if (attr->Equals(nsGkAtoms::no, eIgnoreCase)) {
+      return false;
+    }
+  }
+  return nsGenericHTMLElementBase::Translate();
 }

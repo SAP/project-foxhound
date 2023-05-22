@@ -395,6 +395,15 @@ partial namespace ChromeUtils {
   DOMString getClassName(object obj, optional boolean unwrap = true);
 
   /**
+   * Returns whether the object is a DOM object.
+   *
+   * if |unwrap| is true, all wrappers are unwrapped first. Unless you're
+   * specifically trying to detect whether the object is a proxy, this is
+   * probably what you want.
+   */
+  boolean isDOMObject(object obj, optional boolean unwrap = true);
+
+  /**
    * Clones the properties of the given object into a new object in the given
    * target compartment (or the caller compartment if no target is provided).
    * Property values themeselves are not cloned.
@@ -644,6 +653,17 @@ partial namespace ChromeUtils {
    * Returns whether the background of the element is dark.
    */
   boolean isDarkBackground(Element element);
+
+  /**
+   * Starts the JSOracle process for ORB JavaScript validation, if it hasn't started already.
+   */
+  undefined ensureJSOracleStarted();
+
+  /**
+   * The number of currently alive utility processes.
+   */
+  [ChromeOnly]
+  readonly attribute unsigned long aliveUtilityProcesses;
 };
 
 /*
@@ -718,6 +738,8 @@ enum WebIDLUtilityActorName {
   "audioDecoder_AppleMedia",
   "audioDecoder_WMF",
   "mfMediaEngineCDM",
+  "jSOracle",
+  "windowsUtils",
 };
 
 dictionary UtilityActorsDictionary {

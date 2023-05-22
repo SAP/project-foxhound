@@ -18,7 +18,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -55,6 +54,18 @@ const L10N = new Localization([
 
 const HOMEPAGE_PREF = "browser.startup.homepage";
 const NEWTAB_PREF = "browser.newtabpage.enabled";
+
+/**
+ * return the retargeting delay in days for the cookiebanner nimbus experiment
+ */
+const cbhRetargetingDelay = () => {
+  const featureVal = lazy.NimbusFeatures.cookieBannerHandling.getVariable(
+    "retargetingDelayInDays"
+  );
+
+  if (!featureVal) return 1;
+  return featureVal;
+};
 
 const BASE_MESSAGES = () => [
   {
@@ -282,163 +293,6 @@ const BASE_MESSAGES = () => [
           },
         },
         {
-          id: "UPGRADE_COLORWAY",
-          content: {
-            position: "split",
-            split_narrow_bkg_position: "-65px",
-            image_alt_text: {
-              string_id: "mr2022-onboarding-colorways-image-alt",
-            },
-            background:
-              "url('chrome://activity-stream/content/data/content/assets/mr-colorways.avif') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
-            progress_bar: true,
-            logo: {},
-            title: {
-              string_id: "mr2022-onboarding-colorway-title",
-            },
-            subtitle: {
-              string_id: "mr2022-onboarding-colorway-subtitle",
-            },
-            tiles: {
-              type: "colorway",
-              action: {
-                theme: "<event>",
-              },
-              defaultVariationIndex: 1,
-              darkVariation: 2,
-              systemVariations: ["light", "automatic", "dark"],
-              variations: ["soft", "balanced", "bold"],
-              colorways: [
-                {
-                  id: "default",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-default",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-default2",
-                  },
-                  description: {
-                    string_id: "mr2022-onboarding-colorway-description-default",
-                  },
-                },
-                {
-                  id: "playmaker",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-playmaker",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-playmaker2",
-                  },
-                  description: {
-                    string_id:
-                      "mr2022-onboarding-colorway-description-playmaker",
-                  },
-                },
-                {
-                  id: "expressionist",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-expressionist",
-                  },
-                  tooltip: {
-                    string_id:
-                      "mr2022-onboarding-colorway-tooltip-expressionist2",
-                  },
-                  description: {
-                    string_id:
-                      "mr2022-onboarding-colorway-description-expressionist",
-                  },
-                },
-                {
-                  id: "visionary",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-visionary",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-visionary2",
-                  },
-                  description: {
-                    string_id:
-                      "mr2022-onboarding-colorway-description-visionary",
-                  },
-                },
-                {
-                  id: "activist",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-activist",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-activist2",
-                  },
-                  description: {
-                    string_id:
-                      "mr2022-onboarding-colorway-description-activist",
-                  },
-                },
-                {
-                  id: "dreamer",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-dreamer",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-dreamer2",
-                  },
-                  description: {
-                    string_id: "mr2022-onboarding-colorway-description-dreamer",
-                  },
-                },
-                {
-                  id: "innovator",
-                  label: {
-                    string_id: "mr2022-onboarding-colorway-label-innovator",
-                  },
-                  tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-innovator2",
-                  },
-                  description: {
-                    string_id:
-                      "mr2022-onboarding-colorway-description-innovator",
-                  },
-                },
-              ],
-            },
-            primary_button: {
-              label: {
-                string_id:
-                  "mr2022-onboarding-colorway-primary-button-label-continue",
-              },
-              action: {
-                persistActiveTheme: true,
-                navigate: true,
-              },
-            },
-            checkbox: {
-              label: {
-                string_id: "mr2022-onboarding-existing-colorway-checkbox-label",
-              },
-              action: {
-                type: "CONFIGURE_HOMEPAGE",
-                data: { homePage: "default", newtab: "default" },
-                navigate: true,
-              },
-            },
-            secondary_button: {
-              label: {
-                string_id: "mr2022-onboarding-secondary-skip-button-label",
-              },
-              action: {
-                theme: "automatic",
-                navigate: true,
-              },
-              has_arrow_icon: true,
-            },
-            navigate_away: {
-              action: {
-                theme: "revert",
-              },
-            },
-          },
-        },
-        {
           id: "UPGRADE_MOBILE_DOWNLOAD",
           content: {
             position: "split",
@@ -537,7 +391,6 @@ const BASE_MESSAGES = () => [
               string_id: "mr2022-onboarding-privacy-segmentation-image-alt",
             },
             progress_bar: "true",
-            dual_action_buttons: true,
             background:
               "url('chrome://activity-stream/content/data/content/assets/mr-privacysegmentation.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
             logo: {},
@@ -568,11 +421,12 @@ const BASE_MESSAGES = () => [
                 navigate: true,
               },
             },
-            secondary_button: {
+            additional_button: {
               label: {
                 string_id:
                   "mr2022-onboarding-privacy-segmentation-button-secondary-label",
               },
+              style: "secondary",
               action: {
                 type: "SET_PREF",
                 data: {
@@ -1074,6 +928,156 @@ const BASE_MESSAGES = () => [
     },
     targeting: "!inMr2022Holdback && doesAppNeedPrivatePin",
   },
+  /**
+   * The three messages below are part of an experiment for cookie banner handling.
+   * Due to the need to set a few prefs in order to enable the feature,
+   * The message variant is also being handled via a pref. At the end of the experiment
+   * period this will be consolidated into a single message.
+   */
+  {
+    id: "CFR_COOKIEBANNER",
+    groups: ["cfr"],
+    template: "cfr_doorhanger",
+    content: {
+      bucket_id: "CFR_COOKIEBANNER",
+      anchor_id: "tracking-protection-icon-container",
+      layout: "icon_and_message",
+      icon: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
+      icon_class: "cfr-doorhanger-small-icon",
+      persistent_doorhanger: true,
+      heading_text: {
+        string_id: "cfr-cookiebanner-header",
+      },
+      text: {
+        string_id: "cfr-cookiebanner-body",
+      },
+      buttons: {
+        primary: {
+          label: {
+            string_id: "cfr-cookiebanner-accept-button-v2",
+          },
+          action: {
+            type: "ENABLE_CBH",
+          },
+        },
+        secondary: [
+          {
+            label: {
+              string_id: "cfr-cookiebanner-reject-button",
+            },
+            action: {
+              type: "CANCEL",
+            },
+          },
+        ],
+      },
+      skip_address_bar_notifier: true,
+    },
+    frequency: {
+      custom: [{ period: 24 * 60 * 60 * 1000 * cbhRetargetingDelay(), cap: 1 }],
+      lifetime: 2,
+    },
+    trigger: {
+      id: "cookieBannerDetected",
+    },
+    targeting: `'cookiebanners.ui.desktop.enabled'|preferenceValue == true && 'cookiebanners.service.detectOnly'|preferenceValue == true && 'cookiebanners.ui.desktop.cfrVariant'|preferenceValue == 1`,
+  },
+  {
+    id: "CFR_COOKIEBANNER_VARIANT_A",
+    groups: ["cfr"],
+    template: "cfr_doorhanger",
+    content: {
+      bucket_id: "CFR_COOKIEBANNER",
+      anchor_id: "tracking-protection-icon-container",
+      layout: "icon_and_message",
+      icon: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
+      icon_class: "cfr-doorhanger-small-icon",
+      persistent_doorhanger: true,
+      heading_text: {
+        string_id: "cfr-cookiebanner-header-variant-1",
+      },
+      text: {
+        string_id: "cfr-cookiebanner-body-variant-1",
+      },
+      buttons: {
+        primary: {
+          label: {
+            string_id: "cfr-cookiebanner-accept-button-variant-1",
+          },
+          action: {
+            type: "ENABLE_CBH",
+          },
+        },
+        secondary: [
+          {
+            label: {
+              string_id: "cfr-cookiebanner-reject-button-variant-1",
+            },
+            action: {
+              type: "CANCEL",
+            },
+          },
+        ],
+      },
+      skip_address_bar_notifier: true,
+    },
+    frequency: {
+      custom: [{ period: 24 * 60 * 60 * 1000 * cbhRetargetingDelay(), cap: 1 }],
+      lifetime: 2,
+    },
+    trigger: {
+      id: "cookieBannerDetected",
+    },
+    targeting: `'cookiebanners.ui.desktop.enabled'|preferenceValue == true && 'cookiebanners.service.detectOnly'|preferenceValue == true && 'cookiebanners.ui.desktop.cfrVariant'|preferenceValue == 2`,
+  },
+  {
+    id: "CFR_COOKIEBANNER_VARIANT_B",
+    groups: ["cfr"],
+    template: "cfr_doorhanger",
+    content: {
+      bucket_id: "CFR_COOKIEBANNER",
+      anchor_id: "tracking-protection-icon-container",
+      layout: "icon_and_message",
+      icon: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
+      icon_class: "cfr-doorhanger-small-icon",
+      persistent_doorhanger: true,
+      heading_text: {
+        string_id: "cfr-cookiebanner-header-variant-2",
+      },
+      text: {
+        string_id: "cfr-cookiebanner-body-variant-2",
+      },
+      buttons: {
+        primary: {
+          label: {
+            string_id: "cfr-cookiebanner-accept-button-variant-2",
+          },
+          action: {
+            type: "ENABLE_CBH",
+          },
+        },
+        secondary: [
+          {
+            label: {
+              string_id: "cfr-cookiebanner-reject-button-variant-2",
+            },
+            action: {
+              type: "CANCEL",
+            },
+          },
+        ],
+      },
+      skip_address_bar_notifier: true,
+    },
+    frequency: {
+      custom: [{ period: 24 * 60 * 60 * 1000 * cbhRetargetingDelay(), cap: 1 }],
+      lifetime: 2,
+    },
+    trigger: {
+      id: "cookieBannerDetected",
+    },
+    targeting: `'cookiebanners.ui.desktop.enabled'|preferenceValue == true && 'cookiebanners.service.detectOnly'|preferenceValue == true && 'cookiebanners.ui.desktop.cfrVariant'|preferenceValue == 3`,
+  },
 ];
 
 // Eventually, move Feature Callout messages to their own provider
@@ -1271,18 +1275,6 @@ const OnboardingMessageProvider = {
       prepareMobileDownload();
     }
 
-    // Remove colorways screen if there is no active colorways collection
-    const hasActiveColorways = !!lazy.BuiltInThemes.findActiveColorwayCollection?.();
-    if (!hasActiveColorways) {
-      removeScreens(screen => screen.id?.startsWith("UPGRADE_COLORWAY"));
-    }
-
-    // If the newtab and home page are already set to defaults, remove the
-    // checkbox that offers to reset them.
-    if (!this._doesHomepageNeedReset()) {
-      delete content.screens?.find(screen => screen.id === "UPGRADE_COLORWAY")
-        ?.content?.checkbox;
-    }
     return message;
   },
 };

@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -237,7 +237,7 @@ async function copySomeTextAndCheckClipboard(view, positions, expectedPattern) {
 }
 
 function checkClipboard(expectedPattern) {
-  const actual = SpecialPowers.getClipboardData("text/unicode");
+  const actual = SpecialPowers.getClipboardData("text/plain");
   const expectedRegExp = new RegExp(expectedPattern, "g");
   return expectedRegExp.test(actual);
 }
@@ -249,7 +249,7 @@ function failClipboardCheck(expectedPattern) {
   expectedPattern = expectedPattern.replace(/\\\(/g, "(");
   expectedPattern = expectedPattern.replace(/\\\)/g, ")");
 
-  let actual = SpecialPowers.getClipboardData("text/unicode");
+  let actual = SpecialPowers.getClipboardData("text/plain");
 
   // Trim the right hand side of our strings. This is because expectedPattern
   // accounts for windows sometimes adding a newline to our copied data.

@@ -8,7 +8,6 @@ const { PromiseTestUtils } = ChromeUtils.importESModule(
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
   this
@@ -25,9 +24,7 @@ add_task(async function() {
   // Enable Multiprocess Browser Toolbox
   await pushPref("devtools.browsertoolbox.scope", "everything");
 
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableBrowserToolboxFission: true,
-  });
+  const ToolboxTask = await initBrowserToolboxTask();
   await ToolboxTask.importFunctions({
     getNodeFront,
     getNodeFrontInFrames,

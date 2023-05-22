@@ -12,6 +12,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Decimal.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
@@ -458,12 +459,6 @@ class HTMLInputElement final : public TextControlElement,
 
   void GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo);
 
-  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
-
-  void SetAutofocus(bool aValue, ErrorResult& aRv) {
-    SetHTMLBoolAttr(nsGkAtoms::autofocus, aValue, aRv);
-  }
-
   void GetCapture(nsAString& aValue);
   void SetCapture(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::capture, aValue, aRv);
@@ -860,6 +855,9 @@ class HTMLInputElement final : public TextControlElement,
    * @return whether the current value is the empty string.
    */
   bool IsValueEmpty() const;
+
+  // Parse a simple (hex) color.
+  static mozilla::Maybe<nscolor> ParseSimpleColor(const nsAString& aColor);
 
  protected:
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual ~HTMLInputElement();
@@ -1394,6 +1392,11 @@ class HTMLInputElement final : public TextControlElement,
    * picker (color picker or file picker).
    */
   nsresult MaybeInitPickers(EventChainPostVisitor& aVisitor);
+
+  /**
+   * Returns all valid colors in the <datalist> for the input with type=color.
+   */
+  nsTArray<nsString> GetColorsFromList();
 
   enum FilePickerType { FILE_PICKER_FILE, FILE_PICKER_DIRECTORY };
   nsresult InitFilePicker(FilePickerType aType);

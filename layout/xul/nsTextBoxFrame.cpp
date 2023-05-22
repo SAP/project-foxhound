@@ -26,7 +26,6 @@
 #include "nsIContent.h"
 #include "nsNameSpaceManager.h"
 #include "nsBoxLayoutState.h"
-#include "nsMenuBarListener.h"
 #include "nsString.h"
 #include "nsITheme.h"
 #include "nsUnicharUtils.h"
@@ -354,9 +353,9 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
   nscolor overColor = 0;
   nscolor underColor = 0;
   nscolor strikeColor = 0;
-  uint8_t overStyle = 0;
-  uint8_t underStyle = 0;
-  uint8_t strikeStyle = 0;
+  auto overStyle = StyleTextDecorationStyle::None;
+  auto underStyle = StyleTextDecorationStyle::None;
+  auto strikeStyle = StyleTextDecorationStyle::None;
 
   // Begin with no decorations
   auto decorations = StyleTextDecorationLine::NONE;
@@ -384,7 +383,7 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
       } else {
         color = styleText->mTextDecorationColor.CalcColor(*context);
       }
-      uint8_t style = styleText->mTextDecorationStyle;
+      const auto style = styleText->mTextDecorationStyle;
 
       if (StyleTextDecorationLine::UNDERLINE & decorMask &
           styleText->mTextDecorationLine) {
@@ -453,7 +452,7 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
     fontMet->GetUnderline(offset, size);
     params.lineSize.height = presContext->AppUnitsToGfxUnits(size);
     if ((decorations & StyleTextDecorationLine::UNDERLINE) &&
-        underStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
+        underStyle != StyleTextDecorationStyle::None) {
       params.color = underColor;
       params.offset = presContext->AppUnitsToGfxUnits(offset);
       params.decoration = StyleTextDecorationLine::UNDERLINE;
@@ -461,7 +460,7 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
       nsCSSRendering::PaintDecorationLine(this, *drawTarget, params);
     }
     if ((decorations & StyleTextDecorationLine::OVERLINE) &&
-        overStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
+        overStyle != StyleTextDecorationStyle::None) {
       params.color = overColor;
       params.offset = params.ascent;
       params.decoration = StyleTextDecorationLine::OVERLINE;
@@ -537,7 +536,7 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
   // Strikeout is drawn on top of the text, per
   // http://www.w3.org/TR/CSS21/zindex.html point 7.2.1.4.1.1.
   if ((decorations & StyleTextDecorationLine::LINE_THROUGH) &&
-      strikeStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
+      strikeStyle != StyleTextDecorationStyle::None) {
     fontMet->GetStrikeout(offset, size);
     params.color = strikeColor;
     params.lineSize.height = presContext->AppUnitsToGfxUnits(size);
@@ -727,8 +726,10 @@ void nsTextBoxFrame::UpdateAccessTitle() {
    * toolkit/components/prompts/src/CommonDialog.jsm (setLabelForNode)
    * toolkit/content/widgets/text.js (formatAccessKey)
    */
-  int32_t menuAccessKey = nsMenuBarListener::GetMenuAccessKey();
-  if (!menuAccessKey || mAccessKey.IsEmpty()) return;
+  uint32_t menuAccessKey = LookAndFeel::GetMenuAccessKey();
+  if (!menuAccessKey || mAccessKey.IsEmpty()) {
+    return;
+  }
 
   if (!AlwaysAppendAccessKey() &&
       FindInReadable(mAccessKey, mTitle, nsCaseInsensitiveStringComparator))
@@ -774,49 +775,49 @@ void nsTextBoxFrame::UpdateAccessTitle() {
 }
 
 void nsTextBoxFrame::UpdateAccessIndex() {
-  int32_t menuAccessKey = nsMenuBarListener::GetMenuAccessKey();
-  if (menuAccessKey) {
-    if (mAccessKey.IsEmpty()) {
-      if (mAccessKeyInfo) {
-        delete mAccessKeyInfo;
-        mAccessKeyInfo = nullptr;
-      }
-    } else {
-      if (!mAccessKeyInfo) {
-        mAccessKeyInfo = new nsAccessKeyInfo();
-        if (!mAccessKeyInfo) return;
-      }
-
-      nsAString::const_iterator start, end;
-
-      mCroppedTitle.BeginReading(start);
-      mCroppedTitle.EndReading(end);
-
-      // remember the beginning of the string
-      nsAString::const_iterator originalStart = start;
-
-      bool found;
-      if (!AlwaysAppendAccessKey()) {
-        // not appending access key - do case-sensitive search
-        // first
-        found = FindInReadable(mAccessKey, start, end);
-        if (!found) {
-          // didn't find it - perform a case-insensitive search
-          start = originalStart;
-          found = FindInReadable(mAccessKey, start, end,
-                                 nsCaseInsensitiveStringComparator);
-        }
-      } else {
-        found = RFindInReadable(mAccessKey, start, end,
-                                nsCaseInsensitiveStringComparator);
-      }
-
-      if (found)
-        mAccessKeyInfo->mAccesskeyIndex = Distance(originalStart, start);
-      else
-        mAccessKeyInfo->mAccesskeyIndex = kNotFound;
-    }
+  uint32_t menuAccessKey = LookAndFeel::GetMenuAccessKey();
+  if (!menuAccessKey) {
+    return;
   }
+  if (mAccessKey.IsEmpty()) {
+    if (mAccessKeyInfo) {
+      delete mAccessKeyInfo;
+      mAccessKeyInfo = nullptr;
+    }
+    return;
+  }
+  if (!mAccessKeyInfo) {
+    mAccessKeyInfo = new nsAccessKeyInfo();
+  }
+
+  nsAString::const_iterator start, end;
+
+  mCroppedTitle.BeginReading(start);
+  mCroppedTitle.EndReading(end);
+
+  // remember the beginning of the string
+  nsAString::const_iterator originalStart = start;
+
+  bool found;
+  if (!AlwaysAppendAccessKey()) {
+    // not appending access key - do case-sensitive search
+    // first
+    found = FindInReadable(mAccessKey, start, end);
+    if (!found) {
+      // didn't find it - perform a case-insensitive search
+      start = originalStart;
+      found = FindInReadable(mAccessKey, start, end,
+                             nsCaseInsensitiveStringComparator);
+    }
+  } else {
+    found = RFindInReadable(mAccessKey, start, end,
+                            nsCaseInsensitiveStringComparator);
+  }
+
+  if (found)
+    mAccessKeyInfo->mAccesskeyIndex = Distance(originalStart, start);
+  else
+    mAccessKeyInfo->mAccesskeyIndex = kNotFound;
 }
 
 void nsTextBoxFrame::RecomputeTitle() {

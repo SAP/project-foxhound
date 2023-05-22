@@ -42,11 +42,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   Resource: "resource://services-sync/resource.js",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "ANNOS_TO_TRACK", () => [
-  lazy.PlacesUtils.LMANNO_FEEDURI,
-  lazy.PlacesUtils.LMANNO_SITEURI,
-]);
-
 const PLACES_MAINTENANCE_INTERVAL_SECONDS = 4 * 60 * 60; // 4 hours.
 
 const FOLDER_SORTINDEX = 1000000;
@@ -116,7 +111,7 @@ PlacesItem.prototype = {
 
     // Convert the abstract places item to the actual object type
     if (!this.deleted) {
-      this.__proto__ = this.getTypeObject(this.type).prototype;
+      Object.setPrototypeOf(this, this.getTypeObject(this.type).prototype);
     }
 
     return clear;
@@ -130,7 +125,6 @@ PlacesItem.prototype = {
     return recordObj;
   },
 
-  __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.PlacesItem",
 
   // Converts the record to a Sync bookmark object that can be passed to
@@ -162,6 +156,8 @@ PlacesItem.prototype = {
   },
 };
 
+Object.setPrototypeOf(PlacesItem.prototype, CryptoWrapper.prototype);
+
 Utils.deferGetSet(PlacesItem, "cleartext", [
   "hasDupe",
   "parentid",
@@ -174,7 +170,6 @@ function Bookmark(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "bookmark");
 }
 Bookmark.prototype = {
-  __proto__: PlacesItem.prototype,
   _logName: "Sync.Record.Bookmark",
 
   toSyncBookmark() {
@@ -197,6 +192,8 @@ Bookmark.prototype = {
   },
 };
 
+Object.setPrototypeOf(Bookmark.prototype, PlacesItem.prototype);
+
 Utils.deferGetSet(Bookmark, "cleartext", [
   "title",
   "bmkUri",
@@ -209,7 +206,6 @@ function BookmarkQuery(collection, id) {
   Bookmark.call(this, collection, id, "query");
 }
 BookmarkQuery.prototype = {
-  __proto__: Bookmark.prototype,
   _logName: "Sync.Record.BookmarkQuery",
 
   toSyncBookmark() {
@@ -226,13 +222,14 @@ BookmarkQuery.prototype = {
   },
 };
 
+Object.setPrototypeOf(BookmarkQuery.prototype, Bookmark.prototype);
+
 Utils.deferGetSet(BookmarkQuery, "cleartext", ["folderName", "queryId"]);
 
 function BookmarkFolder(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "folder");
 }
 BookmarkFolder.prototype = {
-  __proto__: PlacesItem.prototype,
   _logName: "Sync.Record.Folder",
 
   toSyncBookmark() {
@@ -250,6 +247,8 @@ BookmarkFolder.prototype = {
   },
 };
 
+Object.setPrototypeOf(BookmarkFolder.prototype, PlacesItem.prototype);
+
 Utils.deferGetSet(BookmarkFolder, "cleartext", [
   "description",
   "title",
@@ -260,7 +259,6 @@ function Livemark(collection, id) {
   BookmarkFolder.call(this, collection, id, "livemark");
 }
 Livemark.prototype = {
-  __proto__: BookmarkFolder.prototype,
   _logName: "Sync.Record.Livemark",
 
   toSyncBookmark() {
@@ -279,13 +277,14 @@ Livemark.prototype = {
   },
 };
 
+Object.setPrototypeOf(Livemark.prototype, BookmarkFolder.prototype);
+
 Utils.deferGetSet(Livemark, "cleartext", ["siteUri", "feedUri"]);
 
 function BookmarkSeparator(collection, id) {
   PlacesItem.call(this, collection, id, "separator");
 }
 BookmarkSeparator.prototype = {
-  __proto__: PlacesItem.prototype,
   _logName: "Sync.Record.Separator",
 
   fromSyncBookmark(item) {
@@ -293,6 +292,8 @@ BookmarkSeparator.prototype = {
     this.pos = item.index;
   },
 };
+
+Object.setPrototypeOf(BookmarkSeparator.prototype, PlacesItem.prototype);
 
 Utils.deferGetSet(BookmarkSeparator, "cleartext", "pos");
 
@@ -306,7 +307,6 @@ function BookmarksEngine(service) {
   SyncEngine.call(this, "Bookmarks", service);
 }
 BookmarksEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _recordObj: PlacesItem,
   _trackerObj: BookmarksTracker,
   _storeObj: BookmarksStore,
@@ -628,6 +628,8 @@ BookmarksEngine.prototype = {
   },
 };
 
+Object.setPrototypeOf(BookmarksEngine.prototype, SyncEngine.prototype);
+
 /**
  * The bookmarks store delegates to the mirror for staging and applying
  * records. Most `Store` methods intentionally remain abstract, so you can't use
@@ -639,8 +641,6 @@ function BookmarksStore(name, engine) {
 }
 
 BookmarksStore.prototype = {
-  __proto__: Store.prototype,
-
   _openMirrorPromise: null,
 
   // For tests.
@@ -787,6 +787,8 @@ BookmarksStore.prototype = {
   },
 };
 
+Object.setPrototypeOf(BookmarksStore.prototype, Store.prototype);
+
 // The bookmarks tracker is a special flower. Instead of listening for changes
 // via observer notifications, it queries Places for the set of items that have
 // changed since the last sync. Because it's a "pull-based" tracker, it ignores
@@ -796,10 +798,7 @@ function BookmarksTracker(name, engine) {
   Tracker.call(this, name, engine);
 }
 BookmarksTracker.prototype = {
-  __proto__: Tracker.prototype,
-
   onStart() {
-    lazy.PlacesUtils.bookmarks.addObserver(this, true);
     this._placesListener = new PlacesWeakCallbackWrapper(
       this.handlePlacesEvents.bind(this)
     );
@@ -808,6 +807,8 @@ BookmarksTracker.prototype = {
         "bookmark-added",
         "bookmark-removed",
         "bookmark-moved",
+        "bookmark-guid-changed",
+        "bookmark-keyword-changed",
         "bookmark-tags-changed",
         "bookmark-time-changed",
         "bookmark-title-changed",
@@ -821,12 +822,13 @@ BookmarksTracker.prototype = {
   },
 
   onStop() {
-    lazy.PlacesUtils.bookmarks.removeObserver(this);
     lazy.PlacesUtils.observers.removeListener(
       [
         "bookmark-added",
         "bookmark-removed",
         "bookmark-moved",
+        "bookmark-guid-changed",
+        "bookmark-keyword-changed",
         "bookmark-tags-changed",
         "bookmark-time-changed",
         "bookmark-title-changed",
@@ -870,10 +872,7 @@ BookmarksTracker.prototype = {
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI([
-    "nsINavBookmarkObserver",
-    "nsISupportsWeakReference",
-  ]),
+  QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
 
   /* Every add/remove/change will trigger a sync for MULTI_DEVICE */
   _upScore: function BMT__upScore() {
@@ -886,12 +885,23 @@ BookmarksTracker.prototype = {
         case "bookmark-added":
         case "bookmark-removed":
         case "bookmark-moved":
-        case "bookmark-guid-changed":
+        case "bookmark-keyword-changed":
         case "bookmark-tags-changed":
         case "bookmark-time-changed":
         case "bookmark-title-changed":
         case "bookmark-url-changed":
           if (lazy.IGNORED_SOURCES.includes(event.source)) {
+            continue;
+          }
+
+          this._log.trace(`'${event.type}': ${event.id}`);
+          this._upScore();
+          break;
+        case "bookmark-guid-changed":
+          if (event.source !== lazy.PlacesUtils.bookmarks.SOURCES.SYNC) {
+            this._log.warn(
+              "The source of bookmark-guid-changed event shoud be sync."
+            );
             continue;
           }
 
@@ -905,41 +915,9 @@ BookmarksTracker.prototype = {
       }
     }
   },
-
-  // This method is oddly structured, but the idea is to return as quickly as
-  // possible -- this handler gets called *every time* a bookmark changes, for
-  // *each change*.
-  onItemChanged: function BMT_onItemChanged(
-    itemId,
-    property,
-    isAnno,
-    value,
-    lastModified,
-    itemType,
-    parentId,
-    guid,
-    parentGuid,
-    oldValue,
-    source
-  ) {
-    if (lazy.IGNORED_SOURCES.includes(source)) {
-      return;
-    }
-
-    if (isAnno && !lazy.ANNOS_TO_TRACK.includes(property)) {
-      // Ignore annotations except for the ones that we sync.
-      return;
-    }
-
-    this._log.trace(
-      "onItemChanged: " +
-        itemId +
-        (", " + property + (isAnno ? " (anno)" : "")) +
-        (value ? ' = "' + value + '"' : "")
-    );
-    this._upScore();
-  },
 };
+
+Object.setPrototypeOf(BookmarksTracker.prototype, Tracker.prototype);
 
 /**
  * A changeset that stores extra metadata in a change record for each ID. The

@@ -49,6 +49,20 @@ FX_URLBAR_SELECTED_RESULT_METHOD
     Before QuantumBar, it was possible to right-click a result to highlight but
     not pick it. Then the user could press Enter. This is no more possible.
 
+FX_URLBAR_ZERO_PREFIX_DWELL_TIME_MS
+  This probe records the amount of time the zero-prefix view was shown; that is,
+  the time from when it was opened to the time it was closed. "Zero-prefix"
+  means the search string was empty, so the zero-prefix view is the view that's
+  shown when the user clicks in the urlbar before typing a search string. Often
+  it's also called the "top sites" view since normally it shows the user's top
+  sites. This is an exponential histogram whose values range from 0 to 60,000
+  with 50 buckets. Values are in milliseconds. This histogram was introduced in
+  Firefox 110.0 in bug 1806765.
+
+PLACES_FRECENCY_RECALC_CHUNK_TIME_MS
+  This records the time necessary to recalculate frecency of a chunk of pages,
+  as defined in the `PlacesFrecencyRecalculator <https://searchfox.org/mozilla-central/source/toolkit/components/places/PlacesFrecencyRecalculator.sys.mjs>`_ module.
+
 Scalars
 -------
 
@@ -58,6 +72,11 @@ urlbar.abandonment
   completing the engagement. This can happen when the user clicks outside the
   urlbar to focus a different part of the window. It can also happen when the
   user switches to another window while the urlbar is focused.
+
+urlbar.autofill_deletion
+  A uint recording the deletion count for autofilled string in the urlbar.
+  This occurs when the user deletes whole autofilled string by BACKSPACE or
+  DELETE key while the autofilled string is selected.
 
 urlbar.engagement
   A uint recording the number of engagements the user completes in the urlbar.
@@ -358,8 +377,43 @@ urlbar.tabtosearch.*
     Due to the potentially sensitive nature of these data, they are currently
     collected only on pre-release version of Firefox. See bug 1686330.
 
+urlbar.zeroprefix.abandonment
+  A uint recording the number of abandonments of the zero-prefix view.
+  "Zero-prefix" means the search string was empty, so the zero-prefix view is
+  the view that's shown when the user clicks in the urlbar before typing a
+  search string. Often it's called the "top sites" view since normally it shows
+  the user's top sites. "Abandonment" means the user opened the zero-prefix view
+  but it was closed without the user picking a result inside it. This scalar was
+  introduced in Firefox 110.0 in bug 1806765.
+
+urlbar.zeroprefix.engagement
+  A uint recording the number of engagements in the zero-prefix view.
+  "Zero-prefix" means the search string was empty, so the zero-prefix view is
+  the view that's shown when the user clicks in the urlbar before typing a
+  search string. Often it's called the "top sites" view since normally it shows
+  the user's top sites. "Engagement" means the user picked a result inside the
+  view. This scalar was introduced in Firefox 110.0 in bug 1806765.
+
+urlbar.zeroprefix.exposure
+  A uint recording the number of times the user was exposed to the zero-prefix
+  view; that is, the number of times it was shown. "Zero-prefix" means the
+  search string was empty, so the zero-prefix view is the view that's shown when
+  the user clicks in the urlbar before typing a search string. Often it's called
+  the "top sites" view since normally it shows the user's top sites. This scalar
+  was introduced in Firefox 110.0 in bug 1806765.
+
+urlbar.quickaction.impression
+  A uint recording the number of times the user was shown a quickaction, the
+  key is in the form $key-$n where $n is the number of characters the user typed
+  in order for the suggestion to show. See bug 1806024.
+
+urlbar.quickaction.picked
+  A uint recording the number of times the user selected a quickaction, the
+  key is in the form $key-$n where $n is the number of characters the user typed
+  in order for the suggestion to show. See bug 1783155.
+
 places.*
-  This is places related telemetry.
+  This is Places related telemetry.
 
   Valid result types are:
 
@@ -367,106 +421,39 @@ places.*
     Number of sponsored visits that could not find their triggering URL in
     history. We expect this to be a small number just due to the navigation layer
     manipulating URLs. A large or growing value may be a concern.
+  - ``pages_need_frecency_recalculation``
+    Number of pages in need of a frecency recalculation. This number should
+    remain small compared to the total number of pages in the database (see the
+    `PLACES_PAGES_COUNT` histogram). It can be used to valuate the frequency
+    and size of recalculations, for performance reasons.
 
-Event Telemetry
----------------
+Search Engagement Telemetry
+---------------------------
 
-The event telemetry is grouped under the ``urlbar`` category.
+The search engagement telemetry provided since Firefox 110 is is recorded using
+Glean events. Because of the data size, these events are collected only for a
+subset of the population, using the Glean Sampling feature. Please see the
+following documents for the details.
 
-Event Method
-  There are two methods to describe the interaction with the urlbar:
-
-  - ``engagement``
-    It is defined as a completed action in urlbar, where a user inserts text
-    and executes one of the actions described in the Event Object.
-  - ``abandonment``
-    It is defined as an action where the user inserts text but does not
+  - `Engagement`_ :
+    It is defined as a completed action in urlbar, where a user picked one of
+    the results.
+  - `Abandonment`_ :
+    It is defined as an action where the user open the results but does not
     complete an engagement action, usually unfocusing the urlbar. This also
-    happens when the user switches to another window, regardless of urlbar
-    focus.
+    happens when the user switches to another window, if the results popup was
+    opening.
+  - `Impression`_ :
+    It is defined as an action where the results had been shown to the user for
+    a while. In default, it will be recorded when the same results have been
+    shown and 1 sec has elapsed. The interval value can be modified through the
+    `browser.urlbar.searchEngagementTelemetry.pauseImpressionIntervalMs`
+    preference.
 
-Event Value
-  This is how the user interaction started
+.. _Engagement: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/urlbar_engagement
+.. _Abandonment: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/urlbar_abandonment
+.. _Impression: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/urlbar_impression
 
-  - ``typed``: The text was typed into the urlbar.
-  - ``dropped``: The text was drag and dropped into the urlbar.
-  - ``pasted``: The text was pasted into the urlbar.
-  - ``topsites``: The user opened the urlbar view without typing, dropping,
-    or pasting.
-    In these cases, if the urlbar input is showing the URL of the loaded page
-    and the user has not modified the input’s content, the urlbar views shows
-    the user’s top sites. Otherwise, if the user had modified the input’s
-    content, the urlbar view shows results based on what the user has typed.
-    To tell whether top sites were shown, it's enough to check whether value is
-    ``topsites``. To know whether the user actually picked a top site, check
-    check that ``numChars`` == 0. If ``numChars`` > 0, the user initially opened
-    top sites, but then they started typing and confirmed a different result.
-  - ``returned``: The user abandoned a search, for example by switching to
-    another tab/window, or focusing something else, then came back to it
-    and continued. We consider a search continued if the user kept at least the
-    first char of the original search string.
-  - ``restarted``: The user abandoned a search, for example by switching to
-    another tab/window, or focusing something else, then came back to it,
-    cleared it and then typed a new string.
-
-Event Object
-  These describe actions in the urlbar:
-
-  - ``click``
-    The user clicked on a result.
-  - ``enter``
-    The user confirmed a result with Enter.
-  - ``drop_go``
-    The user dropped text on the input field.
-  - ``paste_go``
-    The user used Paste and Go feature. It is not the same as paste and Enter.
-  - ``blur``
-    The user unfocused the urlbar. This is only valid for ``abandonment``.
-
-Event Extra
-  This object contains additional information about the interaction.
-  Extra is a key-value store, where all the keys and values are strings.
-
-  - ``elapsed``
-    Time in milliseconds from the initial interaction to an action.
-  - ``numChars``
-    Number of input characters the user typed or pasted at the time of
-    submission.
-  - ``numWords``
-    Number of words in the input. The measurement is taken from a trimmed input
-    split up by its spaces. This is not a perfect measurement, since it will
-    return an incorrect value for languages that do not use spaces or URLs
-    containing spaces in its query parameters, for example.
-  - ``selType``
-    The type of the selected result at the time of submission.
-    This is only present for ``engagement`` events.
-    It can be one of: ``none``, ``autofill``, ``visiturl``, ``bookmark``,
-    ``history``, ``keyword``, ``searchengine``, ``searchsuggestion``,
-    ``switchtab``, ``remotetab``, ``extension``, ``oneoff``, ``keywordoffer``,
-    ``canonized``, ``tip``, ``tiphelp``, ``formhistory``, ``tabtosearch``,
-    ``help``, ``block``, ``quicksuggest``, ``unknown``
-    In practice, ``tabtosearch`` should not appear in real event telemetry.
-    Opening a tab-to-search result enters search mode and entering search mode
-    does not currently mark the end of an engagement. It is noted here for
-    completeness. Similarly, ``block`` indicates a result was blocked or deleted
-    but should not appear because blocking a result does not end the engagement.
-  - ``selIndex``
-    Index of the selected result in the urlbar panel, or -1 for no selection.
-    There won't be a selection when a one-off button is the only selection, and
-    for the ``paste_go`` or ``drop_go`` objects. There may also not be a
-    selection if the system was busy and results arrived too late, then we
-    directly decide whether to search or visit the given string without having
-    a fully built result.
-    This is only present for ``engagement`` events.
-  - ``provider``
-    The name of the result provider for the selected result. Existing values
-    are: ``HeuristicFallback``, ``Autofill``, ``Places``,
-    ``TokenAliasEngines``, ``SearchSuggestions``, ``UrlbarProviderTopSites``.
-    Data from before Firefox 91 will also list ``UnifiedComplete`` as a
-    provider. This is equivalent to ``Places``.
-    Values can also be defined by `URLBar provider experiments`_.
-
-    .. _URLBar provider experiments: experiments.html#developing-address-bar-extensions
 
 Custom pings for Contextual Services
 ------------------------------------
@@ -579,3 +566,111 @@ Firefox Suggest
   :doc:`firefox-suggest-telemetry` document.
 
 .. _search telemetry: /browser/search/telemetry.html
+
+Event Telemetry
+---------------
+
+  .. note::
+    This is a legacy event telemetry. For the current telemetry, please see
+    `Search Engagement Telemetry`_. These legacy events were disabled by default
+    and required enabling through a preference or a Urlbar WebExtension
+    experimental API.
+
+.. _Search Engagement Telemetry: #search-engagement-telemetry
+
+The event telemetry is grouped under the ``urlbar`` category.
+
+Event Method
+  There are two methods to describe the interaction with the urlbar:
+
+  - ``engagement``
+    It is defined as a completed action in urlbar, where a user inserts text
+    and executes one of the actions described in the Event Object.
+  - ``abandonment``
+    It is defined as an action where the user inserts text but does not
+    complete an engagement action, usually unfocusing the urlbar. This also
+    happens when the user switches to another window, regardless of urlbar
+    focus.
+
+Event Value
+  This is how the user interaction started
+
+  - ``typed``: The text was typed into the urlbar.
+  - ``dropped``: The text was drag and dropped into the urlbar.
+  - ``pasted``: The text was pasted into the urlbar.
+  - ``topsites``: The user opened the urlbar view without typing, dropping,
+    or pasting.
+    In these cases, if the urlbar input is showing the URL of the loaded page
+    and the user has not modified the input’s content, the urlbar views shows
+    the user’s top sites. Otherwise, if the user had modified the input’s
+    content, the urlbar view shows results based on what the user has typed.
+    To tell whether top sites were shown, it's enough to check whether value is
+    ``topsites``. To know whether the user actually picked a top site, check
+    check that ``numChars`` == 0. If ``numChars`` > 0, the user initially opened
+    top sites, but then they started typing and confirmed a different result.
+  - ``returned``: The user abandoned a search, for example by switching to
+    another tab/window, or focusing something else, then came back to it
+    and continued. We consider a search continued if the user kept at least the
+    first char of the original search string.
+  - ``restarted``: The user abandoned a search, for example by switching to
+    another tab/window, or focusing something else, then came back to it,
+    cleared it and then typed a new string.
+
+Event Object
+  These describe actions in the urlbar:
+
+  - ``click``
+    The user clicked on a result.
+  - ``enter``
+    The user confirmed a result with Enter.
+  - ``drop_go``
+    The user dropped text on the input field.
+  - ``paste_go``
+    The user used Paste and Go feature. It is not the same as paste and Enter.
+  - ``blur``
+    The user unfocused the urlbar. This is only valid for ``abandonment``.
+
+Event Extra
+  This object contains additional information about the interaction.
+  Extra is a key-value store, where all the keys and values are strings.
+
+  - ``elapsed``
+    Time in milliseconds from the initial interaction to an action.
+  - ``numChars``
+    Number of input characters the user typed or pasted at the time of
+    submission.
+  - ``numWords``
+    Number of words in the input. The measurement is taken from a trimmed input
+    split up by its spaces. This is not a perfect measurement, since it will
+    return an incorrect value for languages that do not use spaces or URLs
+    containing spaces in its query parameters, for example.
+  - ``selType``
+    The type of the selected result at the time of submission.
+    This is only present for ``engagement`` events.
+    It can be one of: ``none``, ``autofill``, ``visiturl``, ``bookmark``,
+    ``history``, ``keyword``, ``searchengine``, ``searchsuggestion``,
+    ``switchtab``, ``remotetab``, ``extension``, ``oneoff``, ``keywordoffer``,
+    ``canonized``, ``tip``, ``tiphelp``, ``formhistory``, ``tabtosearch``,
+    ``help``, ``block``, ``quicksuggest``, ``unknown``
+    In practice, ``tabtosearch`` should not appear in real event telemetry.
+    Opening a tab-to-search result enters search mode and entering search mode
+    does not currently mark the end of an engagement. It is noted here for
+    completeness. Similarly, ``block`` indicates a result was blocked or deleted
+    but should not appear because blocking a result does not end the engagement.
+  - ``selIndex``
+    Index of the selected result in the urlbar panel, or -1 for no selection.
+    There won't be a selection when a one-off button is the only selection, and
+    for the ``paste_go`` or ``drop_go`` objects. There may also not be a
+    selection if the system was busy and results arrived too late, then we
+    directly decide whether to search or visit the given string without having
+    a fully built result.
+    This is only present for ``engagement`` events.
+  - ``provider``
+    The name of the result provider for the selected result. Existing values
+    are: ``HeuristicFallback``, ``Autofill``, ``Places``,
+    ``TokenAliasEngines``, ``SearchSuggestions``, ``UrlbarProviderTopSites``.
+    Data from before Firefox 91 will also list ``UnifiedComplete`` as a
+    provider. This is equivalent to ``Places``.
+    Values can also be defined by `URLBar provider experiments`_.
+
+    .. _URLBar provider experiments: experiments.html#developing-address-bar-extensions

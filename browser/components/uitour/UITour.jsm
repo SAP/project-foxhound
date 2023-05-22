@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
+  TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
 
@@ -27,7 +28,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
-  TelemetryController: "resource://gre/modules/TelemetryController.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
@@ -542,7 +542,7 @@ var UITour = {
 
       case "setDefaultSearchEngine": {
         let enginePromise = this.selectSearchEngine(data.identifier);
-        enginePromise.catch(Cu.reportError);
+        enginePromise.catch(console.error);
         break;
       }
 
@@ -603,7 +603,7 @@ var UITour = {
               searchbar.openSuggestionsPanel();
             }
           })
-          .catch(Cu.reportError);
+          .catch(console.error);
         break;
       }
 

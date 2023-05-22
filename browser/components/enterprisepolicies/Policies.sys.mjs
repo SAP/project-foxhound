@@ -19,7 +19,6 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
     "nsIHandlerService",
   ],
   gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
-  gXulStore: ["@mozilla.org/xul/xulstore;1", "nsIXULStore"],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -841,6 +840,14 @@ export var Policies = {
     },
   },
 
+  DisableThirdPartyModuleBlocking: {
+    onBeforeUIStartup(manager, param) {
+      if (param) {
+        manager.disallowFeature("thirdPartyModuleBlocking");
+      }
+    },
+  },
+
   DisplayBookmarksToolbar: {
     onBeforeUIStartup(manager, param) {
       let visibility;
@@ -882,7 +889,7 @@ export var Policies = {
         // If this policy was already applied and the user chose to re-hide the
         // menu bar, do not show it again.
         runOncePerModification("displayMenuBar", value, () => {
-          lazy.gXulStore.setValue(
+          Services.xulStore.setValue(
             BROWSER_DOCUMENT_URL,
             "toolbar-menubar",
             "autohide",
@@ -900,7 +907,7 @@ export var Policies = {
             value = "true";
             break;
         }
-        lazy.gXulStore.setValue(
+        Services.xulStore.setValue(
           BROWSER_DOCUMENT_URL,
           "toolbar-menubar",
           "autohide",
@@ -2108,10 +2115,9 @@ export var Policies = {
       let pkcs11db = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
         Ci.nsIPKCS11ModuleDB
       );
-      let moduleList = pkcs11db.listModules();
       for (let deviceName in securityDevices) {
         let foundModule = false;
-        for (let module of moduleList) {
+        for (let module of pkcs11db.listModules()) {
           if (module && module.libName === securityDevices[deviceName]) {
             foundModule = true;
             break;
