@@ -1310,7 +1310,7 @@ JSString* StringReplace(JSContext* cx, HandleString string,
   if (str && str->taint().hasTaint()) {
     str->taint().extend(TaintOperationFromContext(cx, "replace", true, pattern, repl));
   }
-  return str;;
+  return str;
 }
 
 void AssertValidBigIntPtr(JSContext* cx, JS::BigInt* bi) {
