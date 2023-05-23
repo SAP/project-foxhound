@@ -290,9 +290,13 @@ static constexpr std::array<uint32_t, 256> BuildEscapeChars() {
 static constexpr std::array<uint32_t, 256> EscapeChars = BuildEscapeChars();
 
 static bool dontNeedEscape(unsigned char aChar, uint32_t aFlags) {
+  // Taintfox: option to skip escaping
+  if (!!(aFlags & esc_Never)) return true;
   return EscapeChars[(size_t)aChar] & aFlags;
 }
 static bool dontNeedEscape(uint16_t aChar, uint32_t aFlags) {
+  // Taintfox: option to skip escaping
+  if (!!(aFlags & esc_Never)) return true;
   return aChar < EscapeChars.size() ? (EscapeChars[(size_t)aChar] & aFlags)
                                     : false;
 }

@@ -98,7 +98,7 @@ nsStandardURL::nsSegmentEncoder::nsSegmentEncoder(const Encoding* encoding)
 }
 
 int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
-  const char* aStr, const StringTaint& taint, const URLSegment& aSeg, int16_t aMask, nsCString& aOut,
+  const char* aStr, const StringTaint& taint, const URLSegment& aSeg, uint32_t aMask, nsCString& aOut,
   bool& aAppended, uint32_t aExtraLen) {
   // aExtraLen is characters outside the segment that will be
   // added when the segment is not empty (like the @ following
@@ -111,6 +111,9 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
 
   // Tainting: check whether to encode URL
   bool encodeURL = NS_IsMainThread() ? Preferences::GetBool("taintfox.escapeURL", false) : true;
+  if (!encodeURL) {
+    aMask |= esc_Never;
+  }
 
   uint32_t origLen = aOut.Length();
   Span<const char> span = Span(aStr + aSeg.mPos, aSeg.mLen);
@@ -160,15 +163,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
 
         totalRead += read;
         auto bufferWritten = buffer.To(written);
-        bool escaped = false;
-        if (encodeURL) {
-          if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
-            escaped = true;
-          }
-        }
-        if (!escaped) {
-          // Taintfox: append the taint
-          aOut.Taint().concat(subsubTaint, aOut.Length());
+        if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
           aOut.Append(bufferWritten);
         }
         if (encoderResult == kInputEmpty) {
@@ -190,13 +185,11 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     }
   }
 
-  if (encodeURL) {
-    if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
-      aAppended = true;
-      // Difference between original and current output
-      // string lengths plus extra length
-      return aOut.Length() - origLen + aExtraLen;
-    }
+  if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
+    aAppended = true;
+    // Difference between original and current output
+    // string lengths plus extra length
+    return aOut.Length() - origLen + aExtraLen;
   }
   aAppended = false;
   // Original segment length plus extra length
@@ -204,7 +197,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
 }
 
 const nsACString& nsStandardURL::nsSegmentEncoder::EncodeSegment(
-    const nsACString& str, int16_t mask, nsCString& result) {
+    const nsACString& str, uint32_t mask, nsCString& result) {
   const char* text;
   bool encoded;
   EncodeSegmentCount(str.BeginReading(text), str.Taint(), URLSegment(0, str.Length()), mask,
